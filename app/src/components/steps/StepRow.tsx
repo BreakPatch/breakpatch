@@ -7,7 +7,7 @@ import { Icon } from '../ui';
 import { stepIcon } from './stepText';
 
 /** Run statuses a row can show (ui-requirements §7). */
-export type RowStatus = 'passed' | 'running' | 'looking' | 'waiting' | 'failed' | 'notRun' | 'fixed';
+export type RowStatus = 'passed' | 'running' | 'looking' | 'waiting' | 'failed' | 'notRun' | 'fixed' | 'added';
 
 const STATUS: Record<RowStatus, { icon: string; word: string; cls: string }> = {
   passed: { icon: 'check_circle', word: 'Passed', cls: 'st-passed' },
@@ -17,6 +17,7 @@ const STATUS: Record<RowStatus, { icon: string; word: string; cls: string }> = {
   failed: { icon: 'cancel', word: 'Failed', cls: 'st-failed' },
   notRun: { icon: 'block', word: 'Not run', cls: 'st-muted' },
   fixed: { icon: 'auto_fix_high', word: 'Fixed automatically', cls: 'st-fixed' },
+  added: { icon: 'check_circle', word: 'Added', cls: 'st-passed' },
 };
 
 export interface StepRowProps {

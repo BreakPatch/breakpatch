@@ -149,8 +149,12 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup }: {
   const leadIcon = CLICK_FAMILY.has(action) ? 'auto_awesome' : actionInfo(action).icon;
   const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' : action === 'write' && o.writeSource !== 'typed' ? true : !!rec.text.trim());
 
+  if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span></>;
+
   return (
     <div className="rec-bar">
+      {/* Over the bottom of the page, not in the layout: the page view never moves when it comes and goes. */}
+      <div className="rec-float">
       {rec.ai.state === 'result' && (
         <div className="rec-ai rec-ai-result" role="status">
           <Icon name="auto_awesome" size={20} className="rec-ai-icon" />
@@ -167,6 +171,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup }: {
           <button type="button" className="rec-ai-link" onClick={() => { rec.cancelAi(); inputRef.current?.focus(); }}>OK</button>
         </div>
       )}
+      </div>
       <div className="rec-hint">{hint}</div>
       <div className="rec-composer-wrap">
         <div className="rec-composer">
@@ -176,7 +181,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup }: {
             onClick={() => setMenu(m => (m === 'closed' ? 'menu' : 'closed'))}>
             <Icon name={actionInfo(action).icon} size={16} />{shortName(action)}<Icon name={menu !== 'closed' ? 'expand_less' : 'expand_more'} size={16} className="faint" />
           </button>
-          <button type="button" className="rec-send" aria-label={input === 'describe' ? 'Ask the AI assistant' : 'Add step'} title={input === 'describe' ? 'Ask the AI assistant' : 'Add step'}
+          <button type="button" className="rec-send" aria-label={input === 'describe' ? 'Ask the AI assistant' : 'Add step'}
+            title={rec.busy ? 'Waiting for the last step to finish' : input === 'describe' ? 'Ask the AI assistant' : 'Add step'}
             onClick={rec.send} disabled={!canSend}>
             <Icon name="arrow_upward" size={18} />
           </button>

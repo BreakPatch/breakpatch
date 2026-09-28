@@ -32,6 +32,8 @@ export interface StepsPanelProps {
   /** Run mode: status per step id, and an optional note per step id (e.g. the fail reason). */
   statuses?: Record<string, RowStatus>;
   notes?: Record<string, string>;
+  /** Replaces a status word, e.g. "Clicking…" on the step being recorded. */
+  statusTexts?: Record<string, string>;
   /** Steps of a shared-steps card (resolved from its version), shown read-only when expanded. */
   groupSteps?: (step: Step) => Step[] | undefined;
   /** "Edit shared steps" link on a shared-steps card. */
@@ -107,7 +109,9 @@ export function StepsPanel(p: StepsPanelProps) {
     const isGroup = s.action === 'group';
     const children = isGroup ? p.groupSteps?.(s) : undefined;
     const groupOpen = isGroup && (openGroups.has(s.id) || (edit && selected));
-    const status = p.statuses?.[s.id];
+    const status = p.statuses?.[s.id] ?? (edit && p.checkingId === s.id ? 'running' : undefined);
+    // The step being recorded can't be edited yet: it expands once it is added.
+    const editable = !(edit && p.checkingId === s.id);
     let note: ReactNode = p.notes?.[s.id] ?? stepNote(s, { range: r.range });
     let tone: 'muted' | 'failed' | 'passed' | 'accent' = status === 'failed' ? 'failed' : 'muted';
     if (edit && p.rerecordingId === s.id) { note = 'Re-recording: do this step again on the page'; tone = 'accent'; }
@@ -118,12 +122,12 @@ export function StepsPanel(p: StepsPanelProps) {
         onClick={e => { e.stopPropagation(); toggleGroup(s.id); }}>
         {children ? `${children.length} steps` : 'Shared'}<Icon name={groupOpen ? 'expand_less' : 'expand_more'} size={18} />
       </button>
-    ) : edit && selected && !isGroup ? <Icon name="expand_less" size={20} className="step-chev" /> : null;
+    ) : edit && selected && !isGroup && editable ? <Icon name="expand_less" size={20} className="step-chev" /> : null;
 
     const expanded = (
       <>
         {groupOpen && <GroupChildren number={r.number} steps={children} onEdit={p.onEditGroup && s.groupId ? () => p.onEditGroup!(s.groupId!) : undefined} />}
-        {edit && selected && (
+        {edit && selected && editable && (
           <StepEditor step={s}
             onChange={patch => change(updateStep(steps, s.id, patch))}
             onRerecord={s.action !== 'loop' && s.action !== 'group' && p.onRerecord ? () => p.onRerecord!(s.id) : undefined}
@@ -135,12 +139,12 @@ export function StepsPanel(p: StepsPanelProps) {
 
     return (
       <StepRow key={s.id} step={s} number={r.number} depth={r.depth} selected={selected} status={status}
-        note={note} noteTone={tone} checking={p.checkingId === s.id} trailing={trailing} fresh={fresh.has(s.id)}
+        note={note} noteTone={tone} checking={p.checkingId === s.id} trailing={trailing} fresh={fresh.has(s.id)} statusText={p.statusTexts?.[s.id]}
         onSelect={p.onSelect ? () => p.onSelect!(selected && edit ? null : s.id) : undefined}
         onMove={edit ? d => change(moveBy(steps, s.id, d)) : undefined}
         dropEdge={drag && drag.over === s.id && drag.id !== s.id ? drag.edge : null}
         headProps={edit ? { draggable: true, onDragStart: onDragStart(s.id), onDragOver: onDragOver(s.id), onDrop, onDragEnd: () => setDrag(null) } : undefined}>
-        {groupOpen || (edit && selected) ? expanded : null}
+        {groupOpen || (edit && selected && editable) ? expanded : null}
       </StepRow>
     );
   }
@@ -203,8 +207,9 @@ function StepEditor({ step, onChange, onRerecord, onDuplicate, onDelete }: {
       )}
       {!isLoop && !isGroup && (TARGETED.has(step.action) || step.target) && (
         <div className="look-for">
-          <label className="look-label" htmlFor={'look-' + step.id}><Icon name="auto_awesome" size={15} />What to look for</label>
+          <label className="look-label" htmlFor={'look-' + step.id}><Icon name="auto_awesome" size={15} />What to look for<span className="look-optional">Optional</span></label>
           <LookFor id={'look-' + step.id} value={step.target ?? ''} onCommit={v => onChange({ target: v || undefined })} />
+          <div className="look-help">Helps find it again if the page changes. The dashed box on the page shows where this step acts.</div>
         </div>
       )}
       <div className="step-actions">

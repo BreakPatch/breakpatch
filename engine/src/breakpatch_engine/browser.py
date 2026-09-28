@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import logging
 import os
 import re
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
@@ -90,6 +92,10 @@ class BrowserSession:
         self._download_tasks: set[asyncio.Task] = set()
         self._stream = None
         self._seq = 0
+        # The live view frames the app may still be showing, by seq: a recorded click names the
+        # frame it was made on, so the recorder can check the page still looks like that.
+        self._frames: OrderedDict[int, str] = OrderedDict()
+        self._changed_at: float | None = None    # when the frame stream last saw the page change
         self.start_origin: str | None = None     # the site the browser was opened on
 
     # ---------- lifecycle ----------
@@ -114,7 +120,7 @@ class BrowserSession:
             log.debug("focus engine: %s", e)
         try:
             exe = config.chromium_executable()
-            opts = launch_options(self.headless)
+            opts = launch_options(self.headless, self.width, self.height)
             if exe:
                 opts["executable_path"] = exe
             else:
@@ -153,6 +159,7 @@ class BrowserSession:
         self._pw = self._browser = self.context = self.page = None
         self.pages = []
         self.downloads = []
+        self._frames.clear()
 
     def require(self):
         if self.page is None:
@@ -299,6 +306,7 @@ class BrowserSession:
 
     async def _start_stream(self) -> None:
         await self._stop_stream()
+        self._changed_at = None
         if self.on_frame is None or self.page is None:
             return
         self._stream = FrameStream(self, self.page, self.on_frame)
@@ -312,6 +320,34 @@ class BrowserSession:
     def next_seq(self) -> int:
         self._seq += 1
         return self._seq
+
+    @property
+    def last_seq(self) -> int:
+        return self._seq
+
+    def remember_frame(self, seq: int, b64: str) -> None:
+        self._frames[seq] = b64
+        while len(self._frames) > config.FRAMES_KEPT:
+            self._frames.popitem(last=False)
+
+    def page_changed(self) -> None:
+        self._changed_at = time.monotonic()
+
+    def seen_frame(self, seq) -> np.ndarray | None:
+        """The live view frame `seq` as an RGB array, or None when it's unknown or too old."""
+        if not isinstance(seq, int) or isinstance(seq, bool) or seq not in self._frames:
+            return None
+        try:
+            return imaging.to_array(base64.b64decode(self._frames[seq]))
+        except Exception:  # noqa: BLE001
+            return None
+
+    def quiet_for(self) -> float:
+        """Seconds since the frame stream last saw the page change (it only sends frames on a
+        change), or 0 when there is no stream to go by."""
+        if self._stream is None or self._changed_at is None:
+            return 0.0
+        return time.monotonic() - self._changed_at
 
     # ---------- navigation ----------
 
@@ -487,12 +523,23 @@ class BrowserSession:
                     pass
 
 
-def launch_options(headless: bool) -> dict:
+def launch_options(headless: bool, width: int = 1280, height: int = 800) -> dict:
     """Chromium's launch options. Its sandbox is on (config.chromium_sandbox): tested pages are
-    third-party code, so a renderer bug mustn't mean code running as the user."""
+    third-party code, so a renderer bug mustn't mean code running as the user. The window is made
+    the viewport's size (headless has no window frame), so Chrome paints the whole viewport."""
     return {"headless": headless, "chromium_sandbox": config.chromium_sandbox(),
             "args": ["--force-color-profile=srgb", "--hide-scrollbars", "--disable-lcd-text",
-                     "--font-render-hinting=none"]}
+                     "--font-render-hinting=none", f"--window-size={int(width)},{int(height)}"]}
+
+
+def frame_size(b64: str) -> tuple[int, int] | None:
+    """A JPEG's width and height, from its header."""
+    try:
+        from PIL import Image
+        with Image.open(io.BytesIO(base64.b64decode(b64))) as img:
+            return img.size
+    except Exception:  # noqa: BLE001
+        return None
 
 
 class FrameStream:
@@ -537,7 +584,37 @@ class FrameStream:
     def _on_frame(self, params: dict) -> None:
         if self.cdp is not None:
             asyncio.ensure_future(self._ack(params.get("sessionId")))
-        self._offer(params.get("data", ""))
+        data = params.get("data", "")
+        if data and self.poll_task is None and not self.fits(data, params.get("metadata") or {}):
+            # Chrome paints only the part of the page its window has room for (a Mac screen shorter
+            # than the test's viewport): such a frame is cropped, and showing it at the viewport's
+            # size would stretch it and put every click in the wrong place. Screenshots always
+            # cover the whole viewport, so the stream uses them from now on.
+            log.warning("screencast frames don't cover the %dx%d viewport (%s); using screenshots",
+                        self.session.width, self.session.height, frame_size(data))
+            asyncio.ensure_future(self._fall_back())
+            return
+        self._offer(data)
+
+    def fits(self, b64: str, meta: dict) -> bool:
+        """Whether a screencast frame shows the whole viewport at 1:1."""
+        w, h = self.session.width, self.session.height
+        dw, dh = meta.get("deviceWidth"), meta.get("deviceHeight")
+        if dw is not None and dh is not None and (round(dw) != w or round(dh) != h):
+            return False
+        return frame_size(b64) in ((w, h), None)
+
+    async def _fall_back(self) -> None:
+        if self.poll_task is not None or self.stopped:
+            return
+        self.poll_task = asyncio.ensure_future(self._poll())
+        cdp, self.cdp = self.cdp, None
+        if cdp is not None:
+            try:
+                await cdp.send("Page.stopScreencast")
+                await cdp.detach()
+            except Exception:  # noqa: BLE001
+                pass
 
     async def _ack(self, sid) -> None:
         try:
@@ -548,6 +625,7 @@ class FrameStream:
     def _offer(self, b64: str) -> None:
         if self.stopped or not b64:
             return
+        self.session.page_changed()
         gap = self.session.timings.frame_min_gap
         now = time.monotonic()
         if now - self.last_sent >= gap:
@@ -564,10 +642,13 @@ class FrameStream:
             self._send(b64)
 
     def _send(self, b64: str) -> None:
+        # Always the size of the picture itself, so the app can tell a frame that isn't the viewport.
         self.last_sent = time.monotonic()
         self.pending = None
-        self.sink({"jpeg": b64, "width": self.session.width, "height": self.session.height,
-                   "seq": self.session.next_seq()})
+        seq = self.session.next_seq()
+        self.session.remember_frame(seq, b64)
+        w, h = frame_size(b64) or (self.session.width, self.session.height)
+        self.sink({"jpeg": b64, "width": w, "height": h, "seq": seq})
 
     async def _poll(self) -> None:
         last = None

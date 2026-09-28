@@ -31,6 +31,14 @@
 .live-overlays { position: absolute; inset: 0; pointer-events: none; }
 .live-hit { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
 .live-hit.tool-point.on-target { cursor: pointer; }
+.live-hit.blocked { cursor: progress; }
+/* Over the frame, not inside the scaled page, so it reads the same at every zoom. */
+.live-blocked {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px;
+  background: var(--raised); color: var(--text); border-radius: var(--r-pill); padding: 6px 14px; font-size: 13px; white-space: nowrap;
+  box-shadow: var(--shadow-pop); pointer-events: none; animation: bpIn 160ms ease-out both; z-index: 2;
+}
+.live-blocked .icon { color: var(--accent); }
 
 .live-hover {
   position: absolute; border-radius: calc(6px / var(--s)); background: var(--accent-tint);

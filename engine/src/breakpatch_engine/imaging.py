@@ -95,6 +95,23 @@ def region_changed(a: np.ndarray, b: np.ndarray, box: Sequence[float],
     return int(mask[y1:y2, x1:x2].sum()) >= min_pixels
 
 
+def looks_different(seen: np.ndarray, now: np.ndarray, box: Sequence[float], level: int = 40,
+                    min_cells: int = 3) -> bool:
+    """Whether a region changed between a live view frame (JPEG) and a screenshot (PNG). Both are
+    shrunk 4 times first so JPEG noise on text edges doesn't count; a change needs `min_cells`
+    4 x 4 cells that differ by more than `level` in some channel."""
+    if seen.shape != now.shape:
+        return True
+    h, w = now.shape[:2]
+    x1, y1, x2, y2 = clamp_box(box, w, h)
+    if x2 - x1 < 4 or y2 - y1 < 4:
+        return False
+    size = ((x2 - x1) // 4, (y2 - y1) // 4)
+    a = cv2.resize(seen[y1:y2, x1:x2], size, interpolation=cv2.INTER_AREA).astype(np.int16)
+    b = cv2.resize(now[y1:y2, x1:x2], size, interpolation=cv2.INTER_AREA).astype(np.int16)
+    return int((np.abs(a - b).max(axis=2) > level).sum()) >= min_cells
+
+
 def overlaps(a: Sequence[int], b: Sequence[int], gap: int = 0) -> bool:
     return not (a[2] + gap <= b[0] or b[2] + gap <= a[0] or a[3] + gap <= b[1] or b[3] + gap <= a[1])
 
@@ -146,6 +163,16 @@ def blast_radius(before: np.ndarray, after: np.ndarray, ignore: Iterable[Sequenc
                  pad: int = BOX_PAD) -> Box | None:
     """Region that changed between two screens, excluding noise (spec §10.3.4)."""
     return union_box(mask_boxes(change_mask(before, after, ignore), pad=pad))
+
+
+def changed_share(before: np.ndarray, after: np.ndarray, box: Sequence[float],
+                  ignore: Iterable[Sequence[float]] | None = None) -> float:
+    """Share (0-1) of a region's pixels that changed, ignore zones excluded."""
+    mask = change_mask(before, after, ignore)
+    h, w = mask.shape
+    x1, y1, x2, y2 = clamp_box(box, w, h)
+    area = (x2 - x1) * (y2 - y1)
+    return float(mask[y1:y2, x1:x2].sum()) / area if area > 0 else 0.0
 
 
 def noise_boxes(frames: Sequence[np.ndarray], pad: int = BOX_PAD) -> list[Box]:

@@ -17,15 +17,23 @@ export interface SetupProgress {
 
 export interface Frame { jpeg: string; width: number; height: number; seq: number }
 
-export type CheckingPhase = 'watching' | 'acting' | 'settling' | 'reloading';
+export type CheckingPhase = 'watching' | 'acting' | 'settling' | 'reloading' | 'naming';
 
 export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' | 'post' | 'ignore'>> & {
   action: Step['action']; at?: Point;
   /** A "Write saved secret" step's value, by name. Typed, never stored in the step; the shell adds its sites. */
   secrets?: Record<string, string>;
+  /**
+   * The `seq` of the live view frame the user clicked or drew on. The engine acts only while the
+   * page still looks like it there, else fails with `stale` and does nothing. Never stored in the step.
+   */
+  frame?: number;
+  /** What to look for, when the user already said it (a step found with the AI assistant). */
+  target?: string;
 };
 
-export interface LocateResult { box: Box; at: Point; target: string }
+/** `frame`: the live view frame the box was found on (pass it on when recording the step). */
+export interface LocateResult { box: Box; at: Point; target: string; frame?: number }
 
 export interface RunSettings { autoFix: boolean; failOnFix: boolean }
 export interface RunStart {
@@ -87,7 +95,7 @@ export interface Engine {
 
   recordPoint(p: RecordParams): Promise<Step>;
   locate(description: string): Promise<LocateResult | null>;
-  recordCheckpoint(region: Box): Promise<Step>;
+  recordCheckpoint(region: Box, frame?: number): Promise<Step>;
 
   startRun(r: RunStart): Promise<void>;
   stopRun(runId: string): Promise<void>;

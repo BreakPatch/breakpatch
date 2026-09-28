@@ -3,7 +3,7 @@
 // candidate box, open loop, re-record step). All engine work goes through getEngine().
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActionKind, Box, Direction, Generated, Point, SampleFile, Step, Viewport } from '../../data/types';
-import { demoEngine, getEngine, EngineError, type RecordParams } from '../../engine';
+import { demoEngine, getEngine, EngineError, type CheckingPhase, type RecordParams } from '../../engine';
 import { around, gesture, inside, sampleApp } from '../../components/live';
 import { appendStep, defaultLabel, findStep, numberOf, removeStep, replaceStep, stepsBefore, updateStep } from '../../components/steps';
 import { POINT_KINDS, STICKY } from './actions';
@@ -14,7 +14,7 @@ import { askText, checkpointLabel, describeWhat, notFoundText, thinkingText } fr
 export type AiState =
   | { state: 'idle' }
   | { state: 'thinking'; text: string; what: string }
-  | { state: 'result'; text: string; what: string; box: Box; at: Point; target: string }
+  | { state: 'result'; text: string; what: string; box: Box; at: Point; target: string; frame?: number }
   | { state: 'notfound'; text: string; what: string };
 
 export interface ActionOptions {
@@ -36,7 +36,22 @@ let seq = 0;
 const CLICKS = new Set<ActionKind>(['click', 'doubleClick', 'longClick', 'rightClick', 'hover']);
 export const localId = (p = 's') => `${p}${Date.now().toString(36)}${(seq++).toString(36)}`;
 
-interface Extra { label?: string; target?: string; checkpoint?: Box }
+interface Extra { label?: string; target?: string; checkpoint?: Box; frame?: number }
+
+/** What the step being recorded is doing now, for its row and the live view ("Clicking…"). */
+export function phaseText(phase: CheckingPhase, action: ActionKind): string {
+  switch (phase) {
+    case 'watching': return 'Looking at the page…';
+    case 'acting': return ACTING[action] ?? 'Doing the step…';
+    case 'naming': return 'Naming the step…';
+    default: return 'Waiting for the page…';
+  }
+}
+const ACTING: Partial<Record<ActionKind, string>> = {
+  click: 'Clicking…', doubleClick: 'Clicking…', longClick: 'Clicking…', rightClick: 'Clicking…', hover: 'Moving the pointer…',
+  write: 'Typing…', navigate: 'Opening the page…', waitFor: 'Waiting…', swipe: 'Swiping…', scroll: 'Scrolling…', drag: 'Dragging…',
+  upload: 'Uploading…', switchTab: 'Switching tabs…', downloadCheck: 'Checking the download…',
+};
 
 /**
  * The value for a "Write saved secret" step, read from the Keychain just for this call (the engine
@@ -67,6 +82,9 @@ export function useRecorder({ viewport, onError, appUrl }: {
   const [options, setOptionsState] = useState<ActionOptions>(DEFAULT_OPTIONS);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [phase, setPhase] = useState<CheckingPhase>('watching');
+  const [busyAction, setBusyAction] = useState<ActionKind>('click');
+  const [addedId, setAddedId] = useState<string | null>(null);
   const [savedPill, setSavedPill] = useState<string | null>(null);
   const [ai, setAi] = useState<AiState>({ state: 'idle' });
   const aiToken = useRef(0);
@@ -81,7 +99,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
   }, []);
 
   // "Checking the screen…" follows the engine's record.checking events while a step records.
-  useEffect(() => engine.on('record.checking', () => { if (busyRef.current) setChecking(true); }), [engine]);
+  useEffect(() => engine.on('record.checking', d => { if (busyRef.current) { setChecking(true); setPhase(d.phase); } }), [engine]);
   useEffect(() => { if (!savedPill) return; const t = setTimeout(() => setSavedPill(null), 1500); return () => clearTimeout(t); }, [savedPill]);
 
   const setOptions = (patch: Partial<ActionOptions>) => setOptionsState(o => ({ ...o, ...patch }));
@@ -113,17 +131,19 @@ export function useRecorder({ viewport, onError, appUrl }: {
       setBusyId(tempId);
     }
     setSelectedId(rr ?? tempId);
-    setChecking(true); setSavedPill(null);
+    setChecking(true); setSavedPill(null); setPhase('watching'); setBusyAction(params.action); setAddedId(null);
     try {
       // The secret's value goes to the engine with this call only, never into the step.
       const secretValues = extra.checkpoint ? undefined : await secretFor(params.secretRef, appUrl);
-      const got = extra.checkpoint ? await engine.recordCheckpoint(extra.checkpoint)
-        : await engine.recordPoint(secretValues ? { ...params, secrets: secretValues } : params);
+      const sent: RecordParams = { ...params, ...(secretValues ? { secrets: secretValues } : {}), ...(extra.frame !== undefined ? { frame: extra.frame } : {}),
+        // Found with the AI assistant: the user's words are what to look for (the engine still names it).
+        ...(extra.target && !extra.checkpoint ? { target: extra.target } : {}) };
+      const got = extra.checkpoint ? await engine.recordCheckpoint(extra.checkpoint, extra.frame) : await engine.recordPoint(sent);
       const step: Step = { ...got, label: extra.label ?? (CLICKS.has(params.action) ? got.label : defaultLabel({ ...params, ...got, action: got.action })), target: extra.target ?? got.target ?? (params.action === 'write' ? 'The focused field' : undefined) };
       if (sample) sampleApp.perform(step, viewport);
       const next = setSteps(s => (rr ? replaceStep(s, rr, step) : updateStep(s, tempId, () => step)));
       const id = rr ?? step.id;
-      setSelectedId(id); setDirty(true); setRerecordId(null);
+      setSelectedId(id); setDirty(true); setRerecordId(null); setAddedId(id);
       setSavedPill(`Step ${numberOf(next, id)} saved`);
       afterAdd(params.action);
     } catch (e) {
@@ -157,7 +177,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
     let res = null;
     try { res = await engine.locate(t); } catch { res = null; }
     if (token !== aiToken.current) return;
-    if (res) setAi({ state: 'result', text: t, what, box: res.box, at: res.at, target: res.target });
+    if (res) setAi({ state: 'result', text: t, what, box: res.box, at: res.at, target: res.target, frame: res.frame });
     else { setAi({ state: 'notfound', text: t, what }); setText(t); }
   }
   const cancelAi = () => { aiToken.current++; setAi({ state: 'idle' }); };
@@ -165,37 +185,39 @@ export function useRecorder({ viewport, onError, appUrl }: {
   function confirmAi() {
     if (ai.state !== 'result') return;
     const a = ai; setAi({ state: 'idle' });
-    if (action === 'checkpoint') void record({ action: 'checkpoint' }, { checkpoint: a.box, label: checkpointLabel(a.text), target: a.target });
-    else if (action === 'waitUntil') void record({ action: 'waitUntil', region: a.box, timeoutMs: options.maxWait * 1000 }, { target: a.target });
-    else if (action === 'swipe' || action === 'scroll') void record({ action, from: a.at, direction: options.direction, distance: options.distance }, { target: a.target });
-    else void record({ action: POINT_KINDS.has(action) ? action : 'click', at: a.at, ...(action === 'upload' ? { sample: options.sample } : {}) }, { target: a.target });
+    const x = { target: a.target, frame: a.frame };
+    if (action === 'checkpoint') void record({ action: 'checkpoint' }, { ...x, checkpoint: a.box, label: checkpointLabel(a.text) });
+    else if (action === 'waitUntil') void record({ action: 'waitUntil', region: a.box, timeoutMs: options.maxWait * 1000 }, x);
+    else if (action === 'swipe' || action === 'scroll') void record({ action, from: a.at, direction: options.direction, distance: options.distance }, x);
+    else void record({ action: POINT_KINDS.has(action) ? action : 'click', at: a.at, ...(action === 'upload' ? { sample: options.sample } : {}) }, x);
   }
 
   // ---------- Page ----------
   const pageBusy = () => busyRef.current || ai.state === 'thinking';
-  function pagePoint(p: Point) {
+  // `frame`: the live view frame the user pressed on; the engine refuses the step if the page has changed since.
+  function pagePoint(p: Point, frame?: number) {
     if (pageBusy()) return;
     if (ai.state !== 'idle') cancelAi();
     const kind: ActionKind = POINT_KINDS.has(action) && action !== 'swipe' && action !== 'scroll' ? action : 'click';
-    void record({ action: kind, at: p, ...(kind === 'upload' ? { sample: options.sample } : {}) });
+    void record({ action: kind, at: p, ...(kind === 'upload' ? { sample: options.sample } : {}) }, { frame });
   }
-  function pageDrag(from: Point, to: Point) {
+  function pageDrag(from: Point, to: Point, frame?: number) {
     if (pageBusy()) return;
     if (ai.state !== 'idle') cancelAi();
-    if (action === 'drag') void record({ action: 'drag', from, to });
+    if (action === 'drag') void record({ action: 'drag', from, to }, { frame });
     else {
       const g = gesture(from, to);
       setOptions({ direction: g.direction, distance: g.distance });
-      void record({ action: action === 'scroll' ? 'scroll' : 'swipe', from, direction: g.direction, distance: g.distance });
+      void record({ action: action === 'scroll' ? 'scroll' : 'swipe', from, direction: g.direction, distance: g.distance }, { frame });
     }
   }
-  function pageBox(box: Box | null, at: Point) {
+  function pageBox(box: Box | null, at: Point, frame?: number) {
     if (pageBusy()) return;
     if (ai.state !== 'idle') cancelAi();
     const region = box ?? snapBox(at, viewport);
     const named = text.trim();
-    if (action === 'checkpoint') { setText(''); void record({ action: 'checkpoint' }, { checkpoint: region, label: named ? checkpointLabel(named) : undefined }); }
-    else void record({ action: 'waitUntil', region, timeoutMs: options.maxWait * 1000 });
+    if (action === 'checkpoint') { setText(''); void record({ action: 'checkpoint' }, { checkpoint: region, label: named ? checkpointLabel(named) : undefined, frame }); }
+    else void record({ action: 'waitUntil', region, timeoutMs: options.maxWait * 1000 }, { frame });
   }
 
   // ---------- Composer ----------
@@ -230,7 +252,9 @@ export function useRecorder({ viewport, onError, appUrl }: {
   }
 
   return {
-    steps, dirty, selectedId, openLoopId, rerecordId, action, text, options, ai, busyId, checking, savedPill, sample,
+    steps, dirty, selectedId, openLoopId, rerecordId, action, text, options, ai, busyId, checking, savedPill, sample, addedId,
+    /** "Clicking…", "Waiting for the page…": what the step being recorded is doing now. */
+    phaseText: busyId !== null ? phaseText(phase, busyAction) : null,
     stepsRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi,
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),

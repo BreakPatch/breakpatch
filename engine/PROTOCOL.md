@@ -21,7 +21,8 @@ All coordinates are **viewport pixels at DPR 1**. Boxes are `[x1, y1, x2, y2]`.
 ```
 
 Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`, `busy`,
-`network`, `stopped`, `internal`. `message` is plain language, safe to show; `details`
+`stale` (the page changed after the frame the user acted on; nothing was done), `network`,
+`stopped`, `internal`. `message` is plain language, safe to show; `details`
 (optional) goes behind "Copy details".
 
 - Requests run concurrently: a long call (a run, a download, recording) never blocks
@@ -117,7 +118,7 @@ the app config, or (Breakpatch Team) the workspace's model override.
 | `browser.open` | `{ url, viewport: {width, height} }` | `{}` — starts streaming `frame` events |
 | `browser.close` | – | `{}` |
 | `browser.navigate` | `{ nav: "url"\|"reload"\|"back"\|"forward", url? }` | `{}` |
-| `browser.pointer` | `{ kind: "move"\|"scroll", at, dx?, dy? }` | `{}` — lets the user scroll/hover the live view without recording |
+| `browser.pointer` | `{ kind: "move"\|"scroll", at, dx?, dy? }` | `{}` — lets the user scroll/hover the live view without recording; `busy` while a step records |
 
 The test browser only shows web pages: `http://` and `https://` addresses, and `about:blank`.
 `browser.open`, `browser.navigate` (`nav: "url"`), a run's `startUrl` and a `navigate` step refuse
@@ -130,31 +131,47 @@ Chromium runs with its sandbox on (`chromium_sandbox`); only development runs ca
 (see Environment).
 
 `frame` data: `{ jpeg: <base64>, width, height, seq }`, sent when the page changes (at most ~10/s,
-always ending on the latest picture). Frames follow the active tab: when `switchTab` moves to a
+always ending on the latest picture). `width`/`height` are the picture's own size, which is always the viewport's: the
+window is opened at the viewport's size, and if Chrome still paints less of the page than the
+viewport (a screen smaller than the viewport), the stream switches to screenshots of the whole viewport. Frames follow the active tab: when `switchTab` moves to a
 popup, or the popup closes itself, frames come from the page now in front.
 The browser methods answer `busy` during a run.
 
 ### Recording
 | Method | Params | Result |
 |---|---|---|
-| `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets? }` | `{ step: Step }` |
-| `record.locate` | `{ description }` | `{ box, at, target } \| null` — AI assistant; `null` means not found |
-| `record.checkpoint` | `{ region }` | `{ step: Step }` |
+| `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
+| `record.locate` | `{ description }` | `{ box, at, target, frame } \| null` — AI assistant; `null` means not found |
+| `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
 
 `record.point` performs the action in the live browser and runs the automatic checks
 (spec §10.3): noise watch, pre-check hash around the target, the action, settle, blast
-radius post-check, reload diff for ignore zones. It emits `record.checking` `{ phase: "watching"|"acting"|"settling"|"reloading" }`
-while it works. The returned `Step` follows spec §12.1 (`id`, `action`, `label`, `target`, `at`,
+radius post-check, reload diff for ignore zones. It emits `record.checking` `{ phase: "watching"|"acting"|"settling"|"reloading"|"naming" }`
+while it works (`naming` only when the AI assistant is still naming the step after the rest is done). The returned `Step` follows spec §12.1 (`id`, `action`, `label`, `target`, `at`,
 `pre`, `post`, `ignore`, plus action fields). `label` and `target` are plain-language
 suggestions the UI shows and the user may edit; pass `label`/`target` to set them instead.
-With a model installed, the engine asks it to name the clicked element; without one the target
-reads like "The spot you clicked, near the top left of the page".
+With a model installed, the engine asks it to name the clicked element (unless `label` is given;
+a given `target` is kept); without one the target reads like "The spot you clicked, near the top
+left of the page". The naming looks at the screen from before the action but runs after it, while
+the page reacts, so it never delays the click.
+
+`frame` is the `seq` of the live view frame the user clicked or drew on (`record.locate` returns
+the one it found the box on). Right before acting, and at its first look, the engine checks that
+the page still looks like that frame around the click (96 × 96 px) or inside the drawn box; if it
+doesn't, the call fails with `stale` ("The page changed before your click reached it, so nothing
+was clicked…") and nothing is sent to the page. Without `frame`, or for a frame too old to be kept
+(the last 64), there is no check. The action follows the last look straight away. The noise watch
+is skipped when the frame stream has seen the page sit still for the whole watch (it only sends
+frames on a change), so a click on a still page goes at once.
 
 Per action:
 - Pointer actions (`click`, `doubleClick`, `longClick`, `rightClick`, `hover`, `upload`, `downloadCheck`
   with `at`): `pre` is a 64 × 64 box around `at`. `drag`/`swipe`/`scroll` use `from` for the pre-check.
 - `post` is the blast radius (what changed, padded, noise excluded) with `expectChange: true`, or
-  the pre region with `expectChange: false` when nothing changed. A `write` whose text changes per
+  the pre region with `expectChange: false` when nothing changed. With `expectChange`, `post.change` is the
+  share (0-1) of that area's pixels that changed; a replay must change at least a quarter as much
+  (`POST_CHANGE_SHARE`), so a click that only lights up a button that should have moved the page on
+  fails with `noChange`. Steps saved without `change` keep the hash check alone. A `write` whose text changes per
   run (`generated`, `{i}`, `{time}`, `{date}`) gets no `post`.
 - `write` without `at` types into the focused field. With `secretRef`, pass the secret in
   `secrets` (see Saved secrets below; it is typed, never stored in the step); without it the call

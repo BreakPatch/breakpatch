@@ -7,16 +7,20 @@
   flex: none; position: relative; border-top: 1px solid var(--line); background: var(--surface);
   padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px;
 }
-.rec-hint { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); min-height: 18px; animation: bpIn 160ms ease-out both; }
+.rec-hint { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); height: 18px; white-space: nowrap; overflow: hidden; animation: bpIn 160ms ease-out both; }
 .rec-hint-icon { color: var(--accent); flex: none; }
+.rec-hint .grow { overflow: hidden; text-overflow: ellipsis; }
 .rec-hint-link { color: var(--accent); font-weight: 600; font-size: 12px; flex: none; padding: 0 2px; }
 .rec-hint-link:hover { color: var(--text); }
 
+/* Transient bars float over the bottom edge of the page view (above the add step bar). */
+.rec-float { position: absolute; left: 14px; right: 14px; bottom: calc(100% + 8px); display: flex; flex-direction: column; gap: 8px; z-index: 5; pointer-events: none; }
+.rec-float > * { pointer-events: auto; box-shadow: var(--shadow-pop); }
 .rec-ai { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; animation: bpIn 200ms ease-out both; font-size: 14px; }
-.rec-ai-result { background: var(--running-tint); border: 1px solid color-mix(in srgb, var(--running) 40%, transparent); }
+.rec-ai-result { background: color-mix(in srgb, var(--running) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--running) 40%, transparent); }
 .rec-ai-result .rec-ai-icon { color: var(--running); }
 .rec-ai-result .rec-ai-text { font-weight: 600; }
-.rec-ai-notfound { background: var(--fixed-tint); border: 1px solid color-mix(in srgb, var(--fixed) 35%, transparent); }
+.rec-ai-notfound { background: color-mix(in srgb, var(--fixed) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--fixed) 35%, transparent); }
 .rec-ai-notfound .rec-ai-icon { color: var(--fixed); }
 .rec-ai-link { font-size: 14px; color: var(--text-muted); padding: 6px; border-radius: 6px; }
 .rec-ai-link:hover { color: var(--text); }
@@ -78,12 +82,14 @@
 .rec-chip.on { background: var(--accent-tint); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 
 /* ---------- Action list (260 px, pops from bottom right) ---------- */
+/* At least 260 px, wider when a name needs it: a name that wrapped left its icon between the lines. */
 .rec-menu {
-  right: 40px; bottom: calc(100% + 8px); width: 260px; padding: 8px; transform-origin: bottom right;
+  right: 40px; bottom: calc(100% + 8px); min-width: 260px; max-width: min(340px, calc(100vw - 80px)); padding: 8px; transform-origin: bottom right;
   max-height: min(520px, calc(100vh - 200px)); display: flex; flex-direction: column;
 }
 .rec-menu-scroll { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 2px; }
 .rec-menu .menu-item { padding: 8px 10px; }
+.rec-menu .menu-item .grow { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rec-menu .menu-item.on { background: var(--raised); }
 .rec-menu-check { color: var(--accent) !important; }
 .rec-menu-foot { font-size: 11px; color: var(--text-faint); padding: 8px 10px 2px; line-height: 1.4; border-top: 1px solid var(--line); margin-top: 4px; }

@@ -339,6 +339,12 @@ class Runner:
         while True:
             dist = imaging.distance(imaging.region_hash(after, region, ignore), post["hash"])
             changed = imaging.region_changed(before, after, region, ignore)
+            if changed and post.get("expectChange") and isinstance(post.get("change"), (int, float)):
+                # A perceptual hash of a big area barely notices new words on a screen laid out like
+                # the old one, so the amount of change is compared too (steps recorded before this
+                # have no `change` and keep the hash check alone).
+                share = imaging.changed_share(before, after, region, ignore)
+                changed = share >= config.POST_CHANGE_SHARE * float(post["change"])
             if post.get("expectChange") and not changed:
                 reason = "noChange"
             elif dist > tol:

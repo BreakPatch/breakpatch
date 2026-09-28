@@ -1,0 +1,38 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sign in</title>
+<style>
+  body { margin: 0; background: #fff; font: 16px sans-serif; color: #222; }
+  .card { position: absolute; left: 200px; top: 80px; width: 400px; }
+  h1 { font-size: 24px; margin: 0 0 20px; }
+  .field { height: 40px; border: 1px solid #999; border-radius: 6px; margin: 8px 0 20px; }
+  button { width: 400px; height: 48px; border: 0; border-radius: 8px; background: #6b3fd4; color: #fff; font: 16px sans-serif; }
+  button:hover { background: #5a31bd; }
+  .foot { position: absolute; left: 200px; top: 420px; font-size: 12px; color: #888; }
+</style></head>
+<body>
+  <div id="corner-a" style="position:absolute;left:4px;top:4px;font-size:10px">1</div>
+  <div id="corner-b" style="position:absolute;left:784px;top:584px;font-size:10px">1</div>
+  <!-- Two screens that look alike (like a sign-in flow): Next shows the second one.
+       ?dead=1: Next does nothing, though it still changes colour under the pointer. -->
+  <div class="card">
+    <h1 id="h">Enter your email</h1>
+    <div id="l">Email address</div>
+    <div class="field"></div>
+    <button id="next">Next</button>
+  </div>
+  <!-- Artwork that stays put: most of the area that changes is the same on both screens. -->
+  <div style="position:absolute;left:20px;top:60px;width:150px;height:420px;background:#e9e2fb"></div>
+  <div style="position:absolute;left:630px;top:60px;width:150px;height:420px;background:#dff0ea"></div>
+  <div class="foot" id="f">Step 1 of 2</div>
+  <script>
+    var q = new URLSearchParams(location.search);
+    document.getElementById('next').onclick = function () {
+      if (q.get('dead')) return;
+      document.getElementById('h').textContent = 'Enter your password';
+      document.getElementById('l').textContent = 'Password';
+      this.textContent = 'Sign in';
+      document.getElementById('f').textContent = 'Step 2 of 2';
+      document.getElementById('corner-a').textContent = '2';
+      document.getElementById('corner-b').textContent = '2';
+    };
+  </script>
+</body></html>

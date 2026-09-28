@@ -1,0 +1,141 @@
+// Recorder fixes from testing a real build: clicks carry the frame they were made on, the step's
+// state reads plainly while it records, the AI bars float, and menu names stay on one line.
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { EngineError, getEngine, type Frame } from '../../engine';
+import { fitScale, LiveView, toViewport } from '../../components/live';
+import type { Step } from '../../data/types';
+import { StepsPanel } from '../../components/steps';
+import { ActionMenu } from './ActionMenu';
+import { phaseText, useRecorder } from './useRecorder';
+
+const fsModule = 'node:fs', urlModule = 'node:url', pathModule = 'node:path';
+const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync(path: string, enc: 'utf8'): string };
+const { fileURLToPath } = (await import(/* @vite-ignore */ urlModule)) as { fileURLToPath(url: string): string };
+const { dirname, join } = (await import(/* @vite-ignore */ pathModule)) as { dirname(p: string): string; join(...p: string[]): string };
+const here = dirname(fileURLToPath(import.meta.url));
+const css = (p: string) => fs.readFileSync(join(here, p), 'utf8');
+
+afterEach(() => { vi.restoreAllMocks(); });
+Element.prototype.scrollIntoView ??= () => undefined;   // not in jsdom
+globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
+const vp = { width: 1440, height: 900 };
+const hook = (onError = vi.fn()) => renderHook(() => useRecorder({ viewport: vp, onError }));
+
+describe('a click is recorded against the frame it was made on', () => {
+  it('sends the frame with the click, and never keeps it in the step', async () => {
+    const spy = vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: 's1', action: p.action, label: 'Click Next button', at: p.at }));
+    const { result } = hook();
+    act(() => { result.current.pagePoint([700, 500], 42); });
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][0]).toEqual({ action: 'click', at: [700, 500], frame: 42 });
+    await waitFor(() => expect(result.current.steps[0]?.id).toBe('s1'));
+    expect(result.current.steps[0]).not.toHaveProperty('frame');
+    expect(result.current.addedId).toBe('s1');
+  });
+
+  it('drops the step and says why when the page had moved on', async () => {
+    vi.spyOn(getEngine(), 'recordPoint').mockRejectedValue(new EngineError('stale', 'The page changed before your click reached it, so nothing was clicked. Look at the page again, then click.'));
+    const onError = vi.fn();
+    const { result } = hook(onError);
+    act(() => { result.current.pagePoint([700, 500], 7); });
+    await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.stringContaining('nothing was clicked')));
+    expect(result.current.steps).toHaveLength(0);
+    expect(result.current.busy).toBe(false);
+  });
+
+  it('confirming an AI box clicks at once with the user\'s words and the frame the box was found on', async () => {
+    vi.spyOn(getEngine(), 'locate').mockResolvedValue({ box: [500, 480, 940, 528], at: [720, 504], target: 'the Next button', frame: 9 });
+    const spy = vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: 's2', action: p.action, label: 'Click Next button', at: p.at, target: p.target }));
+    const { result } = hook();
+    await act(async () => { await result.current.describe('click the Next button'); });
+    expect(result.current.ai.state).toBe('result');
+    act(() => { result.current.confirmAi(); });
+    await waitFor(() => expect(spy).toHaveBeenCalled());
+    expect(spy.mock.calls[0][0]).toEqual({ action: 'click', at: [720, 504], target: 'the Next button', frame: 9 });
+    await waitFor(() => expect(result.current.steps[0]?.target).toBe('the Next button'));
+  });
+
+  it('says what the step is doing while it records', () => {
+    expect(phaseText('watching', 'click')).toBe('Looking at the page…');
+    expect(phaseText('acting', 'click')).toBe('Clicking…');
+    expect(phaseText('acting', 'write')).toBe('Typing…');
+    expect(phaseText('settling', 'click')).toBe('Waiting for the page…');
+    expect(phaseText('reloading', 'click')).toBe('Waiting for the page…');
+    expect(phaseText('naming', 'click')).toBe('Naming the step…');
+  });
+});
+
+describe('step card states', () => {
+  const steps: Step[] = [{ id: 'a', action: 'click', label: 'Click Sign in', at: [10, 10] }, { id: 'p', action: 'click', label: 'Click here', at: [20, 20] }];
+
+  it('shows "Clicking…" on the step being recorded, with nothing to edit yet', () => {
+    render(<StepsPanel steps={steps} mode="edit" selectedId="p" checkingId="p" statusTexts={{ p: 'Clicking…' }} onChange={() => undefined} onSelect={() => undefined} />);
+    expect(screen.getByText('Clicking…')).toBeInTheDocument();
+    expect(screen.queryByText('Re-record')).toBeNull();
+    expect(screen.queryByText('What to look for')).toBeNull();
+  });
+
+  it('shows "Added" when it is saved, and says What to look for is optional and what it is for', () => {
+    render(<StepsPanel steps={steps} mode="edit" selectedId="p" statuses={{ p: 'added' }} onChange={() => undefined} onSelect={() => undefined} onRerecord={() => undefined} />);
+    expect(screen.getByText('Added')).toBeInTheDocument();
+    expect(screen.getByText('Optional')).toBeInTheDocument();
+    expect(screen.getByText(/The dashed box on the page shows where this step acts/)).toBeInTheDocument();
+    expect(screen.getByText('Re-record')).toBeInTheDocument();
+  });
+});
+
+describe('layout that must not move the page', () => {
+  it('floats the AI bars over the page instead of taking space above the add step bar', () => {
+    const rules = css('recorder.css');
+    expect(rules).toMatch(/\.rec-float \{ position: absolute;[^}]*bottom: calc\(100% \+ 8px\)/);
+    expect(rules).toMatch(/\.rec-hint \{[^}]*height: 18px; white-space: nowrap;/);
+  });
+
+  it('keeps every action name on one line, next to its icon', () => {
+    expect(css('recorder.css')).toMatch(/\.rec-menu \.menu-item \.grow \{ white-space: nowrap;/);
+    expect(css('recorder.css')).toMatch(/\.rec-menu \{[^}]*min-width: 260px;/);
+    render(<ActionMenu open current="waitUntil" allowGroups onPick={() => undefined} onClose={() => undefined} />);
+    const item = screen.getByRole('menuitemradio', { name: /Wait until something appears/ });
+    expect(item.firstElementChild).toHaveTextContent('hourglass_top');
+    expect(item.children[1]).toHaveTextContent('Wait until something appears');
+  });
+});
+
+describe('clicks map to true page pixels', () => {
+  it('round-trips a click at every zoom and pane shape', () => {
+    for (const pane of [{ width: 1300, height: 900 }, { width: 900, height: 1100 }, { width: 2400, height: 700 }]) {
+      for (const zoom of [1, 0.86, 0.5, 1.5, fitScale(pane, vp)]) {
+        for (const p of [[0, 0], [720, 450], [400, 396], [1439, 899]] as [number, number][]) {
+          expect(toViewport({ x: p[0] * zoom, y: p[1] * zoom }, zoom, vp)).toEqual(p);
+        }
+      }
+    }
+  });
+
+  it('stamps a press with the frame on screen, and draws a frame at its own size, never stretched', () => {
+    const engine = getEngine() as unknown as { emit(e: 'frame', d: Frame): void };
+    const onPoint = vi.fn();
+    const { container } = render(<LiveView address="x" viewport={vp} source="frames" onPoint={onPoint} />);
+    act(() => { engine.emit('frame', { jpeg: '/9j/', width: 1440, height: 900, seq: 5 }); });
+    const img = container.querySelector('img.live-img') as HTMLImageElement;
+    expect(img.style.height).toBe('');                       // the viewport's size: fills the page box
+    const hit = container.querySelector('.live-hit')!;
+    fireEvent.pointerDown(hit, { button: 0, clientX: 100, clientY: 80 });
+    act(() => { engine.emit('frame', { jpeg: '/9j/', width: 1440, height: 812, seq: 6 }); });
+    fireEvent.pointerUp(hit, { button: 0, clientX: 100, clientY: 80 });
+    expect(onPoint).toHaveBeenCalledTimes(1);
+    expect(onPoint.mock.calls[0][1]).toBe(5);                // the frame the press began on
+    expect(img.style.height).toBe('812px');                  // a short frame keeps its own size
+  });
+
+  it('shows why the page is not taking clicks, and does nothing', () => {
+    const onPoint = vi.fn();
+    const { container } = render(<LiveView address="x" viewport={vp} source="sample" onPoint={onPoint} blocked="Wait for step 2 to finish, then click." />);
+    const hit = container.querySelector('.live-hit')!;
+    fireEvent.pointerDown(hit, { button: 0, clientX: 100, clientY: 80 });
+    fireEvent.pointerUp(hit, { button: 0, clientX: 100, clientY: 80 });
+    expect(onPoint).not.toHaveBeenCalled();
+    expect(screen.getByText('Wait for step 2 to finish, then click.')).toBeInTheDocument();
+  });
+});

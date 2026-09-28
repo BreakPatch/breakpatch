@@ -40,10 +40,16 @@ export interface LiveViewProps {
   /** Run view and report: no pointer tools, no hover. */
   readOnly?: boolean;
   tool?: LiveTool;
-  onPoint?: (p: Point) => void;
-  onDrag?: (from: Point, to: Point) => void;
+  /** `frame` is the `seq` of the frame on screen when the press began (frames source only). */
+  onPoint?: (p: Point, frame?: number) => void;
+  onDrag?: (from: Point, to: Point, frame?: number) => void;
   /** A drawn box, or `null` with the point when the user only clicked. */
-  onBox?: (box: Box | null, at: Point) => void;
+  onBox?: (box: Box | null, at: Point, frame?: number) => void;
+  /**
+   * The page can't take a click now (a step is still being recorded): presses and scrolling do
+   * nothing, and a press shows this text over the page for a moment.
+   */
+  blocked?: string | null;
   markers?: LiveMarker[];
   /** The AI assistant's candidate box while it asks "Is this …?". */
   candidate?: Box | null;
@@ -92,7 +98,12 @@ export function LiveView(props: LiveViewProps) {
   const [frame, setFrame] = useState<Frame | null>(null);
   useEffect(() => (source === 'frames' && !props.image ? engine.on('frame', setFrame) : undefined), [engine, source, props.image]);
 
-  const pointer = usePagePointer({ tool, scale, vp, frameRef, source, onPoint: props.onPoint, onDrag: props.onDrag, onBox: props.onBox });
+  const seqRef = useRef<number | undefined>(undefined);
+  useEffect(() => { seqRef.current = frame?.seq; }, [frame]);
+  const [blockedNote, setBlockedNote] = useState<string | null>(null);
+  useEffect(() => { if (!blockedNote) return; const t = setTimeout(() => setBlockedNote(null), 2500); return () => clearTimeout(t); }, [blockedNote]);
+  const pointer = usePagePointer({ tool, scale, vp, frameRef, source, seqRef, blocked: props.blocked ?? null, onBlocked: setBlockedNote,
+    onPoint: props.onPoint, onDrag: props.onDrag, onBox: props.onBox });
 
   const pct = Math.round(scale * 100);
   const pageStyle = { width: vp.width, height: vp.height, transform: `scale(${scale})`, '--s': scale } as CSSProperties;
@@ -100,7 +111,10 @@ export function LiveView(props: LiveViewProps) {
   let page: ReactNode;
   if (props.image) page = <img className="live-img" src={props.image} alt="Screenshot of the page" draggable={false} />;
   else if (source === 'sample') page = <SampleApp viewport={vp} state={props.sampleState} />;
-  else page = frame ? <img className="live-img" src={`data:image/jpeg;base64,${frame.jpeg}`} alt="Live page" draggable={false} /> : null;
+  // At the frame's own size in page pixels, never stretched to the viewport: a frame that isn't the
+  // viewport's size would otherwise put the page, and every click on it, in the wrong place.
+  else page = frame ? <img className="live-img" src={`data:image/jpeg;base64,${frame.jpeg}`} alt="Live page" draggable={false}
+    style={frame.width !== vp.width || frame.height !== vp.height ? { width: frame.width, height: frame.height } : undefined} /> : null;
   const loading = props.loading || (source === 'frames' && !props.image && !frame);
 
   return (
@@ -138,8 +152,9 @@ export function LiveView(props: LiveViewProps) {
             )}
             {loading && <div className="live-loading"><Icon name="progress_activity" className="spin" />Opening the browser…</div>}
           </div>
+          {blockedNote && props.blocked && <div className="live-blocked" role="status"><Icon name="hourglass_top" size={16} />{blockedNote}</div>}
           {tool !== 'none' && (
-            <div className={'live-hit tool-' + tool + (pointer.hover ? ' on-target' : '')} aria-label="Live page. Click anything on the page to add a step."
+            <div className={'live-hit tool-' + tool + (pointer.hover ? ' on-target' : '') + (props.blocked ? ' blocked' : '')} aria-label="Live page. Click anything on the page to add a step."
               onPointerDown={pointer.down} onPointerMove={pointer.move} onPointerUp={pointer.up} onPointerLeave={pointer.leave}
               onWheel={source === 'frames' ? pointer.wheel : undefined} />
           )}
@@ -174,14 +189,19 @@ function Candidate({ box }: { box: Box }) {
 interface PointerOpts {
   tool: LiveTool; scale: number; vp: Pick<Viewport, 'width' | 'height'>; source: 'frames' | 'sample';
   frameRef: React.RefObject<HTMLDivElement | null>;
-  onPoint?: (p: Point) => void; onDrag?: (from: Point, to: Point) => void; onBox?: (box: Box | null, at: Point) => void;
+  /** The seq of the frame on screen; read when a press begins. */
+  seqRef: React.RefObject<number | undefined>;
+  blocked: string | null; onBlocked: (note: string) => void;
+  onPoint?: (p: Point, frame?: number) => void; onDrag?: (from: Point, to: Point, frame?: number) => void; onBox?: (box: Box | null, at: Point, frame?: number) => void;
 }
 
 /** A press that moves less than this (viewport px) counts as a click. */
 const CLICK_SLOP = 6;
 
-function usePagePointer({ tool, scale, vp, frameRef, source, onPoint, onDrag, onBox }: PointerOpts) {
+function usePagePointer({ tool, scale, vp, frameRef, source, seqRef, blocked, onBlocked, onPoint, onDrag, onBox }: PointerOpts) {
   const [start, setStart] = useState<Point | null>(null);      // pointer is down here
+  const startSeq = useRef<number | undefined>(undefined);      // the frame the user saw when pressing
+  const pendingSeq = useRef<number | undefined>(undefined);
   const [now, setNow] = useState<Point | null>(null);
   const [pending, setPending] = useState<Point | null>(null);  // drag tool: first of two clicks
   const [hover, setHover] = useState<Box | null>(null);
@@ -202,7 +222,9 @@ function usePagePointer({ tool, scale, vp, frameRef, source, onPoint, onDrag, on
 
   const down = (e: ReactPointerEvent) => {
     if (e.button !== 0) return;
+    if (blocked) { onBlocked(blocked); return; }
     (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    startSeq.current = seqRef.current;
     const p = at(e); setStart(p); setNow(p);
   };
   const move = (e: ReactPointerEvent) => {
@@ -220,16 +242,18 @@ function usePagePointer({ tool, scale, vp, frameRef, source, onPoint, onDrag, on
     setStart(null); setNow(null);
     setHover(null);                        // the page usually changes; the next move finds the new target
     const click = distance(s, p) < CLICK_SLOP;
-    if (tool === 'point') onPoint?.(s);
-    else if (tool === 'box') onBox?.(click ? null : normBox(s, p), click ? s : p);
+    const seq = startSeq.current;
+    if (tool === 'point') onPoint?.(s, seq);
+    else if (tool === 'box') onBox?.(click ? null : normBox(s, p), click ? s : p, seq);
     else if (tool === 'drag') {
-      if (!click) { setPending(null); onDrag?.(s, p); }
-      else if (pending) { onDrag?.(pending, s); setPending(null); }
-      else setPending(s);
+      if (!click) { setPending(null); onDrag?.(s, p, seq); }
+      else if (pending) { onDrag?.(pending, s, pendingSeq.current); setPending(null); }
+      else { setPending(s); pendingSeq.current = seq; }
     }
   };
   const leave = () => { if (!start) setHover(null); };
   const wheel = (e: React.WheelEvent) => {
+    if (blocked) return;                   // scrolling now would move the page under the step being recorded
     const p = at(e);
     const acc = wheelAcc.current ?? { dx: 0, dy: 0, at: p };
     acc.dx += e.deltaX; acc.dy += e.deltaY; acc.at = p;
@@ -237,7 +261,7 @@ function usePagePointer({ tool, scale, vp, frameRef, source, onPoint, onDrag, on
       wheelAcc.current = acc;
       requestAnimationFrame(() => {
         const a = wheelAcc.current; wheelAcc.current = null;
-        if (a) void getEngine().pointer('scroll', a.at, Math.round(a.dx), Math.round(a.dy));
+        if (a) getEngine().pointer('scroll', a.at, Math.round(a.dx), Math.round(a.dy)).catch(() => undefined);
       });
     }
   };

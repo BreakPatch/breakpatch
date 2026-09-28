@@ -17,7 +17,7 @@ from typing import Any, Awaitable, BinaryIO, Callable
 
 log = logging.getLogger("breakpatch.protocol")
 
-ERROR_CODES = {"bad_request", "not_ready", "not_found", "busy", "network", "stopped", "internal"}
+ERROR_CODES = {"bad_request", "not_ready", "not_found", "busy", "stale", "network", "stopped", "internal"}
 
 
 class EngineError(Exception):

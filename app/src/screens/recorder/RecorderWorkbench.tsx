@@ -21,8 +21,13 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
   useSampleState();                                      // markers follow what the sample page shows
   const groupSteps = useGroupSteps(appId, rec.steps);
   const sel = rec.selectedId ? findStep(rec.steps, rec.selectedId) : undefined;
-  const marker = sel && rec.ai.state === 'idle' ? stepMarker(sel, numberOf(rec.steps, sel.id)) : null;
-  const status = rec.checking ? <CheckingPill /> : rec.savedPill ? <SavedPill key={rec.savedPill} text={rec.savedPill} /> : null;
+  const marker = sel && rec.ai.state === 'idle' ? stepMarker(sel, numberOf(rec.steps, sel.id), sel.id === rec.busyId ? rec.phaseText ?? undefined : undefined) : null;
+  const status = rec.checking ? <CheckingPill text={rec.phaseText ?? undefined} /> : rec.savedPill ? <SavedPill key={rec.savedPill} text={rec.savedPill} /> : null;
+  const busyStep = rec.busyId ? findStep(rec.steps, rec.busyId) : undefined;
+  // While a step records, the page can't take another click (it would land on a page that is changing).
+  const blocked = !rec.busy ? null : busyStep ? `Wait for step ${numberOf(rec.steps, busyStep.id)} to finish, then click.` : 'Wait for the last step to finish, then click.';
+  const statuses = rec.addedId && !rec.busy ? { [rec.addedId]: 'added' as const } : undefined;
+  const statusTexts = rec.busyId && rec.phaseText ? { [rec.busyId]: rec.phaseText } : undefined;
 
   const insertGroup = (g: StepGroup, version: number | 'latest') =>
     rec.addLocal({ id: localId('grp'), action: 'group', label: g.name, target: `Shared steps: ${g.name}`, groupId: g.id, groupVersion: version });
@@ -31,7 +36,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
     <div className="rec-body">
       <div className="rec-left">
         <LiveView address={address} viewport={viewport} status={status} tool={loading ? 'none' : toolFor(rec.action)}
-          onPoint={rec.pagePoint} onDrag={rec.pageDrag} onBox={rec.pageBox}
+          onPoint={rec.pagePoint} onDrag={rec.pageDrag} onBox={rec.pageBox} blocked={blocked}
           markers={marker ? [marker] : []} candidate={rec.ai.state === 'result' ? rec.ai.box : null} thinking={rec.thinking} loading={loading} />
         <AddStepBar rec={rec} appId={appId} allowGroups={allowGroups} onInsertGroup={insertGroup} />
       </div>
@@ -42,7 +47,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
         </aside>
       ) : (
         <StepsPanel steps={rec.steps} mode="edit" selectedId={rec.selectedId} onSelect={id => { if (rec.ai.state !== 'idle') rec.cancelAi(); rec.setSelectedId(id); }}
-          onChange={rec.change} onRerecord={rec.startRerecord} rerecordingId={rec.rerecordId} checkingId={rec.busyId}
+          onChange={rec.change} onRerecord={rec.startRerecord} rerecordingId={rec.rerecordId} checkingId={rec.busyId} statuses={statuses} statusTexts={statusTexts}
           openLoopId={rec.openLoopId} onCloseLoop={() => rec.setOpenLoopId(null)} groupSteps={groupSteps} onEditGroup={onEditGroup}
           makeId={() => localId('s')} />
       )}

@@ -123,6 +123,9 @@ class Engine:
 
     async def browser_pointer(self, p: dict) -> dict:
         self._not_during_run()
+        if self._activity == "recording":
+            # Scrolling now would move the page between the user's click and the engine's.
+            raise EngineError("busy", "Wait for the step to finish before scrolling the page.")
         self.browser.require()
         at = p.get("at")
         if not (isinstance(at, list) and len(at) == 2):
@@ -154,7 +157,8 @@ class Engine:
         region = p.get("region")
         if not (isinstance(region, list) and len(region) == 4):
             raise EngineError("bad_request", "Draw a box around what should be visible.")
-        return {"step": await self._recording(lambda: self.recorder.checkpoint([int(v) for v in region], phase))}
+        return {"step": await self._recording(
+            lambda: self.recorder.checkpoint([int(v) for v in region], phase, p.get("frame")))}
 
     async def record_locate(self, p: dict):
         self._not_during_run()

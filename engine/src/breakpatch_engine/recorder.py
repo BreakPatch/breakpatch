@@ -85,12 +85,12 @@ class Recorder:
         if action == "checkpoint":
             if not p.get("region"):
                 raise EngineError("bad_request", "Draw a box around what should be visible.")
-            return await self.checkpoint(_box(p["region"]), phase)
+            return await self.checkpoint(_box(p["region"]), phase, p.get("frame"))
         if action == "waitUntil":
             # Nothing to perform: the area as it looks now is what replay waits for.
             if not p.get("region"):
                 raise EngineError("bad_request", "Draw a box around what to wait for.")
-            got = await self.checkpoint(_box(p["region"]), phase)
+            got = await self.checkpoint(_box(p["region"]), phase, p.get("frame"))
             step.update({k: got[k] for k in ("region", "hash", "tolerance", "ignore")})
             step["label"] = p.get("label") or labels.default_label(action, p)
             step["target"] = p.get("target") or "The area you picked"
@@ -99,27 +99,20 @@ class Recorder:
 
         self.b.require()
         w, h = self.b.width, self.b.height
-        phase("watching")
-        noise, before = await self._watch()
-
         anchor = at or frm
-        name = None
+        seen = self._seen(p, anchor)
+        phase("watching")
+        noise, before = await self._watch(seen)
+
         target = p.get("target")
         if anchor is not None and not target:
-            loc = self.locator_fn()
-            if loc.available():
-                try:
-                    got = await loc.describe(imaging.to_image(before), anchor)
-                except Exception as e:  # noqa: BLE001
-                    log.info("describe failed: %s", e)
-                    got = None
-                if got:
-                    name, target = got["name"], got["target"]
-            target = target or labels.spot_target(anchor, w, h)
-        step["label"] = p.get("label") or labels.default_label(action, p, name)
+            target = labels.spot_target(anchor, w, h)
+        step["label"] = p.get("label") or labels.default_label(action, p)
         if target:
             step["target"] = target
 
+        # Straight after the last look at the page: the click lands on what that look (and the
+        # user) saw. Naming what was clicked only needs that look, so it runs while the page reacts.
         phase("acting")
         if len(self.b.downloads) < self._download_mark:
             self._download_mark = 0          # the browser was reopened
@@ -134,43 +127,120 @@ class Recorder:
                               e.message)
         if action == "downloadCheck":
             self._download_mark = ctx.download_mark
+        naming = asyncio.ensure_future(self._name(before, anchor)) if anchor is not None and not p.get("label") else None
 
-        phase("settling")
-        after, _settled = await self._settle(self.b.shoot, noise)
-        blast = imaging.blast_radius(before, after, noise)
-        if blast is None and action not in ("hover", "waitFor"):
-            # A slow server can leave the screen still for a moment before the result shows up.
-            after, blast = await self._late_change(before, after, noise)
+        try:
+            phase("settling")
+            after, _settled = await self._settle(self.b.shoot, noise)
+            blast = imaging.blast_radius(before, after, noise)
+            if blast is None and action not in ("hover", "waitFor"):
+                # A slow server can leave the screen still for a moment before the result shows up.
+                after, blast = await self._late_change(before, after, noise)
 
-        ignore = list(noise)
-        if self.t.reload_diff and action not in ("waitFor",):
-            phase("reloading")
-            shots = await self.b.background_reload_shots(lambda s: self._settle(s, noise))
-            if shots is not None:
-                ignore = imaging.merge_boxes(ignore + imaging.noise_boxes(list(shots)))
-                self.remember_noise(ignore)
+            ignore = list(noise)
+            if self.t.reload_diff and action not in ("waitFor",):
+                phase("reloading")
+                shots = await self.b.background_reload_shots(lambda s: self._settle(s, noise))
+                if shots is not None:
+                    ignore = imaging.merge_boxes(ignore + imaging.noise_boxes(list(shots)))
+                    self.remember_noise(ignore)
 
-        if anchor is not None:
-            pre_region = imaging.box_around(anchor, config.PRE_RADIUS, w, h)
-            step["pre"] = {"region": pre_region, "hash": imaging.region_hash(before, pre_region, ignore),
-                           "tolerance": config.PRE_TOLERANCE}
-        if blast is not None:
-            post_region, expect = blast, True
-        else:
-            post_region = step["pre"]["region"] if "pre" in step else [0, 0, w, h]
-            expect = False
-        if not varies_each_run(step):
-            step["post"] = {"region": post_region, "hash": imaging.region_hash(after, post_region, ignore),
-                            "tolerance": config.POST_TOLERANCE, "expectChange": expect}
-        step["ignore"] = ignore
+            if anchor is not None:
+                pre_region = imaging.box_around(anchor, config.PRE_RADIUS, w, h)
+                step["pre"] = {"region": pre_region, "hash": imaging.region_hash(before, pre_region, ignore),
+                               "tolerance": config.PRE_TOLERANCE}
+            if blast is not None:
+                post_region, expect = blast, True
+            else:
+                post_region = step["pre"]["region"] if "pre" in step else [0, 0, w, h]
+                expect = False
+            if not varies_each_run(step):
+                step["post"] = {"region": post_region, "hash": imaging.region_hash(after, post_region, ignore),
+                                "tolerance": config.POST_TOLERANCE, "expectChange": expect}
+                if expect:
+                    # How much of the area changed: a replay whose click only lit up the button
+                    # (a miss) changes far less than one that moved to the next screen.
+                    step["post"]["change"] = round(imaging.changed_share(before, after, post_region, ignore), 4)
+            step["ignore"] = ignore
+        except BaseException:
+            if naming is not None:
+                naming.cancel()
+            raise
 
+        if naming is not None:
+            if not naming.done():
+                phase("naming")
+            got = await naming
+            if got:
+                step["label"] = labels.default_label(action, p, got["name"])
+                if not p.get("target"):
+                    step["target"] = got["target"]
         return step
 
-    async def _watch(self):
+    async def _name(self, before, anchor) -> dict | None:
+        """The AI assistant's name for what is at `anchor` on the screen before the action."""
+        loc = self.locator_fn()
+        if not loc.available():
+            return None
+        try:
+            return await loc.describe(imaging.to_image(before), anchor)
+        except Exception as e:  # noqa: BLE001
+            log.info("describe failed: %s", e)
+            return None
+
+    def _seen(self, p: dict, anchor, region=None):
+        """The live view frame the user acted on (`frame`, its seq) and the area of it that must
+        still look the same when the engine acts: around the click, or the drawn box."""
+        if "frame" not in p or p["frame"] is None:
+            return None
+        img = self.b.seen_frame(p["frame"])
+        if img is None:
+            log.info("frame %s is no longer kept; acting without the check", p["frame"])
+            return None
+        if region is None:
+            if anchor is None:
+                return None
+            region = imaging.box_around(anchor, config.SEEN_RADIUS, self.b.width, self.b.height)
+        return img, region, p.get("action")
+
+    @staticmethod
+    def _check_seen(seen, now) -> None:
+        if seen is None:
+            return
+        img, region, action = seen
+        if imaging.looks_different(img, now, region):
+            if action in ("checkpoint", "waitUntil"):
+                raise EngineError("stale", "The page changed after you drew the box, so nothing was added. "
+                                           "Draw it again on the page as it is now.")
+            raise EngineError("stale", "The page changed before your click reached it, so nothing was clicked. "
+                                       "Look at the page again, then click.")
+
+    async def _watch(self, seen=None):
         """Noise watch (spec §10.3.1), merged with what earlier steps on the same page saw change by
-        itself: a clock that happened to sit still for one short watch is still a clock."""
-        noise, last = await checks.watch_noise(self.b.shoot, self.t.noise_watch, self.t.noise_interval)
+        itself: a clock that happened to sit still for one short watch is still a clock.
+
+        The live view stream only sends a frame when the page changes, so a page it saw sit still
+        for the whole watch needs no watch: one look is enough, and the click goes at once. With
+        `seen`, the page must still look as the user saw it, at the first look and at the last
+        one, just before the action (else `stale`, and nothing is done)."""
         page = self.b.url.split("#")[0]
+        first = await self.b.shoot()
+        self._check_seen(seen, first)
+        if self.b.quiet_for() >= self.t.noise_watch:
+            noise, last = [], first
+        else:
+            frames = [first]
+
+            async def shoot():
+                frames.append(await self.b.shoot())
+                return frames[-1]
+
+            end = time.monotonic() + self.t.noise_watch
+            while time.monotonic() < end:
+                await asyncio.sleep(self.t.noise_interval)
+                await shoot()
+            noise, last = imaging.noise_boxes(frames), frames[-1]
+            self._check_seen(seen, last)
         known = self._noise.get(page, []) if page else []
         merged = imaging.merge_boxes(known + noise)
         if page:
@@ -192,13 +262,13 @@ class Recorder:
                 return after, imaging.blast_radius(before, after, noise)
         return after, None
 
-    async def checkpoint(self, region: list[int], phase: Phase) -> dict:
+    async def checkpoint(self, region: list[int], phase: Phase, frame=None) -> dict:
         self.b.require()
-        phase("watching")
-        noise, last = await self._watch()
         region = imaging.clamp_box(region, self.b.width, self.b.height)
         if imaging.box_area(region) == 0:
             raise EngineError("bad_request", "Draw a bigger box around what should be visible.")
+        phase("watching")
+        noise, last = await self._watch(self._seen({"frame": frame, "action": "checkpoint"}, None, region))
         return {"id": new_id(), "action": "checkpoint", "label": "Check something is visible",
                 "target": "The area you picked", "region": region,
                 "hash": imaging.region_hash(last, region, noise), "tolerance": config.CHECKPOINT_TOLERANCE,
@@ -210,10 +280,11 @@ class Recorder:
         loc = self.locator_fn()
         if not loc.available():
             raise EngineError("not_ready", "The AI assistant isn't downloaded yet. Finish setup to use it.")
+        seq = self.b.last_seq               # the frame the live view shows as the screenshot is taken
         img = imaging.to_image(await self.b.shoot())
         box = await loc.locate(img, description.strip())
         if box is None:
             return NULL
         box = imaging.clamp_box(box, self.b.width, self.b.height)
         at = [round((box[0] + box[2]) / 2, 1), round((box[1] + box[3]) / 2, 1)]
-        return {"box": box, "at": at, "target": description.strip()}
+        return {"box": box, "at": at, "target": description.strip(), "frame": seq}

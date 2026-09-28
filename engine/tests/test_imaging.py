@@ -156,3 +156,28 @@ def test_parse_bbox_maps_1000_units_to_viewport():
     assert map_box([0, 0, 1200, 10], 1000, 1000) is None
     assert parse_describe('{"name": "Done button", "target": "Done button, bottom right"}') == {
         "name": "Done button", "target": "Done button, bottom right"}
+
+
+def _jpeg(a):
+    return imaging.to_array(imaging.encode_jpeg(a, quality=70))
+
+
+def test_a_live_view_jpeg_looks_the_same_as_the_screenshot_it_came_from():
+    a = canvas(800, 600)
+    rect(a, [100, 200, 240, 244])
+    for x in range(110, 230, 9):          # text-like edges, where JPEG noise is worst
+        a[215:230, x:x + 4] = (255, 255, 255)
+    assert not imaging.looks_different(_jpeg(a), a, imaging.box_around([170, 222], 48, 800, 600))
+
+
+def test_a_change_at_the_click_is_seen_through_jpeg_noise():
+    a = canvas(800, 600)
+    rect(a, [100, 200, 240, 244])
+    b = a.copy()
+    rect(b, [60, 160, 320, 300], (170, 50, 50))          # a dialog opened over the button
+    box = imaging.box_around([170, 222], 48, 800, 600)
+    assert imaging.looks_different(_jpeg(a), b, box)
+    c = a.copy()
+    rect(c, [600, 20, 700, 40], (0, 0, 0))               # a change far away doesn't count
+    assert not imaging.looks_different(_jpeg(a), c, box)
+    assert imaging.looks_different(_jpeg(a), canvas(400, 300), box)   # another size: not the same page

@@ -74,8 +74,9 @@ export class DemoEngine implements Engine {
     for (const phase of ['watching', 'acting', 'settling'] as const) { this.emit('record.checking', { phase }); await this.sleep(phase === 'watching' ? 500 : 250); }
     const hit = p.at ? this.targets.find(t => t.visible() && inside(p.at!, t.box)) : undefined;
     const at = p.at;
+    const { frame: _frame, secrets: _secrets, ...fields } = p;
     const step: Step = {
-      ...p, id: 's' + Date.now().toString(36) + (this.nextId++),
+      ...fields, id: 's' + Date.now().toString(36) + (this.nextId++),
       label: hit ? hit.label.replace(/^Click/, labelFor(p.action).verb) : labelFor(p.action, p).label,
       target: hit?.target ?? (at ? 'The spot you clicked' : undefined),
       pre: at ? { region: around(at, 32), hash: fakeHash(), tolerance: 6 } : undefined,

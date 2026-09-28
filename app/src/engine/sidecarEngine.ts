@@ -42,7 +42,7 @@ export class SidecarEngine implements Engine {
 
   async recordPoint(p: RecordParams) { return (await this.call<{ step: Step }>('record.point', p)).step; }
   locate(description: string) { return this.call<LocateResult | null>('record.locate', { description }); }
-  async recordCheckpoint(region: Box) { return (await this.call<{ step: Step }>('record.checkpoint', { region })).step; }
+  async recordCheckpoint(region: Box, frame?: number) { return (await this.call<{ step: Step }>('record.checkpoint', { region, frame })).step; }
 
   async startRun(r: RunStart) { await this.call('run.start', r); }
   async stopRun(runId: string) { await this.call('run.stop', { runId }); }

@@ -332,7 +332,9 @@ async def test_locate_maps_box_and_handles_not_found(site):
     await hx.call("browser.open", {"url": site + "/index.html", "viewport": VIEWPORT})
     try:
         got = await hx.call("record.locate", {"description": "the Create project button"})
+        frame = got.pop("frame")
         assert got == {"box": MOVED_BOX, "at": [490.0, 222.0], "target": "the Create project button"}
+        assert isinstance(frame, int) and frame == hx.engine.browser.last_seq   # the frame the box was found on
         hx.locator.box = None
         from breakpatch_engine.protocol import NULL
         assert await hx.call("record.locate", {"description": "a unicorn"}) is NULL
@@ -400,5 +402,218 @@ async def test_frames_only_on_change_and_at_most_about_10_per_second(site):
         t = time.monotonic()
         await asyncio.sleep(1.0)
         assert len([s for s in stamps if s >= t]) <= 1
+    finally:
+        await hx.call("browser.close")
+
+
+# ---------- a click acts on the frame the user saw ----------
+
+STILL_ADD = [170, 222]      # centre of "Add" on still.html
+
+
+async def _latest_frame(hx, timeout=5.0):
+    end = asyncio.get_running_loop().time() + timeout
+    while not hx.of("frame"):
+        assert asyncio.get_running_loop().time() < end, "no live view frames"
+        await asyncio.sleep(0.05)
+    await asyncio.sleep(0.3)                 # let the first paint settle
+    return hx.of("frame")[-1]["seq"]
+
+
+async def test_a_click_on_a_frame_that_is_out_of_date_is_refused_and_not_sent(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        seen = await _latest_frame(hx)
+        page = hx.engine.browser.page
+        # The page moves on (a dialog opens over the button) before the click reaches the engine.
+        await page.evaluate("""() => { const d = document.createElement('div');
+            d.style.cssText = 'position:absolute;left:60px;top:160px;width:260px;height:140px;background:#a33';
+            document.body.appendChild(d); }""")
+        await asyncio.sleep(0.3)
+        with pytest.raises(EngineError) as e:
+            await hx.call("record.point", {"action": "click", "at": STILL_ADD, "frame": seen})
+        assert e.value.code == "stale" and "nothing was clicked" in e.value.message
+        assert "acting" not in [d["phase"] for d in hx.of("record.checking")]
+        assert await page.text_content("#n") == "Clicks: 0"
+        # On the frame the page shows now, the same click records (it lands on the dialog).
+        now = hx.of("frame")[-1]["seq"]
+        assert now > seen
+        step = (await hx.call("record.point", {"action": "click", "at": STILL_ADD, "frame": now}))["step"]
+        assert step["at"] == STILL_ADD
+    finally:
+        await hx.call("browser.close")
+
+
+async def test_a_box_drawn_on_an_out_of_date_frame_is_refused(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        seen = await _latest_frame(hx)
+        await hx.engine.browser.page.evaluate("document.getElementById('n').textContent = 'Something else entirely'")
+        await asyncio.sleep(0.3)
+        with pytest.raises(EngineError) as e:
+            await hx.call("record.checkpoint", {"region": [90, 290, 330, 330], "frame": seen})
+        assert e.value.code == "stale" and "Draw it again" in e.value.message
+        check = (await hx.call("record.checkpoint", {"region": [90, 290, 330, 330], "frame": hx.of("frame")[-1]["seq"]}))["step"]
+        assert check["region"] == [90, 290, 330, 330]
+    finally:
+        await hx.call("browser.close")
+
+
+async def test_a_click_on_a_still_page_goes_at_once_and_is_named_after(site):
+    import time
+
+    class SlowNamer(FakeLocator):
+        def __init__(self):
+            super().__init__(None)
+            self.phases_when_asked = None
+
+        async def describe(self, image, at):
+            self.phases_when_asked = [d["phase"] for d in hx.of("record.checking")]
+            await asyncio.sleep(0.5)
+            return {"name": "Add button", "target": "Add button, top left"}
+
+    hx = Harness(SlowNamer())
+    stamps = {}
+    emit = hx.emit
+
+    def stamp(event, data):
+        if event == "record.checking":
+            stamps.setdefault(data["phase"], time.monotonic())
+        emit(event, data)
+    hx.engine.emit = stamp
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        seen = await _latest_frame(hx)
+        await asyncio.sleep(hx.engine.timings.noise_watch + 0.2)      # the page has sat still for a whole watch
+        t0 = time.monotonic()
+        step = (await hx.call("record.point", {"action": "click", "at": STILL_ADD, "frame": seen}))["step"]
+        assert stamps["acting"] - t0 < hx.engine.timings.noise_watch / 2, "the click waited for a noise watch"
+        assert await hx.engine.browser.page.text_content("#n") == "Clicks: 1"
+        # The AI assistant names the step after the click, not before it.
+        assert "acting" in hx.locator.phases_when_asked
+        assert step["label"] == "Click Add button" and step["target"] == "Add button, top left"
+        # Given a target (a step found with the AI assistant), it keeps it and still gets a name.
+        step = (await hx.call("record.point", {"action": "click", "at": STILL_ADD, "target": "the add button"}))["step"]
+        assert step["label"] == "Click Add button" and step["target"] == "the add button"
+    finally:
+        await hx.call("browser.close")
+
+
+async def test_scrolling_waits_while_a_step_records(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        hx.engine._activity = "recording"
+        with pytest.raises(EngineError) as e:
+            await hx.call("browser.pointer", {"kind": "scroll", "at": [10, 10], "dy": 100})
+        assert e.value.code == "busy"
+        hx.engine._activity = None
+        assert await hx.call("browser.pointer", {"kind": "scroll", "at": [10, 10], "dy": 100}) == {}
+    finally:
+        await hx.call("browser.close")
+
+
+async def test_a_step_saved_before_these_changes_still_replays(site):
+    """Steps saved by the current release (no new fields): the file format is unchanged."""
+    old = {"id": "s1a2b3c4", "action": "click", "label": "Click Add", "target": "The Add button", "at": [170, 222],
+           "pre": None, "post": None, "ignore": []}
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        seen = await _latest_frame(hx)
+        rec = (await hx.call("record.point", {"action": "click", "at": STILL_ADD, "frame": seen}))["step"]
+    finally:
+        await hx.call("browser.close")
+    assert set(rec) <= {"id", "action", "label", "target", "at", "pre", "post", "ignore"}, set(rec)
+    old.update(pre=rec["pre"], post=rec["post"])
+    ended = await hx.run([old], site + "/still.html")
+    assert ended["result"] == "pass", ended
+
+
+# ---------- a click that misses must not pass ----------
+
+SIGNIN_NEXT = [400, 214]      # centre of Next on signin.html (the card starts at y 80)
+
+
+async def test_a_click_that_misses_a_button_that_moves_on_fails(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/signin.html", "viewport": VIEWPORT})
+    try:
+        page = hx.engine.browser.page
+        box = await page.eval_on_selector("#next", "e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }")
+        at = [round((box[0] + box[2]) / 2), round((box[1] + box[3]) / 2)]
+        step = (await hx.call("record.point", {"action": "click", "at": at}))["step"]
+        assert await page.text_content("#h") == "Enter your password"
+    finally:
+        await hx.call("browser.close")
+    post = step["post"]
+    assert post["expectChange"] is True and 0 < post["change"] <= 1
+    ok = await hx.run([step], site + "/signin.html")
+    assert ok["result"] == "pass", ok
+    # Next does nothing now; the pointer still changes its colour, which alone used to pass.
+    missed = await hx.run([step], site + "/signin.html?dead=1")
+    assert missed["result"] == "fail", missed
+    assert missed["steps"][0]["reason"] == "noChange"
+    # A step saved before `change` existed keeps the old rule and still loads and runs.
+    old = {**step, "post": {k: v for k, v in post.items() if k != "change"}}
+    assert (await hx.run([old], site + "/signin.html"))["result"] == "pass"
+
+
+# ---------- the live view is the page the engine clicks ----------
+
+async def test_the_recording_browser_is_the_same_size_as_a_run_and_its_frames(site):
+    hx = Harness()
+    vp = {"width": 1440, "height": 900}
+    where = "() => { const r = document.getElementById('next').getBoundingClientRect(); return [innerWidth, innerHeight, r.top]; }"
+    await hx.call("browser.open", {"url": site + "/signin.html", "viewport": vp})
+    try:
+        await _latest_frame(hx)
+        recording = await hx.engine.browser.page.evaluate(where)
+        f = hx.of("frame")[-1]
+        assert (f["width"], f["height"]) == (1440, 900)
+        from breakpatch_engine.browser import frame_size
+        assert frame_size(f["jpeg"]) == (1440, 900)
+    finally:
+        await hx.call("browser.close")
+    # The same page during a run (read while its one step waits).
+    hx.ended.clear()
+    await hx.call("run.start", {"runId": "r-size", "startUrl": site + "/signin.html", "viewport": vp,
+                                "steps": [{"id": "w", "action": "waitFor", "durationMs": 1500}],
+                                "settings": {"autoFix": False, "failOnFix": False}, "secrets": {}})
+    running = None
+    for _ in range(100):
+        await asyncio.sleep(0.05)
+        page = hx.engine.browser.page
+        if page is not None and page.url.endswith("/signin.html"):
+            try:
+                running = await page.evaluate(where)
+                break
+            except Exception:  # noqa: BLE001 - still loading
+                pass
+    await asyncio.wait_for(hx.ended.wait(), 30)
+    assert recording == running == [1440, 900, recording[2]]
+
+
+async def test_frames_cut_short_by_a_small_screen_switch_the_live_view_to_screenshots(site):
+    import base64
+    import io
+    from PIL import Image
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/signin.html", "viewport": {"width": 1440, "height": 900}})
+    try:
+        await _latest_frame(hx)
+        stream = hx.engine.browser._stream
+        buf = io.BytesIO()
+        Image.new("RGB", (1440, 812)).save(buf, "JPEG")      # what a 900 px high Mac screen gave
+        n = len(hx.of("frame"))
+        stream._on_frame({"data": base64.b64encode(buf.getvalue()).decode(), "sessionId": 0,
+                          "metadata": {"deviceWidth": 1440, "deviceHeight": 812}})
+        await hx.engine.browser.page.evaluate("document.getElementById('h').textContent = 'Changed'")
+        await asyncio.sleep(1.0)
+        assert stream.poll_task is not None and stream.cdp is None
+        later = hx.of("frame")[n:]
+        assert later and all((f["width"], f["height"]) == (1440, 900) for f in later)
     finally:
         await hx.call("browser.close")
