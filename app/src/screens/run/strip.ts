@@ -3,7 +3,7 @@
 import type { Step } from '../../data/types';
 import { plural } from '../../components/common/format';
 import { preorder, rowIds, rowRefs } from './resolve';
-import { passNote, reasonTitle, targetName } from './reasons';
+import { passNote, reasonTitle, slowNote, targetName } from './reasons';
 import { progress, type RunView } from './runState';
 
 export type Tone = 'running' | 'passed' | 'fixed' | 'failed' | 'muted';
@@ -84,6 +84,12 @@ export function rowNotes(view: RunView, info: RunInfo): Record<string, string> {
     if (!s || !rowId) continue;
     if (state === 'looking') notes[rowId] = 'Looking for the button…';
     else if (state === 'fixed' && !s.steps) notes[rowId] = `${/button/i.test(s.target ?? '') ? 'Button moved' : 'Moved'} · new position not saved yet`;
+  }
+  for (const [id, t] of Object.entries(view.timings ?? {})) {
+    const rowId = info.refs.get(id)?.rowId;
+    const n = numberOf(info, id);
+    const text = slowNote(t, typeof n === 'number' && n > 1 ? n - 1 : undefined);
+    if (rowId && text && !notes[rowId]) notes[rowId] = text;
   }
   for (const [id, p] of Object.entries(view.passes ?? {})) {
     const rowId = info.refs.get(id)?.rowId;

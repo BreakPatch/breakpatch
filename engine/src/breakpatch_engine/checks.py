@@ -11,7 +11,7 @@ from typing import Awaitable, Callable, Sequence
 
 import numpy as np
 
-from . import imaging
+from . import config, imaging
 
 Shoot = Callable[[], Awaitable[np.ndarray]]
 
@@ -34,6 +34,10 @@ async def settle(shoot: Shoot, ignore: Sequence[Sequence[float]] | None, interva
     """
     need = max(2, frames)
     last = await shoot()
+    # Each new frame is compared with the first frame of the still run, not only the one before
+    # it: a slow fade or crossfade changes each 150 ms by less than the "changed" threshold, so
+    # frame-to-frame it looked settled half way through, and the next step paid for the rest.
+    anchor = last
     same = 1
     end = time.monotonic() + timeout
     while True:
@@ -43,5 +47,8 @@ async def settle(shoot: Shoot, ignore: Sequence[Sequence[float]] | None, interva
             return last, False
         await asyncio.sleep(interval)
         cur = await shoot()
-        same = same + 1 if imaging.frames_equal(last, cur, ignore) else 1
+        if imaging.frames_equal(anchor, cur, ignore, threshold=config.SETTLE_THRESHOLD):
+            same += 1
+        else:
+            anchor, same = cur, 1
         last = cur

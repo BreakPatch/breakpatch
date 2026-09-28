@@ -119,6 +119,7 @@ GONE_SHARE = 0.5            # ... with at least this share of the change seen wh
 POST_CHANGE_SHARE = 0.25   # replay: a step must change at least this share of what it changed when recorded
 CHECKPOINT_TOLERANCE = 8
 BOX_PAD = 16            # padding around changed areas
+SETTLE_THRESHOLD = 8    # settle: screenshots of a still page are identical, so a small, slow change still counts
 DIFF_THRESHOLD = 24     # per-channel difference that counts as "changed"
 
 # A test recorded on another kind of system (systems.py: another OS family or Chromium major) with

@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Welcome</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; background: #fafafa; }
+  .screen { position: absolute; inset: 0; transition: opacity 2000ms linear; }
+  .card { position: absolute; width: 200px; height: 120px; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.15);
+          display: flex; align-items: center; justify-content: center; font-size: 18px; cursor: pointer; }
+  #email { position: absolute; left: 200px; top: 200px; width: 400px; height: 40px; font: 16px sans-serif; border: 1px solid #999;
+           border-radius: 6px; outline: none; transition: border-color 300ms, box-shadow 300ms; }
+  #email:focus { border-color: #6b3fd4; box-shadow: 0 0 0 4px rgba(107, 63, 212, .25); }
+  #next { position: absolute; left: 200px; top: 270px; width: 400px; height: 44px; border: 0; border-radius: 8px; color: #fff;
+          background: #bbb; font: 16px sans-serif; transition: background-color 300ms; }
+  #next.on { background: #6b3fd4; }
+</style></head>
+<body>
+  <!-- A welcome screen that crossfades (2 s, both screens showing, a slow even fade) to an email form. The field
+       has a focus transition and Next enables with a 300 ms transition once something is typed. -->
+  <div id="welcome" class="screen">
+    <div class="card" id="login" style="left:60px;top:200px">Login</div>
+    <div class="card" style="left:300px;top:200px">New business</div>
+    <div class="card" style="left:540px;top:200px">Join project</div>
+  </div>
+  <div id="form" class="screen" style="opacity:0;pointer-events:none">
+    <div style="position:absolute;left:200px;top:140px;font-size:24px">Enter your email</div>
+    <input id="email" type="email">
+    <button id="next">Next</button>
+  </div>
+  <script>
+    document.getElementById('login').onclick = function () {
+      if (new URLSearchParams(location.search).get('dead')) return;       // ?dead=1: Login does nothing
+      var w = document.getElementById('welcome'), f = document.getElementById('form');
+      w.style.opacity = '0'; w.style.pointerEvents = 'none';
+      f.style.opacity = '1'; f.style.pointerEvents = 'auto';
+      document.getElementById('email').focus();
+    };
+    document.getElementById('email').oninput = function (e) {
+      document.getElementById('next').className = e.target.value ? 'on' : '';
+    };
+  </script>
+</body></html>

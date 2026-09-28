@@ -233,8 +233,14 @@ Recording answers `busy` while a previous `record.point` is still checking, or d
 | `run.stop` | `{ runId }` | `{}` — stops after the current step |
 | `call.try` | `{ call: Call, appUrl, secrets? }` | `{ ok, status?, ms?, error?, message? }` — "Try it": one request under the same rules as a run |
 
+Each step's `run.step` events and its entry in `run.ended` `steps` carry `timings` `{ preMs, actionMs,
+settleMs, postMs, settled, preTries, postTries }`: where its time went. Settling waits until three
+screenshots in a row match the first of them (a slow fade changes each frame only a little), so a
+click that starts a crossfade waits it out itself and the next step doesn't pay for it.
+
 `run.start` also takes `keepOpen` and `upToStepId` for the recorder's own Run and Play to here.
-With `keepOpen: true` the run is the same (a fresh browser at `startUrl`, set-up call, secrets,
+With `keepOpen: true` the run is the same (a brand-new browser at `startUrl`: no cookies, storage,
+cache or service workers from the recording session; set-up call, secrets,
 shared steps and repeats as given) but the browser stays open at the end, frames keep coming, and
 there is no clean-up call, so recording carries on from where the run left the page. With
 `upToStepId` (any step id, also inside a repeat or shared steps) the run stops after that step

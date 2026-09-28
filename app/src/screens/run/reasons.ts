@@ -15,6 +15,28 @@ const VERB: Partial<Record<Step['action'], string>> = {
   write: 'write in', drag: 'drag', swipe: 'swipe', scroll: 'scroll', upload: 'upload to',
 };
 
+/** Over this, a step says where its time went. */
+export const SLOW_MS = 2000;
+const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+
+/**
+ * "Took 6.1 s: 5.2 s waiting for the page to finish changing after step 2." for a step that took
+ * over SLOW_MS, naming the phase that took longest. `prev` is the number of the step before it.
+ */
+export function slowNote(t: StepRun['timings'], prev?: number | string): string | undefined {
+  if (!t) return undefined;
+  const parts: [number, string][] = [
+    [t.preMs ?? 0, `waiting for the page to finish changing${prev !== undefined ? ` after step ${prev}` : ''}`],
+    [t.actionMs ?? 0, 'doing the step'],
+    [t.settleMs ?? 0, t.settled === false ? 'waiting for the page, which never stopped changing' : 'waiting for the page to settle after it'],
+    [t.postMs ?? 0, 'waiting for the page to look as it did when recorded'],
+  ];
+  const total = parts.reduce((a, [ms]) => a + ms, 0);
+  if (total <= SLOW_MS) return undefined;
+  const [ms, what] = parts.reduce((a, b) => (b[0] > a[0] ? b : a));
+  return `Took ${secs(total)}: ${secs(ms)} ${what}.`;
+}
+
 /** A pass that wasn't a plain match with the recording, in words for the report. */
 export function passNote(r: Pick<StepRun, 'passedBy' | 'why'> | undefined): string | undefined {
   if (r?.passedBy === 'gone') return 'Passed: the dialog closed. The page behind it looked different from when it was recorded.';

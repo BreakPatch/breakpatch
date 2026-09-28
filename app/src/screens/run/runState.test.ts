@@ -97,3 +97,17 @@ describe('passes another way than the recording', () => {
     expect(passNote(undefined)).toBeUndefined();
   });
 });
+
+describe('where a slow step\'s time went', () => {
+  it('names the longest wait for a step over 2 s, and nothing for a quick one', async () => {
+    const { slowNote } = await import('./reasons');
+    expect(slowNote({ preMs: 5200, actionMs: 300, settleMs: 450, postMs: 150 }, 2)).toBe('Took 6.1 s: 5.2 s waiting for the page to finish changing after step 2.');
+    expect(slowNote({ preMs: 10, actionMs: 200, settleMs: 2500, postMs: 30, settled: true })).toBe('Took 2.7 s: 2.5 s waiting for the page to settle after it.');
+    expect(slowNote({ preMs: 10, actionMs: 100, settleMs: 8000, postMs: 30, settled: false })).toBe('Took 8.1 s: 8.0 s waiting for the page, which never stopped changing.');
+    expect(slowNote({ preMs: 10, actionMs: 250, settleMs: 430, postMs: 40 })).toBeUndefined();
+    expect(slowNote(undefined)).toBeUndefined();
+    let s = started();
+    s = runReducer(s, { type: 'step', ev: ev('b', 'passed', { timings: { preMs: 3000, actionMs: 10, settleMs: 400, postMs: 20 } }) });
+    expect(s.timings.b.preMs).toBe(3000);
+  });
+});

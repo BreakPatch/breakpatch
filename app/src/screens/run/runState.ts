@@ -21,6 +21,8 @@ export interface RunView {
   screenshots: Record<string, string>;
   /** Steps that passed another way than matching the recording, and how (StepRun.passedBy). */
   passes: Record<string, Pick<StepRun, 'passedBy' | 'why'>>;
+  /** Where each step's time went. */
+  timings: Record<string, NonNullable<StepRun['timings']>>;
   startedAt?: number;
   result?: 'pass' | 'fail';
   durationMs?: number;
@@ -35,7 +37,7 @@ export type RunAction =
   | { type: 'ended'; ev: RunEnded }
   | { type: 'error'; message: string };
 
-export const INITIAL_RUN: RunView = { phase: 'idle', ids: [], states: {}, reasons: {}, fixes: {}, screenshots: {}, passes: {} };
+export const INITIAL_RUN: RunView = { phase: 'idle', ids: [], states: {}, reasons: {}, fixes: {}, screenshots: {}, passes: {}, timings: {} };
 
 const FROM_RESULT: Record<StepRun['result'], StepState> = { passed: 'passed', healed: 'fixed', failed: 'failed', notRun: 'notRun' };
 
@@ -53,6 +55,7 @@ export function runReducer(s: RunView, a: RunAction): RunView {
       if (state === 'running' || state === 'looking') next.currentId = ev.stepId;
       if (state === 'fixed') next.fixes = { ...s.fixes, [ev.stepId]: { oldAt: ev.oldAt, newAt: ev.newAt } };
       if (ev.screenshot) next.screenshots = { ...s.screenshots, [ev.stepId]: ev.screenshot };
+      if (ev.timings) next.timings = { ...s.timings, [ev.stepId]: ev.timings };
       if (ev.passedBy) next.passes = { ...s.passes, [ev.stepId]: { passedBy: ev.passedBy, why: ev.why } };
       if (state === 'failed') {
         if (ev.reason) next.reasons = { ...s.reasons, [ev.stepId]: ev.reason };

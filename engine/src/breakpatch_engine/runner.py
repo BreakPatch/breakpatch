@@ -86,6 +86,7 @@ class Runner:
         self.healer = healer                  # None: no healing (Community), see plugins.py
         self.locator: Locator | None = None   # for the healer: loaded lazily on the first failed pre-check
         self._passed_by: str | None = None
+        self._tries = 0
         self._post_message: str | None = None
         self.keep_open = False
         self.from_id: str | None = None
@@ -240,7 +241,7 @@ class Runner:
     def _fail(self, step: dict, err: StepFailed, iteration: int | None = None) -> None:
         i = self.index[id(step)]
         rec = {"stepId": step.get("id"), "result": "failed", "reason": err.reason}
-        for k in ("preDistance", "postDistance", "oldAt", "newAt", "screenshotPath"):
+        for k in ("preDistance", "postDistance", "oldAt", "newAt", "screenshotPath", "timings"):
             if err.extra.get(k) is not None:
                 rec[k] = err.extra[k]
         self.results[i] = rec
@@ -248,7 +249,8 @@ class Runner:
         self.details = self.details or err.extra.get("details")
         self._event(step, "failed", iteration, reason=err.reason, message=err.message, details=err.extra.get("details"),
                     preDistance=rec.get("preDistance"), postDistance=rec.get("postDistance"),
-                    oldAt=rec.get("oldAt"), newAt=rec.get("newAt"), screenshot=rec.get("screenshotPath"))
+                    oldAt=rec.get("oldAt"), newAt=rec.get("newAt"), screenshot=rec.get("screenshotPath"),
+                    timings=rec.get("timings"))
 
     async def _run_list(self, steps: list[dict], ctx: Context, stop: asyncio.Event, iteration: int | None) -> bool:
         for step in steps:
@@ -288,7 +290,8 @@ class Runner:
             self.results[self.index[id(step)]] = rec
             self._event(step, rec["result"], iteration, preDistance=rec.get("preDistance"),
                         postDistance=rec.get("postDistance"), oldAt=rec.get("oldAt"), newAt=rec.get("newAt"),
-                        screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"), why=rec.get("why"))
+                        screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"), why=rec.get("why"),
+                        timings=rec.get("timings"))
             self._stop_if_reached(step)
         return True
 
@@ -373,6 +376,15 @@ class Runner:
         kind = step.get("action")
         ignore = step.get("ignore") or []
         rec: dict = {"stepId": step.get("id"), "result": "passed"}
+        clock = time.monotonic()
+        timings: dict = {}
+        rec["timings"] = timings
+
+        def lap(name: str) -> None:
+            nonlocal clock
+            now = time.monotonic()
+            timings[name] = int((now - clock) * 1000)
+            clock = now
 
         if kind == "checkpoint":
             tol = config.check_tolerance(step.get("tolerance", config.CHECKPOINT_TOLERANCE), self.relaxed)
@@ -389,6 +401,7 @@ class Runner:
             tol = config.check_tolerance(pre.get("tolerance", config.PRE_TOLERANCE), self.relaxed)
             dist = await self._wait_region(pre["region"], pre["hash"], tol, ignore)
             rec["preDistance"] = dist
+            timings["preTries"] = self._tries
             if dist > tol:
                 if not self.auto_fix or self.healer is None:
                     raise StepFailed("targetNotFound", preDistance=dist)
@@ -402,20 +415,26 @@ class Runner:
             # The clicked control itself (read through the DevTools protocol, before the click).
             box = await self.b.element_box(at)
             own = [box[0] - 4, box[1] - 4, box[2] + 4, box[3] + 4] if box else None
+        lap("preMs")
         before = await self.b.shoot()
         try:
             await perform(self.b, step, ctx, at=at, frm=frm)
         except ActionFailed as e:
             raise StepFailed(e.reason, e.message, **_keep(rec))
+        lap("actionMs")
 
         post = step.get("post")
         settle_ignore = ignore
         after, settled = await checks.settle(self.b.shoot, settle_ignore, self.t.settle_interval,
                                              self.t.settle_frames, self.t.settle_timeout)
+        lap("settleMs")
+        timings["settled"] = settled
         if post:
             self._passed_by = None
             reason, dist = await self._post_check(post, before, after, ignore, settled, step.get("expect"), url_before,
                                                   own)
+            lap("postMs")
+            timings["postTries"] = self._tries
             rec["postDistance"] = dist
             message = self._post_message
             if reason and step.get("expectNote"):
@@ -440,7 +459,9 @@ class Runner:
         """Distance between the region now and its stored hash, retried briefly while the page catches up."""
         end = time.monotonic() + self.t.pre_wait
         best = 64
+        self._tries = 0
         while True:
+            self._tries += 1
             arr = await self.b.shoot()
             best = min(best, imaging.region_distance(arr, region, want, ignore, self.relaxed))
             if best <= tol or time.monotonic() >= end:
@@ -515,7 +536,9 @@ class Runner:
         dist_before = imaging.region_distance(before, post["region"], post["hash"], ignore, self.relaxed)
         if expect not in EXPECTS:
             expect = None
+        self._tries = 0
         while True:
+            self._tries += 1
             moved = url_before is not None and self.b.url.split("#")[0] != url_before.split("#")[0]
             reason, dist = self._judge(post, before, after, ignore, settled, expect, moved, tol, dist_before, own)
             if reason is None or time.monotonic() >= end:
@@ -560,4 +583,4 @@ def _note(note: str) -> str:
 
 
 def _keep(rec: dict) -> dict:
-    return {k: rec[k] for k in ("preDistance", "postDistance", "oldAt", "newAt") if k in rec}
+    return {k: rec[k] for k in ("preDistance", "postDistance", "oldAt", "newAt", "timings") if k in rec}

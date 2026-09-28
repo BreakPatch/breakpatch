@@ -118,8 +118,8 @@ def change_mask(a: np.ndarray, b: np.ndarray, ignore: Iterable[Sequence[float]] 
 
 
 def frames_equal(a: np.ndarray, b: np.ndarray, ignore: Iterable[Sequence[float]] | None = None,
-                 max_pixels: int = 0) -> bool:
-    return int(change_mask(a, b, ignore).sum()) <= max_pixels
+                 max_pixels: int = 0, threshold: int = DIFF_THRESHOLD) -> bool:
+    return int(change_mask(a, b, ignore, threshold).sum()) <= max_pixels
 
 
 def region_changed(a: np.ndarray, b: np.ndarray, box: Sequence[float],

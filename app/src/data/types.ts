@@ -173,7 +173,12 @@ export interface StepRun {
   passedBy?: 'gone' | 'note';
   /** With passedBy "note": the AI assistant's sentence. */
   why?: string;
+  /** Where the step's time went (engine run.step `timings`). */
+  timings?: StepTimings;
 }
+
+/** A step's phases in a run, in ms: the check before it, the action, waiting for the page to settle, the check after. */
+export interface StepTimings { preMs?: number; actionMs?: number; settleMs?: number; postMs?: number; settled?: boolean; preTries?: number; postTries?: number }
 
 /** A run on another kind of system than the test was recorded on (engine run.ended `systemMismatch`). */
 export interface SystemMismatch {

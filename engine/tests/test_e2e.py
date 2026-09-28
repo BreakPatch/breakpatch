@@ -964,3 +964,70 @@ async def test_play_this_step_runs_one_step_on_the_page_as_it_is(site):
         await hx.call("run.start", {"runId": "x", "startUrl": site, "viewport": VIEWPORT, "steps": plan,
                                     "fromStepId": steps[1]["id"], "settings": {}, "secrets": {}})
     assert e.value.code == "not_ready"
+
+
+
+# ---------- a crossfade after a click is paid for by that click, not the next step ----------
+
+async def test_a_crossfade_is_waited_out_by_the_click_that_starts_it(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/crossfade.html", "viewport": VIEWPORT})
+    try:
+        await _latest_frame(hx)
+        click = (await hx.call("record.point", {"action": "click", "at": [160, 260]}))["step"]
+        write = (await hx.call("record.point", {"action": "write", "text": "oscar@example.com"}))["step"]
+    finally:
+        await hx.call("browser.close")
+    ended = await hx.run([click, write], site + "/crossfade.html")
+    assert ended["result"] == "pass", ended
+    c, w = (s["timings"] for s in ended["steps"])
+    assert c["settled"] and c["settleMs"] >= 1500, c        # the 2 s fade is the click's own wait
+    waited = w["preMs"] + w["settleMs"] + w["postMs"]
+    assert waited < 1000, w                                 # the Write doesn't pay for it
+    timed = [d for d in hx.of("run.step") if d["state"] == "passed" and d.get("timings")]
+    assert timed and all({"preMs", "actionMs", "settleMs", "postMs"} <= set(d["timings"]) for d in timed)
+    # No false pass: Login that does nothing still fails.
+    assert (await hx.run([click, write], site + "/crossfade.html?dead=1"))["result"] == "fail"
+
+
+async def test_settle_waits_out_a_slow_fade_that_changes_little_per_frame():
+    import numpy as np
+    from breakpatch_engine import checks
+    level = [0]
+
+    async def shoot():                      # a fade 10 levels per frame: under the "changed" threshold each time
+        level[0] = min(200, level[0] + 10)
+        return np.full((20, 20, 3), level[0], np.uint8)
+    last, settled = await checks.settle(shoot, None, 0.001, 3, 5.0)
+    assert settled and int(last[0, 0, 0]) == 200
+
+
+# ---------- Run and Play to here start from a clean browser, like any run ----------
+
+async def test_run_in_the_recorder_starts_clean_and_play_this_step_keeps_the_page(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/storage.html", "viewport": VIEWPORT})
+    try:
+        page = hx.engine.browser.page
+        await page.evaluate("document.cookie = 'who=oscar'; localStorage.setItem('dismissed', 'yes'); sessionStorage.setItem('s', '1')")
+        await page.reload()
+        assert await page.text_content("#seen") == "cookie=who=oscar local=yes session=1"
+        wait = {"id": "w", "action": "waitFor", "durationMs": 10}
+        ended = await hx.run([wait], site + "/storage.html", keepOpen=True)
+        assert ended["result"] == "pass", ended
+        fresh = hx.engine.browser.page
+        assert await fresh.text_content("#seen") == "cookie=- local=- session=-"
+        assert fresh.viewport_size == VIEWPORT
+        # Recording goes on in that fresh browser, with live view frames of the viewport's size.
+        n = len(hx.of("frame"))
+        await fresh.evaluate("localStorage.setItem('dismissed', 'again'); document.body.style.background = '#eee'")
+        await asyncio.sleep(0.5)
+        later = hx.of("frame")[n:]
+        assert later and (later[-1]["width"], later[-1]["height"]) == (VIEWPORT["width"], VIEWPORT["height"])
+        # Play this step keeps the page as it is: what it stored stays.
+        ended = await hx.run([wait], site + "/storage.html", keepOpen=True, fromStepId="w", upToStepId="w")
+        assert ended["result"] == "pass"
+        assert hx.engine.browser.page is fresh
+        assert await fresh.evaluate("localStorage.getItem('dismissed')") == "again"
+    finally:
+        await hx.call("browser.close")

@@ -10,7 +10,7 @@ import { stripUi, type RowStatus } from '../../components/steps';
 import { useSession } from '../../state/session';
 import { backendGroupLoader, preorder, resolveSteps } from '../run/resolve';
 import { INITIAL_RUN, rowStatus, runReducer, type RunView } from '../run/runState';
-import { passNote, reasonText } from '../run/reasons';
+import { passNote, reasonText, slowNote } from '../run/reasons';
 import { engineRun, machineName, newRunIdForEditor } from '../run/useTestRun';
 
 /** run: every step. play: steps 1 to N. step: just one step, on the page as it is. */
@@ -42,6 +42,13 @@ export function editorStatuses(view: RunView, steps: Step[], mode: EditorRunMode
     if (st) statuses[id] = st;
   }
   for (const [id, p] of Object.entries(view.passes ?? {})) { const t = passNote(p); if (t && byId.has(id)) notes[id] = t; }
+  // Where a slow step's time went (also the note's tooltip).
+  const order = preorder(steps).map(s => s.id);
+  for (const [id, t] of Object.entries(view.timings ?? {})) {
+    const i = order.indexOf(id);
+    const text = slowNote(t, i > 0 ? i : undefined);
+    if (text && byId.has(id) && !notes[id]) notes[id] = text;
+  }
   if (view.failedId && byId.has(view.failedId) && view.reasons[view.failedId] !== 'stopped') {
     notes[view.failedId] = reasonText(view.reasons[view.failedId] as FailReason, byId.get(view.failedId)!);
   }

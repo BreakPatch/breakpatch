@@ -11,7 +11,7 @@ import { formatWhen, plural } from '../../components/common/format';
 import { runBy, runStatus, WHERE } from '../../components/common/runs';
 import { hasFeature } from '../../edition';
 import { preorder, rowRefs } from '../run/resolve';
-import { reasonTitle, passNote } from '../run/reasons';
+import { reasonTitle, passNote, slowNote } from '../run/reasons';
 import { focusStep } from '../run/runState';
 import { ReportDetail } from './ReportDetail';
 import { RunHistory } from './RunHistory';
@@ -104,7 +104,8 @@ export default function ReportScreen() {
                 const stopped = (failedChild ? focus!.reason : sr?.reason) === 'stopped';
                 const note = stopped && sr?.result === 'failed' ? 'You stopped the run here'
                   : sr?.result === 'failed' && !failedChild ? reasonTitle(sr.reason, r.step)
-                  : failedChild ? `Step ${refs.get(focus!.stepId)?.number}: ${reasonTitle(focus!.reason, flat.find(s => s.id === focus!.stepId) ?? r.step)}` : passNote(sr);
+                  : failedChild ? `Step ${refs.get(focus!.stepId)?.number}: ${reasonTitle(focus!.reason, flat.find(s => s.id === focus!.stepId) ?? r.step)}`
+                  : passNote(sr) ?? slowNote(sr?.timings, typeof r.number === 'number' && r.number > 1 ? r.number - 1 : undefined);
                 return (
                   <div role="listitem" key={r.step.id}>
                     <StepRow step={r.step} number={r.number} depth={r.depth} status={st} note={note} noteTone={sr?.result === 'failed' && !stopped ? 'failed' : 'muted'}
