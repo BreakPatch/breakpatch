@@ -5,6 +5,8 @@ import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-d
 import { ToastProvider } from './components/ui';
 import { ErrorDialog } from './components/shell/ErrorDialog';
 import { UsageNotice } from './components/shell/UsageNotice';
+import { EngineStarting } from './components/shell/EngineStarting';
+import { getEngine } from './engine';
 import { SecretSitesPrompt } from './components/shell/SecretSitesPrompt';
 import { useSession } from './state/session';
 import { useApplyTheme } from './state/theme';
@@ -39,6 +41,7 @@ const SuiteRunScreen = lazy(() => import('./screens/suites/SuiteRunScreen'));
  * The edition adds its own (Team: /connect, /signin, /runner, /runner-mode, version history).
  */
 export default function App() {
+  useEffect(() => { getEngine(); }, []);        // starts asking the engine at once ("Starting Breakpatch…")
   useApplyTheme();
   useOnlineStatus();
   const Provider = edition.Provider ?? Passthrough;
@@ -71,6 +74,7 @@ export default function App() {
           <ErrorDialog />
           <SecretSitesPrompt />
           <UsageNotice />
+          <EngineStarting />
         </HashRouter>
       </Provider>
     </ToastProvider>

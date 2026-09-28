@@ -60,3 +60,10 @@ a:hover { color: var(--text); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* "Starting Breakpatch…" floats bottom centre until the engine answers (EngineStarting.tsx). */
+.engine-starting {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 200; display: flex; align-items: center; gap: 8px;
+  background: var(--raised); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--r-pill);
+  padding: 8px 16px; font-size: 13px; box-shadow: var(--shadow-pop); pointer-events: none; white-space: nowrap;
+}

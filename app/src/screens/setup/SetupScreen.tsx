@@ -10,6 +10,8 @@ import { firstNameOf } from '../../data/local/folder';
 import { baseName } from '../../data/local/storage';
 import { ROWS, SetupRunner, type Row, type RowKey, type SetupSnapshot } from './setupRunner';
 import './setup.css';
+import { useSystem } from '../../state/system';
+import { STARTING_TEXT } from '../../components/shell/EngineStarting';
 
 const NAMES: Record<RowKey, string> = { browser: 'Installing the test browser', mac: 'Checking this Mac', model: 'Downloading the AI assistant' };
 const LOOK: Record<TaskState, { icon: string; word: string; cls: string }> = {
@@ -58,6 +60,7 @@ export default function SetupScreen() {
   const local = useSession(s => s.local);
   const setSetupDone = useSession(s => s.setSetupDone);
   const { runner, snap } = useSetupRunner();
+  const engineReady = useSystem(s => s.engineReady);
   if (!snap || !runner) return null;
 
   const rows = snap.rows;
@@ -69,6 +72,8 @@ export default function SetupScreen() {
 
   const note = (k: RowKey, r: Row): string | undefined => {
     if (r.state === 'paused' || r.state === 'failed') return r.reason;
+    // Until the engine first answers, the first row says what is going on instead of sitting at 0%.
+    if (!engineReady && k === ROWS[0] && r.state !== 'done') return STARTING_TEXT;
     if (r.state !== 'done') return undefined;
     if (k === 'mac' && snap.info) return `This Mac has ${snap.info.memoryGb} GB of memory, so you get the ${modelLabel} AI assistant${snap.modelBytes ? ` (${size(snap.modelBytes)})` : ''}.`;
     if (k === 'model' && snap.modelBytes) return `${size(snap.modelBytes)}, checked and ready.`;

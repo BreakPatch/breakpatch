@@ -1,5 +1,6 @@
 // Engine client for the real app: requests go through the Tauri shell to the Python sidecar.
 import { invoke } from '@tauri-apps/api/core';
+import { useSystem } from '../state/system';
 import { listen } from '@tauri-apps/api/event';
 import type { Box, HttpCall, Point, Step, Viewport } from '../data/types';
 import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type LocateResult, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
@@ -11,7 +12,9 @@ export class SidecarEngine implements Engine {
   private handlers = new Map<string, Set<(d: unknown) => void>>();
 
   constructor() {
-    void listen<Wire>('engine://event', e => this.handlers.get(e.payload.event)?.forEach(h => h(e.payload.data)));
+    void listen<Wire>('engine://event', e => { useSystem.getState().markEngineReady(); this.handlers.get(e.payload.event)?.forEach(h => h(e.payload.data)); });
+    // Ask at once, so "Starting Breakpatch…" ends the moment the engine can answer.
+    void this.systemInfo().catch(() => undefined);
   }
 
   on<K extends keyof EngineEvents>(event: K, cb: (data: EngineEvents[K]) => void) {
@@ -22,7 +25,9 @@ export class SidecarEngine implements Engine {
 
   private async call<T>(method: string, params: object = {}): Promise<T> {
     try {
-      return await invoke<T>('engine_request', { method, params });
+      const got = await invoke<T>('engine_request', { method, params });
+      useSystem.getState().markEngineReady();
+      return got;
     } catch (e) {
       const err = (typeof e === 'string' ? safeParse(e) : e) as { code?: string; message?: string; details?: string } | null;
       throw new EngineError(err?.code ?? 'internal', err?.message ?? 'Something went wrong in the engine.', err?.details ?? String(e));

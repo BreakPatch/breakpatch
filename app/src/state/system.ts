@@ -13,6 +13,12 @@ interface SystemState {
    */
   readOnly: boolean;
   error: AppError | null;
+  /**
+   * The engine has answered once since the app opened. Until then the app says it's starting: the
+   * packaged engine unpacks itself first, which takes a while on a Mac's first start.
+   */
+  engineReady: boolean;
+  markEngineReady(): void;
   /** Plain lines about data the backend skipped (a tests-folder file that isn't valid JSON). */
   warnings: string[];
   warningsDismissed: boolean;
@@ -29,6 +35,8 @@ export const useSystem = create<SystemState>(set => ({
   updateDismissed: false,
   readOnly: false,
   error: null,
+  engineReady: false,
+  markEngineReady: () => set(s => (s.engineReady ? s : { engineReady: true })),
   warnings: [],
   warningsDismissed: false,
   setWarnings: warnings => set(s => ({ warnings, warningsDismissed: s.warningsDismissed && warnings.join('\n') === s.warnings.join('\n') })),
