@@ -99,6 +99,12 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
 [data-prelaunch] .prelaunch{display:flex;align-items:center;gap:8px;margin:0;font-size:0.8438rem;letter-spacing:.01em;color:var(--muted);background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);border-radius:999px;padding:5px 14px;text-align:left}
 .prelaunch .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
 .prelaunch a{font-weight:600}
+/* The same switch for a few words inside a sentence, like "(after the public release)". */
+.prelaunch-text{display:none}
+[data-prelaunch] .prelaunch-text{display:inline}
+/* A short, secondary line with the technical detail, for developers. */
+.dev-note{font-size:0.8438rem!important;color:var(--faint)!important;letter-spacing:.01em;line-height:1.5}
+.dev-note b{font-weight:600;color:var(--muted)}
 .hero-shot{margin:64px auto 0;max-width:1120px}
 .window{border-radius:14px;overflow:hidden;box-shadow:var(--shadow);background:var(--surface)}
 .window img{width:100%}
@@ -224,7 +230,7 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
 .matrix th,.matrix td{padding:11px 18px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 .matrix thead th{font-size:0.7812rem;color:var(--faint);font-weight:600;background:var(--surface);letter-spacing:.02em}
 .matrix tbody th{font-weight:500;color:var(--text2)}
-.matrix td{width:130px;text-align:center;color:var(--muted)}
+.matrix td{width:30%;text-align:center;color:var(--muted)}
 .matrix thead th:not(:first-child){text-align:center}
 .matrix tr:last-child > *{border-bottom:0}
 .yes{color:var(--accent);font-weight:700}
@@ -412,6 +418,8 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
   .ai-badge{font-size:0.8438rem}
   .matrix.vs{font-size:0.875rem}
   .matrix.vs th,.matrix.vs td{padding:10px 10px}
+  .code pre{padding:40px 16px 14px}
+  .code pre code[data-lang="sh"]{white-space:pre-wrap;overflow-wrap:anywhere}
   .matrix.vs tbody th{width:34%}
   .matrix.vs td{width:33%}
 }
@@ -419,6 +427,18 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
   .top{gap:12px}
   .top .btn{padding:8px 12px;font-size:0.875rem}
   .top nav{gap:12px}
+}
+/* Tables marked .stack become one card per row on a phone, so every column stays visible. Each
+   cell names its column with data-label; --cols is how many cells sit side by side. */
+@media (max-width:560px){
+  table.stack,table.plain.stack{min-width:0}
+  table.stack thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  table.stack tbody tr{display:grid;grid-template-columns:repeat(var(--cols,1),minmax(0,1fr));gap:6px 16px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  table.stack tbody tr:last-child{border-bottom:0}
+  table.stack tbody tr > *{display:block;width:auto;padding:0;border:0;text-align:left}
+  table.stack tbody tr > :first-child{grid-column:1 / -1}
+  table.stack td[data-label]::before{content:attr(data-label);display:block;font-size:0.7812rem;font-weight:600;color:var(--faint);letter-spacing:.02em;margin-bottom:1px}
+  .matrix.stack{--cols:2}
 }
 /* Reduced motion: no movement, but keep the short fades that explain what changed. */
 @media (prefers-reduced-motion:reduce){

@@ -82,20 +82,21 @@ async function load(config, places = { total: 25, taken: 0 }) {
       },
     },
   };
-  const ctx = vm.createContext({ window, document, location: { href: 'https://breakpatch.dev/pricing/', search: '' }, URL, setTimeout, clearTimeout, AbortController });
+  const location = { href: 'https://breakpatch.dev/pricing/', search: '' };
+  const ctx = vm.createContext({ window, document, location, URL, setTimeout, clearTimeout, AbortController });
   vm.runInContext(JS, ctx);
   await new Promise(r => setImmediate(r)); // the places answer
   const $ = id => byId[id];
   const buy = async () => { $('team-form').fire('submit'); await new Promise(r => setImmediate(r)); return opened.at(-1); };
   const period = p => all.find(e => e.dataset.period === p).click();
-  return { $, buy, period, opened, fetched };
+  return { $, buy, period, opened, fetched, location };
 }
 
 const prices = { teamMonthly: 'pri_tm', teamYearly: 'pri_ty', machineMonthly: 'pri_mm', machineYearly: 'pri_my' };
 const URL_ = 'https://account.breakpatch.dev/api/founding';
 const cfg = (extra = {}) => ({ env: 'sandbox', foundingPlacesUrl: URL_, sandbox: { clientToken: 'test_x', prices, ...extra }, live: { prices: {} } });
 const FOUNDING = { foundingDiscountId: 'dsc_01test' };
-const TITLE = 'Founding teams: $12/person/month for 24 months — ';
+const TITLE = 'Founding teams: $12/person/month for 24 months · ';
 
 test('without a founding discount nothing shows and checkout has no discount', async () => {
   for (const c of [cfg(), cfg({ foundingDiscountId: '' }), cfg({ foundingDiscountId: 'pri_ty' })]) {
@@ -243,4 +244,33 @@ test('the Business card: $30 billed yearly, 20 people, what it adds, and Contact
   for (const s of ['20 people or more', '$30', 'per person per month, billed yearly', '$360 per person per year', 'Everything in Team',
     '5 machine licences included', 'Choose another AI model', 'Support answered within 4 business hours', 'Invoice billing']) assert.ok(card.includes(s), s);
   assert.ok(card.includes('href="mailto:support@breakpatch.dev?subject=Breakpatch%20Business">Contact us</a>'));
+});
+
+test('checkout off: the free beta, no Work email or Company, no tax line, and an email that says what was picked', async () => {
+  const off = { env: 'sandbox', foundingPlacesUrl: URL_, sandbox: { clientToken: '', prices: {} }, live: { prices: {} } };
+  const p = await load(off);
+  assert.equal(p.$('buyer').hidden, true);
+  assert.equal(p.$('buy').textContent, 'Join the free beta');
+  assert.equal(p.$('buy-note').hidden, false);
+  assert.doesNotMatch(p.$('total-sub').textContent, /Tax/);
+  p.$('seats').value = '7'; p.$('seats').fire('input');
+  p.period('month');
+  assert.equal(await p.buy(), undefined); // no Paddle checkout
+  const mail = p.location.href;
+  assert.ok(mail.startsWith('mailto:support@breakpatch.dev?subject=Breakpatch%20Team%20beta&body='), mail);
+  const body = decodeURIComponent(mail.slice(mail.indexOf('&body=') + 6));
+  assert.match(body, /People: 7\n/);
+  assert.match(body, /Extra machine licences: 0\n/);
+  assert.match(body, /Billing: monthly\n/);
+  // The page as served (before the script runs) has the fields hidden and no tax line either.
+  assert.match(HTML, /<div class="fields buyer" id="buyer" hidden>/);
+  assert.doesNotMatch(HTML, /Tax is added at checkout/);
+});
+
+test('checkout on: Work email and Company show, and the tax line is back', async () => {
+  const { $ } = await load(cfg());
+  assert.equal($('buyer').hidden, false);
+  assert.equal($('buy').textContent, 'Buy Team');
+  assert.equal($('buy-note').hidden, true);
+  assert.equal($('total-sub').textContent, '5 people, 1 machine licence (1 included). Tax is added at checkout.');
 });

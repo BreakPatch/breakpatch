@@ -28,7 +28,7 @@
   var foundingOn = $('founding-on');
   foundingOn.addEventListener('change', function () { render(); });
   function showFounding(left, total) {
-    $('founding-title').textContent = 'Founding teams: $12/person/month for 24 months — ' + (left == null ? '25 places' : left + ' of ' + total + ' places left');
+    $('founding-title').textContent = 'Founding teams: $12/person/month for 24 months · ' + (left == null ? '25 places' : left + ' of ' + total + ' places left');
     $('founding').hidden = false;
     founding = { discountId: foundingId };
     render();
@@ -86,8 +86,11 @@
     $('machine-price').textContent = yearly ? '$384 a year each' : '$40 a month each';
     var perMonth = n * seatPrice + m * MACHINE[state.period];
     $('total').textContent = yearly ? usd(perMonth * 12) + ' a year' : usd(perMonth) + ' a month';
-    $('total-sub').textContent = n + (n === 1 ? ' person' : ' people') + ', ' + (1 + m) + ' machine licence' + (m ? 's' : '') + ' (1 included).' + (f ? ' Founding price for the first 24 months.' : '') + ' Tax is added at checkout.';
+    $('total-sub').textContent = n + (n === 1 ? ' person' : ' people') + ', ' + (1 + m) + ' machine licence' + (m ? 's' : '') + ' (1 included).' + (f ? ' Founding price for the first 24 months.' : '');
     var ok = ready();
+    if (ok) $('total-sub').textContent += ' Tax is added at checkout.';
+    // Work email and Company are for Paddle's checkout: while it's off, they're hidden.
+    $('buyer').hidden = !ok;
     // Until checkout is set up, the button invites people to the free beta instead.
     buy.disabled = false;
     buy.textContent = ok ? 'Buy Team' : 'Join the free beta';
@@ -144,12 +147,22 @@
       successUrl: new URL('../thanks/', location.href).href,
     };
   }
+  /** The beta email, with what the visitor picked, so the draft isn't empty. */
+  function betaMail() {
+    var n = clamp(seats.value, MIN_SEATS, MAX_SEATS), m = clamp(extra.value, 0, 100);
+    var body = 'Hello,\n\nWe would like to join the Breakpatch Team beta.\n\n'
+      + 'People: ' + n + '\n'
+      + 'Extra machine licences: ' + m + '\n'
+      + 'Billing: ' + (state.period === 'year' ? 'yearly' : 'monthly') + '\n'
+      + 'Company: \n';
+    return 'mailto:support@breakpatch.dev?subject=' + encodeURIComponent('Breakpatch Team beta') + '&body=' + encodeURIComponent(body);
+  }
   function showError(text) { err.textContent = text; err.hidden = !text; }
 
   form.addEventListener('submit', function (ev) {
     ev.preventDefault();
     showError('');
-    if (!ready()) { location.href = 'mailto:support@breakpatch.dev?subject=Breakpatch%20Team%20beta'; return; }
+    if (!ready()) { location.href = betaMail(); return; }
     if (!form.reportValidity()) return;
     var n = clamp(seats.value, MIN_SEATS, MAX_SEATS);
     var m = clamp(extra.value, 0, 100);

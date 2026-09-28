@@ -6,6 +6,8 @@
 //
 // It understands the Markdown the manual uses: "# " parts, "## " sections, "### " subsections,
 // paragraphs, lists (nested by indent), tables, fenced code, `code`, **bold**, *italic*, [links](…).
+// A paragraph that starts with <!-- prelaunch --> becomes the "Public release coming soon" note,
+// shown only while <html> has data-prelaunch (GitHub hides the comment and shows the text).
 // Everything before the first "---" is the intro: its paragraphs become the lead, and its
 // contents list is skipped (the page builds its own). Ids match GitHub's heading anchors, so
 // links like manual/#run-requests work on both.
@@ -38,6 +40,7 @@ function inline(s) {
   return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[+i])}</code>`);
 }
 
+const PRELAUNCH = /^<!--\s*prelaunch\s*-->\s*(.*)$/;
 const LIST = /^(\s*)(\d+\.|[-*])\s+(.*)$/;
 const indentOf = l => l.match(/^\s*/)[0].length;
 
@@ -98,7 +101,9 @@ function blocks(lines) {
 
     const para = [];
     for (; i < lines.length && lines[i].trim() && !LIST.test(lines[i]) && !/^\s*(```|\||#)/.test(lines[i]); i++) para.push(lines[i].trim());
-    out.push(`<p>${inline(para.join(' '))}</p>`);
+    const pre = para.join(' ').match(PRELAUNCH);
+    if (pre) out.push(`<p class="prelaunch" role="note"><span class="dot" aria-hidden="true"></span><span>${inline(pre[1])}</span></p>`);
+    else out.push(`<p>${inline(para.join(' '))}</p>`);
   }
   return out;
 }
@@ -153,7 +158,8 @@ export function build(md) {
   const leadHtml = lead.map((t, i) => `<p${i === 0 ? ' class="lead"' : ''}>${inline(t)}</p>`).join('\n');
 
   return `<!DOCTYPE html>
-<html lang="en-GB">
+<!-- data-prelaunch shows the pre-launch notes. Remove it on launch day (site/README.md, "Launch day"). -->
+<html lang="en-GB" data-prelaunch>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -190,6 +196,26 @@ ${content}
 <footer class="foot">Found a mistake? <a href="https://github.com/BreakPatch/breakpatch/edit/main/docs/manual.md" data-gh="/edit/main/docs/manual.md">Edit this page on GitHub</a>, or write to <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a>.</footer>
 </main>
 </div>
+<footer class="site-foot rich">
+  <div class="wrap">
+    <div class="foot-brand">
+      <a class="brand" href="/"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a>
+      <p>Here to find what breaks.</p>
+      <p><a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></p>
+    </div>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="/manual/">Manual</a>
+      <a href="/pricing/">Pricing</a>
+      <a href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a>
+      <a href="https://github.com/BreakPatch/breakpatch/releases" data-gh="/releases">Releases</a>
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/refunds">Refunds</a>
+      <a href="mailto:support@breakpatch.dev">Support</a>
+    </nav>
+    <p class="foot-small">© 2026 Breakpatch. The Community edition is open source under Apache 2.0.</p>
+  </div>
+</footer>
 <a class="to-top" href="#main" aria-label="Back to the top">↑</a>
 <script src="/assets/site.js"></script>
 </body>

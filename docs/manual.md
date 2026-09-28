@@ -56,6 +56,8 @@ Open Terminal and paste this:
 curl -fsSL https://breakpatch.dev/install | sh
 ```
 
+<!-- prelaunch --> Public release coming soon. Until then, this command doesn't work. Join the list: [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list)
+
 It checks your Mac, downloads the latest Breakpatch from [GitHub Releases](https://github.com/BreakPatch/breakpatch/releases) (over https only, and only from Breakpatch's own releases), checks the download against the release's checksums, checks the app is signed with Breakpatch's certificate, puts Breakpatch in Applications and opens it. If you have `minisign`, it also checks the download's signature with Breakpatch's update key. If your account can't write to Applications, it uses `~/Applications` instead. It never asks for your password, changes nothing else on your Mac and sends nothing about you or your Mac to Breakpatch. Don't run it with `sudo`: it refuses to run as root. You can [read the script](https://breakpatch.dev/install) first.
 
 For a given version, put it in front of `sh`: `curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh`.
@@ -100,7 +102,7 @@ It takes about 5 minutes on office Wi-Fi. It's safe to close Breakpatch: setup p
 3. Click through the page the way a person would. Each click becomes a step on the right.
 4. Press **Save**, then **Run**.
 
-Your first test takes about 5 minutes. The rest of this manual covers each part in more detail.
+Your first test takes about 5 minutes, so about 10 minutes from install to your first run. The rest of this manual covers each part in more detail.
 
 ---
 
@@ -185,7 +187,7 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
    - Redirects aren't followed: use the address the call ends up at.
    - A header's value can be a saved secret, for example an `Authorization` token. The secret must be allowed on the call's site, like typing it (see [Saved secrets](#saved-secrets)).
    - Logs show the address without its query string, and never a header's value.
-3. Add steps. Both of these always work:
+3. Add steps, in either of these ways:
    - **Click** anything on the page. Nothing happens to the page yet: Breakpatch highlights what you clicked and asks, for example, "Click Next button?". Press **Confirm** (or Enter, or click it again) to do the step; **Try again** to pick something else; Esc to cancel. Dragging and scrolling on the page work the same way.
    - **Describe** it in the box below, for example "click the Done button". The AI assistant highlights what it found. Press **Confirm** or **Try again**.
 4. Use the action button next to the box for everything else: double, long and right click, hover, swipe, scroll, drag and drop, **Write text**, **Wait until**, **Go to address**, reload, back and forward, tabs and popups, upload a sample file, check a download, **Checkpoint**, **Repeat** and **Shared steps**.
@@ -259,7 +261,7 @@ A small AI model that runs only on your Mac. Your screens never leave it. It fin
 - **Standard** is downloaded during setup (about 3 GB). It works well for almost every team.
 - **Larger** is optional on Macs with 32 GB of memory or more (about 5 GB). It's slower to load and rarely finds more.
 
-Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Describing steps needs it. Clicking always works without it.
+Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it, both when you click and when you describe a step, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)) is Team only.
 
 It's kept in `~/Library/Application Support/Breakpatch/models/`.
 
@@ -303,7 +305,7 @@ The counts wait in `~/Library/Application Support/Breakpatch/usage.json`, with y
 
 **"Setup paused."** The download stopped, usually because the connection dropped. Nothing's lost. It continues when you're back online.
 
-**"The AI assistant isn't downloaded."** Download it in Settings → AI assistant.
+**"The AI assistant isn't downloaded."** Download it in Settings → AI assistant. You need it to record.
 
 **macOS asks to let Breakpatch use your Keychain.** macOS only lets the app that saved a Keychain item read it without asking, and it tells apps apart by their code signature. Copies from the install command, the releases and the in-app updates are all signed with Breakpatch's certificate, so they never ask. When you're asked, the copy asking isn't signed that way: usually one you built yourself, or one from somewhere else.
 
@@ -321,21 +323,22 @@ Everything in this part needs **Breakpatch Team**, the paid edition.
 
 ## What Team adds
 
-- **A shared workspace** on your own Firebase project: your team's apps, tests, suites and runs in one place, joined with an invite link. A test is *Only you* until you add it to the team suite. Then it's *In team suite*.
+- **A shared workspace** in your company's own Google Firebase project (see [Create a workspace](#create-a-workspace)): your team's apps, tests, suites and runs in one place, joined with an invite link. A test is *Only you* until you add it to the team suite. Then it's *In team suite*.
 - **Members and roles**: member, admin, a runner account and a CI account.
 - **Version history.** Every save is kept. Runs show which version they tested, and you can restore any version.
 - **Fixed automatically.** When a button has moved, the AI assistant finds it during the run and carries on. You accept the new position in the report.
 - **Schedules** for suites, on any days and time.
 - **The local runner**: one Mac that runs suites for the whole team.
 - **Run requests** from CI or any other tool, and **result messages** after every suite run.
-- **One AI assistant choice** for the whole workspace.
+
+Choosing another AI model for the assistant is in Business.
 
 ## Upgrading to Team
 
 Install Breakpatch Team over Community. The AI assistant, the test browser, your settings and your saved secrets stay as they are, and Breakpatch opens your tests folder like before. Then go to **Settings → Upgrade to Team** (or **Upgrade to Team** on Home):
 
 1. **Connect a workspace**: [create one](#create-a-workspace), or open an invite link from your team. Then sign in.
-2. **Enter your licence key** on this Mac. It looks like `BP-XXXX-XXXX-XXXX-XXXX`; your admin gives it to you. It isn't saved in the workspace; see [Licences and seats](#licences-and-seats).
+2. **The licence.** If you created the workspace, enter the licence key once in **Settings → Licence** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). If you joined with an invite link, the link sets up your licence and there's no key to enter. See [Licences and seats](#licences-and-seats).
 3. **Copy your tests**. Breakpatch shows what it will copy first, for example "1 app, 12 tests, 3 shared steps and 2 suites will be copied.", then copies the apps, tests, shared steps, suites and the last run of each test into the workspace.
 
 Good to know:
@@ -371,7 +374,7 @@ Settings → Workspace → **Invite teammates** → **Copy link**. Send it any w
 https://breakpatch.dev/connect#c=eyJuYW1lIjoiU3ltVGVycmEi…
 ```
 
-Clicking it opens a page with **Open in Breakpatch** and **Download for Mac**. The workspace details are in the part after `#`, which browsers never send to a server.
+Clicking it opens a page with **Open in Breakpatch** and **Install Breakpatch**. The link also sets up each person's licence, so they don't enter a key: they take a seat when they sign in. The workspace details are in the part after `#`, which browsers never send to a server.
 
 **Save as file** gives the same thing as a `.bpworkspace` file, handy for a shared drive, CI or the local runner. Double-click it to connect.
 
@@ -420,7 +423,7 @@ The first few runs of a new test also learn which parts of the page change by th
 
 ## Schedules
 
-Open a suite and set its **Schedule**: the days and a 24-hour time, like *Mon–Fri, 06:00*. The time is the local runner's clock. With no schedule, the suite is *By request only*: the Run button, CI or another tool.
+Open a suite and set its **Schedule**: the days and a 24-hour time, like *Mon to Fri, 06:00*. The time is the local runner's clock. With no schedule, the suite is *By request only*: the Run button, CI or another tool.
 
 The suite shows its next run. If the runner was off when a run was due, the missed run happens once when it's back, not once for every time it missed.
 
@@ -527,6 +530,8 @@ n8n, Zapier or Make can add a Firestore document on any event: a deploy, a merge
 ```sh
 curl -fsSL https://breakpatch.dev/install-ci | sh
 ```
+
+<!-- prelaunch --> Public release coming soon. Until then, this command and the CI examples below that use it don't work. Join the list: [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list)
 
 It installs `breakpatch-ci` and the test browser in `~/.breakpatch-ci` and links the command into `~/.local/bin`. It checks every download against the release's checksums, and needs no administrator password. In GitHub Actions the next steps can run `breakpatch-ci` straight away; elsewhere, add `~/.local/bin` to `PATH` or use the full path. Running it again updates to the latest version, `BREAKPATCH_VERSION=1.2.3` installs a given one, and `sh -s -- --uninstall` removes it. You can [read the script](https://breakpatch.dev/install-ci) first.
 
@@ -679,12 +684,13 @@ A service account using the Firebase Admin SDK skips the rules altogether. Use a
 
 ## Licences and seats
 
-A Team licence has **seats** for people and **machine licences** for the local runner and CI machines. The licence belongs to the workspace, and only its admins can see the key there: it's kept in an admin-only part of the workspace (`workspace/licence`), so members can't read it.
+A Team licence has **seats** for people and **machine licences** for the local runner and CI machines. The licence belongs to the workspace.
 
-- **A new member enters the key on their own Mac**: **Settings → Licence** → **Enter licence key** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`; ask your admin for it). It's kept in that Mac's Keychain and isn't saved to the workspace. Until then they see "Ask your admin for a licence key."
-- Each person takes a seat when they enter the key or sign in. A seat someone already holds keeps refreshing, so people who have one don't need the key again. Signing out gives the seat back; so does **Release this Mac** (admins).
+- **The admin sets up the licence once**: **Settings → Licence** → **Enter licence key** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). The key is on your licence page after you buy: see [The back office](#the-back-office).
+- **Members don't enter a key.** The [invite link](#invite-your-team) sets up each member's licence.
+- **The local runner and CI machines use a machine licence.** Machines count separately from people. CI machines take theirs with the key: see [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci).
+- Each person takes a seat when they sign in. A seat someone already holds keeps refreshing. Signing out gives the seat back; so does **Release this Mac** (admins).
 - A seat is tied to the Macs it's used on: one person can use it on a few of their own Macs, and a copy of the Keychain on another Mac doesn't work. On too many Macs you see "Your seat is already used on too many Macs. Ask your admin to free one, then sign in again."
-- The local runner takes a machine licence. Machines count separately from people.
 - A seat nobody has used for 30 days is freed automatically. An admin can also free one in the [back office](#the-back-office).
 - Breakpatch checks the licence when it opens and every day, and keeps working for up to 30 days without a connection. If this Mac's clock is set back by more than a day, the licence stops working until Breakpatch can check it online again: "This Mac's clock is behind. Set the right date and time, then reconnect to check your licence."
 - **Saved secrets in CI.** `breakpatch-ci` takes a saved secret's value only from an environment variable named `BP_SECRET_<NAME>`, for example `BP_SECRET_STAGING_PASSWORD` for `STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), never from other variables. `--secret NAME` (you can give it more than once) limits which secrets a run may use. It types them only on the test's start site.
@@ -712,6 +718,6 @@ If you're one of your licence's admins, you see:
 - **Free a seat**, for someone who has left or a Mac you no longer use. Freeing a seat lets someone else take it.
 - **Usage**: tests created and runs each week for the last 12 weeks (by hand, schedules, local runner and CI), the pass rate, and the same per person and machine.
 
-If you bought Breakpatch Team on the [pricing page](https://breakpatch.dev/pricing/), sign in with the email you bought with: the first time, you see **Your new licence key (shown once)**. Press **Show my licence key** and keep it somewhere safe, because it isn't shown again. The same page has **Manage billing** (invoices, payment method, cancelling, through Paddle, our reseller) and **Change seats** (seats and extra machine licences, charged or credited for the rest of the billing period). A cancelled licence keeps working until the end of the period you paid for.
+If you bought Breakpatch Team on the [pricing page](https://breakpatch.dev/pricing/), sign in with the email you bought with: the first time, you see **Your new licence key (shown once)**. Press **Show my licence key** and keep it somewhere safe, because it isn't shown again. The same page has **Manage billing** (invoices, payment method, cancelling, through Paddle, our reseller) and **Change seats** (seats and extra machine licences, charged or credited straight away, pro rata for the rest of the billing period; credits go against your next payments). A cancelled licence keeps working until the end of the period you paid for.
 
 For a licence you didn't buy on the site, contact Breakpatch to add seats or renew. If you see "No licences for this email", ask whoever bought Breakpatch Team to add you as an admin.

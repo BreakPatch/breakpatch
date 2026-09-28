@@ -24,12 +24,12 @@ site/
   build-manual.mjs      builds manual/index.html from docs/manual.md
 ```
 
-The pricing, thanks and legal pages (`pricing/`, `thanks/`, `terms/`, `privacy/`, `refunds/`, `assets/pricing.*`, `assets/paddle-config.js`) sit on top of `site.css`: keep `.edition`, `.price`, `.home` and the one-line `.site-foot` working when you change it.
+The pricing, thanks and legal pages (`pricing/`, `thanks/`, `terms/`, `privacy/`, `refunds/`, `assets/pricing.*`, `assets/paddle-config.js`) sit on top of `site.css`: keep `.edition`, `.price` and `.home` working when you change it. Every page, the manual included, has the same footer as `index.html` (`.site-foot.rich`): change it everywhere at once.
 
 ## Launch day
 
 - **GitHub links.** Every GitHub link is `<a data-gh="/path">`, and `assets/site.js` points them all at `GITHUB` (one line at its top). The HTML also has the full address in `href` for browsers without JavaScript. The repository is private, so these 404 for visitors until it's public.
-- **Pre-launch notice.** "Public release coming soon — join the list" shows next to the install commands while `<html>` in `index.html` has `data-prelaunch`. Delete that attribute to hide both.
+- **Pre-launch notes.** While a page's `<html>` has `data-prelaunch`, it shows its `.prelaunch` notes ("Public release coming soon. Join the list") and `.prelaunch-text` words (Home's install answer, Pricing's "or email support@breakpatch.dev"). The pages that have it: `index.html`, `pricing/`, `connect/`, and the manual through `build-manual.mjs`. On launch day, delete the attribute from each (`grep -rl data-prelaunch site`), then run `node site/build-manual.mjs`. The manual's notes are the paragraphs starting with `<!-- prelaunch -->` in `docs/manual.md`: delete those too.
 
 ## Private beta
 
@@ -104,6 +104,6 @@ The page decodes it in the browser only, shows the workspace, then opens `breakp
 
 `/pricing` sells Team through [Paddle Billing](https://developer.paddle.com) (Paddle is the merchant of record). Paddle.js v2 is loaded from `cdn.paddle.com` only when someone presses **Buy Team**, or opens a Paddle payment link (`/pricing/?_ptxn=txn_…`, which Paddle uses for invoices and payment method updates). The checkout takes the people (at least 3) and extra machine licences, prefills the email, and passes `{ company, email }` as custom data; afterwards Paddle sends the buyer to `/thanks/`.
 
-Paste the ids into `assets/paddle-config.js`: the client-side token (Paddle → Developer tools → Authentication) and the four Team price ids, for sandbox and live, and set `env`. None of them is a secret. Until the token and ids are there, the Buy button is off and the page says to email support@breakpatch.dev. Business is sold by email (Contact us).
+Paste the ids into `assets/paddle-config.js`: the client-side token (Paddle → Developer tools → Authentication) and the four Team price ids, for sandbox and live, and set `env`. None of them is a secret. Until the token and ids are there, the button reads "Join the free beta" and opens an email to support@breakpatch.dev with the people, machines and billing period picked; Work email, Company and "Tax is added at checkout" are hidden. Business is sold by email (Contact us).
 
 The licence itself is made by the back office from Paddle's webhook: the private repo's `backoffice/README.md`, "Payments (Paddle)", has the owner's steps (products, prices, the notification destination, secrets). The legal pages are drafts marked "Draft", with `[Legal name]` to fill in; keep the privacy page in step with the manual's Privacy section.
