@@ -142,7 +142,14 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   const [handPlayed, setHandPlayed] = useState<Set<string>>(new Set());
   // A typed password (a Write into a masked field): offer once to save it as a saved secret.
   const [secretAsk, setSecretAsk] = useState<string | null>(null);
-  useEffect(() => engine.on('record.fileChooser', d => { if (busyRef.current) setFileAsk(d); }), [engine]);
+  useEffect(() => engine.on('record.fileChooser', d => { if (busyRef.current || d.stepId) setFileAsk(d); }), [engine]);
+  // A picker that opened a moment after a click the engine had already answered (DESK-07): the
+  // step becomes an upload of the chosen file.
+  useEffect(() => engine.on('record.stepChanged', ({ step }) => {
+    if (!findStep(stepsRef.current, step.id)) return;
+    setSteps(s => updateStep(s, step.id, old => ({ ...old, ...step, target: old.target ?? step.target })));
+    setDirty(true);
+  }), [engine, setSteps]);
   const chooseFile = (c: FileChoice) => { setFileAsk(null); void engine.chooseFile(c).catch(e => onErrorRef.current(e instanceof Error ? e.message : "Couldn't use that file.")); };
   useEffect(() => engine.on('record.checking', d => { if (busyRef.current) { setChecking(true); setPhase(d.phase); } }), [engine]);
   useEffect(() => { if (!savedPill) return; const t = setTimeout(() => setSavedPill(null), 1500); return () => clearTimeout(t); }, [savedPill]);
@@ -230,7 +237,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
       setSelectedId(rr);
       onErrorRef.current(e instanceof EngineError || e instanceof Error ? e.message : "Couldn't record that step.");
     } finally {
-      busyRef.current = false; setBusyId(null); setChecking(false); setFileAsk(null);
+      busyRef.current = false; setBusyId(null); setChecking(false); setFileAsk(a => (a?.stepId ? a : null));
     }
   }
 

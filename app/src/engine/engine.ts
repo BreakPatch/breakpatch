@@ -22,7 +22,8 @@ export interface Frame { jpeg: string; width: number; height: number; seq: numbe
 export type CheckingPhase = 'watching' | 'acting' | 'settling' | 'reloading' | 'naming' | 'choosing';
 
 /** A click opened the page's file picker: the app asks which file to use (`record.chooseFile`). */
-export interface FileChooserEvent { accept: string; multiple: boolean }
+/** `stepId`: the picker opened a moment after that (already recorded) click: answering it makes the step an upload. */
+export interface FileChooserEvent { accept: string; multiple: boolean; stepId?: string }
 export type HandInput =
   | { kind: 'down' | 'up' | 'move' | 'click'; at: Point; button?: 'left' | 'right' | 'middle' }
   | { kind: 'wheel'; at: Point; dx: number; dy: number }
@@ -108,6 +109,8 @@ export interface EngineEvents {
   'setup.progress': SetupProgress;
   'record.checking': { phase: CheckingPhase };
   'record.fileChooser': FileChooserEvent;
+  /** A recorded step changed after it was answered (a late file picker made a click an upload). */
+  'record.stepChanged': { step: Step };
   /** A file picker the page opened while the user uses it by hand (answer with handChooseFile). */
   'browser.fileChooser': FileChooserEvent;
   'run.step': RunStepEvent;

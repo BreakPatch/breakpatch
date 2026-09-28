@@ -195,21 +195,10 @@ class Recorder:
                 unwatch()
                 raise
 
-        async def late_chooser() -> bool:
-            """A page can open its file picker a while after the click (after an async step, as
-            Flutter does): the listener stays on for `chooser_window` after it, while the page settles
-            (DESK-07). True when one opened late and was answered."""
-            if not watching:
-                return False
-            try:
-                while not choosers and time.monotonic() - clicked < self.t.chooser_window:
-                    await asyncio.sleep(0.05)
-            finally:
-                unwatch()
-            if choosers and not answered:
-                await self._choose_file(choosers[0], step, phase)
-                return True
-            return False
+        def late_chooser() -> bool:
+            """Whether the page opened its file picker while this step settled (it's then answered
+            here, before the step is returned)."""
+            return bool(choosers) and not answered
         if action == "downloadCheck":
             self._download_mark = ctx.download_mark
         naming = asyncio.ensure_future(self._name(before, anchor, dom_name or {})) if anchor is not None and not p.get("label") else None
@@ -232,7 +221,9 @@ class Recorder:
         try:
             phase("settling")
             after, _settled = await self._settle(self.b.shoot, noise)
-            if await late_chooser():
+            if late_chooser():
+                answered = True
+                await self._choose_file(choosers[0], step, phase)
                 phase("settling")
                 after, _settled = await self._settle(self.b.shoot, noise)
             blast = imaging.blast_radius(before, after, noise)
@@ -294,9 +285,36 @@ class Recorder:
                 step["label"] = labels.default_label(action, p, got["name"])
                 if not p.get("target"):
                     step["target"] = got["target"]
+        if watching and not answered:
+            # A page can open its file picker a while after the click (after an async step, as
+            # Flutter does). The step is answered now; the listener stays on in the background for
+            # `chooser_window` after the click, and a late picker turns the step into an upload
+            # (`record.stepChanged`), even if the user has started the next step (DESK-07).
+            asyncio.ensure_future(self._late_chooser(page, choosers, on_chooser, clicked, dict(step)))
+        else:
+            unwatch()
         return step
 
-    async def _choose_file(self, chooser, step: dict, phase: Phase) -> None:
+    async def _late_chooser(self, page, choosers: list, listener, clicked: float, step: dict) -> None:
+        try:
+            while not choosers and time.monotonic() - clicked < self.t.chooser_window:
+                await asyncio.sleep(0.05)
+        finally:
+            try:
+                page.remove_listener("filechooser", listener)
+            except Exception:  # noqa: BLE001
+                pass
+        if not choosers:
+            return
+        try:
+            await self._choose_file(choosers[0], step, lambda _phase: None, step_id=step.get("id"))
+        except Exception as e:  # noqa: BLE001
+            log.info("late file picker: %s", e)
+            return
+        if step.get("action") == "upload":
+            self.emit("record.stepChanged", {"step": step})
+
+    async def _choose_file(self, chooser, step: dict, phase: Phase, step_id: str | None = None) -> None:
         try:
             accept = await chooser.element.get_attribute("accept") or ""
         except Exception:  # noqa: BLE001
@@ -304,7 +322,8 @@ class Recorder:
         loop = asyncio.get_running_loop()
         self._choice = loop.create_future()
         phase("choosing")
-        self.emit("record.fileChooser", {"accept": accept, "multiple": bool(chooser.is_multiple())})
+        self.emit("record.fileChooser", {"accept": accept, "multiple": bool(chooser.is_multiple()),
+                                         **({"stepId": step_id} if step_id else {})})
         try:
             choice = await asyncio.wait_for(self._choice, config.CHOOSE_FILE_TIMEOUT)
         except asyncio.TimeoutError:

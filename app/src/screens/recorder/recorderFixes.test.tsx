@@ -296,3 +296,22 @@ describe('a password typed as plain text', () => {
     expect(screen.queryByText('Write "hunter2!"')).toBeNull();
   });
 });
+
+describe('a file picker that opens after the click was answered', () => {
+  it('asks, and turns the recorded click into an upload', async () => {
+    const engine = getEngine() as unknown as { emit(e: string, d: unknown): void };
+    vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: 'k1', action: 'click', label: 'Click Add photo', at: p.at, target: 'Add photo' }));
+    const choose = vi.spyOn(getEngine(), 'chooseFile').mockResolvedValue();
+    const { result } = hook();
+    act(() => { result.current.pagePoint([100, 60], 1); });
+    act(() => { result.current.confirmAi(); });
+    await waitFor(() => expect(result.current.steps[0]?.id).toBe('k1'));
+    expect(result.current.busy).toBe(false);
+    act(() => { engine.emit('record.fileChooser', { accept: 'image/*', multiple: false, stepId: 'k1' }); });
+    expect(result.current.fileAsk?.stepId).toBe('k1');
+    act(() => { result.current.chooseFile({ sample: 'jpeg' }); });
+    expect(choose).toHaveBeenCalledWith({ sample: 'jpeg' });
+    act(() => { engine.emit('record.stepChanged', { step: { id: 'k1', action: 'upload', sample: 'jpeg', label: 'Upload JPEG image', at: [100, 60] } }); });
+    expect(result.current.steps[0]).toMatchObject({ id: 'k1', action: 'upload', sample: 'jpeg', label: 'Upload JPEG image', target: 'Add photo' });
+  });
+});

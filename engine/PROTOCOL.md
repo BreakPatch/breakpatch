@@ -231,7 +231,11 @@ Per action:
   DevTools protocol before the action) comes first; else the AI assistant's name, unless its reply
   echoes a template; else "Click the spot you clicked". `record.propose` leaves out a box bigger
   than 12% of the page.
-- A click that opens the page's file picker up to 3 s later (after an async step) is still caught.
+- A click whose page opens its file picker later (after an async step) is still caught, without
+  holding the click up: `record.point` answers as soon as the step has settled, the listener stays
+  on in the background for 3 s after the click, and a late picker emits `record.fileChooser` with
+  `stepId`; once the app answers with `record.chooseFile`, the event `record.stepChanged` `{ step }`
+  gives that step as an `upload` of the chosen file.
 - `waitFor` (Wait N seconds) only waits: it's recorded with no `pre`, `post`, `ignore` or `expect`, and
   replay ignores any of those an older file has on it. The next step's pre-check guards the page.
 - `waitUntil` needs `region`; nothing is performed. The step stores `region`, `hash` (how the

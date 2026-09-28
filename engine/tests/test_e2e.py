@@ -1230,20 +1230,45 @@ async def test_settle_leaves_out_a_blinking_spot_but_not_a_real_change():
 
 
 async def test_a_file_picker_that_opens_a_second_after_the_click_is_still_caught(site):
-    """DESK-07."""
+    """DESK-07: the click is answered as soon as it settles; a picker that opens later turns it
+    into an upload through record.stepChanged."""
     hx = Harness()
     await hx.call("browser.open", {"url": site + "/upload.html", "viewport": VIEWPORT})
     try:
-        rec = asyncio.ensure_future(hx.call("record.point", {"action": "click", "at": [480, 60]}))
+        step = (await hx.call("record.point", {"action": "click", "at": [480, 60]}))["step"]
+        assert step["action"] == "click" and not hx.of("record.fileChooser")      # answered before the picker
         for _ in range(300):
-            if hx.of("record.fileChooser") or rec.done():
+            if hx.of("record.fileChooser"):
                 break
             await asyncio.sleep(0.02)
-        assert hx.of("record.fileChooser"), "the late picker wasn't caught"
+        ask = hx.of("record.fileChooser")[-1]
+        assert ask["stepId"] == step["id"] and ask["accept"] == "image/*"
         await hx.call("record.chooseFile", {"sample": "jpeg"})
-        step = (await rec)["step"]
-        assert step["action"] == "upload" and step["sample"] == "jpeg"
+        for _ in range(100):
+            if hx.of("record.stepChanged"):
+                break
+            await asyncio.sleep(0.02)
+        changed = hx.of("record.stepChanged")[-1]["step"]
+        assert changed["id"] == step["id"] and changed["action"] == "upload" and changed["sample"] == "jpeg"
+        assert changed["pre"] == step["pre"]
+        await asyncio.sleep(0.3)
         assert (await hx.engine.browser.page.text_content("#names")).startswith("sample.jpeg ")
+    finally:
+        await hx.call("browser.close")
+
+
+async def test_a_click_without_a_picker_is_answered_without_the_picker_window(site):
+    import time
+    from breakpatch_engine.config import Timings
+    hx = Harness()
+    hx.engine.timings = hx.engine.recorder.t = Timings.fast().with_(chooser_window=4.0)
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        await _latest_frame(hx)
+        t0 = time.monotonic()
+        step = (await hx.call("record.point", {"action": "click", "at": STILL_ADD}))["step"]
+        took = time.monotonic() - t0
+        assert step["action"] == "click" and took < 3.0, took       # not held for the 4 s window
     finally:
         await hx.call("browser.close")
 
