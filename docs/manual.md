@@ -372,6 +372,8 @@ Whoever connects the workspace becomes its first admin.
 
 Settings → Workspace → **Invite teammates** → **Copy link**. Send it any way you like. It works for everyone and doesn't expire.
 
+Teammates don't need the licence key. Once your admin has entered it in **Settings → Licence**, everyone who opens the link and signs in gets a seat by themselves. The link holds only the workspace details, never the licence.
+
 ```
 https://breakpatch.dev/connect#c=eyJuYW1lIjoiU3ltVGVycmEi…
 ```
@@ -689,7 +691,9 @@ A service account using the Firebase Admin SDK skips the rules altogether. Use a
 A Team licence has **seats** for people and **machine licences** for the local runner and CI machines. The licence belongs to the workspace.
 
 - **The admin sets up the licence once**: **Settings → Licence** → **Enter licence key** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). The key is on your licence page after you buy: see [The back office](#the-back-office).
-- **Members don't enter a key.** The [invite link](#invite-your-team) sets up each member's licence.
+- **Members don't enter a key.** Everyone else gets a seat by themselves when they join through the [invite link](#invite-your-team) or sign in. Only admins can see the key. Until the admin has entered it, members see "Your admin hasn't set up the licence for this workspace yet."
+- **Out of seats:** the member sees "Your team is out of seats. Your admin can see you're waiting and can add a seat or free one." Admins see who is waiting in **Settings → Licence**.
+- **A new key:** if the admin replaces the key, members' seats follow once an admin opens Breakpatch.
 - **The local runner and CI machines use a machine licence.** Machines count separately from people. CI machines take theirs with the key: see [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci).
 - Each person takes a seat when they sign in. A seat someone already holds keeps refreshing. Signing out gives the seat back; so does **Release this Mac** (admins).
 - A seat is tied to the Macs it's used on: one person can use it on a few of their own Macs, and a copy of the Keychain on another Mac doesn't work. On too many Macs you see "Your seat is already used on too many Macs. Ask your admin to free one, then sign in again."
@@ -698,7 +702,7 @@ A Team licence has **seats** for people and **machine licences** for the local r
 - **Saved secrets in CI.** `breakpatch-ci` takes a saved secret's value only from an environment variable named `BP_SECRET_<NAME>`, for example `BP_SECRET_STAGING_PASSWORD` for `STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), never from other variables. `--secret NAME` (you can give it more than once) limits which secrets a run may use. It types them only on the test's start site.
 - **Usage counts go with the licence check.** Each check sends how many tests were created and how many runs there were (by hand, from schedules, on the local runner and in CI), passed and failed, and on how many days Breakpatch was used, since the last check. Only numbers: never test names, addresses, steps or screenshots. The licence check already knows the licence and seat, so your admin sees the numbers per person and machine in the [back office](#the-back-office). They're part of how the licence works, so there's no switch for them in Team. `breakpatch-ci` counts its runs the same way in its licence file and sends them with its next check; on CI machines that don't keep that file between jobs they aren't sent.
 
-Without a licence, Breakpatch keeps working as Community (tests, recording and running on this Mac) and Team features are off. A quiet banner under the title bar says why: "Breakpatch Team needs a licence. Ask your admin, or enter one in Settings → Licence.", "Your team is out of seats. Ask your admin to add one.", "Reconnect to check your licence." (after 30 days offline) or "Your licence has expired." A runner with no machine licence left gets "Your team has no machine licences left. Ask your admin to add one."
+Without a licence, Breakpatch keeps working as Community (tests, recording and running on this Mac) and Team features are off. A quiet banner under the title bar says why: "Breakpatch Team needs a licence. Your admin enters the key once in Settings → Licence, then everyone gets a seat when they sign in.", "Your team is out of seats. Ask your admin to add one.", "Reconnect to check your licence." (after 30 days offline) or "Your licence has expired." A runner with no machine licence left gets "Your team has no machine licences left. Ask your admin to add one."
 
 Other messages you may see:
 
