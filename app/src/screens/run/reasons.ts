@@ -1,6 +1,6 @@
 // Plain words for why a step failed (ui-requirements §5.10). One headline per FailReason,
 // used as the step's note, the Run view strip and the report heading, plus a one-line reason.
-import type { FailReason, Step } from '../../data/types';
+import type { StepRun, FailReason, Step } from '../../data/types';
 
 /** "the Done button" from "Done button, bottom right of the Create project dialog". */
 export function targetName(step: Pick<Step, 'target' | 'label' | 'action'>): string {
@@ -14,6 +14,13 @@ const VERB: Partial<Record<Step['action'], string>> = {
   click: 'click', doubleClick: 'double-click', longClick: 'press', rightClick: 'right-click', hover: 'point at',
   write: 'write in', drag: 'drag', swipe: 'swipe', scroll: 'scroll', upload: 'upload to',
 };
+
+/** A pass that wasn't a plain match with the recording, in words for the report. */
+export function passNote(r: Pick<StepRun, 'passedBy' | 'why'> | undefined): string | undefined {
+  if (r?.passedBy === 'gone') return 'Passed: the dialog closed. The page behind it looked different from when it was recorded.';
+  if (r?.passedBy === 'note') return r.why ?? 'Passed: the step did what its note says.';
+  return undefined;
+}
 
 /** The headline: "Couldn't find the Done button". */
 export function reasonTitle(reason: FailReason | undefined, step: Pick<Step, 'target' | 'label' | 'action'>): string {

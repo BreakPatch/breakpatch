@@ -10,7 +10,7 @@ import { stripUi, type RowStatus } from '../../components/steps';
 import { useSession } from '../../state/session';
 import { backendGroupLoader, preorder, resolveSteps } from '../run/resolve';
 import { INITIAL_RUN, rowStatus, runReducer, type RunView } from '../run/runState';
-import { reasonText } from '../run/reasons';
+import { passNote, reasonText } from '../run/reasons';
 import { engineRun, machineName, newRunIdForEditor } from '../run/useTestRun';
 
 export type EditorRunMode = 'run' | 'play';
@@ -37,6 +37,7 @@ export function editorStatuses(view: RunView, steps: Step[], mode: EditorRunMode
     const st = rowStatus(state, view.reasons[id]);
     if (st) statuses[id] = st;
   }
+  for (const [id, p] of Object.entries(view.passes ?? {})) { const t = passNote(p); if (t && byId.has(id)) notes[id] = t; }
   if (view.failedId && byId.has(view.failedId) && view.reasons[view.failedId] !== 'stopped') {
     notes[view.failedId] = reasonText(view.reasons[view.failedId] as FailReason, byId.get(view.failedId)!);
   }

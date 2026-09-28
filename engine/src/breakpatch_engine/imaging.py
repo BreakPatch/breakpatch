@@ -210,6 +210,16 @@ def changed_share(before: np.ndarray, after: np.ndarray, box: Sequence[float],
     return float(mask[y1:y2, x1:x2].sum()) / area if area > 0 else 0.0
 
 
+def edge_density(arr: np.ndarray, box: Sequence[float], ignore: Iterable[Sequence[float]] | None = None) -> float:
+    """Share of a region's pixels on an edge: a dialog, text or a list has many, a plain page few."""
+    h, w = arr.shape[:2]
+    x1, y1, x2, y2 = clamp_box(box, w, h)
+    if x2 <= x1 or y2 <= y1:
+        return 0.0
+    gray = cv2.cvtColor(blank(arr, ignore)[y1:y2, x1:x2], cv2.COLOR_RGB2GRAY)
+    return float((cv2.Canny(gray, 60, 160) > 0).mean())
+
+
 def noise_boxes(frames: Sequence[np.ndarray], pad: int = BOX_PAD) -> list[Box]:
     """Areas that changed by themselves across a series of frames (spec §10.3.1)."""
     if len(frames) < 2:

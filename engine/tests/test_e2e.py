@@ -560,7 +560,7 @@ async def test_a_step_saved_before_these_changes_still_replays(site):
         rec = (await hx.call("record.point", {"action": "click", "at": STILL_ADD, "frame": seen}))["step"]
     finally:
         await hx.call("browser.close")
-    assert set(rec) <= {"id", "action", "label", "target", "at", "pre", "post", "ignore"}, set(rec)
+    assert set(rec) <= {"id", "action", "label", "target", "at", "pre", "post", "ignore", "expect"}, set(rec)   # expect: optional
     old.update(pre=rec["pre"], post=rec["post"])
     ended = await hx.run([old], site + "/still.html")
     assert ended["result"] == "pass", ended
@@ -840,3 +840,105 @@ async def test_a_plain_field_is_not_masked(site):
     finally:
         await hx.call("browser.close")
     assert "masked" not in step and step["label"] == 'Write "hello"'
+
+
+# ---------- closing a dialog over a page that looks different now ----------
+
+async def test_closing_a_dialog_passes_when_it_is_gone_though_the_page_behind_differs(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/dialog.html", "viewport": VIEWPORT})
+    try:
+        step = (await hx.call("record.point", {"action": "click", "at": [572, 178]}))["step"]
+        assert await hx.engine.browser.page.query_selector("#dlg") is None
+    finally:
+        await hx.call("browser.close")
+    assert step["post"]["expectChange"] is True
+    same = await hx.run([step], site + "/dialog.html")
+    assert same["result"] == "pass" and "passedBy" not in same["steps"][0], same
+    other = await hx.run([step], site + "/dialog.html?bg=2")
+    assert other["result"] == "pass", other
+    assert other["steps"][0]["passedBy"] == "gone"
+    assert any(d.get("passedBy") == "gone" for d in hx.of("run.step"))
+    faded = await hx.run([step], site + "/dialog.html?bg=2&fade=1")
+    assert faded["result"] == "pass", faded
+    for bad in ("stay=1", "partial=1"):
+        failed = await hx.run([step], site + "/dialog.html?bg=2&" + bad)
+        assert failed["result"] == "fail", (bad, failed)
+
+
+
+# ---------- "What should happen" ----------
+
+async def _record_one(site, url, params, locator=None):
+    hx = Harness(locator)
+    await hx.call("browser.open", {"url": site + url, "viewport": VIEWPORT})
+    try:
+        page = hx.engine.browser.page
+        if "at" not in params and "sel" in params:
+            b = await page.eval_on_selector(params.pop("sel"), "e => { const r = e.getBoundingClientRect(); return [(r.left + r.right) / 2, (r.top + r.bottom) / 2]; }")
+            params["at"] = b
+        step = (await hx.call("record.point", params))["step"]
+    finally:
+        await hx.call("browser.close")
+    return hx, step
+
+
+async def test_what_should_happen_is_suggested_from_the_screen(site):
+    _, nav = await _record_one(site, "/signin.html?nav=1", {"action": "click", "sel": "#next"})
+    _, gone = await _record_one(site, "/dialog.html", {"action": "click", "at": [572, 178]})
+    _, shown = await _record_one(site, "/index.html", {"action": "click", "at": BUTTON_AT})
+    _, count = await _record_one(site, "/still.html", {"action": "click", "at": STILL_ADD})
+    _, still = await _record_one(site, "/still.html", {"action": "hover", "at": [150, 310]})
+    assert (nav["expect"], gone["expect"], shown["expect"], count["expect"], still["expect"]) == \
+        ("newPage", "closes", "appears", "changes", "noChange")
+
+
+async def test_each_what_should_happen_passes_and_fails(site):
+    hx, count = await _record_one(site, "/still.html", {"action": "click", "at": STILL_ADD})
+    run = lambda steps, url: hx.run(steps, site + url)  # noqa: E731
+    # Text or a value changes: another value than recorded still passes; no change fails.
+    assert (await run([count], "/still.html?start=5"))["result"] == "pass"
+    assert (await run([count], "/still.html?dead=1"))["steps"][0]["reason"] == "noChange"
+    strict = {**count, "expect": "appears"}                  # must match the recorded result
+    assert (await run([strict], "/still.html"))["result"] == "pass"
+    # Nothing should change: a change fails, saying so.
+    quiet = {**count, "expect": "noChange"}
+    changed = await run([quiet], "/still.html")
+    assert changed["result"] == "fail" and "expects nothing to change" in changed["message"]
+    assert (await run([quiet], "/still.html?dead=1"))["result"] == "pass"
+    # A new page opens.
+    _, nav = await _record_one(site, "/signin.html?nav=1", {"action": "click", "sel": "#next"})
+    assert (await run([nav], "/signin.html?nav=1"))["result"] == "pass"
+    assert (await run([nav], "/signin.html?nav=1&dead=1"))["result"] == "fail"
+    # Something appears.
+    _, shown = await _record_one(site, "/index.html", {"action": "click", "at": BUTTON_AT})
+    assert (await run([shown], "/index.html"))["result"] == "pass"
+    assert (await run([shown], "/index.html?broken=1"))["result"] == "fail"
+    # Something closes: gone over a page that differs passes; still there fails (the #29 case).
+    _, gone = await _record_one(site, "/dialog.html", {"action": "click", "at": [572, 178]})
+    assert (await run([gone], "/dialog.html?bg=2"))["steps"][0]["passedBy"] == "gone"
+    assert (await run([gone], "/dialog.html?bg=2&stay=1"))["result"] == "fail"
+
+
+async def test_the_note_is_read_only_when_a_check_fails(site):
+    class Judge(FakeLocator):
+        def __init__(self, happened):
+            super().__init__(None)
+            self.happened, self.asked = happened, []
+
+        async def judge(self, image, note):
+            self.asked.append(note)
+            return {"happened": self.happened, "why": "it's still open"}
+
+    _, gone = await _record_one(site, "/dialog.html", {"action": "click", "at": [572, 178]})
+    step = {**gone, "expectNote": "Closes the What's new dialog"}
+    yes = Harness(Judge(True))
+    ok = await yes.run([step], site + "/dialog.html")
+    assert ok["result"] == "pass" and yes.locator.asked == []            # passing runs never ask
+    stayed = await yes.run([step], site + "/dialog.html?stay=1")
+    assert stayed["result"] == "pass" and stayed["steps"][0]["passedBy"] == "note"
+    assert stayed["steps"][0]["why"] == "The note says this closes the What's new dialog; it did, so this passed."
+    no = Harness(Judge(False))
+    failed = await no.run([step], site + "/dialog.html?stay=1")
+    assert failed["result"] == "fail"
+    assert failed["message"] == "The note says this closes the What's new dialog; it's still open."

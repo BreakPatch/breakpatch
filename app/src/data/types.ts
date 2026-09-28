@@ -109,6 +109,10 @@ export interface Step {
   sample?: SampleFile;
   /** A Write into a field that hides what's typed (a password): shown as dots, the field's inside left out of checks. */
   masked?: boolean;
+  /** "What should happen": how replay judges the step (absent: as before it existed). */
+  expect?: Expect;
+  /** A plain note on what should happen, read by the AI assistant only when the check fails. */
+  expectNote?: string;
   /** An upload of one of the user's own files: "files/<name>", in the tests folder. */
   file?: string;
   fileType?: string; minBytes?: number;
@@ -150,6 +154,8 @@ export interface StepGroup {
 // ---------- Runs ----------
 
 export type StepResult = 'passed' | 'healed' | 'failed' | 'notRun';
+export type Expect = 'newPage' | 'closes' | 'appears' | 'changes' | 'noChange';
+
 export type FailReason =
   | 'targetNotFound' | 'unexpectedScreen' | 'noChange' | 'timeout'
   | 'healFailed' | 'healingUnavailable' | 'secretMissing' | 'setUpFailed' | 'stopped' | 'fileMissing';
@@ -163,6 +169,10 @@ export interface StepRun {
   preDistance?: number; postDistance?: number;
   oldAt?: Point; newAt?: Point;
   screenshotPath?: string;       // local only
+  /** Passed another way than matching the recording: "gone" (what it closed is gone), "note" (the AI read the step's note). */
+  passedBy?: 'gone' | 'note';
+  /** With passedBy "note": the AI assistant's sentence. */
+  why?: string;
 }
 
 /** A run on another kind of system than the test was recorded on (engine run.ended `systemMismatch`). */

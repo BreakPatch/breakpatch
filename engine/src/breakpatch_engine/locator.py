@@ -22,6 +22,9 @@ log = logging.getLogger("breakpatch.locator")
 
 LOCATE_PROMPT = ('Find "{desc}" in this screenshot of a web app. Reply with JSON only, no other text: '
                  '{{"bbox_2d": [x1, y1, x2, y2]}}')
+JUDGE_PROMPT = ('This is a screenshot of a web app just after a test step. The step should have done this: '
+                '"{note}". Did it happen? Reply with JSON only, no other text: '
+                '{{"happened": true, "why": "the dialog is gone"}}')
 DESCRIBE_PROMPT = ('In this screenshot of a web app, look at the element at point [{x}, {y}] '
                    '(coordinates from 0 to 1000). Name it the way a tester would, and say where it is. '
                    'Reply with JSON only, no other text: '
@@ -32,6 +35,9 @@ class Locator(Protocol):
     def available(self) -> bool: ...
     async def locate(self, image: Image.Image, description: str) -> list[int] | None: ...
     async def describe(self, image: Image.Image, at: Sequence[float]) -> dict | None: ...
+    # Optional: reads a failed step's "What should happen" note against the screen after it.
+    # {"happened": bool, "why": "it's still open"} or None. Only called when a check fails.
+    async def judge(self, image: Image.Image, note: str) -> dict | None: ...
 
 
 class NoLocator:
@@ -44,6 +50,9 @@ class NoLocator:
         raise EngineError("not_ready", "The AI assistant isn't downloaded yet. Finish setup to use it.")
 
     async def describe(self, image, at):
+        return None
+
+    async def judge(self, image, note):
         return None
 
 
@@ -73,6 +82,18 @@ def map_box(box: Sequence[float], width: int, height: int) -> list[int] | None:
     if x2 - x1 <= 0 or y2 - y1 <= 0 or x1 < 0 or y1 < 0 or x2 > 1000 or y2 > 1000:
         return None
     return [round(x1 * width / 1000), round(y1 * height / 1000), round(x2 * width / 1000), round(y2 * height / 1000)]
+
+
+def parse_judge(text: str) -> dict | None:
+    for c in re.findall(r"\{[^{}]*\}", text or ""):
+        try:
+            obj = json.loads(c)
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and isinstance(obj.get("happened"), bool):
+            why = obj.get("why") if isinstance(obj.get("why"), str) else ""
+            return {"happened": obj["happened"], "why": why.strip()[:200]}
+    return None
 
 
 def parse_describe(text: str) -> dict | None:
@@ -151,6 +172,10 @@ class MlxLocator:
         desc = description.replace('"', "'").strip()
         text = await asyncio.to_thread(self._generate, image, LOCATE_PROMPT.format(desc=desc))
         return parse_bbox(text, image.width, image.height)
+
+    async def judge(self, image: Image.Image, note: str) -> dict | None:
+        text = await asyncio.to_thread(self._generate, image, JUDGE_PROMPT.format(note=note.replace('"', "'").strip()))
+        return parse_judge(text)
 
     async def describe(self, image: Image.Image, at: Sequence[float]) -> dict | None:
         x = round(at[0] * 1000 / image.width)

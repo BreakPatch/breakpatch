@@ -84,3 +84,16 @@ describe('focusStep', () => {
     expect(focusStep({ steps: [{ stepId: 'a', result: 'passed' }] }, rows)).toBeUndefined();
   });
 });
+
+describe('passes another way than the recording', () => {
+  it('keeps how a step passed, from its event or the end of the run', async () => {
+    const { passNote } = await import('./reasons');
+    let s = started();
+    s = runReducer(s, { type: 'step', ev: ev('a', 'passed', { passedBy: 'gone' }) });
+    s = runReducer(s, { type: 'ended', ev: { runId: 'r1', result: 'pass', durationMs: 1, steps: [
+      { stepId: 'a', result: 'passed', passedBy: 'gone' }, { stepId: 'b', result: 'passed', passedBy: 'note', why: 'The note says this closes it; it did, so this passed.' }] } });
+    expect(passNote(s.passes.a)).toBe('Passed: the dialog closed. The page behind it looked different from when it was recorded.');
+    expect(passNote(s.passes.b)).toBe('The note says this closes it; it did, so this passed.');
+    expect(passNote(undefined)).toBeUndefined();
+  });
+});

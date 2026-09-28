@@ -19,6 +19,8 @@ export interface RunView {
   failedId?: string;
   fixes: Record<string, { oldAt?: Point; newAt?: Point }>;
   screenshots: Record<string, string>;
+  /** Steps that passed another way than matching the recording, and how (StepRun.passedBy). */
+  passes: Record<string, Pick<StepRun, 'passedBy' | 'why'>>;
   startedAt?: number;
   result?: 'pass' | 'fail';
   durationMs?: number;
@@ -33,7 +35,7 @@ export type RunAction =
   | { type: 'ended'; ev: RunEnded }
   | { type: 'error'; message: string };
 
-export const INITIAL_RUN: RunView = { phase: 'idle', ids: [], states: {}, reasons: {}, fixes: {}, screenshots: {} };
+export const INITIAL_RUN: RunView = { phase: 'idle', ids: [], states: {}, reasons: {}, fixes: {}, screenshots: {}, passes: {} };
 
 const FROM_RESULT: Record<StepRun['result'], StepState> = { passed: 'passed', healed: 'fixed', failed: 'failed', notRun: 'notRun' };
 
@@ -51,6 +53,7 @@ export function runReducer(s: RunView, a: RunAction): RunView {
       if (state === 'running' || state === 'looking') next.currentId = ev.stepId;
       if (state === 'fixed') next.fixes = { ...s.fixes, [ev.stepId]: { oldAt: ev.oldAt, newAt: ev.newAt } };
       if (ev.screenshot) next.screenshots = { ...s.screenshots, [ev.stepId]: ev.screenshot };
+      if (ev.passedBy) next.passes = { ...s.passes, [ev.stepId]: { passedBy: ev.passedBy, why: ev.why } };
       if (state === 'failed') {
         if (ev.reason) next.reasons = { ...s.reasons, [ev.stepId]: ev.reason };
         // A loop or card fails after its child: the child is the one to show.
@@ -64,8 +67,10 @@ export function runReducer(s: RunView, a: RunAction): RunView {
       if (ev.runId !== s.runId) return s;
       const states = { ...s.states };
       const reasons = { ...s.reasons };
+      const passes = { ...s.passes };
       for (const r of ev.steps) {
         states[r.stepId] = FROM_RESULT[r.result];
+        if (r.passedBy) passes[r.stepId] = { passedBy: r.passedBy, why: r.why };
         if (r.reason) reasons[r.stepId] = r.reason;
       }
       for (const id of s.ids) {
@@ -74,7 +79,7 @@ export function runReducer(s: RunView, a: RunAction): RunView {
       }
       const failedId = s.failedId ?? ev.steps.filter(r => r.result === 'failed').pop()?.stepId;
       return {
-        ...s, phase: 'ended', states, reasons, failedId, currentId: undefined, result: ev.result, durationMs: ev.durationMs,
+        ...s, phase: 'ended', states, reasons, passes, failedId, currentId: undefined, result: ev.result, durationMs: ev.durationMs,
         steps: ev.steps.map(r => (s.screenshots[r.stepId] && !r.screenshotPath ? { ...r, screenshotPath: s.screenshots[r.stepId] } : r)),
       };
     }

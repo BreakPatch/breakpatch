@@ -85,6 +85,8 @@ class Runner:
         self.screenshots = screenshots or config.screenshots_dir()
         self.healer = healer                  # None: no healing (Community), see plugins.py
         self.locator: Locator | None = None   # for the healer: loaded lazily on the first failed pre-check
+        self._passed_by: str | None = None
+        self._post_message: str | None = None
         self.keep_open = False
         self.files_dir: str | None = None
         self.up_to: str | None = None
@@ -267,7 +269,7 @@ class Runner:
             self.results[self.index[id(step)]] = rec
             self._event(step, rec["result"], iteration, preDistance=rec.get("preDistance"),
                         postDistance=rec.get("postDistance"), oldAt=rec.get("oldAt"), newAt=rec.get("newAt"),
-                        screenshot=rec.get("screenshotPath"))
+                        screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"), why=rec.get("why"))
             self._stop_if_reached(step)
         return True
 
@@ -321,6 +323,17 @@ class Runner:
         self._event(step, "failed", iteration, reason=reason)
         return False
 
+    async def _read_note(self, note: str) -> dict | None:
+        """The AI assistant's reading of the screen against "What should happen"'s note, or None."""
+        try:
+            loc = self.locator_fn()
+            if not loc.available() or not hasattr(loc, "judge"):
+                return None
+            return await loc.judge(imaging.to_image(await self.b.shoot()), str(note)[:300])
+        except Exception as e:  # noqa: BLE001
+            log.info("couldn't read the note: %s", e)
+            return None
+
     async def _keep_screenshot(self, step: dict) -> str | None:
         """On failure (or heal) keep the current screen locally for the report (spec §11.6)."""
         if not self.b.is_open:
@@ -364,6 +377,12 @@ class Runner:
                 rec.update({"result": "healed", "oldAt": step.get("at") or step.get("from"),
                             "newAt": at or frm, "preDistance": new_dist})
 
+        url_before = self.b.url
+        own = None
+        if step.get("expect") in ("changes", "noChange") and at is not None and kind in CLICK_LIKE:
+            # The clicked control itself (read through the DevTools protocol, before the click).
+            box = await self.b.element_box(at)
+            own = [box[0] - 4, box[1] - 4, box[2] + 4, box[3] + 4] if box else None
         before = await self.b.shoot()
         try:
             await perform(self.b, step, ctx, at=at, frm=frm)
@@ -375,12 +394,25 @@ class Runner:
         after, settled = await checks.settle(self.b.shoot, settle_ignore, self.t.settle_interval,
                                              self.t.settle_frames, self.t.settle_timeout)
         if post:
-            reason, dist = await self._post_check(post, before, after, ignore)
+            self._passed_by = None
+            reason, dist = await self._post_check(post, before, after, ignore, settled, step.get("expect"), url_before,
+                                                  own)
             rec["postDistance"] = dist
+            message = self._post_message
+            if reason and step.get("expectNote"):
+                # Only now, on a failure: the AI assistant reads the step's note to judge it.
+                verdict = await self._read_note(step["expectNote"])
+                if verdict and verdict.get("happened"):
+                    reason, self._passed_by = None, "note"
+                    rec["why"] = f"The note says this {_note(step['expectNote'])}; it did, so this passed."
+                elif verdict:
+                    message = f"The note says this {_note(step['expectNote'])}; {verdict.get('why') or 'it did not happen'}."
+            if not reason and self._passed_by:
+                rec["passedBy"] = self._passed_by
             if reason:
                 if reason == "unexpectedScreen" and not settled:
                     reason = "timeout"
-                raise StepFailed(reason, **_keep(rec))
+                raise StepFailed(reason, message, **_keep(rec))
         if rec["result"] == "healed":
             rec["screenshotPath"] = await self._keep_screenshot(step)
         return rec
@@ -396,37 +428,88 @@ class Runner:
                 return best
             await asyncio.sleep(self.t.pre_interval)
 
-    async def _post_check(self, post: dict, before: np.ndarray, after: np.ndarray, ignore) -> tuple[str | None, int]:
+    def _judge(self, post: dict, before: np.ndarray, after: np.ndarray, ignore, settled: bool, expect: str | None,
+               moved_page: bool, tol: int, dist_before: int, own=None) -> tuple[str | None, int]:
+        """One look at the screen after the step: (fail reason or None, distance to the recorded
+        result). `expect` is the step's "What should happen" (absent: the checks as before it existed)."""
         region = post["region"]
+        dist = imaging.region_distance(after, region, post["hash"], ignore, self.relaxed)
+        changed = imaging.region_changed(before, after, region, ignore)
+        share = imaging.changed_share(before, after, region, ignore) if changed else 0.0
+        recorded = float(post["change"]) if isinstance(post.get("change"), (int, float)) else None
+        comparable = recorded is None or share >= config.POST_CHANGE_SHARE * recorded
+        closer = dist_before - dist >= config.POST_CLOSER
+        away = imaging.distance(imaging.region_hash(before, region, ignore), imaging.region_hash(after, region, ignore))
+        self._post_message = None
+
+        if expect == "noChange":
+            # Nothing visible should change: a change is the failure.
+            outside = list(ignore) + ([own] if own else [])
+            if imaging.region_changed(before, after, region, outside):
+                self._post_message = "Something changed on the page, but this step expects nothing to change."
+                return "unexpectedScreen", dist
+            return (None if dist <= tol else "unexpectedScreen"), dist
+        if expect == "changes":
+            # Text or a value changes: it must differ from before, somewhere other than the control
+            # itself (a button looks pressed or focused after any click); what it changes to may
+            # differ from the recording.
+            outside = list(ignore) + ([own] if own else [])
+            if imaging.region_changed(before, after, region, outside):
+                return None, dist
+            return "noChange", dist
+        if expect == "newPage":
+            if (moved_page or (changed and comparable)) and (dist <= tol or away >= config.GONE_DISTANCE):
+                return None, dist
+            return ("noChange" if not changed and not moved_page else "unexpectedScreen"), dist
+
+        # "appears", "closes", or no choice: the recorded result, reached by this step.
+        ok_change = changed and (recorded is None or dist > tol or closer or comparable)
+        if post.get("expectChange") and not ok_change:
+            return "noChange", dist
+        if dist > tol:
+            if expect == "closes" and self._gone(post, before, after, ignore, settled):
+                self._passed_by = "gone"
+                return None, dist
+            return "unexpectedScreen", dist
+        return None, dist
+
+    def _gone(self, post: dict, before: np.ndarray, after: np.ndarray, ignore, settled: bool) -> bool:
+        """What the step removed is clearly gone (a dialog it closed), though the page behind it
+        differs from the recording: the area is now far from how it looked just before the action,
+        and about as much of it changed as when recorded. Judged only on a settled screen, so a
+        half-faded dialog isn't taken as gone; a dialog that stayed, or only partly went, fails."""
+        if not settled:
+            return False
+        region = post["region"]
+        away = imaging.distance(imaging.region_hash(before, region, ignore), imaging.region_hash(after, region, ignore))
+        share = imaging.changed_share(before, after, region, ignore)
+        recorded = float(post["change"]) if isinstance(post.get("change"), (int, float)) else 0.0
+        return away >= config.GONE_DISTANCE and share >= config.GONE_SHARE * recorded
+
+    async def _post_check(self, post: dict, before: np.ndarray, after: np.ndarray, ignore,
+                          settled: bool = True, expect: str | None = None,
+                          url_before: str | None = None, own=None) -> tuple[str | None, int]:
         tol = config.check_tolerance(post.get("tolerance", config.POST_TOLERANCE), self.relaxed)
         end = time.monotonic() + self.t.settle_timeout
         # How close the screen was to the recorded result just before the action: a step that
         # really did something gets closer to it, a miss (a button that only lit up) doesn't.
-        dist_before = imaging.region_distance(before, region, post["hash"], ignore, self.relaxed)
+        dist_before = imaging.region_distance(before, post["region"], post["hash"], ignore, self.relaxed)
+        if expect not in EXPECTS:
+            expect = None
         while True:
-            dist = imaging.region_distance(after, region, post["hash"], ignore, self.relaxed)
-            changed = imaging.region_changed(before, after, region, ignore)
-            if changed and post.get("expectChange") and isinstance(post.get("change"), (int, float)) and dist <= tol:
-                # A perceptual hash of a big area barely notices new words on a screen laid out like
-                # the old one, so it must also have moved towards the recorded result, or changed
-                # about as much as when recorded (steps recorded before this have no `change`
-                # and keep the hash check alone). However fast the page changed, `before` is
-                # from just before the action, so a real change always shows in one or the other.
-                share = imaging.changed_share(before, after, region, ignore)
-                changed = (dist_before - dist >= config.POST_CLOSER
-                           or share >= config.POST_CHANGE_SHARE * float(post["change"]))
-            if post.get("expectChange") and not changed:
-                reason = "noChange"
-            elif dist > tol:
-                reason = "unexpectedScreen"
-            else:
-                return None, dist
-            if time.monotonic() >= end:
+            moved = url_before is not None and self.b.url.split("#")[0] != url_before.split("#")[0]
+            reason, dist = self._judge(post, before, after, ignore, settled, expect, moved, tol, dist_before, own)
+            if reason is None or time.monotonic() >= end:
                 return reason, dist
-            # A slow server can leave the old screen "settled" for a moment: give it until the timeout.
+            # A slow server (or a fade-out) can leave the old screen "settled" for a moment: give it
+            # until the timeout, judging only settled screens.
             await asyncio.sleep(self.t.settle_interval)
-            after, _ = await checks.settle(self.b.shoot, ignore, self.t.settle_interval, self.t.settle_frames,
-                                           max(0.0, end - time.monotonic()))
+            after, settled = await checks.settle(self.b.shoot, ignore, self.t.settle_interval, self.t.settle_frames,
+                                                 max(0.0, end - time.monotonic()))
+
+
+CLICK_LIKE = ("click", "doubleClick", "longClick", "rightClick", "hover")   # the control's own look isn't the effect
+EXPECTS = ("newPage", "closes", "appears", "changes", "noChange")
 
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9_-]+")
@@ -449,6 +532,12 @@ def secret_problem(name: str, secret: Secret | None, as_runner: bool) -> str | N
         return (f"{name} can't be used by the runner. Turn on Runner can use for it in Settings, "
                 "Saved secrets, on this Mac.")
     return None
+
+
+def _note(note: str) -> str:
+    """ "closes the What's new dialog" as it reads after "The note says this"."""
+    n = str(note).strip().rstrip(".")
+    return n[0].lower() + n[1:] if n else n
 
 
 def _keep(rec: dict) -> dict:

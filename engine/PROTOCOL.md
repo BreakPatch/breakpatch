@@ -191,6 +191,23 @@ Per action:
   `secrets` (see Saved secrets below; it is typed, never stored in the step); without it the call
   fails with `not_found` "The saved secret NAME isn't on this Mac.", and on a site the secret
   isn't allowed on with `not_found` "NAME isn't allowed on evil.example."
+- `expect` ("What should happen", optional) says how replay judges the step after the action. The
+  recorder suggests one from the screens before and after; the user can change it. Absent: the
+  checks as before it existed.
+  - `newPage`: the address changed, or the area changed about as much as when recorded; the new
+    screen may differ from the recording as long as it's far from the old one.
+  - `closes`: the recorded result, or what was there is clearly gone: on a settled screen the area
+    is far from how it looked before the step (`GONE_DISTANCE` bits) and at least half as much of
+    it changed as when recorded. That pass is reported with `passedBy: "gone"`.
+  - `appears`: the recorded result where it appeared (the checks as without `expect`).
+  - `changes`: the area differs from before, outside the clicked control itself (read through the
+    DevTools protocol); what it changed to may differ from the recording.
+  - `noChange`: nothing outside the clicked control changes, and the area looks as recorded.
+- `expectNote` (optional, plain words, e.g. "closes the What's new dialog") is read by the AI
+  assistant only when a step's check fails (`Locator.judge`: the screen after the step and the note,
+  replying `{happened, why}`). If it happened, the step passes with `passedBy: "note"` and `why`
+  ("The note says this closes the What's new dialog; it did, so this passed."); if not, the failure
+  message says why ("…; it's still open."). Passing runs never call the model for it.
 - `waitUntil` needs `region`; nothing is performed. The step stores `region`, `hash` (how the
   area looks now), `tolerance` and `timeoutMs` (default 10000). No `pre`/`post`.
 - `downloadCheck` without `at` checks for a download since the previous download check (e.g. after

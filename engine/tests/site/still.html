@@ -2,7 +2,10 @@
 <body style="margin:0;background:#f6f3ef;font:16px sans-serif">
   <!-- Nothing moves by itself. The button counts its clicks. -->
   <button id="add" style="position:absolute;left:100px;top:200px;width:140px;height:44px"
-    onclick="n++;document.getElementById('n').textContent='Clicks: '+n">Add</button>
+    onclick="if (!q.get('dead')) { n++; document.getElementById('n').textContent='Clicks: '+n; }">Add</button>
   <div id="n" style="position:absolute;left:100px;top:300px">Clicks: 0</div>
-  <script>var n = 0;</script>
+  <script>
+    var q = new URLSearchParams(location.search), n = Number(q.get('start') || 0);   // ?start=N, ?dead=1
+    document.getElementById('n').textContent = 'Clicks: ' + n;
+  </script>
 </body></html>

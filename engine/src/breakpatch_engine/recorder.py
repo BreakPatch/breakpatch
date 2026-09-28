@@ -35,6 +35,22 @@ def varies_each_run(step: dict) -> bool:
     return bool(step.get("generated")) or any(k in text for k in ("{i}", "{time}", "{date}", "{timestamp}"))
 
 
+def suggest_expect(before, after, blast, ignore, url_before: str, url_after: str) -> str:
+    """ "What should happen", guessed from the screen before and after the step: nothing changed; a
+    new page (the address changed); something closed (the area lost most of its edges: a dialog, a
+    menu); something appeared (it gained them); else something changed. The user can change it."""
+    if blast is None:
+        return "noChange"
+    if (url_before or "").split("#")[0] != (url_after or "").split("#")[0]:
+        return "newPage"
+    was, now = imaging.edge_density(before, blast, ignore), imaging.edge_density(after, blast, ignore)
+    if now < 0.6 * was:
+        return "closes"
+    if now > 1.6 * was + 0.002:
+        return "appears"
+    return "changes"
+
+
 def new_id() -> str:
     return "s" + pysecrets.token_hex(4)
 
@@ -120,6 +136,7 @@ class Recorder:
         # Straight after the last look at the page: the click lands on what that look (and the
         # user) saw. Naming what was clicked only needs that look, so it runs while the page reacts.
         phase("acting")
+        url_before = self.b.url
         if len(self.b.downloads) < self._download_mark:
             self._download_mark = 0          # the browser was reopened
         # A download check without a position looks at downloads since the last check, so a
@@ -201,6 +218,7 @@ class Recorder:
                                                        field_box[3] + 40], w, h) if field_box
                                else [0, 0, w, h])
                 expect = False
+            step["expect"] = suggest_expect(before, after, blast, ignore, url_before, self.b.url)
             if not varies_each_run(step):
                 step["post"] = {"region": post_region, "hash": imaging.region_hash(after, post_region, ignore),
                                 "tolerance": config.POST_TOLERANCE, "expectChange": expect}
