@@ -88,6 +88,8 @@ class Runner:
         self._passed_by: str | None = None
         self._post_message: str | None = None
         self.keep_open = False
+        self.from_id: str | None = None
+        self._started = True
         self.files_dir: str | None = None
         self.up_to: str | None = None
         self._steps: list[dict] = []
@@ -121,6 +123,9 @@ class Runner:
         self.keep_open = bool(req.get("keepOpen"))
         self.files_dir = str(req["filesDir"]) if req.get("filesDir") else None
         self.up_to = req.get("upToStepId") or None
+        # Play this step: start at that step, on the page as it is (the recorder's open browser).
+        self.from_id = req.get("fromStepId") or None
+        self._started = self.from_id is None
         self.message: str | None = None
         self.details: str | None = None
         self.clean_up_failed = False
@@ -161,6 +166,13 @@ class Runner:
                     self.message = problem
                 return False
         self.reached_set_up = True
+        if self.from_id is not None:
+            # On the page as it is: no set-up call, no fresh browser.
+            if not self.b.is_open:
+                self.message = "The browser isn't open."
+                return False
+            ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed, files_dir=self.files_dir)
+            return await self._run_list(steps, ctx, stop, iteration=None)
         if req.get("setUp"):
             reply = await calls.make(req["setUp"], self.app_url, secrets, self.t.http_timeout)
             log.info("set-up call: %s", reply.info)
@@ -240,6 +252,13 @@ class Runner:
 
     async def _run_list(self, steps: list[dict], ctx: Context, stop: asyncio.Event, iteration: int | None) -> bool:
         for step in steps:
+            if not self._started:
+                # Play this step: skip what comes before it (a loop or card around it still runs,
+                # so its children get their repeat number, and skips them the same way).
+                if step.get("id") == self.from_id:
+                    self._started = True
+                elif not any(s.get("id") == self.from_id for s in walk(step.get("steps") or [])):
+                    continue
             if stop.is_set():
                 self._fail(step, StepFailed("stopped"), iteration)
                 return False

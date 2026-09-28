@@ -46,7 +46,7 @@ async function appUrlOf(backend: Backend, test: Test): Promise<string> {
  * Shared by the Run view and the recorder's own Run and Play to here (`keepOpen`, `upToStepId`).
  */
 export async function engineRun(backend: Backend, t: Test, steps: Step[], runId: string, opts: {
-  keepOpen?: boolean; upToStepId?: string; abandoned?: () => boolean;
+  keepOpen?: boolean; upToStepId?: string; fromStepId?: string; abandoned?: () => boolean;
   /** Where the test was recorded (its version's `recordedOn`), to compare with this system. */
   recordedOn?: RecordedOn;
   /** Just before the engine starts, when the secrets are read. */
@@ -77,6 +77,7 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
       secrets: values, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}),
       ...(filesDir(backend.local?.path) ? { filesDir: filesDir(backend.local?.path) } : {}),
       ...(opts.keepOpen ? { keepOpen: true } : {}), ...(opts.upToStepId ? { upToStepId: opts.upToStepId } : {}),
+      ...(opts.fromStepId ? { fromStepId: opts.fromStepId } : {}),
     }).catch(err => { offStep(); offEnd(); reject(err); });
   });
   return { ended, startedAt, shots };

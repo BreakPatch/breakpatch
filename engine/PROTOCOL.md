@@ -241,6 +241,11 @@ there is no clean-up call, so recording carries on from where the run left the p
 passes: its result is `pass`, the loops and cards around the step count as passed, and later steps
 are `notRun`. An unknown `upToStepId` is `bad_request`.
 
+`fromStepId` (with `keepOpen`, and usually `upToStepId` set to the same step) is the recorder's
+Play this step: it runs on the page as the recorder's open browser shows it, with no fresh browser
+and no set-up call, skipping the steps before that one (a repeat or card around it still runs, so
+its children get their repeat number). Without an open browser it's `not_ready`.
+
 `appUrl` is the app's base address (defaults to `startUrl`): set-up and clean-up calls may only
 go to its hosts (see Set-up and clean-up calls). `runner: true` marks a run started by the local
 runner (see Saved secrets).

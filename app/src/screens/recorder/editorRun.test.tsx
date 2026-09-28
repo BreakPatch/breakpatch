@@ -87,9 +87,9 @@ describe('new steps go where the page is', () => {
     const next = container.querySelector('.step-next')!;
     expect(next.previousElementSibling?.getAttribute('data-step-id')).toBe('a');
     expect(container.querySelectorAll('.step-next')).toHaveLength(1);
-    act(() => { screen.getByText('Play to here').click(); screen.getByText('Add a step after this one').click(); });
+    act(() => { screen.getByText('Play to here').click(); screen.getAllByTitle('Add a step here')[0].click(); });
     expect(onPlayTo).toHaveBeenCalledWith('a');
-    expect(onAddAfter).toHaveBeenCalledWith('a');
+    expect(onAddAfter).toHaveBeenCalledWith('L');
     expect(screen.getByText('Not played since the change. Run the test to check them.')).toBeInTheDocument();
   });
 

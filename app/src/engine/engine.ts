@@ -69,6 +69,8 @@ export interface RunStart {
   keepOpen?: boolean;
   /** Play to here: stop after this step passes. */
   upToStepId?: string;
+  /** Play this step: start at this step on the page as it is (with keepOpen). */
+  fromStepId?: string;
   /** <tests folder>/files, where uploads of the user's own files come from. */
   filesDir?: string;
   /** Where the test was recorded (its version's `recordedOn`), to compare with this system. */

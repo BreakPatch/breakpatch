@@ -187,9 +187,12 @@ class Engine:
         if not install.browser_status().get("installed"):
             raise EngineError("not_ready", "The browser isn't installed yet. Finish setup to install it.")
         run_id = str(p.get("runId") or "run")
-        up_to = p.get("upToStepId")
-        if up_to is not None and not any(s.get("id") == up_to for s in _walk(p["steps"])):
-            raise EngineError("bad_request", "That step isn't in this test.", str(up_to)[:80])
+        for key in ("upToStepId", "fromStepId"):
+            want = p.get(key)
+            if want is not None and not any(s.get("id") == want for s in _walk(p["steps"])):
+                raise EngineError("bad_request", "That step isn't in this test.", str(want)[:80])
+        if p.get("fromStepId") is not None and not self.browser.is_open:
+            raise EngineError("not_ready", "The browser isn't open.")
         stop = asyncio.Event()
         self._activity = "run"
         runner = Runner(self.browser, self.locator_fn, self.timings, self.emit, healer=self.healer)

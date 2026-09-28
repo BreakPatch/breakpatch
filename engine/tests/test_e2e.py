@@ -942,3 +942,25 @@ async def test_the_note_is_read_only_when_a_check_fails(site):
     failed = await no.run([step], site + "/dialog.html?stay=1")
     assert failed["result"] == "fail"
     assert failed["message"] == "The note says this closes the What's new dialog; it's still open."
+
+
+async def test_play_this_step_runs_one_step_on_the_page_as_it_is(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        await _latest_frame(hx)
+        steps = [(await hx.call("record.point", {"action": "click", "at": STILL_ADD}))["step"] for _ in range(3)]
+        page = hx.engine.browser.page
+        assert await page.text_content("#n") == "Clicks: 3"
+        loop = {"id": "L", "action": "loop", "count": 2, "steps": [steps[1]]}
+        plan = [steps[0], loop, steps[2]]
+        ended = await hx.run(plan, site + "/still.html", keepOpen=True, fromStepId=steps[1]["id"], upToStepId=steps[1]["id"])
+        assert ended["result"] == "pass", ended
+        assert [r["result"] for r in ended["steps"]] == ["notRun", "passed", "passed", "notRun"]
+        assert hx.engine.browser.page is page and await page.text_content("#n") == "Clicks: 4"   # same page, once
+    finally:
+        await hx.call("browser.close")
+    with pytest.raises(EngineError) as e:                          # needs the recorder's open browser
+        await hx.call("run.start", {"runId": "x", "startUrl": site, "viewport": VIEWPORT, "steps": plan,
+                                    "fromStepId": steps[1]["id"], "settings": {}, "secrets": {}})
+    assert e.value.code == "not_ready"

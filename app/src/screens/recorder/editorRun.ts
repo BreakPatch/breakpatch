@@ -13,7 +13,8 @@ import { INITIAL_RUN, rowStatus, runReducer, type RunView } from '../run/runStat
 import { passNote, reasonText } from '../run/reasons';
 import { engineRun, machineName, newRunIdForEditor } from '../run/useTestRun';
 
-export type EditorRunMode = 'run' | 'play';
+/** run: every step. play: steps 1 to N. step: just one step, on the page as it is. */
+export type EditorRunMode = 'run' | 'play' | 'step';
 
 export interface EditorRunDone {
   mode: EditorRunMode;
@@ -22,6 +23,8 @@ export interface EditorRunDone {
   stoppedAt?: string;
   /** The saved run, for "See report" (full runs of a saved test only). */
   runId?: string;
+  /** Every step that passed in it (their "Not played since the change" note goes). */
+  passedIds?: string[];
 }
 
 /** Row statuses and notes for the steps list, from a run's live state. */
@@ -33,7 +36,8 @@ export function editorStatuses(view: RunView, steps: Step[], mode: EditorRunMode
   for (const [id, state] of Object.entries(view.states)) {
     if (!byId.has(id)) continue;
     // Play to here: the steps after it simply didn't run; no "Not run" on each.
-    if (mode === 'play' && (state === 'notRun' || (view.phase === 'ended' && state === 'waiting'))) continue;
+    if (mode !== 'run' && (state === 'notRun' || (view.phase === 'ended' && state === 'waiting'))) continue;
+    if (mode === 'step' && state === 'waiting') continue;
     const st = rowStatus(state, view.reasons[id]);
     if (st) statuses[id] = st;
   }
@@ -72,7 +76,8 @@ export function useEditorRun({ test, steps }: { test: Test | null | undefined; s
       const demo = demoEngine();
       if (demo) { demo.failStepIds = new Set(); sampleApp.reset(); }
       const got = await engineRun(backend, test, resolved, handle.runId, {
-        keepOpen: true, upToStepId: m === 'play' ? opts.upTo : undefined, abandoned: () => handle.abandoned,
+        keepOpen: true, upToStepId: m !== 'run' ? opts.upTo : undefined, fromStepId: m === 'step' ? opts.upTo : undefined,
+        abandoned: () => handle.abandoned,
         onStart: at => dispatch({ type: 'start', runId: handle.runId, ids, at }),
         onStep: ev => {
           dispatch({ type: 'step', ev });
@@ -85,7 +90,8 @@ export function useEditorRun({ test, steps }: { test: Test | null | undefined; s
       const { ended, startedAt, shots } = got;
       dispatch({ type: 'ended', ev: ended });
       const failed = ended.steps.filter(r => r.result === 'failed').pop()?.stepId;
-      const done: EditorRunDone = { mode: m, result: ended.result, stoppedAt: failed ?? (m === 'play' ? opts.upTo : undefined) };
+      const done: EditorRunDone = { mode: m, result: ended.result, stoppedAt: failed ?? (m !== 'run' ? opts.upTo : undefined),
+        passedIds: ended.steps.filter(r => r.result === 'passed' || r.result === 'healed').map(r => r.stepId) };
       // A full run of the saved test goes in the run history like any other, so its report opens.
       if (m === 'run' && opts.keepRun) {
         const { user } = useSession.getState();

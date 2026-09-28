@@ -81,25 +81,38 @@ export default function RecorderScreen() {
   const { guard, dialog } = useLeaveGuard(rec.dirty, () => save());
 
   /** Run (every step) or Play to here, in this browser. Never saves; the page stays where it ends. */
-  async function play(mode: 'run' | 'play', upTo?: string) {
-    if (rec.busy || editorRun.running) return;
-    rec.cancelAi(); rec.cancelRerecord(); setDone(null); setOfferPlay(null);
+  async function play(mode: 'run' | 'play' | 'step', upTo?: string): Promise<EditorRunDone | null> {
+    if (rec.busy || editorRun.running) return null;
+    rec.cancelAi(); rec.cancelRerecord(); setDone(null); setOfferPlay(null); setOfferStep(null);
+    rec.runStarted();
     try {
       const d = await editorRun.start(mode, { upTo, keepRun: mode === 'run' && !rec.dirty });
-      if (!d) return;
+      if (!d) return null;
       setDone(d);
       const rows = flatRows(rec.stepsRef.current).map(r => r.step.id);
       const last = rows[rows.length - 1] ?? null;
+      const passed = d.passedIds ?? [];
       if (d.result === 'fail') {
-        // Stopped at the failed step: new steps would go after the last one that passed.
-        rec.played({ full: false, at: null, insertAfter: null });
-        if (d.stoppedAt && findStep(rec.stepsRef.current, d.stoppedAt)) rec.setSelectedId(d.stoppedAt);
-      } else if (mode === 'run') rec.played({ full: true, at: last, insertAfter: null });
-      else rec.played({ full: false, at: upTo ?? null, insertAfter: upTo && upTo !== last ? upTo : null });
+        // Stopped at the failed step: the marker goes after it, where fixing it goes on from.
+        const at = d.stoppedAt && findStep(rec.stepsRef.current, d.stoppedAt) ? d.stoppedAt : null;
+        rec.played({ full: false, at: null, insertAfter: at && at !== last ? at : null, passed });
+        if (at) rec.setSelectedId(at);
+      } else if (mode === 'run') rec.played({ full: true, at: last, insertAfter: null, passed });
+      else rec.played({ full: false, at: upTo ?? null, insertAfter: upTo && upTo !== last ? upTo : null, passed });
+      return d;
     } catch (e) {
       toast(e instanceof Error ? e.message : "Couldn't start the run.", { error: true });
+      return null;
     }
   }
+  /** Play this step: from the page as it is, which should be just after the step before it. */
+  const [offerStep, setOfferStep] = useState<string | null>(null);
+  const playStep = (id: string) => {
+    const rows = flatRows(rec.stepsRef.current).map(r => r.step.id);
+    const prev = rows[rows.indexOf(id) - 1] ?? null;
+    if (prev && rec.atStepId !== prev) { setOfferPlay(null); setOfferStep(id); return; }
+    void play('step', id);
+  };
   const addAfter = (id: string) => {
     if (rec.atStepId === id) { rec.setInsertAfter(id); setOfferPlay(null); return; }
     setOfferPlay(id);
@@ -107,7 +120,15 @@ export default function RecorderScreen() {
   const { statuses, notes } = editorStatuses(editorRun.view, rec.steps, editorRun.mode);
   const n = (id: string) => numberOf(rec.steps, id);
   let footer = null;
-  if (offerPlay && findStep(rec.steps, offerPlay)) footer = (
+  const prevOf = (id: string) => { const rows = flatRows(rec.steps).map(r => r.step.id); return rows[rows.indexOf(id) - 1]; };
+  if (offerStep && findStep(rec.steps, offerStep) && prevOf(offerStep)) footer = (
+    <div className="rec-runfoot" role="status">
+      <span className="grow">The page isn't just after step {n(prevOf(offerStep)!)}. Play up to step {n(prevOf(offerStep)!)} first?</span>
+      <Button size="sm" kind="primary" onClick={() => { const id = offerStep; void (async () => { const d = await play('play', prevOf(id)!); if (d?.result === 'pass') await play('step', id); })(); }}>Play up to step {n(prevOf(offerStep)!)} first</Button>
+      <button type="button" className="rec-hint-link" onClick={() => { const id = offerStep; setOfferStep(null); void play('step', id); }}>Play it anyway</button>
+    </div>
+  );
+  else if (offerPlay && findStep(rec.steps, offerPlay)) footer = (
     <div className="rec-runfoot" role="status">
       <span className="grow">The page isn't at step {n(offerPlay)} yet. Play the steps up to it first?</span>
       <Button size="sm" kind="primary" onClick={() => void play('play', offerPlay)}>Play to here</Button>
@@ -118,11 +139,12 @@ export default function RecorderScreen() {
   else if (done) footer = (
     <div className={'rec-runfoot ' + (done.result === 'pass' ? 'ok' : 'bad')} role="status">
       <span className="grow">{done.result === 'fail' ? (done.stoppedAt && findStep(rec.steps, done.stoppedAt) ? `Stopped at step ${n(done.stoppedAt)}. Fix it here, then run again.` : 'The run stopped.')
+        : done.mode === 'step' ? `Step ${done.stoppedAt ? n(done.stoppedAt) : ''} passed. New steps go after it.`
         : done.mode === 'play' ? `Played to step ${done.stoppedAt ? n(done.stoppedAt) : ''}. New steps go after it.` : 'Passed. New steps go at the end.'}</span>
       {done.runId && <Link className="rec-hint-link" to={`/apps/${appId}/runs/${done.runId}`}>See report</Link>}
     </div>
   );
-  const runProps = { running: editorRun.running, statuses, notes, footer, onPlayTo: (id: string) => void play('play', id), onAddAfter: addAfter };
+  const runProps = { running: editorRun.running, statuses, notes, footer, onPlayTo: (id: string) => void play('play', id), onAddAfter: addAfter, onPlayStep: playStep };
   const publish = async () => {
     if (!test) return;
     try { await backend.setTestStatus(appId, test.id, 'published'); toast('Added to the team suite'); }

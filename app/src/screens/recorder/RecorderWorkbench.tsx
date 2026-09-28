@@ -7,6 +7,7 @@ import { CheckingPill, LiveView, SavedPill, stepMarker, useSampleState } from '.
 import { findStep, numberOf, StepsPanel, toTokens, type RowStatus } from '../../components/steps';
 import { Skeleton } from '../../components/ui';
 import { AddStepBar } from './AddStepBar';
+import { secrets } from '../../platform';
 import { FileChooserDialog } from './FileChooserDialog';
 import { toolFor } from './actions';
 import { localId, type Recorder } from './useRecorder';
@@ -21,10 +22,12 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
   /** The recorder's own Run and Play to here (tests only). */
   run?: {
     running: boolean; statuses: Record<string, RowStatus>; notes: Record<string, string>; footer?: ReactNode;
-    onPlayTo: (id: string) => void; onAddAfter: (id: string) => void;
+    onPlayTo: (id: string) => void; onAddAfter: (id: string) => void; onPlayStep: (id: string) => void;
   };
 }) {
   useSampleState();                                      // markers follow what the sample page shows
+  const [secretNames, setSecretNames] = useState<string[]>([]);
+  useEffect(() => { void secrets.list().then(setSecretNames).catch(() => setSecretNames([])); }, []);
   const groupSteps = useGroupSteps(appId, rec.steps);
   const sel = rec.selectedId ? findStep(rec.steps, rec.selectedId) : undefined;
   const marker = sel && rec.ai.state === 'idle' && !run?.running ? stepMarker(sel, numberOf(rec.steps, sel.id), sel.id === rec.busyId ? rec.phaseText ?? undefined : undefined) : null;
@@ -58,7 +61,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
           onChange={rec.change} onRerecord={rec.startRerecord} rerecordingId={rec.rerecordId} checkingId={rec.busyId} statuses={statuses} statusTexts={statusTexts}
           openLoopId={rec.openLoopId} onCloseLoop={() => rec.setOpenLoopId(null)} groupSteps={groupSteps} onEditGroup={onEditGroup}
           makeId={() => localId('s')} notes={run?.notes} insertAfterId={rec.insertAfterId} unplayedIds={rec.unplayed}
-          onPlayTo={run?.onPlayTo} onAddAfter={run?.onAddAfter} locked={run?.running} footer={run?.footer} />
+          onPlayTo={run?.onPlayTo} onAddAfter={run?.onAddAfter} onPlayStep={run?.onPlayStep} onEdited={rec.edited} secretNames={secretNames} locked={run?.running} footer={run?.footer} />
       )}
     </div>
   );

@@ -154,8 +154,10 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     return appendStep(s, step, openLoopId);
   };
   /** After a Run (all played) or Play to here: where the page is now, and where new steps go. */
-  const played = useCallback((opts: { full: boolean; at: string | null; insertAfter: string | null }) => {
+  const played = useCallback((opts: { full: boolean; at: string | null; insertAfter: string | null; passed?: string[] }) => {
     if (opts.full) setUnplayed(new Set());
+    // A step that just passed has been played since the change, whichever way it was played.
+    else if (opts.passed?.length) setUnplayed(u => new Set([...u].filter(id => !opts.passed!.includes(id))));
     setAtStepId(opts.at); setInsertAfter(opts.insertAfter); setAddedId(null); setSelectedId(null);
   }, [setInsertAfter]);
 
@@ -363,7 +365,16 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     phaseText: busyId !== null ? phaseText(phase, busyAction) : null,
     stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi, pageScroll, retryNote,
-    insertAfterId, setInsertAfter, unplayed, atStepId, played, fileAsk, chooseFile, filesDir,
+    insertAfterId, setInsertAfter, unplayed, atStepId, played,
+    /** A step was edited: when it now does something else to the page, the steps after it haven't been played since. */
+    edited: (id: string, affectsPage: boolean) => {
+      if (!affectsPage) return;
+      const rows = flatRows(stepsRef.current).map(r => r.step.id);
+      const later = rows.slice(rows.indexOf(id) + 1);
+      if (later.length) setUnplayed(u => new Set([...u, ...later]));
+    },
+    /** A run starts clean: no step selected, no "Added". */
+    runStarted: () => { setAddedId(null); setSelectedId(null); setSavedPill(null); }, fileAsk, chooseFile, filesDir,
     secretAsk: secretAsk && findStep(steps, secretAsk) ? findStep(steps, secretAsk)! : null,
     /** Keep as typed text; with `forApp`, never ask again for this app. */
     keepTyped: (forApp = false) => {

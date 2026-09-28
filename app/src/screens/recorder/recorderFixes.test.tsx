@@ -82,8 +82,9 @@ describe('step card states', () => {
   it('shows "Added" when it is saved, and says What to look for is optional and what it is for', () => {
     render(<StepsPanel steps={steps} mode="edit" selectedId="p" statuses={{ p: 'added' }} onChange={() => undefined} onSelect={() => undefined} onRerecord={() => undefined} />);
     expect(screen.getByText('Added')).toBeInTheDocument();
-    expect(screen.getByText('Optional')).toBeInTheDocument();
-    expect(screen.getByText(/The dashed box on the page shows where this step acts/)).toBeInTheDocument();
+    expect(screen.queryByText(/The dashed box on the page/)).toBeNull();          // the helper shows only while editing
+    fireEvent.focus(screen.getByLabelText(/What to look for/));
+    expect(screen.getByText(/Optional\. Helps find it again.*The dashed box on the page shows where this step acts/)).toBeInTheDocument();
     expect(screen.getByText('Re-record')).toBeInTheDocument();
   });
 });

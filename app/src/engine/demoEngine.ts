@@ -126,8 +126,11 @@ export class DemoEngine implements Engine {
     const fail = (s: Step, reason: FailReason) => { lastReason = reason; results[index.get(s)!] = { stepId: s.id, result: 'failed', reason }; emit(s, 'failed', reason); return false; };
     const runList = async (list: Step[]): Promise<boolean> => { for (const s of list) if (!(await runOne(s))) return false; return true; };
     let reached = false;
+    let started = !r.fromStepId;
+    const holds = (s: Step): boolean => !!s.steps?.some(c => c.id === r.fromStepId || holds(c));
     const runOne = async (s: Step): Promise<boolean> => {
       if (reached) return true;
+      if (!started) { if (s.id === r.fromStepId) started = true; else if (!holds(s)) return true; }
       if (this.stops.has(r.runId)) return fail(s, 'stopped');
       emit(s, 'running');
       if (s.action === 'loop' || s.action === 'group') {
