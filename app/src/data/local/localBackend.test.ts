@@ -173,6 +173,37 @@ describe('LocalBackend', () => {
     expect(await st.list(`${ROOT}/apps/web-app/tests`)).toEqual([{ name: 'log-in.json', isDir: false }]);   // no temp files left
   });
 
+  it('saves where the steps were recorded and keeps it through edits and renames', async () => {
+    const { st, b } = await setup();
+    const { app, test } = await appWithTest(b);
+    const mac = { os: 'macOS', osVersion: '15.3', arch: 'arm64', chromium: '140.0.7339.16' };
+    const v1 = await b.saveTest(app.id, test.id, steps, undefined, mac);
+    expect(v1.recordedOn).toEqual(mac);
+    const text = (await read(st, 'apps/web-app/tests/log-in.json'))!;
+    expect(fromFileText<{ recordedOn: unknown }>(text).recordedOn).toEqual(mac);
+    expect(text.indexOf('"recordedOn"')).toBeLessThan(text.indexOf('"steps"'));
+    // An edit without recording keeps it; so does a rename. The test itself doesn't carry it.
+    const v2 = await b.saveTest(app.id, test.id, [steps[0]]);
+    expect(v2.recordedOn).toEqual(mac);
+    await b.renameTest(app.id, test.id, 'Log in again');
+    expect((await b.version(app.id, test.id, 2))?.recordedOn).toEqual(mac);
+    expect(await first<Test | null>(l => b.test(app.id, test.id, l))).not.toHaveProperty('recordedOn');
+    // Re-recorded on another system: a new version even with the same steps.
+    const linux = { os: 'Linux', chromium: '140.0.7339.16' };
+    expect((await b.saveTest(app.id, test.id, [steps[0]], undefined, linux)).number).toBe(3);
+    expect((await b.snapshot()).apps[0].tests[0].recordedOn).toEqual(linux);
+  });
+
+  it('reads tests without recordedOn, and ignores one it cannot use', async () => {
+    const { b } = await setup({
+      'apps/web-app/app.json': toFileText({ name: 'Web app', baseUrl: 'https://app.example.com' }),
+      'apps/web-app/tests/old.json': toFileText({ name: 'Old', version: 1, steps }),
+      'apps/web-app/tests/odd.json': toFileText({ name: 'Odd', version: 1, recordedOn: { arch: 'arm64' }, steps }),
+    });
+    expect((await b.version('web-app', 'old', 1))?.recordedOn).toBeUndefined();
+    expect((await b.version('web-app', 'odd', 1))?.recordedOn).toBeUndefined();
+  });
+
   it('writes nothing when nothing changed', async () => {
     const { st, b } = await setup();
     const { app, test } = await appWithTest(b);

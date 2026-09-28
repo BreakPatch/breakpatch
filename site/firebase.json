@@ -6,7 +6,7 @@
     "ignore": ["firebase.json", ".firebaserc", "README.md", "build-manual.mjs", "*.test.mjs", "**/.*", "package.json", "package-lock.json", "node_modules/**"],
     "headers": [
       {
-        "source": "/install",
+        "source": "/@(install|install-ci)",
         "headers": [
           { "key": "Content-Type", "value": "text/plain; charset=utf-8" },
           { "key": "X-Content-Type-Options", "value": "nosniff" },

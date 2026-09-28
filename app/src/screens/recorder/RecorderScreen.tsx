@@ -3,7 +3,7 @@
 // current version, opens the controlled browser at the start address, and saves new versions.
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { App, Test } from '../../data/types';
+import type { App, RecordedOn, Test } from '../../data/types';
 import { useBackend, useLive } from '../../data/hooks';
 import { findStep, stripUi } from '../../components/steps';
 import { AppFrame } from '../../components/shell/AppFrame';
@@ -14,6 +14,8 @@ import { useLeaveGuard } from './useLeaveGuard';
 import { useRecorder } from './useRecorder';
 import { addressOf, useBrowserSession } from './browserSession';
 import { hasFeature } from '../../edition';
+import { getEngine } from '../../engine';
+import { recordedOnForSave } from './recordedOn';
 
 const DEFAULT_VP = { width: 1440, height: 900 };
 
@@ -34,10 +36,11 @@ export default function RecorderScreen() {
 
   // Load the current version once per test; later updates (our own saves) don't overwrite edits.
   const loadedFor = useRef<string | null>(null);
+  const recordedOn = useRef<RecordedOn | undefined>(undefined);
   useEffect(() => {
     if (!test || loadedFor.current === test.id) return;
     loadedFor.current = test.id;
-    void backend.version(appId, test.id, test.currentVersion).then(v => { rec.load(v?.steps ?? []); setLoaded(true); });
+    void backend.version(appId, test.id, test.currentVersion).then(v => { recordedOn.current = v?.recordedOn; rec.load(v?.steps ?? []); setLoaded(true); });
   }, [test, backend, appId, rec]);
 
   // ?step= and ?rerecord= apply once the steps and the browser are ready.
@@ -58,7 +61,9 @@ export default function RecorderScreen() {
     setSaving(true);
     try {
       const clean = stripUi(rec.stepsRef.current);
-      const v = await backend.saveTest(appId, test.id, clean, note || undefined);
+      const where = await recordedOnForSave(getEngine(), rec.recordedRef.current, recordedOn.current);
+      const v = await backend.saveTest(appId, test.id, clean, note || undefined, where);
+      recordedOn.current = v.recordedOn ?? where;
       rec.load(clean);
       toast(hasFeature('versions') ? `Saved as version ${v.number}` : 'Saved');
       return true;

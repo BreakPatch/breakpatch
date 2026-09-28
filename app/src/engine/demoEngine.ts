@@ -41,7 +41,8 @@ export class DemoEngine implements Engine {
     return { memoryGb: this.memoryGb, chip: 'Apple M2 Pro', os: 'macOS 15.1', engineVersion: '0.1.0-demo',
       edition: edition.name, // the demo engine is whatever edition the app is
       browser: { installed: this.browserInstalled, version: this.browserInstalled ? 'Chromium 131' : undefined },
-      model: { installed: this.modelInstalled, repo: this.modelRepo, revision: 'main', sizeBytes: this.modelRepo.includes('8B') ? 5.2e9 : 3.1e9 } };
+      model: { installed: this.modelInstalled, repo: this.modelRepo, revision: 'main', sizeBytes: this.modelRepo.includes('8B') ? 5.2e9 : 3.1e9 },
+      system: { os: 'macOS', osVersion: '15.1', arch: 'arm64', chromium: '131.0.6778.33' } };
   }
 
   private download(task: SetupTaskName, total: number, secs: number): Promise<void> {

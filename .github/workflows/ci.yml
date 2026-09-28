@@ -15,7 +15,11 @@ permissions:
 
 # Community edition only: the private Team module (Breakpatch/breakpatch-team) is not checked
 # out here, so the app builds without app/src/edition/team and the engine without
-# breakpatch_team_engine. The Team repo's own CI tests both together.
+# breakpatch_team_engine. The Team repo's own CI tests both together. One exception, the
+# ci-command job: it builds breakpatch-ci's wheels as a release does (scripts/build-ci.sh, Linux,
+# a throwaway licence key) and tries them in a clean Python environment. It needs the Team repo,
+# so it only runs where the secret TEAM_CI_TOKEN is available (pushes and pull requests from this
+# repository, not from forks) and otherwise says why it skipped.
 #
 # Coverage: the ui, engine and shell jobs each report a line coverage total. On pushes to main the
 # badges job writes them as shields.io endpoint files to the orphan branch `badges`
@@ -173,14 +177,89 @@ jobs:
         run: bash scripts/build-release.sh --edition community --no-bundle --no-deps
 
   install-script:
-    name: Install command
+    name: Install commands
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      # breakpatch-ci's install command needs Python 3.11 (ubuntu-latest's own is newer).
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
       - name: Test the install command against fake releases
         run: bash scripts/test-install.sh
+      - name: Test breakpatch-ci's install command against fake releases
+        run: bash scripts/test-install-ci.sh
+
+  # breakpatch-ci as a release builds it, Linux only (the macOS wheel is built by release.yml on
+  # a tag, never here). Both wheels are built with a throwaway licence key made in this job
+  # (its private half only in RUNNER_TEMP, never uploaded), installed into a clean Python 3.11
+  # environment from the requirements file the build wrote, exactly as
+  # https://breakpatch.dev/install-ci installs them, and then run for real against the open
+  # engine's test pages and a fake licence service: a passing test, a failing one, a test from
+  # another system and no licence. The Team wheel must hold the compiled module only.
+  ci-command:
+    name: breakpatch-ci wheels (Linux, throwaway key)
+    runs-on: ubuntu-latest
+    env:
+      HAS_TEAM: ${{ secrets.TEAM_CI_TOKEN != '' }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
+    steps:
+      - name: Skipped without the Team repo
+        if: env.HAS_TEAM != 'true'
+        run: echo "::notice::TEAM_CI_TOKEN isn't available here (a fork, or not set up yet), so breakpatch-ci's wheels weren't built."
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: env.HAS_TEAM == 'true'
+        with:
+          path: breakpatch
+          persist-credentials: false
+      - name: Check out the Team module
+        if: env.HAS_TEAM == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ vars.TEAM_REPO || 'BreakPatch/breakpatch-team' }}
+          ref: ${{ vars.TEAM_REF || 'main' }}
+          token: ${{ secrets.TEAM_CI_TOKEN }}
+          path: breakpatch-team
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        if: env.HAS_TEAM == 'true'
+        with:
+          python-version: "3.11"
+      - name: Install the build dependencies (hashed locks)
+        if: env.HAS_TEAM == 'true'
+        env:
+          TEAM_DIR: breakpatch-team
+        run: bash breakpatch/scripts/build-ci.sh --deps-only
+      - name: Build both wheels with a throwaway key
+        if: env.HAS_TEAM == 'true'
+        env:
+          TEAM_DIR: breakpatch-team
+        run: |
+          python breakpatch-team/engine/scripts/smoke_ci_wheel.py keys --seed-file "$RUNNER_TEMP/ci-smoke.seed" > "$RUNNER_TEMP/ci-smoke-keys.json"
+          bash breakpatch/scripts/build-ci.sh --no-deps --keys-file "$RUNNER_TEMP/ci-smoke-keys.json" --out "$RUNNER_TEMP/dist"
+      - name: No Team source in the wheel
+        if: env.HAS_TEAM == 'true'
+        run: |
+          python breakpatch-team/engine/scripts/make_wheel.py check "$RUNNER_TEMP"/dist/breakpatch_team_engine-*.whl
+          if python -m zipfile -l "$RUNNER_TEMP"/dist/breakpatch_team_engine-*.whl | grep -E '\.py[co]?( |$)'; then
+            echo "::error::the Team wheel holds Python source"; exit 1
+          fi
+      - name: Install into a clean environment, as the install command does
+        if: env.HAS_TEAM == 'true'
+        working-directory: ${{ runner.temp }}/dist
+        run: |
+          python -m venv "$RUNNER_TEMP/breakpatch-ci"
+          "$RUNNER_TEMP/breakpatch-ci/bin/python" -m pip install --require-hashes --only-binary=:all: \
+            -r breakpatch-ci-requirements-linux-x86_64.txt
+          "$RUNNER_TEMP/breakpatch-ci/bin/python" -m playwright install --with-deps chromium --no-shell
+      - name: Run it for real
+        if: env.HAS_TEAM == 'true'
+        run: |
+          python breakpatch-team/engine/scripts/smoke_ci_wheel.py run --ci "$RUNNER_TEMP/breakpatch-ci/bin/breakpatch-ci" \
+            --seed-file "$RUNNER_TEMP/ci-smoke.seed" --site breakpatch/engine/tests/site \
+            --version "$(node -p "require('./breakpatch/app/package.json').version")"
 
   badges:
     name: Coverage badges (main only)

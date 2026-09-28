@@ -2,7 +2,7 @@
 //
 //   <folder>/breakpatch.json                     { format, schemaVersion, name }
 //   <folder>/apps/<appId>/app.json
-//   <folder>/apps/<appId>/tests/<testId>.json    test fields + "steps" (latest only)
+//   <folder>/apps/<appId>/tests/<testId>.json    test fields + "recordedOn" + "steps" (latest only)
 //   <folder>/apps/<appId>/shared/<groupId>.json  shared steps + "steps"
 //   <folder>/apps/<appId>/runs/<testId>.json     the last run of that test
 //   <folder>/suites/<suiteId>.json
@@ -14,7 +14,7 @@
 // window focus, through the storage's watcher, or by a light poll.
 import type { Backend, Listener, NewApp, NewSuite, NewTest, Unsubscribe } from '../backend';
 import type {
-  App, Member, Person, QueueItem, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Viewport,
+  App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Viewport,
 } from '../types';
 import { FORMAT, SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
@@ -51,7 +51,7 @@ export interface FolderSnapshot {
   newer: boolean;
   apps: {
     app: App;
-    tests: { test: Test; steps: Step[] }[];
+    tests: { test: Test; steps: Step[]; recordedOn?: RecordedOn }[];
     groups: { group: StepGroup; steps: Step[] }[];
     /** The last run of each test that has one. */
     runs: Run[];
@@ -75,7 +75,8 @@ export interface LocalOptions {
   pollMs?: number;
 }
 
-type TestRec = { test: Omit<Test, 'id' | 'appId' | 'stepCount' | 'lastRun'>; steps: Step[] };
+/** `recordedOn` belongs to the latest version (the only one a folder keeps), next to its steps. */
+type TestRec = { test: Omit<Test, 'id' | 'appId' | 'stepCount' | 'lastRun'>; steps: Step[]; recordedOn?: RecordedOn };
 type GroupRec = { group: Omit<StepGroup, 'id' | 'appId' | 'stepCount' | 'usedBy'>; steps: Step[] };
 type RunRec = Omit<Run, 'appId' | 'testId'>;
 interface AppRec { app: App; tests: Map<string, TestRec>; groups: Map<string, GroupRec>; runs: Map<string, RunRec> }
@@ -88,6 +89,14 @@ const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) 
 const clone = <T>(v: T): T => structuredClone(v);
 /** Lists are in name order: files have no other order, and edits from outside keep it stable. */
 const byName = (a: { name: string; id: string }, b: { name: string; id: string }) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+
+/** A test file's `recordedOn` (engine/PROTOCOL.md "Where a test was recorded"): short strings only, else none. */
+export function recordedOnIn(v: unknown): RecordedOn | undefined {
+  if (!isObj(v) || typeof v.os !== 'string' || !v.os) return undefined;
+  const out: RecordedOn = { os: v.os.slice(0, 40) };
+  for (const k of ['osVersion', 'arch', 'chromium'] as const) if (typeof v[k] === 'string' && v[k]) out[k] = (v[k] as string).slice(0, 40);
+  return out;
+}
 
 /** Steps as saved: no UI-only markers, no undefined fields, children cleaned too. */
 function cleanSteps(steps: Step[]): Step[] {
@@ -298,11 +307,11 @@ export class LocalBackend implements Backend {
           continue;
         }
         if (typeof v.name !== 'string' || (v.steps !== undefined && !Array.isArray(v.steps))) { bad(rel, `not ${kind === 'tests' ? 'a test' : 'shared steps'}, skipped`); continue; }
-        const { steps, version, id: _id, appId: _a, stepCount: _c, lastRun: _l, usedBy: _u, currentVersion: _cv, ...rest } = v;
+        const { steps, version, recordedOn, id: _id, appId: _a, stepCount: _c, lastRun: _l, usedBy: _u, currentVersion: _cv, ...rest } = v;
         const common = { ...rest, name: v.name, currentVersion: num(version), createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) };
         const list = (steps as Step[] | undefined) ?? [];
         if (kind === 'tests') {
-          app.tests.set(id, { test: { ...common, startUrl: str(v.startUrl, app.app.baseUrl), status: v.status === 'published' ? 'published' : 'draft', viewport: isObj(v.viewport) ? v.viewport as unknown as Viewport : app.app.defaultViewport } as TestRec['test'], steps: list });
+          app.tests.set(id, { test: { ...common, startUrl: str(v.startUrl, app.app.baseUrl), status: v.status === 'published' ? 'published' : 'draft', viewport: isObj(v.viewport) ? v.viewport as unknown as Viewport : app.app.defaultViewport } as TestRec['test'], steps: list, recordedOn: recordedOnIn(recordedOn) });
         } else {
           app.groups.set(id, { group: common as GroupRec['group'], steps: list });
         }
@@ -376,7 +385,7 @@ export class LocalBackend implements Backend {
 
   private testFile(r: TestRec) {
     const { currentVersion, ...rest } = r.test;
-    return { ...rest, version: currentVersion, steps: r.steps };
+    return { ...rest, version: currentVersion, recordedOn: r.recordedOn, steps: r.steps };
   }
   private groupFile(r: GroupRec) {
     const { currentVersion, ...rest } = r.group;
@@ -402,7 +411,7 @@ export class LocalBackend implements Backend {
     catch { /* already in the warnings */ }
     const apps = [...this.model.apps].map(([appId, a]) => ({
       app: clone(a.app),
-      tests: [...a.tests].map(([id, r]) => ({ test: this.testOut(appId, id, r), steps: clone(r.steps) })).sort((x, y) => byName(x.test, y.test)),
+      tests: [...a.tests].map(([id, r]) => ({ test: this.testOut(appId, id, r), steps: clone(r.steps), ...(r.recordedOn ? { recordedOn: clone(r.recordedOn) } : {}) })).sort((x, y) => byName(x.test, y.test)),
       groups: [...a.groups].map(([id, r]) => ({ group: this.groupOut(appId, id, r), steps: clone(r.steps) })).sort((x, y) => byName(x.group, y.group)),
       runs: [...a.runs].map(([testId, r]) => this.runOut(appId, testId, r)).sort((x, y) => x.testId.localeCompare(y.testId)),
     })).sort((x, y) => byName(x.app, y.app));
@@ -462,7 +471,8 @@ export class LocalBackend implements Backend {
   }
   private current(r: TestRec | GroupRec): Version {
     const meta = 'test' in r ? r.test : r.group;
-    return clone({ number: meta.currentVersion, steps: r.steps, savedBy: meta.updatedBy, savedAt: meta.updatedAt });
+    const recordedOn = 'test' in r ? r.recordedOn : undefined;
+    return clone({ number: meta.currentVersion, steps: r.steps, savedBy: meta.updatedBy, savedAt: meta.updatedAt, ...(recordedOn ? { recordedOn } : {}) });
   }
   /** Only the latest version is kept. */
   versions(appId: string, testId: string, l: Listener<Version[]>) {
@@ -477,14 +487,15 @@ export class LocalBackend implements Backend {
     const r = this.model.apps.get(appId)?.tests.get(testId);
     return r && n > 0 && r.test.currentVersion > 0 ? this.current(r) : null;
   }
-  saveTest(appId: string, testId: string, steps: Step[]) {
+  saveTest(appId: string, testId: string, steps: Step[], _note?: string, recordedOn?: RecordedOn) {
     return this.write(async () => {
       const r = this.testRec(appId, testId);
       const clean = cleanSteps(steps);
+      const where = recordedOnIn(recordedOn) ?? r.recordedOn;
       // Nothing changed: no new number, no new file.
-      if (r.test.currentVersion > 0 && toFileText(clean) === toFileText(r.steps)) return this.current(r);
+      if (r.test.currentVersion > 0 && toFileText(clean) === toFileText(r.steps) && toFileText(where) === toFileText(r.recordedOn)) return this.current(r);
       const now = Date.now();
-      const next: TestRec = { test: { ...r.test, currentVersion: r.test.currentVersion + 1, updatedBy: this.me, updatedAt: now }, steps: clean };
+      const next: TestRec = { test: { ...r.test, currentVersion: r.test.currentVersion + 1, updatedBy: this.me, updatedAt: now }, steps: clean, recordedOn: where };
       await this.put(`apps/${appId}/tests/${testId}.json`, this.testFile(next));
       return this.current(next);
     });
@@ -504,7 +515,7 @@ export class LocalBackend implements Backend {
       const name = `${src.test.name} (copy)`;
       const id = uniqueSlug(`${src.test.name} copy`, x => app.tests.has(x));
       const now = Date.now();
-      const rec: TestRec = { test: { ...src.test, name, status: 'draft', currentVersion: src.steps.length ? 1 : 0, createdBy: this.me, createdAt: now, updatedBy: this.me, updatedAt: now }, steps: clone(src.steps) };
+      const rec: TestRec = { test: { ...src.test, name, status: 'draft', currentVersion: src.steps.length ? 1 : 0, createdBy: this.me, createdAt: now, updatedBy: this.me, updatedAt: now }, steps: clone(src.steps), recordedOn: src.recordedOn && clone(src.recordedOn) };
       await this.put(`apps/${appId}/tests/${id}.json`, this.testFile(rec));
       return this.testOut(appId, id, rec);
     });

@@ -183,7 +183,7 @@ engine/               the Python engine sidecar
   src/breakpatch_engine/   protocol, browser, recorder, runner, screen checks, AI assistant, setup
   tests/              pytest, with local test pages in tests/site/
   PROTOCOL.md         the app ↔ engine contract
-scripts/              build-release.sh, the install command's tests, signing and edition helpers
+scripts/              build-release.sh, build-ci.sh, the install commands' tests, signing and edition helpers
 tools/model-test/     compares candidate AI models on real screenshots
 docs/                 the manual's source, editions, repository settings
 site/                 breakpatch.dev, a static site
@@ -244,6 +244,7 @@ cargo check && cargo clippy --all-targets -- -D warnings
 | Engine | `cd engine && .venv/bin/python -m pytest -q` | About 90 seconds, most of it real headless Chromium. Browser tests are skipped when there's no browser, and nothing touches the network. |
 | Shell | `cd app/src-tauri && cargo test` | Run `sh ../scripts/dev-sidecar.sh` once first: the build needs a sidecar file to exist. |
 | Install command | `scripts/test-install.sh` | Runs the installer against fake releases, on Linux. |
+| breakpatch-ci install command | `scripts/test-install-ci.sh` | The same for `site/install-ci` (needs `python3.11`). |
 
 Coverage, measured the way CI measures it for the badges:
 

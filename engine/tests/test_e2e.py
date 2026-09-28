@@ -185,6 +185,40 @@ async def test_moved_target_without_a_healer_fails_target_not_found(site, record
     assert "looking" not in [d["state"] for d in hx.of("run.step")]
 
 
+async def test_run_reports_where_it_ran_and_no_mismatch_on_the_same_system(site, recorded):
+    from breakpatch_engine import systems
+    hx = Harness()
+    ended = await hx.run(recorded["steps"][:1], site + "/index.html")      # an older test: no recordedOn
+    assert ended["result"] == "pass" and "systemMismatch" not in ended
+    here = ended["ranOn"]                                                   # the running Chromium's version
+    assert here["os"] == systems.os_family() and systems.major(here["chromium"])
+    ended = await hx.run(recorded["steps"][:1], site + "/index.html", recordedOn=dict(here, osVersion="0.1"))
+    assert ended["result"] == "pass", ended
+    assert "systemMismatch" not in ended
+
+
+async def test_recorded_on_another_system_is_explained_and_real_changes_still_fail(site, recorded):
+    hx = Harness()
+    other = {"os": "Windows", "osVersion": "11", "arch": "x86_64", "chromium": "120.0.6099.5"}
+    ended = await hx.run(recorded["steps"], site + "/index.html", recordedOn=other)
+    assert ended["result"] == "pass", ended
+    m = ended["systemMismatch"]
+    assert m["relaxed"] is True and m["differences"][0] == "os" and m["recordedOn"]["os"] == "Windows"
+    assert m["message"].startswith("This test was recorded on Windows and ran on ")
+    # A moved button is still a moved button with the checks relaxed.
+    ended = await hx.run(recorded["steps"][:1], site + "/index.html?moved=1", recordedOn=other)
+    assert ended["result"] == "fail" and ended["steps"][0]["reason"] == "targetNotFound"
+    assert ended["systemMismatch"]["relaxed"] is True
+    # "Allow for small differences between systems" off: still explained, checks strict.
+    hx.ended.clear()
+    await hx.call("run.start", {"runId": "r2", "startUrl": site + "/index.html", "viewport": VIEWPORT,
+                                "steps": recorded["steps"][:1], "recordedOn": other, "secrets": {},
+                                "settings": {"autoFix": False, "failOnFix": False, "allowSystemDifferences": False}})
+    await asyncio.wait_for(hx.ended.wait(), 60)
+    ended = hx.of("run.ended")[-1]
+    assert ended["result"] == "pass" and ended["systemMismatch"]["relaxed"] is False
+
+
 def test_community_engine_has_no_healer():
     from breakpatch_engine import plugins
     try:

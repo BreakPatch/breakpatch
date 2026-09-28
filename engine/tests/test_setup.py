@@ -31,7 +31,7 @@ def hub(monkeypatch):
 
 def test_system_info_shape():
     info = install.system_info()
-    assert set(info) == {"memoryGb", "chip", "os", "engineVersion", "edition", "licence", "browser", "model"}
+    assert set(info) == {"memoryGb", "chip", "os", "engineVersion", "edition", "licence", "browser", "model", "system"}
     assert info["edition"] in ("community", "team")
     assert isinstance(info["memoryGb"], (int, float)) and info["memoryGb"] > 0
     assert info["model"] == {"installed": False}

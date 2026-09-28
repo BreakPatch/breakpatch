@@ -113,3 +113,17 @@ POST_TOLERANCE = 10
 CHECKPOINT_TOLERANCE = 8
 BOX_PAD = 16            # padding around changed areas
 DIFF_THRESHOLD = 24     # per-channel difference that counts as "changed"
+
+# A test recorded on another kind of system (systems.py: another OS family or Chromium major) with
+# "Allow for small differences between systems" on: each screen check compares the area at the
+# recorded spot and one pixel around it, sharp and lightly blurred, and takes the closest
+# (imaging.region_distance), then allows RELAXED_EXTRA more bits on top of the step's tolerance.
+# That absorbs text drawn a pixel off or with other antialiasing; a missing button or other
+# words still differ by far more (tests/test_imaging.py).
+RELAXED_SHIFT = 1       # px
+RELAXED_EXTRA = 2       # bits
+
+
+def check_tolerance(tolerance: int, relaxed: bool) -> int:
+    """The Hamming distance a screen check allows: the step's own, plus RELAXED_EXTRA when relaxed."""
+    return int(tolerance) + (RELAXED_EXTRA if relaxed else 0)

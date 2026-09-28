@@ -71,6 +71,8 @@ export function useRecorder({ viewport, onError, appUrl }: {
   const [ai, setAi] = useState<AiState>({ state: 'idle' });
   const aiToken = useRef(0);
   const busyRef = useRef(false);
+  /** A step was recorded or re-recorded with the engine since the last load: the save says where. */
+  const recordedRef = useRef(false);
   const onErrorRef = useRef(onError); onErrorRef.current = onError;
 
   const setSteps = useCallback((fn: (s: Step[]) => Step[]) => {
@@ -89,6 +91,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
   /** Replaces everything (after loading, or after saving with the saved steps). */
   const load = useCallback((next: Step[]) => {
     setSteps(() => next); setDirty(false); setRerecordId(null); setOpenLoopId(null);
+    recordedRef.current = false;
   }, [setSteps]);
 
   /** Any edit from the steps panel. */
@@ -123,6 +126,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
       if (sample) sampleApp.perform(step, viewport);
       const next = setSteps(s => (rr ? replaceStep(s, rr, step) : updateStep(s, tempId, () => step)));
       const id = rr ?? step.id;
+      recordedRef.current = true;
       setSelectedId(id); setDirty(true); setRerecordId(null);
       setSavedPill(`Step ${numberOf(next, id)} saved`);
       afterAdd(params.action);
@@ -231,7 +235,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
 
   return {
     steps, dirty, selectedId, openLoopId, rerecordId, action, text, options, ai, busyId, checking, savedPill, sample,
-    stepsRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
+    stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi,
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),
     thinking: ai.state === 'thinking' ? thinkingText(ai.what) : null,
