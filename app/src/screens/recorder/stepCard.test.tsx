@@ -98,10 +98,11 @@ describe('Edit a step', () => {
     expect(p.onChange.mock.calls[0][0][2]).toMatchObject({ url: 'https://app.example.com/b', label: 'Go to https://app.example.com/b' });
     p.unmount();
     p = edit('t');
-    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Wait for the email' } });
+    expect(screen.queryByLabelText('Name')).toBeNull();                      // a seconds wait shows only its seconds
+    expect(screen.queryByLabelText(/What should happen/)).toBeNull();       // and has nothing to judge
     fireEvent.change(screen.getByLabelText('Seconds'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    expect(p.onChange.mock.calls[0][0][3]).toMatchObject({ durationMs: 5000, label: 'Wait for the email' });
+    expect(p.onChange.mock.calls[0][0][3]).toMatchObject({ durationMs: 5000, label: 'Wait 5 seconds' });
     p.unmount();
     p = edit('a');
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Click the big button' } });

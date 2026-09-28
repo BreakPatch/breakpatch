@@ -386,6 +386,16 @@ class Runner:
             timings[name] = int((now - clock) * 1000)
             clock = now
 
+        if kind == "waitFor":
+            # Wait N seconds only waits: any pre, post or expect a file has on it (recorded before
+            # this rule) is ignored. The next step's pre-check still guards the page.
+            try:
+                await perform(self.b, {"id": step.get("id"), "action": "waitFor", "durationMs": step.get("durationMs")}, ctx)
+            except ActionFailed as e:
+                raise StepFailed(e.reason, e.message)
+            lap("actionMs")
+            return rec
+
         if kind == "checkpoint":
             tol = config.check_tolerance(step.get("tolerance", config.CHECKPOINT_TOLERANCE), self.relaxed)
             dist = await self._wait_region(step["region"], step["hash"], tol, ignore)

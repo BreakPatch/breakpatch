@@ -104,6 +104,11 @@ class Recorder:
             step["label"] = p.get("label") or labels.default_label(action, p)
             step.setdefault("steps", [])
             return step
+        if action == "waitFor":
+            # Wait N seconds only waits: no checks of its own (the next step's check guards the page).
+            await asyncio.sleep(max(0, float(p.get("durationMs") or 1000)) / 1000)
+            step["label"] = p.get("label") or labels.default_label(action, p)
+            return step
         if action == "checkpoint":
             if not p.get("region"):
                 raise EngineError("bad_request", "Draw a box around what should be visible.")

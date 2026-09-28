@@ -345,7 +345,12 @@ function StepEditPanel({ step, secretNames, onSave, onCancel }: {
         : { text: undefined, secretRef: undefined, generated };
       Object.assign(patch, now);                                   // `masked` stays as recorded
       affects = was.text !== now.text || was.secretRef !== now.secretRef || was.generated !== now.generated;
-    } else if (a === 'waitFor') { patch.durationMs = Math.max(1, seconds) * 1000; affects = patch.durationMs !== step.durationMs; }
+    } else if (a === 'waitFor') {
+      patch.durationMs = Math.max(1, seconds) * 1000; affects = patch.durationMs !== step.durationMs;
+      patch.label = defaultLabel({ ...step, ...patch } as Step);
+      onSave(patch, affects);
+      return;
+    }
     else if (a === 'waitUntil') { patch.target = target || undefined; patch.timeoutMs = Math.max(1, maxWait) * 1000; }
     else if (a === 'navigate' && (step.nav ?? 'url') === 'url') {
       const u = /^[a-z]+:\/\//i.test(url.trim()) ? url.trim() : 'https://' + url.trim();
@@ -363,7 +368,8 @@ function StepEditPanel({ step, secretNames, onSave, onCancel }: {
   };
   return (
     <div className="step-editpanel" role="dialog" aria-label="Edit step" onKeyDown={onKey}>
-      <label className="ep-row">Name<input className="input" value={label} autoFocus onChange={e => setLabel(e.target.value)} /></label>
+      {/* A seconds wait only waits: its seconds are all there is to it (its name follows them). */}
+      {a !== 'waitFor' && <label className="ep-row">Name<input className="input" value={label} autoFocus onChange={e => setLabel(e.target.value)} /></label>}
       {a === 'write' && <>
         <div className="ep-chips" role="radiogroup" aria-label="What to write">
           {([['typed', 'Typed text'], ['secret', 'Saved secret'], ['generated', 'Generated']] as const).map(([v, l]) => (
@@ -377,7 +383,7 @@ function StepEditPanel({ step, secretNames, onSave, onCancel }: {
         {source === 'generated' && <label className="ep-row">Value<select className="input" value={generated} onChange={e => setGenerated(e.target.value as Generated)}>
           {(Object.keys(GENERATED) as Generated[]).map(g => <option key={g} value={g}>{GENERATED[g]}</option>)}</select></label>}
       </>}
-      {a === 'waitFor' && <label className="ep-row">Seconds<input className="input" type="number" min={1} max={600} value={seconds} onChange={e => setSeconds(Number(e.target.value) || 1)} /></label>}
+      {a === 'waitFor' && <label className="ep-row">Seconds<input className="input" type="number" min={1} max={600} value={seconds} autoFocus onChange={e => setSeconds(Number(e.target.value) || 1)} /></label>}
       {a === 'waitUntil' && <>
         <label className="ep-row">What to wait for<input className="input" value={target} onChange={e => setTarget(e.target.value)} /></label>
         <label className="ep-row">Maximum wait, seconds<input className="input" type="number" min={1} max={600} value={maxWait} onChange={e => setMaxWait(Number(e.target.value) || 1)} /></label>

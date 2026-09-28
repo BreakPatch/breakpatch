@@ -208,6 +208,8 @@ Per action:
   replying `{happened, why}`). If it happened, the step passes with `passedBy: "note"` and `why`
   ("The note says this closes the What's new dialog; it did, so this passed."); if not, the failure
   message says why ("…; it's still open."). Passing runs never call the model for it.
+- `waitFor` (Wait N seconds) only waits: it's recorded with no `pre`, `post`, `ignore` or `expect`, and
+  replay ignores any of those an older file has on it. The next step's pre-check guards the page.
 - `waitUntil` needs `region`; nothing is performed. The step stores `region`, `hash` (how the
   area looks now), `tolerance` and `timeoutMs` (default 10000). No `pre`/`post`.
 - `downloadCheck` without `at` checks for a download since the previous download check (e.g. after

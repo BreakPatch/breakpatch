@@ -1031,3 +1031,23 @@ async def test_run_in_the_recorder_starts_clean_and_play_this_step_keeps_the_pag
         assert await fresh.evaluate("localStorage.getItem('dismissed')") == "again"
     finally:
         await hx.call("browser.close")
+
+
+# ---------- Wait N seconds only waits ----------
+
+async def test_a_seconds_wait_only_waits_and_records_no_checks(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        step = (await hx.call("record.point", {"action": "waitFor", "durationMs": 300}))["step"]
+    finally:
+        await hx.call("browser.close")
+    assert step["action"] == "waitFor" and step["durationMs"] == 300 and step["label"].startswith("Wait ")
+    assert not {"pre", "post", "ignore", "expect"} & set(step), step
+    # A file saved before this rule: a post that no longer matches, and an expect. It still just waits.
+    old = {"id": "w", "action": "waitFor", "durationMs": 200, "label": "Wait 2 seconds", "ignore": [],
+           "pre": {"region": [0, 0, 100, 100], "hash": "0" * 16, "tolerance": 6},
+           "post": {"region": [0, 0, 800, 600], "hash": "f" * 16, "tolerance": 10, "expectChange": True, "change": 0.5},
+           "expect": "changes"}
+    ended = await hx.run([old], site + "/still.html")
+    assert ended["result"] == "pass", ended
