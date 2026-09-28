@@ -617,3 +617,41 @@ async def test_frames_cut_short_by_a_small_screen_switch_the_live_view_to_screen
         assert later and all((f["width"], f["height"]) == (1440, 900) for f in later)
     finally:
         await hx.call("browser.close")
+
+
+# ---------- Run and Play to here in the recorder ----------
+
+async def test_play_to_here_and_run_in_the_recorder_keep_the_browser_open(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        await _latest_frame(hx)
+        steps = [(await hx.call("record.point", {"action": "click", "at": STILL_ADD}))["step"] for _ in range(3)]
+    finally:
+        await hx.call("browser.close")
+    loop = {"id": "L", "action": "loop", "count": 1, "steps": [steps[1]]}
+    plan = [steps[0], loop, steps[2]]
+    Handler.calls.clear()
+    clean_up = {"method": "POST", "url": site + "/api/clean"}
+    # Play to here: steps 1 and 2 (inside a repeat), then stop, with the page left where they got it.
+    ended = await hx.run(plan, site + "/still.html", keepOpen=True, upToStepId=steps[1]["id"], cleanUp=clean_up)
+    assert ended["result"] == "pass", ended
+    assert [r["result"] for r in ended["steps"]] == ["passed", "passed", "passed", "notRun"]
+    page = hx.engine.browser.page
+    assert page is not None and await page.text_content("#n") == "Clicks: 2"
+    assert Handler.calls == []                                  # no clean-up: recording goes on from here
+    # Recording carries on in the same browser.
+    more = (await hx.call("record.point", {"action": "click", "at": STILL_ADD}))["step"]
+    assert await page.text_content("#n") == "Clicks: 3" and more["post"]["expectChange"]
+    # Run: every step from a fresh start, and the browser stays open at the end.
+    ended = await hx.run(plan, site + "/still.html", keepOpen=True)
+    assert ended["result"] == "pass", ended
+    assert await hx.engine.browser.page.text_content("#n") == "Clicks: 3"
+    with pytest.raises(EngineError) as e:
+        await hx.call("run.start", {"runId": "x", "startUrl": site + "/still.html", "viewport": VIEWPORT, "steps": plan,
+                                    "upToStepId": "nope", "settings": {}, "secrets": {}})
+    assert e.value.code == "bad_request"
+    await hx.call("browser.close")
+    # A plain run still closes the browser.
+    await hx.run(plan, site + "/still.html")
+    assert hx.engine.browser.page is None

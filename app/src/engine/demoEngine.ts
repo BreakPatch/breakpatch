@@ -114,7 +114,9 @@ export class DemoEngine implements Engine {
     let lastReason: FailReason = 'targetNotFound';
     const fail = (s: Step, reason: FailReason) => { lastReason = reason; results[index.get(s)!] = { stepId: s.id, result: 'failed', reason }; emit(s, 'failed', reason); return false; };
     const runList = async (list: Step[]): Promise<boolean> => { for (const s of list) if (!(await runOne(s))) return false; return true; };
+    let reached = false;
     const runOne = async (s: Step): Promise<boolean> => {
+      if (reached) return true;
       if (this.stops.has(r.runId)) return fail(s, 'stopped');
       emit(s, 'running');
       if (s.action === 'loop' || s.action === 'group') {
@@ -130,6 +132,7 @@ export class DemoEngine implements Engine {
       }
       results[index.get(s)!] = { stepId: s.id, result: 'passed' };
       emit(s, 'passed');
+      if (r.upToStepId === s.id) reached = true;    // Play to here: the rest stays not run
       return true;
     };
     void (async () => {

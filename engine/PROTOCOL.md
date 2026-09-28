@@ -194,6 +194,14 @@ Recording answers `busy` while a previous `record.point` is still checking, or d
 | `run.stop` | `{ runId }` | `{}` — stops after the current step |
 | `call.try` | `{ call: Call, appUrl, secrets? }` | `{ ok, status?, ms?, error?, message? }` — "Try it": one request under the same rules as a run |
 
+`run.start` also takes `keepOpen` and `upToStepId` for the recorder's own Run and Play to here.
+With `keepOpen: true` the run is the same (a fresh browser at `startUrl`, set-up call, secrets,
+shared steps and repeats as given) but the browser stays open at the end, frames keep coming, and
+there is no clean-up call, so recording carries on from where the run left the page. With
+`upToStepId` (any step id, also inside a repeat or shared steps) the run stops after that step
+passes: its result is `pass`, the loops and cards around the step count as passed, and later steps
+are `notRun`. An unknown `upToStepId` is `bad_request`.
+
 `appUrl` is the app's base address (defaults to `startUrl`): set-up and clean-up calls may only
 go to its hosts (see Set-up and clean-up calls). `runner: true` marks a run started by the local
 runner (see Saved secrets).

@@ -1,32 +1,38 @@
 // The recorder layout shared by the Recorder and the Shared steps editor: live browser and
 // add step bar on the left, steps panel (380 px) on the right.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Step, StepGroup, Viewport } from '../../data/types';
 import { useBackend, useLive } from '../../data/hooks';
 import { CheckingPill, LiveView, SavedPill, stepMarker, useSampleState } from '../../components/live';
-import { findStep, numberOf, StepsPanel, toTokens } from '../../components/steps';
+import { findStep, numberOf, StepsPanel, toTokens, type RowStatus } from '../../components/steps';
 import { Skeleton } from '../../components/ui';
 import { AddStepBar } from './AddStepBar';
 import { toolFor } from './actions';
 import { localId, type Recorder } from './useRecorder';
 import './recorder.css';
 
-export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, loading, onEditGroup }: {
+export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, loading, onEditGroup, run }: {
   rec: Recorder; appId: string; address: string; viewport: Pick<Viewport, 'width' | 'height'>;
   /** Tests can insert shared steps; shared steps can't contain other shared steps. */
   allowGroups: boolean;
   loading?: boolean;
   onEditGroup?: (groupId: string) => void;
+  /** The recorder's own Run and Play to here (tests only). */
+  run?: {
+    running: boolean; statuses: Record<string, RowStatus>; notes: Record<string, string>; footer?: ReactNode;
+    onPlayTo: (id: string) => void; onAddAfter: (id: string) => void;
+  };
 }) {
   useSampleState();                                      // markers follow what the sample page shows
   const groupSteps = useGroupSteps(appId, rec.steps);
   const sel = rec.selectedId ? findStep(rec.steps, rec.selectedId) : undefined;
-  const marker = sel && rec.ai.state === 'idle' ? stepMarker(sel, numberOf(rec.steps, sel.id), sel.id === rec.busyId ? rec.phaseText ?? undefined : undefined) : null;
+  const marker = sel && rec.ai.state === 'idle' && !run?.running ? stepMarker(sel, numberOf(rec.steps, sel.id), sel.id === rec.busyId ? rec.phaseText ?? undefined : undefined) : null;
   const status = rec.checking ? <CheckingPill text={rec.phaseText ?? undefined} /> : rec.savedPill ? <SavedPill key={rec.savedPill} text={rec.savedPill} /> : null;
   const busyStep = rec.busyId ? findStep(rec.steps, rec.busyId) : undefined;
   // While a step records, the page can't take another click (it would land on a page that is changing).
-  const blocked = !rec.busy ? null : busyStep ? `Wait for step ${numberOf(rec.steps, busyStep.id)} to finish, then click.` : 'Wait for the last step to finish, then click.';
-  const statuses = rec.addedId && !rec.busy ? { [rec.addedId]: 'added' as const } : undefined;
+  const blocked = run?.running ? 'The test is playing. Stop it to click the page.'
+    : !rec.busy ? null : busyStep ? `Wait for step ${numberOf(rec.steps, busyStep.id)} to finish, then click.` : 'Wait for the last step to finish, then click.';
+  const statuses = { ...run?.statuses, ...(rec.addedId && !rec.busy ? { [rec.addedId]: 'added' as const } : {}) };
   const statusTexts = rec.busyId && rec.phaseText ? { [rec.busyId]: rec.phaseText } : undefined;
 
   const insertGroup = (g: StepGroup, version: number | 'latest') =>
@@ -38,7 +44,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
         <LiveView address={address} viewport={viewport} status={status} tool={loading ? 'none' : toolFor(rec.action)}
           onPoint={rec.pagePoint} onDrag={rec.pageDrag} onBox={rec.pageBox} blocked={blocked}
           markers={marker ? [marker] : []} candidate={rec.ai.state === 'result' ? rec.ai.box : null} thinking={rec.thinking} loading={loading} />
-        <AddStepBar rec={rec} appId={appId} allowGroups={allowGroups} onInsertGroup={insertGroup} />
+        <AddStepBar rec={rec} appId={appId} allowGroups={allowGroups} onInsertGroup={insertGroup} frozen={run?.running ? 'The test is playing in this browser. Stop it, or wait for it to finish, to add steps.' : null} />
       </div>
       {loading ? (
         <aside className="steps-panel" aria-label="Steps" aria-busy>
@@ -49,7 +55,8 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
         <StepsPanel steps={rec.steps} mode="edit" selectedId={rec.selectedId} onSelect={id => { if (rec.ai.state !== 'idle') rec.cancelAi(); rec.setSelectedId(id); }}
           onChange={rec.change} onRerecord={rec.startRerecord} rerecordingId={rec.rerecordId} checkingId={rec.busyId} statuses={statuses} statusTexts={statusTexts}
           openLoopId={rec.openLoopId} onCloseLoop={() => rec.setOpenLoopId(null)} groupSteps={groupSteps} onEditGroup={onEditGroup}
-          makeId={() => localId('s')} />
+          makeId={() => localId('s')} notes={run?.notes} insertAfterId={rec.insertAfterId} unplayedIds={rec.unplayed}
+          onPlayTo={run?.onPlayTo} onAddAfter={run?.onAddAfter} locked={run?.running} footer={run?.footer} />
       )}
     </div>
   );

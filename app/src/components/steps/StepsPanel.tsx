@@ -34,6 +34,15 @@ export interface StepsPanelProps {
   notes?: Record<string, string>;
   /** Replaces a status word, e.g. "Clicking…" on the step being recorded. */
   statusTexts?: Record<string, string>;
+  /** Edit mode: new steps go after this step ("Next step goes here" moves there), else at the end. */
+  insertAfterId?: string | null;
+  /** Edit mode: steps not played since a step was inserted before them. */
+  unplayedIds?: Set<string>;
+  /** Edit mode: "Play to here" and "Add a step after this one" on a step. */
+  onPlayTo?: (id: string) => void;
+  onAddAfter?: (id: string) => void;
+  /** A run is going: the list is read-only until it ends. */
+  locked?: boolean;
   /** Steps of a shared-steps card (resolved from its version), shown read-only when expanded. */
   groupSteps?: (step: Step) => Step[] | undefined;
   /** "Edit shared steps" link on a shared-steps card. */
@@ -91,8 +100,10 @@ export function StepsPanel(p: StepsPanelProps) {
   const lastInOpenLoop = openLoop ? lastRowOfLoop(rows, openLoop) : undefined;
 
   const items: ReactNode[] = [];
+  const insertAt = edit && p.insertAfterId ? rows.find(r => r.step.id === p.insertAfterId) : undefined;
   rows.forEach(r => {
     items.push(renderRow(r));
+    if (insertAt && insertAt.step.id === r.step.id) items.push(<NextSlot key="next-here" depth={r.depth} />);
     if (edit && openLoop && lastInOpenLoop === r.step.id) {
       items.push(<NextSlot key="next-loop" depth={openLoop.depth + 1} />);
       items.push(
@@ -111,9 +122,10 @@ export function StepsPanel(p: StepsPanelProps) {
     const groupOpen = isGroup && (openGroups.has(s.id) || (edit && selected));
     const status = p.statuses?.[s.id] ?? (edit && p.checkingId === s.id ? 'running' : undefined);
     // The step being recorded can't be edited yet: it expands once it is added.
-    const editable = !(edit && p.checkingId === s.id);
+    const editable = !(edit && p.checkingId === s.id) && !p.locked;
     let note: ReactNode = p.notes?.[s.id] ?? stepNote(s, { range: r.range });
     let tone: 'muted' | 'failed' | 'passed' | 'accent' = status === 'failed' ? 'failed' : 'muted';
+    if (edit && p.unplayedIds?.has(s.id) && !p.notes?.[s.id]) note = 'Not played since the change. Run the test to check them.';
     if (edit && p.rerecordingId === s.id) { note = 'Re-recording: do this step again on the page'; tone = 'accent'; }
     else if (edit && s.rerecorded) { note = 'Re-recorded'; tone = 'passed'; }
 
@@ -131,6 +143,8 @@ export function StepsPanel(p: StepsPanelProps) {
           <StepEditor step={s}
             onChange={patch => change(updateStep(steps, s.id, patch))}
             onRerecord={s.action !== 'loop' && s.action !== 'group' && p.onRerecord ? () => p.onRerecord!(s.id) : undefined}
+            onPlayTo={p.onPlayTo ? () => p.onPlayTo!(s.id) : undefined}
+            onAddAfter={p.onAddAfter ? () => p.onAddAfter!(s.id) : undefined}
             onDuplicate={() => { const d = duplicateStep(steps, s.id, p.makeId ?? defaultId); change(d.steps); if (d.copyId) p.onSelect?.(d.copyId); }}
             onDelete={() => { change(removeStep(steps, s.id)); p.onSelect?.(null); }} />
         )}
@@ -154,7 +168,7 @@ export function StepsPanel(p: StepsPanelProps) {
       <div className="steps-head"><h2>{p.title ?? 'Steps'}</h2><span>{p.countText ?? `${n} ${n === 1 ? 'step' : 'steps'}`}</span></div>
       <div className="steps-list" ref={listRef} onDragOver={e => { if (drag) e.preventDefault(); }}>
         {items}
-        {edit && !openLoop && <NextSlot depth={0} />}
+        {edit && !openLoop && !insertAt && <NextSlot depth={0} />}
       </div>
       {p.footer}
     </aside>
@@ -190,8 +204,9 @@ function GroupChildren({ number, steps, onEdit }: { number: number; steps?: Step
 
 const TARGETED = new Set<Step['action']>(['click', 'doubleClick', 'longClick', 'rightClick', 'hover', 'swipe', 'scroll', 'drag', 'write', 'waitUntil', 'checkpoint', 'upload']);
 
-function StepEditor({ step, onChange, onRerecord, onDuplicate, onDelete }: {
-  step: Step; onChange: (patch: Partial<Step>) => void; onRerecord?: () => void; onDuplicate: () => void; onDelete: () => void;
+function StepEditor({ step, onChange, onRerecord, onPlayTo, onAddAfter, onDuplicate, onDelete }: {
+  step: Step; onChange: (patch: Partial<Step>) => void; onRerecord?: () => void; onPlayTo?: () => void; onAddAfter?: () => void;
+  onDuplicate: () => void; onDelete: () => void;
 }) {
   const isLoop = step.action === 'loop';
   const isGroup = step.action === 'group';
@@ -213,6 +228,8 @@ function StepEditor({ step, onChange, onRerecord, onDuplicate, onDelete }: {
         </div>
       )}
       <div className="step-actions">
+        {onPlayTo && <button type="button" className="step-btn" onClick={onPlayTo}><Icon name="play_arrow" size={17} />Play to here</button>}
+        {onAddAfter && <button type="button" className="step-btn" onClick={onAddAfter}><Icon name="add" size={17} />Add a step after this one</button>}
         {onRerecord && <button type="button" className="step-btn" onClick={onRerecord}><Icon name="replay" size={17} />Re-record</button>}
         <button type="button" className="step-btn" onClick={onDuplicate}><Icon name="content_copy" size={17} />Duplicate</button>
         <button type="button" className="step-btn danger icon-only step-delete" onClick={onDelete} aria-label="Delete step" title="Delete step"><Icon name="delete" size={17} /></button>

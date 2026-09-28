@@ -4,7 +4,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { Backend } from '../../data/backend';
 import type { Person, Run, Step, Test } from '../../data/types';
 import { useBackend } from '../../data/hooks';
-import { demoEngine, getEngine, type RunEnded } from '../../engine';
+import { demoEngine, getEngine, type RunEnded, type RunStepEvent } from '../../engine';
 import { sampleApp } from '../../components/live';
 import { secrets } from '../../platform';
 import { useSession } from '../../state/session';
@@ -40,6 +40,45 @@ async function appUrlOf(backend: Backend, test: Test): Promise<string> {
   catch { return test.startUrl; }
 }
 
+/**
+ * Reads the saved secrets the steps and calls use, starts the engine run and waits for its end.
+ * Shared by the Run view and the recorder's own Run and Play to here (`keepOpen`, `upToStepId`).
+ */
+export async function engineRun(backend: Backend, t: Test, steps: Step[], runId: string, opts: {
+  keepOpen?: boolean; upToStepId?: string; abandoned?: () => boolean;
+  /** Just before the engine starts, when the secrets are read. */
+  onStart?: (at: number) => void;
+  onStep?: (ev: RunStepEvent) => void;
+} = {}): Promise<{ ended: RunEnded; startedAt: number; shots: Record<string, string> } | null> {
+  const engine = getEngine();
+  const { prefs } = useSession.getState();
+  const fixing = hasFeature('autoFix');
+  const names = [...new Set([...secretNames(steps), ...callSecretNames(t.setUp, t.cleanUp)])];
+  const appUrl = await appUrlOf(backend, t);
+  await ensureSecretSites(names, appUrl);
+  const values = await secrets.resolve(names);
+  if (opts.abandoned?.()) return null;
+  const startedAt = Date.now();
+  opts.onStart?.(startedAt);
+  const shots: Record<string, string> = {};
+  const ended = await new Promise<RunEnded>((resolve, reject) => {
+    const offStep = engine.on('run.step', ev => {
+      if (ev.runId !== runId) return;
+      if (ev.screenshot) shots[ev.stepId] = ev.screenshot;
+      opts.onStep?.(ev);
+    });
+    const offEnd = engine.on('run.ended', ev => { if (ev.runId !== runId) return; offStep(); offEnd(); resolve(ev); });
+    engine.startRun({
+      runId, startUrl: t.startUrl, appUrl, viewport: t.viewport, steps, setUp: t.setUp, cleanUp: t.cleanUp,
+      settings: { autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix }, secrets: values,
+      ...(opts.keepOpen ? { keepOpen: true } : {}), ...(opts.upToStepId ? { upToStepId: opts.upToStepId } : {}),
+    }).catch(err => { offStep(); offEnd(); reject(err); });
+  });
+  return { ended, startedAt, shots };
+}
+
+export const newRunIdForEditor = () => newRunId();
+
 export class NoStepsError extends Error { constructor() { super('This test has no steps yet. Record some first.'); } }
 
 export function useTestRun() {
@@ -65,7 +104,6 @@ export function useTestRun() {
 
   const start = useCallback(async (t: Test): Promise<Finished | null> => {
     if (active.current) return null;
-    const engine = getEngine();
     dispatch({ type: 'prepare' });
     setTest(t); setRun(null); setSaveError(null);
     const handle = { runId: newRunId(), abandoned: false };
@@ -83,32 +121,19 @@ export function useTestRun() {
         willFail = demo.failStepIds.size > 0;
         sampleApp.reset();
       }
-      const { prefs, user } = useSession.getState();
-      const fixing = hasFeature('autoFix');
-      const names = [...new Set([...secretNames(resolved), ...callSecretNames(t.setUp, t.cleanUp)])];
-      const appUrl = await appUrlOf(backend, t);
-      await ensureSecretSites(names, appUrl);
-      const values = await secrets.resolve(names);
-      if (handle.abandoned) return null;
-      const startedAt = Date.now();
-      dispatch({ type: 'start', runId: handle.runId, ids: [...byId.keys()], at: startedAt });
-      const shots: Record<string, string> = {};
-
-      const ended = await new Promise<RunEnded>((resolve, reject) => {
-        const offStep = engine.on('run.step', ev => {
-          if (ev.runId !== handle.runId) return;
-          if (ev.screenshot) shots[ev.stepId] = ev.screenshot;
+      const { user } = useSession.getState();
+      const got = await engineRun(backend, t, resolved, handle.runId, {
+        abandoned: () => handle.abandoned,
+        onStart: at => dispatch({ type: 'start', runId: handle.runId, ids: [...byId.keys()], at }),
+        onStep: ev => {
           // The sample page follows the run. A run that will fail at the moved Done button
           // never gets the dialog open, like the prototype ("The dialog never opened").
           const s = byId.get(ev.stepId);
           if (demo && !willFail && s && top.has(s.id) && (ev.state === 'passed' || ev.state === 'healed')) sampleApp.perform(s, t.viewport);
-        });
-        const offEnd = engine.on('run.ended', ev => { if (ev.runId !== handle.runId) return; offStep(); offEnd(); resolve(ev); });
-        engine.startRun({
-          runId: handle.runId, startUrl: t.startUrl, appUrl, viewport: t.viewport, steps: resolved, setUp: t.setUp, cleanUp: t.cleanUp,
-          settings: { autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix }, secrets: values,
-        }).catch(err => { offStep(); offEnd(); reject(err); });
+        },
       });
+      if (!got) return null;
+      const { ended, startedAt, shots } = got;
       active.current = null;
       if (handle.abandoned) return { ended, run: null, steps: resolved };
 

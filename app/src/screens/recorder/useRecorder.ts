@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActionKind, Box, Direction, Generated, Point, SampleFile, Step, Viewport } from '../../data/types';
 import { demoEngine, getEngine, EngineError, type CheckingPhase, type RecordParams } from '../../engine';
 import { around, gesture, inside, sampleApp } from '../../components/live';
-import { appendStep, defaultLabel, findStep, numberOf, removeStep, replaceStep, stepsBefore, updateStep } from '../../components/steps';
+import { appendStep, defaultLabel, findStep, flatRows, insertAfter, numberOf, removeStep, replaceStep, stepsBefore, updateStep } from '../../components/steps';
 import { POINT_KINDS, STICKY } from './actions';
 import { secrets } from '../../platform';
 import { ensureSecretSites } from '../../lib/secretSites';
@@ -85,6 +85,14 @@ export function useRecorder({ viewport, onError, appUrl }: {
   const [phase, setPhase] = useState<CheckingPhase>('watching');
   const [busyAction, setBusyAction] = useState<ActionKind>('click');
   const [addedId, setAddedId] = useState<string | null>(null);
+  // Where new steps go: after this step (Play to here, "Add a step after this one"), else at the end.
+  const [insertAfterId, setInsertAfterState] = useState<string | null>(null);
+  const insertRef = useRef<string | null>(null);
+  const setInsertAfter = useCallback((id: string | null) => { insertRef.current = id; setInsertAfterState(id); }, []);
+  // Steps after an insertion that haven't been played since: "Not played since the change".
+  const [unplayed, setUnplayed] = useState<Set<string>>(new Set());
+  // The step the page is at now (the last one recorded or played), for "Add a step after this one".
+  const [atStepId, setAtStepId] = useState<string | null>(null);
   const [savedPill, setSavedPill] = useState<string | null>(null);
   const [ai, setAi] = useState<AiState>({ state: 'idle' });
   const aiToken = useRef(0);
@@ -107,7 +115,27 @@ export function useRecorder({ viewport, onError, appUrl }: {
   /** Replaces everything (after loading, or after saving with the saved steps). */
   const load = useCallback((next: Step[]) => {
     setSteps(() => next); setDirty(false); setRerecordId(null); setOpenLoopId(null);
-  }, [setSteps]);
+    setInsertAfter(insertRef.current && findStep(next, insertRef.current) ? insertRef.current : null);
+  }, [setSteps, setInsertAfter]);
+
+  /** Puts a new step at the insertion point (moving it on), else at the end or in the open loop. */
+  const place = (s: Step[], step: Step) => {
+    const after = insertRef.current;
+    if (after && findStep(s, after)) {
+      const next = insertAfter(s, after, step);
+      // Everything after it was recorded on a page without this step: flag it until the next Run.
+      const rows = flatRows(next).map(r => r.step.id);
+      const later = rows.slice(rows.indexOf(step.id) + 1);
+      if (later.length) setUnplayed(u => new Set([...u, ...later]));
+      return next;
+    }
+    return appendStep(s, step, openLoopId);
+  };
+  /** After a Run (all played) or Play to here: where the page is now, and where new steps go. */
+  const played = useCallback((opts: { full: boolean; at: string | null; insertAfter: string | null }) => {
+    if (opts.full) setUnplayed(new Set());
+    setAtStepId(opts.at); setInsertAfter(opts.insertAfter); setAddedId(null); setSelectedId(null);
+  }, [setInsertAfter]);
 
   /** Any edit from the steps panel. */
   const change = useCallback((next: Step[]) => {
@@ -124,10 +152,12 @@ export function useRecorder({ viewport, onError, appUrl }: {
     busyRef.current = true;
     const rr = rerecordId;
     const tempId = localId('pending-');
+    const prevInsert = insertRef.current;
     const guess = extra.label ?? guessLabel(params, sample);
     if (rr) setBusyId(rr);
     else {
-      setSteps(s => appendStep(s, { ...params, id: tempId, label: guess, target: extra.target } as Step, openLoopId));
+      setSteps(s => place(s, { ...params, id: tempId, label: guess, target: extra.target } as Step));
+      if (prevInsert) setInsertAfter(tempId);
       setBusyId(tempId);
     }
     setSelectedId(rr ?? tempId);
@@ -143,10 +173,12 @@ export function useRecorder({ viewport, onError, appUrl }: {
       if (sample) sampleApp.perform(step, viewport);
       const next = setSteps(s => (rr ? replaceStep(s, rr, step) : updateStep(s, tempId, () => step)));
       const id = rr ?? step.id;
-      setSelectedId(id); setDirty(true); setRerecordId(null); setAddedId(id);
+      if (!rr && insertRef.current === tempId) setInsertAfter(step.id);
+      setSelectedId(id); setDirty(true); setRerecordId(null); setAddedId(id); setAtStepId(id);
       setSavedPill(`Step ${numberOf(next, id)} saved`);
       afterAdd(params.action);
     } catch (e) {
+      if (!rr && insertRef.current === tempId) setInsertAfter(prevInsert);
       if (!rr) setSteps(s => removeStep(s, tempId));
       setSelectedId(rr);
       onErrorRef.current(e instanceof EngineError || e instanceof Error ? e.message : "Couldn't record that step.");
@@ -158,7 +190,8 @@ export function useRecorder({ viewport, onError, appUrl }: {
   /** Steps that need no engine call (Repeat, Insert shared steps). */
   function addLocal(step: Step) {
     if (rerecordId) { setRerecordId(null); }
-    const next = setSteps(s => appendStep(s, step, openLoopId));
+    const next = setSteps(s => place(s, step));
+    if (insertRef.current) setInsertAfter(step.id);
     setSelectedId(step.id); setDirty(true);
     if (step.action === 'loop') setOpenLoopId(step.id);
     setSavedPill(`Step ${numberOf(next, step.id)} saved`);
@@ -257,6 +290,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
     phaseText: busyId !== null ? phaseText(phase, busyAction) : null,
     stepsRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi,
+    insertAfterId, setInsertAfter, unplayed, atStepId, played,
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),
     thinking: ai.state === 'thinking' ? thinkingText(ai.what) : null,
     ask: ai.state === 'result' ? askText(ai.what) : null,

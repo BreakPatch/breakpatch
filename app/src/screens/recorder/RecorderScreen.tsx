@@ -2,10 +2,10 @@
 // step, ?rerecord=<id> starts re-recording it (from the report). Loads the test and its
 // current version, opens the controlled browser at the start address, and saves new versions.
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { App, Test } from '../../data/types';
 import { useBackend, useLive } from '../../data/hooks';
-import { findStep, stripUi } from '../../components/steps';
+import { findStep, flatRows, numberOf, stripUi } from '../../components/steps';
 import { AppFrame } from '../../components/shell/AppFrame';
 import { Button, EmptyState, SharedChip, useToast } from '../../components/ui';
 import { RecorderWorkbench } from './RecorderWorkbench';
@@ -14,6 +14,7 @@ import { useLeaveGuard } from './useLeaveGuard';
 import { useRecorder } from './useRecorder';
 import { addressOf, useBrowserSession } from './browserSession';
 import { hasFeature } from '../../edition';
+import { editorStatuses, useEditorRun, type EditorRunDone } from './editorRun';
 
 const DEFAULT_VP = { width: 1440, height: 900 };
 
@@ -31,6 +32,9 @@ export default function RecorderScreen() {
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const browser = useBrowserSession(test?.startUrl, test ? viewport : undefined, m => toast(m, { error: true }));
+  const editorRun = useEditorRun({ test, steps: () => rec.stepsRef.current });
+  const [done, setDone] = useState<EditorRunDone | null>(null);
+  const [offerPlay, setOfferPlay] = useState<string | null>(null);
 
   // Load the current version once per test; later updates (our own saves) don't overwrite edits.
   const loadedFor = useRef<string | null>(null);
@@ -69,7 +73,50 @@ export default function RecorderScreen() {
   }
 
   const { guard, dialog } = useLeaveGuard(rec.dirty, () => save());
-  const run = async () => { if (rec.dirty && !(await save())) return; navigate(`/apps/${appId}/tests/${testId}/run`); };
+
+  /** Run (every step) or Play to here, in this browser. Never saves; the page stays where it ends. */
+  async function play(mode: 'run' | 'play', upTo?: string) {
+    if (rec.busy || editorRun.running) return;
+    rec.cancelAi(); rec.cancelRerecord(); setDone(null); setOfferPlay(null);
+    try {
+      const d = await editorRun.start(mode, { upTo, keepRun: mode === 'run' && !rec.dirty });
+      if (!d) return;
+      setDone(d);
+      const rows = flatRows(rec.stepsRef.current).map(r => r.step.id);
+      const last = rows[rows.length - 1] ?? null;
+      if (d.result === 'fail') {
+        // Stopped at the failed step: new steps would go after the last one that passed.
+        rec.played({ full: false, at: null, insertAfter: null });
+        if (d.stoppedAt && findStep(rec.stepsRef.current, d.stoppedAt)) rec.setSelectedId(d.stoppedAt);
+      } else if (mode === 'run') rec.played({ full: true, at: last, insertAfter: null });
+      else rec.played({ full: false, at: upTo ?? null, insertAfter: upTo && upTo !== last ? upTo : null });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Couldn't start the run.", { error: true });
+    }
+  }
+  const addAfter = (id: string) => {
+    if (rec.atStepId === id) { rec.setInsertAfter(id); setOfferPlay(null); return; }
+    setOfferPlay(id);
+  };
+  const { statuses, notes } = editorStatuses(editorRun.view, rec.steps, editorRun.mode);
+  const n = (id: string) => numberOf(rec.steps, id);
+  let footer = null;
+  if (offerPlay && findStep(rec.steps, offerPlay)) footer = (
+    <div className="rec-runfoot" role="status">
+      <span className="grow">The page isn't at step {n(offerPlay)} yet. Play the steps up to it first?</span>
+      <Button size="sm" kind="primary" onClick={() => void play('play', offerPlay)}>Play to here</Button>
+      <button type="button" className="rec-hint-link" onClick={() => { rec.setInsertAfter(offerPlay); setOfferPlay(null); }}>Just add it</button>
+    </div>
+  );
+  else if (editorRun.running) footer = <div className="rec-runfoot" role="status"><span className="grow">{editorRun.mode === 'play' ? 'Playing the steps in this browser…' : 'Running the test in this browser…'}</span></div>;
+  else if (done) footer = (
+    <div className={'rec-runfoot ' + (done.result === 'pass' ? 'ok' : 'bad')} role="status">
+      <span className="grow">{done.result === 'fail' ? (done.stoppedAt && findStep(rec.steps, done.stoppedAt) ? `Stopped at step ${n(done.stoppedAt)}. Fix it here, then run again.` : 'The run stopped.')
+        : done.mode === 'play' ? `Played to step ${done.stoppedAt ? n(done.stoppedAt) : ''}. New steps go after it.` : 'Passed. New steps go at the end.'}</span>
+      {done.runId && <Link className="rec-hint-link" to={`/apps/${appId}/runs/${done.runId}`}>See report</Link>}
+    </div>
+  );
+  const runProps = { running: editorRun.running, statuses, notes, footer, onPlayTo: (id: string) => void play('play', id), onAddAfter: addAfter };
   const publish = async () => {
     if (!test) return;
     try { await backend.setTestStatus(appId, test.id, 'published'); toast('Added to the team suite'); }
@@ -90,16 +137,19 @@ export default function RecorderScreen() {
     <>
       {hasFeature('collaboration') && <SharedChip published={published} />}
       {rec.dirty && <div className="rec-dirty" role="status">Unsaved changes</div>}
-      <Button icon="play_arrow" onClick={() => void run()} disabled={saving || rec.busy || rec.steps.length === 0}>Run</Button>
+      {rec.dirty && !editorRun.running && <span className="rec-run-note" title="Running never saves the test">Runs your unsaved changes too</span>}
+      {editorRun.running
+        ? <Button icon="stop" onClick={editorRun.stop}>Stop</Button>
+        : <Button icon="play_arrow" onClick={() => void play('run')} disabled={saving || rec.busy || rec.steps.length === 0}>Run</Button>}
       {hasFeature('collaboration') && !published && <Button icon="group_add" onClick={() => void publish()}>Add to team suite</Button>}
-      <SaveButton nextVersion={test.currentVersion + 1} busy={saving} disabled={!rec.dirty || rec.busy} onSave={note => save(note).then(() => undefined)} />
+      <SaveButton nextVersion={test.currentVersion + 1} busy={saving} disabled={!rec.dirty || rec.busy || editorRun.running} onSave={note => save(note).then(() => undefined)} />
     </>
   );
 
   return (
     <AppFrame back={() => guard(() => navigate(`/apps/${appId}`))} crumb={app?.name ?? ' '} title={test?.name ?? ' '} actions={actions}>
       <RecorderWorkbench rec={rec} appId={appId} address={addressOf(test?.startUrl)} viewport={viewport} allowGroups
-        loading={!loaded || !browser.ready} onEditGroup={id => guard(() => navigate(`/apps/${appId}/shared/${id}/edit`))} />
+        loading={!loaded || !browser.ready} onEditGroup={id => guard(() => navigate(`/apps/${appId}/shared/${id}/edit`))} run={runProps} />
       {dialog}
     </AppFrame>
   );

@@ -137,3 +137,9 @@
 
 /* Shared steps editor banner (amber, account_tree). */
 .rec-group-banner b { font-weight: 600; }
+
+/* ---------- Run and Play to here in the recorder ---------- */
+.rec-runfoot { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--text-muted); flex: none; }
+.rec-runfoot.ok { color: var(--passed); }
+.rec-runfoot.bad { color: var(--failed); }
+.rec-run-note { font-size: 12px; color: var(--text-faint); white-space: nowrap; }

@@ -16,8 +16,10 @@ const CLICK_FAMILY = new Set(['click', 'doubleClick', 'longClick', 'rightClick',
 const FILE_TYPES = [['', 'Any type'], ['pdf', 'PDF'], ['csv', 'CSV'], ['xlsx', 'Excel sheet'], ['docx', 'Word document'], ['jpeg', 'JPEG image'], ['mp4', 'MP4 video']];
 const GEN: [Generated, string][] = [['uniqueName', 'A unique name'], ['timeNow', 'The time now'], ['today', "Today's date"], ['repeatNumber', 'The repeat number']];
 
-export function AddStepBar({ rec, appId, allowGroups, onInsertGroup }: {
+export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
   rec: Recorder; appId: string; allowGroups: boolean; onInsertGroup: (g: StepGroup, version: number | 'latest') => void;
+  /** Adding steps waits (the test is playing in this browser): says why. */
+  frozen?: string | null;
 }) {
   const [menu, setMenu] = useState<'closed' | 'menu' | 'picker'>('closed');
   const [secretNames, setSecretNames] = useState<string[]>([]);
@@ -25,7 +27,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup }: {
   const actionBtn = useRef<HTMLButtonElement>(null);
   const { action, options: o } = rec;
   const input = composerInput(action);
-  const busy = rec.busy || rec.ai.state === 'thinking';
+  const busy = rec.busy || rec.ai.state === 'thinking' || !!frozen;
 
   useEffect(() => { void secrets.list().then(setSecretNames).catch(() => setSecretNames([])); }, []);
   useEffect(() => { if (action === 'write' && o.writeSource === 'secret' && !o.secretRef && secretNames[0]) rec.setOptions({ secretRef: secretNames[0] }); }, [action, o.writeSource, o.secretRef, secretNames, rec]);
@@ -149,7 +151,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup }: {
   const leadIcon = CLICK_FAMILY.has(action) ? 'auto_awesome' : actionInfo(action).icon;
   const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' : action === 'write' && o.writeSource !== 'typed' ? true : !!rec.text.trim());
 
-  if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span></>;
+  if (frozen) hint = <><Icon name="play_arrow" size={16} className="rec-hint-icon" /><span className="grow">{frozen}</span></>;
+  else if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span></>;
 
   return (
     <div className="rec-bar">

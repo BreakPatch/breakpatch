@@ -62,6 +62,10 @@ def shift(box, dx: float, dy: float) -> list[int]:
     return [int(round(box[0] + dx)), int(round(box[1] + dy)), int(round(box[2] + dx)), int(round(box[3] + dy))]
 
 
+class _Reached(Exception):
+    """The step a play in the recorder goes up to has passed: stop there, successfully."""
+
+
 class StepFailed(Exception):
     def __init__(self, reason: str, message: str | None = None, **extra):
         super().__init__(reason)
@@ -80,6 +84,9 @@ class Runner:
         self.screenshots = screenshots or config.screenshots_dir()
         self.healer = healer                  # None: no healing (Community), see plugins.py
         self.locator: Locator | None = None   # for the healer: loaded lazily on the first failed pre-check
+        self.keep_open = False
+        self.up_to: str | None = None
+        self._steps: list[dict] = []
 
     async def run(self, req: dict, stop: asyncio.Event) -> dict:
         run_id = str(req.get("runId") or "run")
@@ -93,11 +100,16 @@ class Runner:
         self.as_runner = bool(req.get("runner"))
         # Set-up and clean-up calls may only reach the app's own hosts (calls.py).
         self.app_url = str(req.get("appUrl") or req.get("startUrl") or "")
+        self._steps = steps
         order = list(walk(steps))
         self.index = {id(s): i for i, s in enumerate(order)}
         self.results = [{"stepId": s.get("id", f"#{i}"), "result": "notRun"} for i, s in enumerate(order)]
         self.run_id = run_id
         self.auto_fix = auto_fix
+        # The recorder's Run and Play to here: the browser stays open at the end so recording goes
+        # on from there, and there is no clean-up call (it would undo what the next steps build on).
+        self.keep_open = bool(req.get("keepOpen"))
+        self.up_to = req.get("upToStepId") or None
         self.message: str | None = None
         self.details: str | None = None
         self.clean_up_failed = False
@@ -105,18 +117,22 @@ class Runner:
         t0 = time.monotonic()
         ok = False
         try:
-            ok = await self._execute(req, steps, order, secrets, stop)
+            try:
+                ok = await self._execute(req, steps, order, secrets, stop)
+            except _Reached:
+                ok = True
         finally:
-            clean_up = req.get("cleanUp")
+            clean_up = None if self.keep_open else req.get("cleanUp")
             if clean_up and self.reached_set_up and (ok or clean_up.get("alsoOnFailure")):
                 reply = await calls.make(clean_up, self.app_url, self.secrets, self.t.http_timeout)
                 log.info("clean-up call: %s", reply.info)
                 if not reply.ok:
                     self.clean_up_failed = True
-            try:
-                await self.b.close()
-            except Exception:  # noqa: BLE001
-                pass
+            if not self.keep_open:
+                try:
+                    await self.b.close()
+                except Exception:  # noqa: BLE001
+                    pass
         return self._ended(t0, ok, fail_on_fix)
 
     async def _execute(self, req: dict, steps: list[dict], order: list[dict], secrets: dict[str, Secret],
@@ -207,6 +223,7 @@ class Runner:
                 ok = await self._run_container(step, ctx, stop, iteration)
                 if not ok:
                     return False
+                self._stop_if_reached(step)
                 continue
             try:
                 rec = await self._run_step(step, ctx, iteration)
@@ -227,7 +244,29 @@ class Runner:
             self._event(step, rec["result"], iteration, preDistance=rec.get("preDistance"),
                         postDistance=rec.get("postDistance"), oldAt=rec.get("oldAt"), newAt=rec.get("newAt"),
                         screenshot=rec.get("screenshotPath"))
+            self._stop_if_reached(step)
         return True
+
+    def _stop_if_reached(self, step: dict) -> None:
+        """Play to here: the loops and cards around the step count as passed so far."""
+        if self.up_to is None or step.get("id") != self.up_to:
+            return
+        for s in self._parents(step):
+            i = self.index[id(s)]
+            if self.results[i]["result"] == "notRun":
+                self.results[i] = {"stepId": s.get("id"), "result": "passed"}
+        raise _Reached()
+
+    def _parents(self, step: dict) -> list[dict]:
+        def find(steps, path):
+            for s in steps:
+                if s is step:
+                    return path
+                got = find(s.get("steps") or [], path + [s])
+                if got is not None:
+                    return got
+            return None
+        return find(self._steps, []) or []
 
     async def _run_container(self, step: dict, ctx: Context, stop: asyncio.Event, iteration: int | None) -> bool:
         children = step.get("steps") or []

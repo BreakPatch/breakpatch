@@ -48,6 +48,10 @@ export interface RunStart {
   settings: RunSettings; secrets: Record<string, string>;
   /** Set by Breakpatch Team's local runner: secrets without "Runner can use" are then refused. */
   runner?: boolean;
+  /** The recorder's Run and Play to here: the browser stays open at the end, and no clean-up call. */
+  keepOpen?: boolean;
+  /** Play to here: stop after this step passes. */
+  upToStepId?: string;
 }
 
 /** The answer to "Try it" for a set-up or clean-up call (engine `call.try`). */
