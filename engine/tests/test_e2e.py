@@ -711,3 +711,30 @@ async def test_a_click_that_loads_a_new_page_at_once_passes(site):
         ok = await hx.run([step], site + "/signin.html?nav=1")
         assert ok["result"] == "pass", ok
     assert (await hx.run([step], site + "/signin.html?nav=1&dead=1"))["steps"][0]["reason"] == "noChange"
+
+
+# ---------- typing: no blinking cursor, no long wait ----------
+
+async def test_no_blinking_cursor_so_typing_settles_at_once(site):
+    import time
+    hx = Harness()
+    stamps = []
+    await hx.call("browser.open", {"url": site + "/field.html", "viewport": VIEWPORT})
+    try:
+        page = hx.engine.browser.page
+        assert await page.evaluate("getComputedStyle(document.getElementById('f')).caretColor") == "rgba(0, 0, 0, 0)"
+        hx.engine.browser.on_frame = lambda d: stamps.append(time.monotonic())
+        hx.engine.browser._stream.sink = hx.engine.browser.on_frame
+        await asyncio.sleep(0.8)
+        t = time.monotonic()
+        await asyncio.sleep(1.5)
+        assert len([s for s in stamps if s >= t]) == 0            # a focused field sends no frames by itself
+        t0 = time.monotonic()
+        step = (await hx.call("record.point", {"action": "write", "text": "hunter2"}))["step"]
+        assert time.monotonic() - t0 < 2.5
+        assert "reloading" not in [d["phase"] for d in hx.of("record.checking")]
+        assert await page.input_value("#f") == "hunter2"
+    finally:
+        await hx.call("browser.close")
+    ended = await hx.run([step], site + "/field.html")
+    assert ended["result"] == "pass", ended

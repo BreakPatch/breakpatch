@@ -133,7 +133,9 @@ Chromium runs with its sandbox on (`chromium_sandbox`); only development runs ca
 `frame` data: `{ jpeg: <base64>, width, height, seq }`, sent when the page changes (at most ~10/s,
 always ending on the latest picture). `width`/`height` are the picture's own size, which is always the viewport's: the
 window is opened at the viewport's size, and if Chrome still paints less of the page than the
-viewport (a screen smaller than the viewport), the stream switches to screenshots of the whole viewport. Frames follow the active tab: when `switchTab` moves to a
+viewport (a screen smaller than the viewport), the stream switches to screenshots of the whole viewport. Every page and frame
+has its text cursor hidden (`caret-color: transparent`), in recording and replay, so a focused field
+doesn't change the screen by itself; a repaint with the same picture sends no frame. Frames follow the active tab: when `switchTab` moves to a
 popup, or the popup closes itself, frames come from the page now in front.
 The browser methods answer `busy` during a run.
 

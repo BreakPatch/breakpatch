@@ -138,7 +138,9 @@ class Recorder:
                 after, blast = await self._late_change(before, after, noise)
 
             ignore = list(noise)
-            if self.t.reload_diff and action not in ("waitFor",):
+            # Not after typing: a reload loses what was typed, so it tells nothing about this step
+            # and only makes "Waiting for the page…" long (noise already seen on the page is kept).
+            if self.t.reload_diff and action not in ("waitFor", "write"):
                 phase("reloading")
                 shots = await self.b.background_reload_shots(lambda s: self._settle(s, noise))
                 if shots is not None:

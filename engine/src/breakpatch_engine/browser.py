@@ -52,6 +52,25 @@ FOCUS_SCRIPT = """({
 })"""
 
 
+# The blinking text cursor changes the screen twice a second by itself, so after typing the page
+# never looked settled for long and every check around a field saw it come and go. It is hidden
+# on every page and frame, in recording and in replay alike (a constructed style sheet, which a
+# page's Content Security Policy doesn't block).
+NO_CARET_SCRIPT = """(() => {
+  const css = '*, *::before, *::after { caret-color: transparent !important; }';
+  const add = () => {
+    try {
+      const sheet = new CSSStyleSheet(); sheet.replaceSync(css);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    } catch (e) {
+      const s = document.createElement('style'); s.textContent = css;
+      (document.head || document.documentElement).appendChild(s);
+    }
+  };
+  if (document.documentElement) add(); else document.addEventListener('DOMContentLoaded', add, { once: true });
+})();"""
+
+
 def is_web_address(url: str) -> bool:
     u = (url or "").strip()
     return u == "about:blank" or bool(_WEB.match(u))
@@ -143,6 +162,7 @@ class BrowserSession:
             viewport={"width": self.width, "height": self.height}, device_scale_factor=1,
             accept_downloads=True, locale="en-US", color_scheme="light")
         self.context.on("page", self._on_new_page)
+        await self.context.add_init_script(NO_CARET_SCRIPT)
         await self.context.route(NOT_WEB, self._guard_route)
         page = await self.context.new_page()
         await self._switch_to(page)
@@ -561,6 +581,7 @@ class FrameStream:
         self.cdp = None
         self.last_sent = 0.0
         self.pending: str | None = None
+        self.last_offered: str | None = None
         self.flush_task: asyncio.Task | None = None
         self.poll_task: asyncio.Task | None = None
         self.stopped = False
@@ -633,6 +654,9 @@ class FrameStream:
     def _offer(self, b64: str) -> None:
         if self.stopped or not b64:
             return
+        if b64 == self.last_offered:
+            return        # Chrome repainted, but the picture is the same (a hidden text cursor)
+        self.last_offered = b64
         self.session.page_changed()
         gap = self.session.timings.frame_min_gap
         now = time.monotonic()
