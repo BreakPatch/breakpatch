@@ -378,7 +378,7 @@ check_self_signed() {
   p12_leaf "$p12" > "$leaf" || true
   rm -f "$p12"
   openssl x509 -in "$leaf" -noout 2>/dev/null || die "couldn't open BP_CODESIGN_P12 with BP_CODESIGN_P12_PASSWORD (wrong password?)"
-  openssl x509 -in "$leaf" -noout -text | grep -q "Code Signing" || die "the certificate in BP_CODESIGN_P12 isn't for code signing (no codeSigning extended key usage)"
+  [[ $(openssl x509 -in "$leaf" -noout -text) == *"Code Signing"* ]] || die "the certificate in BP_CODESIGN_P12 isn't for code signing (no codeSigning extended key usage)"
   openssl x509 -in "$leaf" -noout -checkend 0 >/dev/null || die "the certificate in BP_CODESIGN_P12 has expired"
   if ! openssl x509 -in "$leaf" -noout -checkend 7776000 >/dev/null; then
     echo "build-release: WARNING: the signing certificate expires within 90 days ($(openssl x509 -in "$leaf" -noout -enddate))" >&2
@@ -478,7 +478,9 @@ sign_sidecar() {
 
 cdhash() { codesign -dvvv "$1" 2>&1 | sed -n 's/^CDHash=//p'; }
 # codesign -dv prints e.g. "CodeDirectory v=20500 size=… flags=0x10000(runtime) hashes=…".
-has_runtime() { codesign -dv "$1" 2>&1 | grep -q 'flags=0x[0-9a-f]*([^)]*runtime'; }
+# Reads codesign's whole output first: `codesign … | grep -q` stops reading at the first match,
+# codesign then dies of SIGPIPE, and under pipefail a signed binary reads as unsigned.
+has_runtime() { local info; info=$(codesign -dv "$1" 2>&1) || return 1; [[ $info =~ flags=0x[0-9a-f]*\([^\)]*runtime ]]; }
 
 # The signed .app: valid, with the requirement this signing mode must give it, and the same
 # signed app in the update archive and the .dmg (both are made from it after signing).
