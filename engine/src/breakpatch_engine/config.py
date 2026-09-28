@@ -112,6 +112,7 @@ FRAMES_KEPT = 64        # live view frames kept for that check (a few seconds of
 SEEN_RADIUS = 48        # recording: the 96 x 96 box around a click that must still look as the user saw it
 PRE_TOLERANCE = 6
 POST_TOLERANCE = 10
+POST_CLOSER = 4           # replay: or it must come this much closer (hash bits) to the recorded result
 POST_CHANGE_SHARE = 0.25   # replay: a step must change at least this share of what it changed when recorded
 CHECKPOINT_TOLERANCE = 8
 BOX_PAD = 16            # padding around changed areas

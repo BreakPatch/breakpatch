@@ -41,7 +41,7 @@ class Healer(Protocol):
 MESSAGES = {
     "targetNotFound": "The thing this step acts on isn't where it was.",
     "unexpectedScreen": "The screen didn't look as expected after this step.",
-    "noChange": "Nothing changed on screen after this step.",
+    "noChange": "The step was done, but nothing changed on the page the way it did when it was recorded.",
     "timeout": "The screen didn't settle in time.",
     "healFailed": "The AI assistant found something, but it didn't match the recorded target.",
     "healingUnavailable": "The target moved and the AI assistant isn't available to find it.",
@@ -397,15 +397,21 @@ class Runner:
         region = post["region"]
         tol = config.check_tolerance(post.get("tolerance", config.POST_TOLERANCE), self.relaxed)
         end = time.monotonic() + self.t.settle_timeout
+        # How close the screen was to the recorded result just before the action: a step that
+        # really did something gets closer to it, a miss (a button that only lit up) doesn't.
+        dist_before = imaging.region_distance(before, region, post["hash"], ignore, self.relaxed)
         while True:
             dist = imaging.region_distance(after, region, post["hash"], ignore, self.relaxed)
             changed = imaging.region_changed(before, after, region, ignore)
-            if changed and post.get("expectChange") and isinstance(post.get("change"), (int, float)):
+            if changed and post.get("expectChange") and isinstance(post.get("change"), (int, float)) and dist <= tol:
                 # A perceptual hash of a big area barely notices new words on a screen laid out like
-                # the old one, so the amount of change is compared too (steps recorded before this
-                # have no `change` and keep the hash check alone).
+                # the old one, so it must also have moved towards the recorded result, or changed
+                # about as much as when recorded (steps recorded before this have no `change`
+                # and keep the hash check alone). However fast the page changed, `before` is
+                # from just before the action, so a real change always shows in one or the other.
                 share = imaging.changed_share(before, after, region, ignore)
-                changed = share >= config.POST_CHANGE_SHARE * float(post["change"])
+                changed = (dist_before - dist >= config.POST_CLOSER
+                           or share >= config.POST_CHANGE_SHARE * float(post["change"]))
             if post.get("expectChange") and not changed:
                 reason = "noChange"
             elif dist > tol:

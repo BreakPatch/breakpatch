@@ -590,6 +590,11 @@ async def test_a_click_that_misses_a_button_that_moves_on_fails(site):
     missed = await hx.run([step], site + "/signin.html?dead=1")
     assert missed["result"] == "fail", missed
     assert missed["steps"][0]["reason"] == "noChange"
+    # However fast the page moved on, and even if the recording saw more of it change (a
+    # transition caught half way), a click that brought the recorded result passes.
+    eager = {**step, "post": {**post, "change": 1.0}}
+    assert (await hx.run([eager], site + "/signin.html"))["result"] == "pass"
+    assert (await hx.run([eager], site + "/signin.html?dead=1"))["result"] == "fail"
     # A step saved before `change` existed keeps the old rule and still loads and runs.
     old = {**step, "post": {k: v for k, v in post.items() if k != "change"}}
     assert (await hx.run([old], site + "/signin.html"))["result"] == "pass"
@@ -689,3 +694,20 @@ async def test_play_to_here_and_run_in_the_recorder_keep_the_browser_open(site):
     # A plain run still closes the browser.
     await hx.run(plan, site + "/still.html")
     assert hx.engine.browser.page is None
+
+
+async def test_a_click_that_loads_a_new_page_at_once_passes(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/signin.html?nav=1", "viewport": VIEWPORT})
+    try:
+        page = hx.engine.browser.page
+        box = await page.eval_on_selector("#next", "e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }")
+        step = (await hx.call("record.point", {"action": "click", "at": [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2]}))["step"]
+        assert "step=2" in page.url
+    finally:
+        await hx.call("browser.close")
+    assert step["post"]["expectChange"] is True
+    for _ in range(3):
+        ok = await hx.run([step], site + "/signin.html?nav=1")
+        assert ok["result"] == "pass", ok
+    assert (await hx.run([step], site + "/signin.html?nav=1&dead=1"))["steps"][0]["reason"] == "noChange"

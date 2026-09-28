@@ -40,7 +40,7 @@ export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'tar
       if (step.action === 'checkpoint') return 'The area this step checks looked different from when it was recorded. The run stopped here.';
       if (step.action === 'downloadCheck') return "The downloaded file wasn't the type or size this step expects. The run stopped here.";
       return 'The page looked different from when it was recorded once the step was done. The run stopped here.';
-    case 'noChange': return 'The step was done, but the screen stayed the same. The run stopped here.';
+    case 'noChange': return 'The step was done, but nothing changed on the page the way it did when it was recorded. The run stopped here.';
     case 'timeout':
       if (step.action === 'waitUntil') return 'What this step waits for never appeared. The run stopped here.';
       return "The page didn't finish loading or settle in time. The run stopped here.";

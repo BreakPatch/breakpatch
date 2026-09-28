@@ -205,7 +205,7 @@ Common reasons:
 
 - **Couldn't find the Done button.** It wasn't where it was when the step was recorded. If the app changed on purpose, re-record the step. In Team, the AI assistant can find it for you: see [Fixed automatically](#fixed-automatically).
 - **The screen didn't look as expected after this step.** The page looked different once the step was done.
-- **Nothing happened after this step.** The step was done, but the screen stayed the same.
+- **Nothing happened after this step.** The step was done, but nothing changed on the page the way it did when it was recorded.
 - **Waited too long for the page.** If the app was slow this time, run again.
 - **Saved secret is missing on this Mac.** Add it in Settings → Saved secrets, then run again.
 - **STAGING_PASSWORD isn't allowed on login.example.com.** The page wasn't one of the secret's sites, so nothing was typed. If that site is right, add it to the secret in Settings → Saved secrets.

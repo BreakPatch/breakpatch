@@ -12,7 +12,8 @@
   <div id="corner-a" style="position:absolute;left:4px;top:4px;font-size:10px">1</div>
   <div id="corner-b" style="position:absolute;left:784px;top:584px;font-size:10px">1</div>
   <!-- Two screens that look alike (like a sign-in flow): Next shows the second one.
-       ?dead=1: Next does nothing, though it still changes colour under the pointer. -->
+       ?dead=1: Next does nothing, though it still changes colour under the pointer.
+     ?nav=1: Next loads the second screen as a new page. -->
   <div class="card">
     <h1 id="h">Enter your email</h1>
     <div id="l">Email address</div>
@@ -25,8 +26,18 @@
   <div class="foot" id="f">Step 1 of 2</div>
   <script>
     var q = new URLSearchParams(location.search);
+    function second() {
+      document.getElementById('h').textContent = 'Enter your password';
+      document.getElementById('l').textContent = 'Password';
+      document.getElementById('next').textContent = 'Sign in';
+      document.getElementById('f').textContent = 'Step 2 of 2';
+      document.getElementById('corner-a').textContent = '2';
+      document.getElementById('corner-b').textContent = '2';
+    }
+    if (q.get('step') === '2') second();
     document.getElementById('next').onclick = function () {
       if (q.get('dead')) return;
+      if (q.get('nav')) { location.replace('signin.html?step=2'); return; }   // a new page, at once
       document.getElementById('h').textContent = 'Enter your password';
       document.getElementById('l').textContent = 'Password';
       this.textContent = 'Sign in';
