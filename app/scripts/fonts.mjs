@@ -12,6 +12,10 @@
 // (scripts/link-team.sh), or pass --without-team to keep the Team names already in icons.json.
 //
 //   node scripts/fonts.mjs            # needs the network; run from app/
+//   node scripts/fonts.mjs --with ../../breakpatch-team/backoffice/web/src   # the back office's icons too
+//
+// The back office uses this font, so always pass --with its web/src when it's checked out: an icon
+// only it uses would otherwise be dropped and show as its name there.
 //
 // src/assets/fonts/fonts.test.ts checks that every icon the code names is in icons.json.
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -22,6 +26,10 @@ const app = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = join(app, 'src');
 const out = join(src, 'assets', 'fonts');
 const withoutTeam = process.argv.includes('--without-team');
+// --with <dir>: more source folders whose icons count, e.g. the back office's web/src, which
+// imports the app's components and this font (breakpatch-team/backoffice/web/src).
+const extra = process.argv.flatMap((a, i, all) => (a === '--with' && all[i + 1] ? [all[i + 1]] : []));
+for (const d of extra) if (!existsSync(d)) { console.error(`fonts: --with ${d}: no such folder`); process.exit(1); }
 
 // A current desktop Chrome, so Google Fonts answers with woff2 and unicode-range subsets.
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
@@ -57,7 +65,7 @@ if (!teamLinked && !withoutTeam) {
 // ---- Icons
 const known = new Set((await get(CODEPOINTS)).split('\n').map(l => l.split(' ')[0]).filter(Boolean));
 const words = new Set();
-for (const f of sources(src)) {
+for (const f of [src, ...extra].flatMap(d => sources(d))) {
   for (const m of readFileSync(f, 'utf8').matchAll(/(?<=['"`>])[a-z][a-z0-9_]*(?=['"`<])/g)) words.add(m[0]);
 }
 const iconsFile = join(out, 'icons.json');

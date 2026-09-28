@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import tauriConf from '../../src-tauri/tauri.conf.json?raw';
 import indexHtml from '../../index.html?raw';
 import icons from '../assets/fonts/icons.json';
+import { iconsNamed } from './iconNames';
 
 // Fonts and icons are bundled (src/assets/fonts, written by scripts/fonts.mjs) so the app works
 // offline: without them every icon shows as its name. The icon font is subset to icons.json, so
@@ -31,37 +32,6 @@ function sources(dir: string, out: string[] = []): string[] {
     else if (/\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(p);
   }
   return out;
-}
-
-const WORD = /['"`]([a-z][a-z0-9_]*)['"`]/g;
-
-/** The JSX expression starting at code[i] === '{', up to its matching brace. */
-function braced(code: string, i: number): string {
-  let depth = 0;
-  for (let j = i; j < code.length; j++) {
-    if (code[j] === '{') depth++;
-    else if (code[j] === '}' && --depth === 0) return code.slice(i, j + 1);
-  }
-  return '';
-}
-
-/** Icon names the code spells out where an icon is expected. */
-function iconsNamed(code: string): string[] {
-  const found: string[] = [];
-  // Literals compared against (status === 'paused' ? …) are conditions, not icons.
-  const words = (s: string) => { for (const m of s.replace(/(?:[!=]==?)\s*(['"`])[^'"`]*\1|(['"`])[^'"`]*\2\s*[!=]==?/g, '').matchAll(WORD)) found.push(m[1]); };
-  // name= on <Icon>, and icon= / iconAfter= / leadIcon= on any component: "x" or {cond ? 'x' : 'y'}
-  const attrs = /<Icon\b[^>]*?\bname=|\b(?:icon|iconAfter|leadIcon)=/g;
-  for (const m of code.matchAll(attrs)) {
-    const at = m.index + m[0].length;
-    if (code[at] === '"') found.push(...(/^"([a-z][a-z0-9_]*)"/.exec(code.slice(at))?.slice(1) ?? []));
-    else if (code[at] === '{') words(braced(code, at));
-  }
-  // { icon: 'x' } in data and lookup tables
-  for (const m of code.matchAll(/\bicon\??:\s*(['"`][a-z][a-z0-9_]*['"`])/g)) words(m[1]);
-  // <span className="icon">x</span>
-  for (const m of code.matchAll(/className="icon[^"]*">([a-z][a-z0-9_]*)</g)) found.push(m[1]);
-  return found;
 }
 
 describe('bundled fonts', () => {
