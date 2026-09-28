@@ -48,6 +48,7 @@ MESSAGES = {
     "secretMissing": "A saved secret this test needs isn't on this Mac.",
     "setUpFailed": "The set-up call didn't succeed, so the test didn't start.",
     "stopped": "The run was stopped.",
+    "fileMissing": "The file this upload chooses isn't in the tests folder.",
 }
 
 
@@ -85,6 +86,7 @@ class Runner:
         self.healer = healer                  # None: no healing (Community), see plugins.py
         self.locator: Locator | None = None   # for the healer: loaded lazily on the first failed pre-check
         self.keep_open = False
+        self.files_dir: str | None = None
         self.up_to: str | None = None
         self._steps: list[dict] = []
         self.relaxed = False                  # screen checks allow for another system (systems.py)
@@ -115,6 +117,7 @@ class Runner:
         # The recorder's Run and Play to here: the browser stays open at the end so recording goes
         # on from there, and there is no clean-up call (it would undo what the next steps build on).
         self.keep_open = bool(req.get("keepOpen"))
+        self.files_dir = str(req["filesDir"]) if req.get("filesDir") else None
         self.up_to = req.get("upToStepId") or None
         self.message: str | None = None
         self.details: str | None = None
@@ -180,7 +183,7 @@ class Runner:
         first = next((s for s in order if s.get("action") not in ("loop", "group")), {})
         await checks.settle(self.b.shoot, first.get("ignore"), self.t.settle_interval, self.t.settle_frames,
                             self.t.settle_timeout)
-        ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed)
+        ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed, files_dir=self.files_dir)
         return await self._run_list(steps, ctx, stop, iteration=None)
 
     def _compare_systems(self, recorded_on) -> None:

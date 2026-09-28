@@ -1,5 +1,5 @@
 // UI-side view of the Python engine (see engine/PROTOCOL.md).
-import type { Box, HttpCall, Point, RecordedOn, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
+import type { Box, HttpCall, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
 
 export interface SystemInfo {
   memoryGb: number; chip: string; os: string; engineVersion: string;
@@ -19,7 +19,11 @@ export interface SetupProgress {
 
 export interface Frame { jpeg: string; width: number; height: number; seq: number }
 
-export type CheckingPhase = 'watching' | 'acting' | 'settling' | 'reloading' | 'naming';
+export type CheckingPhase = 'watching' | 'acting' | 'settling' | 'reloading' | 'naming' | 'choosing';
+
+/** A click opened the page's file picker: the app asks which file to use (`record.chooseFile`). */
+export interface FileChooserEvent { accept: string; multiple: boolean }
+export type FileChoice = { sample: SampleFile } | { file: string; path: string } | { cancel: true };
 
 export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' | 'post' | 'ignore'>> & {
   action: Step['action']; at?: Point;
@@ -34,6 +38,8 @@ export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' 
   target?: string;
   /** The step's name, when the app already has one (the engine then doesn't ask the AI assistant). */
   label?: string;
+  /** <tests folder>/files, for uploads of the user's own files. */
+  filesDir?: string;
 };
 
 /** What a click on the live view would act on (nothing is done to the page): `record.propose`. */
@@ -63,6 +69,8 @@ export interface RunStart {
   keepOpen?: boolean;
   /** Play to here: stop after this step passes. */
   upToStepId?: string;
+  /** <tests folder>/files, where uploads of the user's own files come from. */
+  filesDir?: string;
   /** Where the test was recorded (its version's `recordedOn`), to compare with this system. */
   recordedOn?: RecordedOn;
 }
@@ -91,6 +99,7 @@ export interface EngineEvents {
   'frame': Frame;
   'setup.progress': SetupProgress;
   'record.checking': { phase: CheckingPhase };
+  'record.fileChooser': FileChooserEvent;
   'run.step': RunStepEvent;
   'run.ended': RunEnded;
 }
@@ -120,6 +129,8 @@ export interface Engine {
   locate(description: string): Promise<LocateResult | null>;
   /** The element at a point and its name, without acting. `name: false` skips the AI assistant. */
   propose(at: Point, opts?: { name?: boolean }): Promise<Proposal>;
+  /** The answer to a `record.fileChooser` event. */
+  chooseFile(choice: FileChoice): Promise<void>;
   recordCheckpoint(region: Box, frame?: number): Promise<Step>;
 
   startRun(r: RunStart): Promise<void>;

@@ -109,6 +109,7 @@ class Timings:
 # Check sizes and tolerances (spec §12.1 example values).
 PRE_RADIUS = 32         # pre-check region is a 64 x 64 box around the target
 FRAMES_KEPT = 64        # live view frames kept for that check (a few seconds of a busy page)
+CHOOSE_FILE_TIMEOUT = 600.0   # recording: how long a page's file picker waits for the user's choice
 SEEN_RADIUS = 48        # recording: the 96 x 96 box around a click that must still look as the user saw it
 PRE_TOLERANCE = 6
 POST_TOLERANCE = 10

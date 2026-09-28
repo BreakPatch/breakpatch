@@ -14,6 +14,7 @@ import { useLeaveGuard } from './useLeaveGuard';
 import { useRecorder } from './useRecorder';
 import { addressOf, useBrowserSession } from './browserSession';
 import { hasFeature } from '../../edition';
+import { filesDir } from '../../lib/testFiles';
 import { editorStatuses, useEditorRun, type EditorRunDone } from './editorRun';
 import { getEngine } from '../../engine';
 import { recordedOnForSave } from './recordedOn';
@@ -30,7 +31,7 @@ export default function RecorderScreen() {
   const { data: apps } = useLive<App[]>((b, l) => b.apps(l), []);
   const app = apps?.find(a => a.id === appId);
   const viewport = test?.viewport ?? DEFAULT_VP;
-  const rec = useRecorder({ viewport, onError: m => toast(m, { error: true }), appUrl: app?.baseUrl ?? test?.startUrl });
+  const rec = useRecorder({ viewport, onError: m => toast(m, { error: true }), appUrl: app?.baseUrl ?? test?.startUrl, filesDir: filesDir(backend.local?.path) });
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const browser = useBrowserSession(test?.startUrl, test ? viewport : undefined, m => toast(m, { error: true }));

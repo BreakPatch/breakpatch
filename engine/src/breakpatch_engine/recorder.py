@@ -7,8 +7,10 @@ import secrets as pysecrets
 import time
 from typing import Callable
 
+from pathlib import Path
+
 from . import checks, config, imaging, labels
-from .actions import POINTER_ACTIONS, ActionFailed, Context, parse_secrets, perform
+from .actions import FILE_REF, POINTER_ACTIONS, ActionFailed, Context, parse_secrets, perform, sample_path
 from .browser import BrowserSession
 from .locator import Locator
 from .protocol import NULL, EngineError
@@ -21,6 +23,7 @@ ACTIONS = POINTER_ACTIONS | {"write", "waitUntil", "waitFor", "navigate", "switc
 PASS_THROUGH = ("from", "to", "direction", "distance", "text", "secretRef", "generated", "durationMs", "url", "nav",
                 "sample", "fileType", "minBytes", "timeoutMs", "count", "groupId", "groupVersion", "steps")
 Phase = Callable[[str], None]
+CLICKY = {"click", "doubleClick", "longClick", "rightClick"}   # what can open a page's file picker
 
 
 def varies_each_run(step: dict) -> bool:
@@ -51,8 +54,11 @@ def _box(v) -> list[int]:
 
 
 class Recorder:
-    def __init__(self, browser: BrowserSession, locator_fn: Callable[[], Locator], timings: config.Timings):
+    def __init__(self, browser: BrowserSession, locator_fn: Callable[[], Locator], timings: config.Timings,
+                 emit: Callable[[str, dict], None] | None = None):
         self.b = browser
+        self.emit = emit or (lambda event, data: None)
+        self._choice: asyncio.Future | None = None
         self.locator_fn = locator_fn
         self.t = timings
         self._download_mark = 0
@@ -119,12 +125,32 @@ class Recorder:
         # A download check without a position looks at downloads since the last check, so a
         # "click the link" step followed by "check the download" works as it does in replay.
         ctx = Context(self.t, secrets=parse_secrets(p.get("secrets"), self.b.start_origin),
-                      download_mark=self._download_mark)
+                      download_mark=self._download_mark, files_dir=p.get("filesDir"))
+        # A click that opens the page's file picker: the app asks which file to use (no system
+        # dialog can show), and the step becomes an upload of that file.
+        choosers: list = []
+
+        def on_chooser(chooser) -> None:
+            choosers.append(chooser)
+        watching = action in CLICKY and self.b.page is not None
+        page = self.b.page
+        if watching:
+            page.on("filechooser", on_chooser)
         try:
             await perform(self.b, step, ctx)
+            if watching and not choosers:
+                await asyncio.sleep(0.2)              # the chooser event follows the click at once
         except ActionFailed as e:
-            raise EngineError("not_found" if e.reason in ("secretMissing", "targetNotFound") else "bad_request",
-                              e.message)
+            raise EngineError("not_found" if e.reason in ("secretMissing", "targetNotFound", "fileMissing")
+                              else "bad_request", e.message)
+        finally:
+            if watching:
+                try:
+                    page.remove_listener("filechooser", on_chooser)
+                except Exception:  # noqa: BLE001
+                    pass
+        if choosers:
+            await self._choose_file(choosers[0], step, phase)
         if action == "downloadCheck":
             self._download_mark = ctx.download_mark
         naming = asyncio.ensure_future(self._name(before, anchor)) if anchor is not None and not p.get("label") else None
@@ -173,11 +199,49 @@ class Recorder:
             if not naming.done():
                 phase("naming")
             got = await naming
-            if got:
+            if got and step["action"] == action:          # (an upload keeps its "Upload …" name)
                 step["label"] = labels.default_label(action, p, got["name"])
                 if not p.get("target"):
                     step["target"] = got["target"]
         return step
+
+    async def _choose_file(self, chooser, step: dict, phase: Phase) -> None:
+        try:
+            accept = await chooser.element.get_attribute("accept") or ""
+        except Exception:  # noqa: BLE001
+            accept = ""
+        loop = asyncio.get_running_loop()
+        self._choice = loop.create_future()
+        phase("choosing")
+        self.emit("record.fileChooser", {"accept": accept, "multiple": bool(chooser.is_multiple())})
+        try:
+            choice = await asyncio.wait_for(self._choice, config.CHOOSE_FILE_TIMEOUT)
+        except asyncio.TimeoutError:
+            choice = {"cancel": True}
+        finally:
+            self._choice = None
+        if choice.get("cancel"):
+            return                                    # a plain click: nothing chosen
+        if choice.get("sample"):
+            await chooser.set_files(str(sample_path(choice["sample"])))
+            step.update(action="upload", sample=choice["sample"])
+        else:
+            ref = str(choice.get("file") or "")
+            path = Path(str(choice.get("path") or ""))
+            if not FILE_REF.match(ref) or not path.is_file() or path.name != ref.split("/", 1)[1]:
+                raise EngineError("bad_request", "That file can't be used. Pick it again.", ref[:120])
+            await chooser.set_files(str(path))
+            step.update(action="upload", file=ref)
+            step.pop("sample", None)
+        step["label"] = labels.default_label("upload", {**step, "sample": step.get("sample")}) if not step.get("file") \
+            else f"Upload {ref.split('/', 1)[1]}"
+
+    def choose_file(self, p: dict) -> dict:
+        """The app's answer to `record.fileChooser`: `{sample}`, `{file, path}` or `{cancel: true}`."""
+        if self._choice is None or self._choice.done():
+            raise EngineError("bad_request", "No file picker is waiting.")
+        self._choice.set_result(p if isinstance(p, dict) else {"cancel": True})
+        return {}
 
     async def _name(self, before, anchor) -> dict | None:
         """The AI assistant's name for what is at `anchor` on the screen before the action."""

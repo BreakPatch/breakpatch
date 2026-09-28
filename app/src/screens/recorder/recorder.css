@@ -145,3 +145,16 @@
 .rec-runfoot.ok { color: var(--passed); }
 .rec-runfoot.bad { color: var(--failed); }
 .rec-run-note { font-size: 12px; color: var(--text-faint); white-space: nowrap; }
+
+/* ---------- A page's file picker ---------- */
+.fc-list { display: flex; flex-direction: column; gap: 2px; max-height: 360px; overflow: auto; }
+.fc-head { font-size: 11px; font-weight: 600; color: var(--text-faint); letter-spacing: .06em; text-transform: uppercase; padding: 10px 8px 4px; }
+.fc-item { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: var(--r-row); font-size: 14px; text-align: left; }
+.fc-item:hover, .fc-item:focus-visible { background: var(--raised); outline: none; }
+.fc-item.faint { color: var(--text-muted); }
+.fc-item .icon { color: var(--text-muted); }
+.fc-mac { color: var(--accent); font-weight: 600; }
+.fc-mac .icon { color: var(--accent); }
+.fc-note { margin-left: auto; font-size: 12px; color: var(--text-faint); }
+.fc-empty { font-size: 12px; color: var(--text-faint); padding: 4px 8px; }
+.fc-error { font-size: 13px; color: var(--failed); padding: 8px; }

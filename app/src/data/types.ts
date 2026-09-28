@@ -107,6 +107,8 @@ export interface Step {
   durationMs?: number;
   url?: string; nav?: 'url' | 'reload' | 'back' | 'forward';
   sample?: SampleFile;
+  /** An upload of one of the user's own files: "files/<name>", in the tests folder. */
+  file?: string;
   fileType?: string; minBytes?: number;
   count?: number;                // loop
   groupId?: string; groupVersion?: number | 'latest';
@@ -148,7 +150,7 @@ export interface StepGroup {
 export type StepResult = 'passed' | 'healed' | 'failed' | 'notRun';
 export type FailReason =
   | 'targetNotFound' | 'unexpectedScreen' | 'noChange' | 'timeout'
-  | 'healFailed' | 'healingUnavailable' | 'secretMissing' | 'setUpFailed' | 'stopped';
+  | 'healFailed' | 'healingUnavailable' | 'secretMissing' | 'setUpFailed' | 'stopped' | 'fileMissing';
 
 export type RunSource = 'desktop' | 'ci' | 'runner';
 

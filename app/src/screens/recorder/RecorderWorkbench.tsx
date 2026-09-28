@@ -7,6 +7,7 @@ import { CheckingPill, LiveView, SavedPill, stepMarker, useSampleState } from '.
 import { findStep, numberOf, StepsPanel, toTokens, type RowStatus } from '../../components/steps';
 import { Skeleton } from '../../components/ui';
 import { AddStepBar } from './AddStepBar';
+import { FileChooserDialog } from './FileChooserDialog';
 import { toolFor } from './actions';
 import { localId, type Recorder } from './useRecorder';
 import './recorder.css';
@@ -44,6 +45,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
         <LiveView address={address} viewport={viewport} status={status} tool={loading ? 'none' : toolFor(rec.action)}
           onPoint={rec.pagePoint} onDrag={rec.pageDrag} onBox={rec.pageBox} onScroll={rec.pageScroll} blocked={blocked}
           markers={marker ? [marker] : []} candidate={rec.ai.state === 'result' || rec.ai.state === 'proposal' ? rec.ai.box : null} thinking={rec.thinking} loading={loading} />
+        <FileChooserDialog ask={rec.fileAsk} dir={rec.filesDir} onChoose={rec.chooseFile} />
         <AddStepBar rec={rec} appId={appId} allowGroups={allowGroups} onInsertGroup={insertGroup} frozen={run?.running ? 'The test is playing in this browser. Stop it, or wait for it to finish, to add steps.' : null} />
       </div>
       {loading ? (

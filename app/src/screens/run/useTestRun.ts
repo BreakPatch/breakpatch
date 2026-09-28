@@ -11,6 +11,7 @@ import { useSession } from '../../state/session';
 import { hasFeature } from '../../edition';
 import { ensureSecretSites } from '../../lib/secretSites';
 import { first } from '../settings/secretUsage';
+import { filesDir } from '../../lib/testFiles';
 import type { App } from '../../data/types';
 import { backendGroupLoader, callSecretNames, preorder, resolveSteps, secretNames } from './resolve';
 import { INITIAL_RUN, runReducer } from './runState';
@@ -74,6 +75,7 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
       runId, startUrl: t.startUrl, appUrl, viewport: t.viewport, steps, setUp: t.setUp, cleanUp: t.cleanUp,
       settings: { autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix, allowSystemDifferences: prefs.allowSystemDifferences },
       secrets: values, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}),
+      ...(filesDir(backend.local?.path) ? { filesDir: filesDir(backend.local?.path) } : {}),
       ...(opts.keepOpen ? { keepOpen: true } : {}), ...(opts.upToStepId ? { upToStepId: opts.upToStepId } : {}),
     }).catch(err => { offStep(); offEnd(); reject(err); });
   });

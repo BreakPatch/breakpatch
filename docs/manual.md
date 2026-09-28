@@ -121,6 +121,8 @@ breakpatch-tests/
       tests/log-in.json           a test and its steps
       shared/sign-in.json         shared steps
       runs/log-in.json            the last run of that test
+  files/
+    photo.jpg                     a file a test uploads (see Record a test)
   suites/
     smoke.json                    a suite: its name and tests, in order
 ```
@@ -184,7 +186,7 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
    - A header's value can be a saved secret, for example an `Authorization` token. The secret must be allowed on the call's site, like typing it (see [Saved secrets](#saved-secrets)).
    - Logs show the address without its query string, and never a header's value.
 3. Add steps. Both of these always work:
-   - **Click** anything on the page.
+   - **Click** anything on the page. Nothing happens to the page yet: Breakpatch highlights what you clicked and asks, for example, "Click Next button?". Press **Confirm** (or Enter, or click it again) to do the step; **Try again** to pick something else; Esc to cancel. Dragging and scrolling on the page work the same way.
    - **Describe** it in the box below, for example "click the Done button". The AI assistant highlights what it found. Press **Confirm** or **Try again**.
 4. Use the action button next to the box for everything else: double, long and right click, hover, swipe, scroll, drag and drop, **Write text**, **Wait until**, **Go to address**, reload, back and forward, tabs and popups, upload a sample file, check a download, **Checkpoint**, **Repeat** and **Shared steps**.
 5. Press **Save**.
@@ -192,6 +194,8 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
 Screen checks are worked out automatically after every step. There's nothing to draw or approve.
 
 Select a step to change it in place. **What to look for** is the plain description of what the step acts on, for example "Done button, bottom right of the Create project dialog". Edit it if it's wrong. From there you can also re-record, duplicate or delete the step.
+
+**Uploading a file.** When a click opens the page's file picker, Breakpatch asks which file to use: one of the sample files, one of **Your files**, or **Choose from this Mac…**. A file from your Mac is copied into the tests folder's `files` folder, so the test uploads the same file on every run and on every Mac that has the folder. If the file is missing when the test runs, the step fails with "files/photo.jpg isn't in the tests folder." **Cancel, just click** records a plain click.
 
 **Checkpoint** checks that something is on screen, like "Project created": click it, draw a box around it, or name it. **Write text** types a fixed text, a saved secret, or a value made at run time, like `Test project {time}`.
 

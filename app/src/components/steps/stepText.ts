@@ -37,7 +37,7 @@ export function defaultLabel(p: Partial<Step> & { action: Step['action'] }): str
     case 'waitFor': return `Wait ${Math.round((p.durationMs ?? 1000) / 1000)} seconds`;
     case 'switchTab': return 'Switch to the new tab';
     case 'downloadCheck': return p.fileType ? `Check a ${p.fileType.toUpperCase()} file downloaded` : 'Check a file downloaded';
-    case 'upload': return `Upload ${p.sample ? SAMPLES[p.sample] : 'a file'}`;
+    case 'upload': return p.file ? `Upload ${p.file.replace(/^files\//, '')}` : `Upload ${p.sample ? SAMPLES[p.sample] : 'a file'}`;
     case 'checkpoint': return 'Check something is visible';
     case 'swipe': case 'scroll': return `${actionInfo(p.action).verb} ${p.direction ?? 'down'}`;
     case 'drag': return 'Drag and drop';

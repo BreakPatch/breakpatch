@@ -49,7 +49,7 @@ class Engine:
         self.timings = timings or config.Timings.from_env()
         self.locator_fn = locator_fn or default_locator_factory()
         self.browser = BrowserSession(self.timings, on_frame=lambda d: emit("frame", d), headless=headless)
-        self.recorder = Recorder(self.browser, self.locator_fn, self.timings)
+        self.recorder = Recorder(self.browser, self.locator_fn, self.timings, emit)
         self.setup = install.Setup(lambda d: emit("setup.progress", d))
         self._activity: str | None = None      # "recording" | "run"
         self._run: tuple[str, asyncio.Task, asyncio.Event] | None = None
@@ -71,6 +71,7 @@ class Engine:
             "record.locate": self.record_locate,
             "record.checkpoint": self.record_checkpoint,
             "record.propose": self.record_propose,
+            "record.chooseFile": lambda p: self._sync(self.recorder.choose_file(p)),
             "run.start": self.run_start,
             "run.stop": self.run_stop,
             "call.try": self.call_try,
@@ -160,6 +161,10 @@ class Engine:
             raise EngineError("bad_request", "Draw a box around what should be visible.")
         return {"step": await self._recording(
             lambda: self.recorder.checkpoint([int(v) for v in region], phase, p.get("frame")))}
+
+    @staticmethod
+    async def _sync(value):
+        return value
 
     async def record_propose(self, p: dict):
         self._not_during_run()

@@ -756,3 +756,52 @@ async def test_propose_names_the_element_and_touches_nothing(site):
         assert "name" not in quick and "box" not in quick           # the page itself: no box
     finally:
         await hx.call("browser.close")
+
+
+# ---------- a click that opens the page's file picker ----------
+
+async def _click_and_choose(hx, choice):
+    n = len(hx.of("record.fileChooser"))
+    rec = asyncio.ensure_future(hx.call("record.point", {"action": "click", "at": [190, 60]}))
+    for _ in range(200):
+        if len(hx.of("record.fileChooser")) > n or rec.done():
+            break
+        await asyncio.sleep(0.02)
+    if rec.done():
+        return (await rec)["step"]
+    ev = hx.of("record.fileChooser")[-1]
+    assert ev == {"accept": "image/*", "multiple": False}
+    assert "choosing" in [d["phase"] for d in hx.of("record.checking")]
+    await hx.call("record.chooseFile", choice)
+    return (await rec)["step"]
+
+
+async def test_a_page_file_picker_asks_the_app_and_records_an_upload(site, tmp_path):
+    files = tmp_path / "files"
+    files.mkdir()
+    (files / "photo.jpg").write_bytes(b"\xff\xd8\xff" + b"0" * 100)
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/upload.html", "viewport": VIEWPORT})
+    try:
+        page = hx.engine.browser.page
+        own = await _click_and_choose(hx, {"file": "files/photo.jpg", "path": str(files / "photo.jpg")})
+        assert own["action"] == "upload" and own["file"] == "files/photo.jpg" and "sample" not in own
+        assert own["label"] == "Upload photo.jpg"
+        assert await page.text_content("#names") == "photo.jpg 103"
+        step = await _click_and_choose(hx, {"sample": "jpeg"})
+        assert step["action"] == "upload" and step["sample"] == "jpeg" and step["label"] == "Upload JPEG image"
+        assert (await page.text_content("#names")).startswith("sample.jpeg ")
+        with pytest.raises(EngineError):                                          # outside files/
+            await _click_and_choose(hx, {"file": "files/../x.jpg", "path": str(files / "photo.jpg")})
+        plain = await _click_and_choose(hx, {"cancel": True})
+        assert plain["action"] == "click"
+        with pytest.raises(EngineError):
+            await hx.call("record.chooseFile", {"cancel": True})                   # nothing waiting
+    finally:
+        await hx.call("browser.close")
+    ok = await hx.run([own, step], site + "/upload.html", filesDir=str(files))
+    assert ok["result"] == "pass", ok
+    (files / "photo.jpg").unlink()
+    gone = await hx.run([own], site + "/upload.html", filesDir=str(files))
+    assert gone["steps"][0]["reason"] == "fileMissing"
+    assert gone["message"] == "files/photo.jpg isn't in the tests folder."

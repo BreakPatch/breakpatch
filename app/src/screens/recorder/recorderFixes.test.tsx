@@ -226,3 +226,24 @@ describe('nothing reaches the page until it is confirmed', () => {
     expect(liveSource).not.toMatch(/\.pointer\(/);
   });
 });
+
+describe("a click that opens the page's file picker", () => {
+  it('asks which file and sends the answer; uploads of own files come from the tests folder', async () => {
+    const engine = getEngine() as unknown as { emit(e: 'record.fileChooser', d: { accept: string; multiple: boolean }): void };
+    let release: () => void = () => undefined;
+    vi.spyOn(getEngine(), 'recordPoint').mockImplementation(p => new Promise(res => { release = () => res({ id: 'u1', action: 'upload', label: 'Upload photo.jpg', at: p.at, file: 'files/photo.jpg' }); }));
+    const choose = vi.spyOn(getEngine(), 'chooseFile').mockResolvedValue();
+    const { result } = renderHook(() => useRecorder({ viewport: vp, onError: vi.fn(), filesDir: '/t/files' }));
+    act(() => { result.current.pagePoint([100, 60], 1); });
+    act(() => { result.current.confirmAi(); });
+    await waitFor(() => expect(getEngine().recordPoint).toHaveBeenCalled());
+    expect(vi.mocked(getEngine().recordPoint).mock.calls[0][0]).toMatchObject({ filesDir: '/t/files' });
+    act(() => { engine.emit('record.fileChooser', { accept: 'image/*', multiple: false }); });
+    expect(result.current.fileAsk).toEqual({ accept: 'image/*', multiple: false });
+    act(() => { result.current.chooseFile({ file: 'files/photo.jpg', path: '/t/files/photo.jpg' }); });
+    expect(choose).toHaveBeenCalledWith({ file: 'files/photo.jpg', path: '/t/files/photo.jpg' });
+    expect(result.current.fileAsk).toBeNull();
+    act(() => release());
+    await waitFor(() => expect(result.current.steps[0]?.file).toBe('files/photo.jpg'));
+  });
+});

@@ -190,7 +190,15 @@ Per action:
   area looks now), `tolerance` and `timeoutMs` (default 10000). No `pre`/`post`.
 - `downloadCheck` without `at` checks for a download since the previous download check (e.g. after
   a "Click Download" step). Without one it fails with `bad_request` "No file was downloaded."
-- `upload` clicks `at`, expects a file picker and chooses the bundled `sample` (`docx`, `pdf`, `jpeg`, `mp4`, `xlsx`, `csv`).
+- `upload` clicks `at`, expects a file picker and chooses the bundled `sample` (`docx`, `pdf`, `jpeg`, `mp4`, `xlsx`, `csv`). With `file:
+  "files/<name>"` it chooses that file from `filesDir` instead (`record.point` and `run.start` take
+  `filesDir`, the tests folder's `files` folder; only a plain name inside it is used). A missing file
+  fails the run step with `fileMissing` ("files/photo.jpg isn't in the tests folder.").
+- A click (`click`, `doubleClick`, `longClick`, `rightClick`) that opens the page's file picker
+  doesn't show a system dialog: `record.point` emits `record.checking` `{ phase: "choosing" }` and the
+  event `record.fileChooser` `{ accept, multiple }`, then waits (up to 10 minutes) for the app's
+  `record.chooseFile` with `{ sample }`, `{ file: "files/<name>", path }` or `{ cancel: true }`. With a
+  file, the step comes back as an `upload` of it; with cancel it stays a plain click.
 - `loop` / `group` return at once with the given fields (`steps` default `[]`).
 - `checkpoint` through `record.point` needs `region` and is the same as `record.checkpoint`.
 

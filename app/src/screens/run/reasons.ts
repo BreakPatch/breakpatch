@@ -26,12 +26,13 @@ export function reasonTitle(reason: FailReason | undefined, step: Pick<Step, 'ta
     case 'secretMissing': return 'Saved secret is missing on this Mac';
     case 'setUpFailed': return "The set-up call didn't work";
     case 'stopped': return 'You stopped the run';
+    case 'fileMissing': return "The file to upload isn't in the tests folder";
     default: return 'This step failed';
   }
 }
 
 /** One plain sentence (or two) under the headline. */
-export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'target' | 'label' | 'action' | 'secretRef'>): string {
+export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'target' | 'label' | 'action' | 'secretRef'> & Partial<Pick<Step, 'file'>>): string {
   const verb = VERB[step.action] ?? 'use';
   switch (reason) {
     case 'targetNotFound': return `It wasn't where it was when this step was recorded, so there was nothing to ${verb}. The run stopped here.`;
@@ -48,6 +49,7 @@ export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'tar
     case 'secretMissing': return `Add ${step.secretRef ?? 'the saved secret'} in Settings → Saved secrets, then run again.`;
     case 'setUpFailed': return "The call before the test didn't answer with success, so no steps ran.";
     case 'stopped': return "The steps from here on didn't run.";
+    case 'fileMissing': return `${step.file ?? 'The file'} isn't in the tests folder. Put it back in the files folder, or re-record the step.`;
     default: return 'The run stopped here.';
   }
 }

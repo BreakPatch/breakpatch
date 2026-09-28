@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import datetime as dt
 import time
 from dataclasses import dataclass, field
@@ -87,11 +88,30 @@ class Context:
     stop: asyncio.Event | None = None
     download_mark: int = 0                      # downloads before this index are already accounted for
     relaxed: bool = False                       # screen checks allow for another system (systems.py)
+    files_dir: str | None = None                # <tests folder>/files, for uploads of the user's own files
 
     def __post_init__(self):
         # Bare values (in-process callers) become Secrets allowed nowhere: typing them fails plainly.
         if any(not isinstance(v, Secret) for v in self.secrets.values()):
             self.secrets = parse_secrets(self.secrets)
+
+
+FILE_REF = re.compile(r"^files/[^/\\]+$")
+
+
+def upload_path(step: dict, ctx: "Context") -> Path:
+    """The file an upload step chooses: one of the user's own (`file: "files/<name>"`, in the tests
+    folder), else a bundled sample. Only a plain name inside files/ is accepted."""
+    ref = step.get("file")
+    if not ref:
+        return sample_path(step.get("sample") or "pdf")
+    name = str(ref)
+    if not FILE_REF.match(name) or name.endswith(("/..", "/.")) or "/../" in name:
+        raise ActionFailed("fileMissing", f"{name} isn't a file in the tests folder.")
+    path = Path(ctx.files_dir or "") / name.split("/", 1)[1] if ctx.files_dir else None
+    if path is None or not path.is_file():
+        raise ActionFailed("fileMissing", f"{name} isn't in the tests folder.")
+    return path
 
 
 def sample_path(kind: str) -> Path:
@@ -206,7 +226,7 @@ async def perform(b: BrowserSession, step: dict, ctx: Context, at: Sequence[floa
     elif a == "upload":
         if at is None:
             raise ActionFailed("targetNotFound", "This upload has no position to click.")
-        if not await b.upload(at, sample_path(step.get("sample") or "pdf")):
+        if not await b.upload(at, upload_path(step, ctx)):
             raise ActionFailed("timeout", "Clicking there didn't open a file picker.")
     elif a == "downloadCheck":
         await download_check(b, step, ctx, at)

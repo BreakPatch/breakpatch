@@ -14,6 +14,7 @@
     "fs:allow-read-dir",
     "fs:allow-mkdir",
     "fs:allow-rename",
+    "fs:allow-copy-file",
     "fs:allow-remove",
     "fs:allow-exists",
     "fs:allow-stat",

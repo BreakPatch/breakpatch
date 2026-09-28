@@ -1,7 +1,7 @@
 // Simulated engine for the browser preview and tests. Timings follow the prototype:
 // "Checking the screen…" ~1 s, run steps ~750 ms each, AI thinking ~1.5 s.
 import type { Box, FailReason, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import type { CallReply, Engine, EngineEvents, LocateResult, Proposal, RecordParams, RunStart, SetupTaskName, SystemInfo } from './engine';
+import type { CallReply, Engine, EngineEvents, FileChoice, LocateResult, Proposal, RecordParams, RunStart, SetupTaskName, SystemInfo } from './engine';
 import { edition } from '../edition';
 import { labelFor } from './labels';
 import { MODELS_DIR } from './paths';
@@ -95,6 +95,8 @@ export class DemoEngine implements Engine {
     return { box: hit.box, at: [(hit.box[0] + hit.box[2]) / 2, (hit.box[1] + hit.box[3]) / 2], target: hit.target };
   }
 
+  /** The demo's sample page has no file inputs, so this never waits. */
+  async chooseFile(_choice: FileChoice) {}
   async propose(at: Point, opts: { name?: boolean } = {}): Promise<Proposal> {
     const hit = this.targets.find(t => t.visible() && inside(at, t.box));
     if (!hit) return { at };

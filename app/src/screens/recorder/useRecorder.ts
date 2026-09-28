@@ -3,7 +3,7 @@
 // candidate box, open loop, re-record step). All engine work goes through getEngine().
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActionKind, Box, Direction, Generated, Point, SampleFile, Step, Viewport } from '../../data/types';
-import { demoEngine, getEngine, EngineError, type CheckingPhase, type RecordParams } from '../../engine';
+import { demoEngine, getEngine, EngineError, type CheckingPhase, type FileChoice, type FileChooserEvent, type RecordParams } from '../../engine';
 import { around, gesture, inside, sampleApp } from '../../components/live';
 import { actionInfo } from '../../engine/labels';
 import { appendStep, defaultLabel, findStep, flatRows, insertAfter, numberOf, removeStep, replaceStep, stepsBefore, updateStep } from '../../components/steps';
@@ -50,6 +50,7 @@ export function phaseText(phase: CheckingPhase, action: ActionKind): string {
     case 'watching': return 'Looking at the page…';
     case 'acting': return ACTING[action] ?? 'Doing the step…';
     case 'naming': return 'Naming the step…';
+    case 'choosing': return 'Choose the file to upload…';
     default: return 'Waiting for the page…';
   }
 }
@@ -70,10 +71,12 @@ export async function secretFor(ref: string | undefined, appUrl: string | undefi
   return ref in values ? { [ref]: values[ref] } : {};
 }
 
-export function useRecorder({ viewport, onError, appUrl }: {
+export function useRecorder({ viewport, onError, appUrl, filesDir }: {
   viewport: Pick<Viewport, 'width' | 'height'>; onError: (message: string) => void;
   /** The app's base address: where a saved secret is allowed when it has no sites yet. */
   appUrl?: string;
+  /** <tests folder>/files, for uploads of the user's own files. */
+  filesDir?: string;
 }) {
   const engine = getEngine();
   const sample = engine.liveMode === 'sample';
@@ -115,6 +118,10 @@ export function useRecorder({ viewport, onError, appUrl }: {
   }, []);
 
   // "Checking the screen…" follows the engine's record.checking events while a step records.
+  // A click opened the page's file picker: the app asks which file (FileChooserDialog).
+  const [fileAsk, setFileAsk] = useState<FileChooserEvent | null>(null);
+  useEffect(() => engine.on('record.fileChooser', d => { if (busyRef.current) setFileAsk(d); }), [engine]);
+  const chooseFile = (c: FileChoice) => { setFileAsk(null); void engine.chooseFile(c).catch(e => onErrorRef.current(e instanceof Error ? e.message : "Couldn't use that file.")); };
   useEffect(() => engine.on('record.checking', d => { if (busyRef.current) { setChecking(true); setPhase(d.phase); } }), [engine]);
   useEffect(() => { if (!savedPill) return; const t = setTimeout(() => setSavedPill(null), 1500); return () => clearTimeout(t); }, [savedPill]);
 
@@ -174,7 +181,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
     try {
       // The secret's value goes to the engine with this call only, never into the step.
       const secretValues = extra.checkpoint ? undefined : await secretFor(params.secretRef, appUrl);
-      const sent: RecordParams = { ...params, ...(secretValues ? { secrets: secretValues } : {}), ...(extra.frame !== undefined ? { frame: extra.frame } : {}),
+      const sent: RecordParams = { ...params, ...(filesDir ? { filesDir } : {}), ...(secretValues ? { secrets: secretValues } : {}), ...(extra.frame !== undefined ? { frame: extra.frame } : {}),
         // Found with the AI assistant: the user's words are what to look for (the engine still names it).
         ...(extra.target && !extra.checkpoint ? { target: extra.target } : {}),
         ...(extra.label && !extra.checkpoint && params.action !== 'checkpoint' ? { label: extra.label } : {}) };
@@ -194,7 +201,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
       setSelectedId(rr);
       onErrorRef.current(e instanceof EngineError || e instanceof Error ? e.message : "Couldn't record that step.");
     } finally {
-      busyRef.current = false; setBusyId(null); setChecking(false);
+      busyRef.current = false; setBusyId(null); setChecking(false); setFileAsk(null);
     }
   }
 
@@ -348,7 +355,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
     phaseText: busyId !== null ? phaseText(phase, busyAction) : null,
     stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi, pageScroll, retryNote,
-    insertAfterId, setInsertAfter, unplayed, atStepId, played,
+    insertAfterId, setInsertAfter, unplayed, atStepId, played, fileAsk, chooseFile, filesDir,
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),
     thinking: ai.state === 'thinking' ? thinkingText(ai.what) : null,
     ask: ai.state === 'result' ? askText(ai.what) : ai.state === 'proposal' ? `${ai.label}?` : null,
