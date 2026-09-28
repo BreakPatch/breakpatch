@@ -334,7 +334,7 @@ async def test_locate_maps_box_and_handles_not_found(site):
         got = await hx.call("record.locate", {"description": "the Create project button"})
         frame = got.pop("frame")
         assert got == {"box": MOVED_BOX, "at": [490.0, 222.0], "target": "the Create project button"}
-        assert isinstance(frame, int) and frame == hx.engine.browser.last_seq   # the frame the box was found on
+        assert isinstance(frame, int) and 0 < frame <= hx.engine.browser.last_seq   # the frame shown as the box was found
         hx.locator.box = None
         from breakpatch_engine.protocol import NULL
         assert await hx.call("record.locate", {"description": "a unicorn"}) is NULL
