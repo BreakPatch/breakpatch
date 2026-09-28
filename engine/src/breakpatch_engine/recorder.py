@@ -197,12 +197,12 @@ class Recorder:
 
         async def late_chooser() -> bool:
             """A page can open its file picker a while after the click (after an async step, as
-            Flutter does): the listener stays on for CHOOSER_WINDOW after it, while the page settles
+            Flutter does): the listener stays on for `chooser_window` after it, while the page settles
             (DESK-07). True when one opened late and was answered."""
             if not watching:
                 return False
             try:
-                while not choosers and time.monotonic() - clicked < config.CHOOSER_WINDOW:
+                while not choosers and time.monotonic() - clicked < self.t.chooser_window:
                     await asyncio.sleep(0.05)
             finally:
                 unwatch()
