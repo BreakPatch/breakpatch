@@ -197,6 +197,8 @@ Select a step to change it in place. **What to look for** is the plain descripti
 
 **Uploading a file.** When a click opens the page's file picker, Breakpatch asks which file to use: one of the sample files, one of **Your files**, or **Choose from this Mac…**. A file from your Mac is copied into the tests folder's `files` folder, so the test uploads the same file on every run and on every Mac that has the folder. If the file is missing when the test runs, the step fails with "files/photo.jpg isn't in the tests folder." **Cancel, just click** records a plain click.
 
+**Passwords.** When you write into a field that hides what's typed, the step shows as `Write "••••••••"` (the eye shows it) and Breakpatch asks once: "This looks like a password. Save it as a saved secret?" **Save as secret** keeps the value in this Mac's Keychain and the step uses the secret; **Keep as typed text** is fine for a sandbox account; **Don't ask again for this app** stops asking. The screen checks leave the inside of the field out, so another password of another length still passes.
+
 **Checkpoint** checks that something is on screen, like "Project created": click it, draw a box around it, or name it. **Write text** types a fixed text, a saved secret, or a value made at run time, like `Test project {time}`.
 
 ## Run a test and read the report

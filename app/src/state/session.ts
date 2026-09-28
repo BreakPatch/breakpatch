@@ -21,6 +21,8 @@ export interface Prefs {
   allowSystemDifferences: boolean; // "Allow for small differences between systems" (Settings → Screen checks)
   runnerMode: boolean;           // "Use this Mac as the local runner"
   runnerName: string;
+  /** Apps (by id) whose passwords typed as plain text shouldn't prompt "Save it as a saved secret?". */
+  noSecretAsk?: string[];
 }
 
 /** A tests folder on this Mac (Community). */

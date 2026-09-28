@@ -26,12 +26,16 @@ export function stepIcon(s: Pick<Step, 'action' | 'nav' | 'secretRef'>): string 
   return actionInfo(s.action)?.icon ?? 'radio_button_checked';
 }
 
+/** A typed value written into a masked field reads as dots in the list (an eye shows it). */
+export const MASKED_LABEL = 'Write "••••••••"';
+
 /** Default label for a new step (the user can rename it later). */
 export function defaultLabel(p: Partial<Step> & { action: Step['action'] }): string {
   switch (p.action) {
     case 'write':
       if (p.secretRef) return `Write saved secret ${p.secretRef}`;
       if (p.generated) return `Write ${GENERATED[p.generated as Generated]}`;
+      if (p.masked) return MASKED_LABEL;
       return `Write "${friendlyText(p.text ?? '')}"`;
     case 'waitUntil': return 'Wait until something appears';
     case 'waitFor': return `Wait ${Math.round((p.durationMs ?? 1000) / 1000)} seconds`;

@@ -154,6 +154,21 @@ class Recorder:
         if action == "downloadCheck":
             self._download_mark = ctx.download_mark
         naming = asyncio.ensure_future(self._name(before, anchor)) if anchor is not None and not p.get("label") else None
+        field_box = None
+        if action == "write":
+            # A field that hides what's typed (a password): the step says so, and its checks, and
+            # those of later steps on this page, leave the inside of the field out, so another
+            # value (a generated one, a changed secret) of another length still passes.
+            field = await self.b.focused_field()
+            if field and field[1]:
+                field_box = field[0]
+                inside = imaging.shrink_box(field[0], 2)
+                step["masked"] = True
+                noise = imaging.merge_boxes(list(noise) + [inside])
+                self.remember_noise([inside])
+                if step.get("text") and not step.get("secretRef") and not p.get("label"):
+                    step["label"] = 'Write "' + "\u2022" * 8 + '"'
+
 
         try:
             phase("settling")
@@ -180,7 +195,11 @@ class Recorder:
             if blast is not None:
                 post_region, expect = blast, True
             else:
-                post_region = step["pre"]["region"] if "pre" in step else [0, 0, w, h]
+                post_region = (step["pre"]["region"] if "pre" in step
+                               # around a masked field: what's next to it, its inside left out
+                               else imaging.clamp_box([field_box[0] - 40, field_box[1] - 40, field_box[2] + 40,
+                                                       field_box[3] + 40], w, h) if field_box
+                               else [0, 0, w, h])
                 expect = False
             if not varies_each_run(step):
                 step["post"] = {"region": post_region, "hash": imaging.region_hash(after, post_region, ignore),

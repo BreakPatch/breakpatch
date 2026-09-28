@@ -9,6 +9,8 @@ import { actionInfo } from '../../engine/labels';
 import { appendStep, defaultLabel, findStep, flatRows, insertAfter, numberOf, removeStep, replaceStep, stepsBefore, updateStep } from '../../components/steps';
 import { POINT_KINDS, STICKY } from './actions';
 import { secrets } from '../../platform';
+import { useSession } from '../../state/session';
+import { originOf } from '../../lib/sites';
 import { ensureSecretSites } from '../../lib/secretSites';
 import { askText, checkpointLabel, describeWhat, notFoundText, thinkingText } from './describe';
 
@@ -71,12 +73,14 @@ export async function secretFor(ref: string | undefined, appUrl: string | undefi
   return ref in values ? { [ref]: values[ref] } : {};
 }
 
-export function useRecorder({ viewport, onError, appUrl, filesDir }: {
+export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   viewport: Pick<Viewport, 'width' | 'height'>; onError: (message: string) => void;
   /** The app's base address: where a saved secret is allowed when it has no sites yet. */
   appUrl?: string;
   /** <tests folder>/files, for uploads of the user's own files. */
   filesDir?: string;
+  /** For "Don't ask again for this app" (saving a typed password as a saved secret). */
+  appId?: string;
 }) {
   const engine = getEngine();
   const sample = engine.liveMode === 'sample';
@@ -120,6 +124,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir }: {
   // "Checking the screen…" follows the engine's record.checking events while a step records.
   // A click opened the page's file picker: the app asks which file (FileChooserDialog).
   const [fileAsk, setFileAsk] = useState<FileChooserEvent | null>(null);
+  // A typed password (a Write into a masked field): offer once to save it as a saved secret.
+  const [secretAsk, setSecretAsk] = useState<string | null>(null);
   useEffect(() => engine.on('record.fileChooser', d => { if (busyRef.current) setFileAsk(d); }), [engine]);
   const chooseFile = (c: FileChoice) => { setFileAsk(null); void engine.chooseFile(c).catch(e => onErrorRef.current(e instanceof Error ? e.message : "Couldn't use that file.")); };
   useEffect(() => engine.on('record.checking', d => { if (busyRef.current) { setChecking(true); setPhase(d.phase); } }), [engine]);
@@ -195,6 +201,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir }: {
       setSelectedId(id); setDirty(true); setRerecordId(null); setAddedId(id); setAtStepId(id);
       setSavedPill(`Step ${numberOf(next, id)} saved`);
       afterAdd(params.action);
+      const noAsk = useSession.getState().prefs.noSecretAsk ?? [];
+      if (step.action === 'write' && step.masked && step.text && !step.secretRef && !step.generated && !(appId && noAsk.includes(appId))) setSecretAsk(id);
     } catch (e) {
       if (!rr && insertRef.current === tempId) setInsertAfter(prevInsert);
       if (!rr) setSteps(s => removeStep(s, tempId));
@@ -356,6 +364,21 @@ export function useRecorder({ viewport, onError, appUrl, filesDir }: {
     stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi, pageScroll, retryNote,
     insertAfterId, setInsertAfter, unplayed, atStepId, played, fileAsk, chooseFile, filesDir,
+    secretAsk: secretAsk && findStep(steps, secretAsk) ? findStep(steps, secretAsk)! : null,
+    /** Keep as typed text; with `forApp`, never ask again for this app. */
+    keepTyped: (forApp = false) => {
+      setSecretAsk(null);
+      if (forApp && appId) { const s = useSession.getState(); s.setPrefs({ noSecretAsk: [...new Set([...(s.prefs.noSecretAsk ?? []), appId])] }); }
+    },
+    /** Saves the step's typed value as a saved secret (allowed on the app's site) and makes the step use it. */
+    saveAsSecret: async (name: string) => {
+      const id = secretAsk; const s = id ? findStep(stepsRef.current, id) : undefined;
+      if (!id || !s?.text) return;
+      const origin = appUrl ? originOf(appUrl) : null;
+      await secrets.set(name, s.text, origin ? { origins: [origin] } : {});
+      setSteps(list => updateStep(list, id, st => ({ ...st, text: undefined, secretRef: name, label: `Write saved secret ${name}` })));
+      setDirty(true); setSecretAsk(null);
+    },
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),
     thinking: ai.state === 'thinking' ? thinkingText(ai.what) : null,
     ask: ai.state === 'result' ? askText(ai.what) : ai.state === 'proposal' ? `${ai.label}?` : null,

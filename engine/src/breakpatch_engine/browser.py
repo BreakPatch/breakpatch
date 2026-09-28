@@ -71,6 +71,16 @@ NO_CARET_SCRIPT = """(() => {
 })();"""
 
 
+FOCUS_FIELD_ENGINE = "bp-focused-field"
+FOCUS_FIELD_SCRIPT = """({
+  queryAll(root) {
+    const doc = root.ownerDocument || root;
+    const a = doc.activeElement;
+    return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable) ? [a] : [];
+  }
+})"""
+
+
 def is_web_address(url: str) -> bool:
     u = (url or "").strip()
     return u == "about:blank" or bool(_WEB.match(u))
@@ -143,6 +153,10 @@ class BrowserSession:
         try:
             # Finds the focused frame element from Playwright's isolated world (focused_frame).
             await self._pw.selectors.register(FOCUS_ENGINE, FOCUS_SCRIPT, content_script=True)
+        except Exception as e:  # noqa: BLE001 - already registered on this driver
+            log.debug("focus engine: %s", e)
+        try:
+            await self._pw.selectors.register(FOCUS_FIELD_ENGINE, FOCUS_FIELD_SCRIPT, content_script=True)
         except Exception as e:  # noqa: BLE001 - already registered on this driver
             log.debug("focus engine: %s", e)
         try:
@@ -510,6 +524,28 @@ class BrowserSession:
                 return origin_of(url)
             f = f.parent_frame
         return None
+
+    async def focused_field(self) -> tuple[list[int], bool] | None:
+        """The focused field's box (viewport px) and whether it hides what's typed in it (a password
+        field, or text shown as dots with -webkit-text-security). Read from Playwright's isolated
+        world, like focused_frame. None when no field has the focus."""
+        frame = await self.focused_frame()
+        try:
+            el = frame.locator(f"{FOCUS_FIELD_ENGINE}=*")
+            if not await el.count():
+                return None
+            handle = await el.first.element_handle(timeout=1000)
+            if handle is None:
+                return None
+            masked = bool(await handle.evaluate(
+                "e => e.type === 'password' || !['', 'none'].includes(getComputedStyle(e).webkitTextSecurity || '')"))
+            bb = await handle.bounding_box()
+        except Exception:  # noqa: BLE001
+            return None
+        if not bb:
+            return None
+        box = imaging.clamp_box([bb["x"], bb["y"], bb["x"] + bb["width"], bb["y"] + bb["height"]], self.width, self.height)
+        return (box, masked) if imaging.box_area(box) else None
 
     async def type_guarded(self, text: str, allowed) -> str | None:
         """Types `text` key by key while the focused frame's origin passes `allowed`. Returns None

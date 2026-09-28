@@ -65,6 +65,8 @@ export function StepsPanel(p: StepsPanelProps) {
   const n = countRows(steps);
   const listRef = useRef<HTMLDivElement>(null);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  // Typed values written into a masked field, shown for now (the eye).
+  const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [drag, setDrag] = useState<{ id: string; over?: string; edge?: 'before' | 'after' } | null>(null);
   const seen = useRef<Set<string> | null>(null);
   // Rows that weren't there on the previous render fade up (not on first paint).
@@ -129,12 +131,21 @@ export function StepsPanel(p: StepsPanelProps) {
     if (edit && p.rerecordingId === s.id) { note = 'Re-recording: do this step again on the page'; tone = 'accent'; }
     else if (edit && s.rerecorded) { note = 'Re-recorded'; tone = 'passed'; }
 
-    const trailing = isGroup ? (
+    const masked = s.action === 'write' && s.masked && !!s.text && !s.secretRef;
+    const shown = masked && revealed.has(s.id);
+    const eye = masked ? (
+      <button type="button" className="step-eye" aria-label={shown ? 'Hide the typed text' : 'Show the typed text'} title={shown ? 'Hide the typed text' : 'Show the typed text'}
+        onClick={e => { e.stopPropagation(); setRevealed(r => { const n = new Set(r); if (n.has(s.id)) n.delete(s.id); else n.add(s.id); return n; }); }}>
+        <Icon name={shown ? 'visibility_off' : 'visibility'} size={17} />
+      </button>
+    ) : null;
+    const trailing0 = isGroup ? (
       <button type="button" className="group-toggle" aria-expanded={groupOpen} aria-label={groupOpen ? 'Hide shared steps' : 'Show shared steps'}
         onClick={e => { e.stopPropagation(); toggleGroup(s.id); }}>
         {children ? `${children.length} steps` : 'Shared'}<Icon name={groupOpen ? 'expand_less' : 'expand_more'} size={18} />
       </button>
     ) : edit && selected && !isGroup && editable ? <Icon name="expand_less" size={20} className="step-chev" /> : null;
+    const trailing = eye ? <>{eye}{trailing0}</> : trailing0;
 
     const expanded = (
       <>
@@ -152,7 +163,7 @@ export function StepsPanel(p: StepsPanelProps) {
     );
 
     return (
-      <StepRow key={s.id} step={s} number={r.number} depth={r.depth} selected={selected} status={status}
+      <StepRow key={s.id} step={shown ? { ...s, label: `Write "${s.text}"` } : s} number={r.number} depth={r.depth} selected={selected} status={status}
         note={note} noteTone={tone} checking={p.checkingId === s.id} trailing={trailing} fresh={fresh.has(s.id)} statusText={p.statusTexts?.[s.id]}
         onSelect={p.onSelect ? () => p.onSelect!(selected && edit ? null : s.id) : undefined}
         onMove={edit ? d => change(moveBy(steps, s.id, d)) : undefined}

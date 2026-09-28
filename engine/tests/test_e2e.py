@@ -805,3 +805,38 @@ async def test_a_page_file_picker_asks_the_app_and_records_an_upload(site, tmp_p
     gone = await hx.run([own], site + "/upload.html", filesDir=str(files))
     assert gone["steps"][0]["reason"] == "fileMissing"
     assert gone["message"] == "files/photo.jpg isn't in the tests folder."
+
+
+# ---------- typing into a field that hides what's typed ----------
+
+async def test_a_masked_field_is_flagged_and_left_out_of_the_checks(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/password.html", "viewport": VIEWPORT})
+    try:
+        step = (await hx.call("record.point", {"action": "write", "text": "hunter2"}))["step"]
+        typed = (await hx.call("record.point", {"action": "write", "text": "x"}))["step"]     # later steps too
+    finally:
+        await hx.call("browser.close")
+    assert step["masked"] is True and step["label"] == 'Write "' + "•" * 8 + '"'
+    assert step["text"] == "hunter2"
+    inside = [30, 30, 400, 55]                                     # well inside the field (left 20, top 20)
+    covers = lambda boxes: any(b[0] <= inside[0] and b[1] <= inside[1] and b[2] >= inside[2] and b[3] >= inside[3] and b[1] >= 20 for b in boxes)  # noqa: E731
+    assert covers(step["ignore"]) and covers(typed["ignore"]), step["ignore"]
+    # The check around the field still covers the line under it.
+    region = step["post"]["region"]
+    assert region[1] <= 70 and region[3] >= 94, region
+    assert (await hx.run([step], site + "/password.html"))["result"] == "pass"
+    longer = {**step, "text": "a much longer secret value than before"}
+    assert (await hx.run([longer], site + "/password.html"))["result"] == "pass"
+    other = await hx.run([step], site + "/password.html?other=1")
+    assert other["result"] == "fail", other
+
+
+async def test_a_plain_field_is_not_masked(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/field.html", "viewport": VIEWPORT})
+    try:
+        step = (await hx.call("record.point", {"action": "write", "text": "hello"}))["step"]
+    finally:
+        await hx.call("browser.close")
+    assert "masked" not in step and step["label"] == 'Write "hello"'

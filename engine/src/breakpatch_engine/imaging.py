@@ -38,6 +38,12 @@ def box_around(point: Sequence[float], radius: int, width: int, height: int) -> 
     return clamp_box([x - radius, y - radius, x + radius, y + radius], width, height)
 
 
+def shrink_box(b: Sequence[int], by: int) -> Box:
+    """The box moved in by `by` px on each side (the inside of a field, without its border)."""
+    x1, y1, x2, y2 = (int(v) for v in b)
+    return [x1 + by, y1 + by, max(x1 + by, x2 - by), max(y1 + by, y2 - by)]
+
+
 def box_area(b: Sequence[int]) -> int:
     return max(0, b[2] - b[0]) * max(0, b[3] - b[1])
 

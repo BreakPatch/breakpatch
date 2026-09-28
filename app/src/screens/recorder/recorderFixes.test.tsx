@@ -247,3 +247,51 @@ describe("a click that opens the page's file picker", () => {
     await waitFor(() => expect(result.current.steps[0]?.file).toBe('files/photo.jpg'));
   });
 });
+
+describe('a password typed as plain text', () => {
+  const masked = () => vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: 'w1', action: 'write', label: 'Write "••••••••"', text: p.text, masked: true }));
+  const typeIt = async (r: { current: ReturnType<typeof useRecorder> }) => {
+    act(() => { r.current.setAction('write'); r.current.setText('hunter2!'); });
+    act(() => { r.current.send(); });
+    await waitFor(() => expect(r.current.steps[0]?.id).toBe('w1'));
+  };
+
+  it('shows as dots, offers once to save it as a saved secret, and then uses the secret', async () => {
+    masked();
+    const { result } = renderHook(() => useRecorder({ viewport: vp, onError: vi.fn(), appUrl: 'https://app.example.com', appId: 'web' }));
+    await typeIt(result);
+    expect(result.current.steps[0].label).toBe('Write "••••••••"');
+    expect(result.current.secretAsk?.id).toBe('w1');
+    await act(async () => { await result.current.saveAsSecret('SIGNUP_PASSWORD'); });
+    expect(result.current.steps[0]).toMatchObject({ secretRef: 'SIGNUP_PASSWORD', label: 'Write saved secret SIGNUP_PASSWORD' });
+    expect(result.current.steps[0].text).toBeUndefined();
+    const { secrets } = await import('../../platform');
+    expect(await secrets.resolve(['SIGNUP_PASSWORD'])).toEqual({ SIGNUP_PASSWORD: 'hunter2!' });
+    expect((await secrets.info()).find(s => s.name === 'SIGNUP_PASSWORD')?.origins).toEqual(['https://app.example.com']);
+    expect(result.current.secretAsk).toBeNull();
+  });
+
+  it('can stay typed text, and stop asking for this app', async () => {
+    masked();
+    const { useSession } = await import('../../state/session');
+    const { result } = renderHook(() => useRecorder({ viewport: vp, onError: vi.fn(), appId: 'sandbox' }));
+    await typeIt(result);
+    act(() => { result.current.keepTyped(true); });
+    expect(result.current.secretAsk).toBeNull();
+    expect(result.current.steps[0].text).toBe('hunter2!');
+    expect(useSession.getState().prefs.noSecretAsk).toContain('sandbox');
+    const again = renderHook(() => useRecorder({ viewport: vp, onError: vi.fn(), appId: 'sandbox' }));
+    await typeIt(again.result);
+    expect(again.result.current.secretAsk).toBeNull();
+  });
+
+  it('the list shows dots, and the eye shows the typed text', () => {
+    const steps: Step[] = [{ id: 'w', action: 'write', label: 'Write "••••••••"', text: 'hunter2!', masked: true }];
+    render(<StepsPanel steps={steps} mode="edit" onChange={() => undefined} onSelect={() => undefined} />);
+    expect(screen.getByText('Write "••••••••"')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Show the typed text'));
+    expect(screen.getByText('Write "hunter2!"')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Hide the typed text'));
+    expect(screen.queryByText('Write "hunter2!"')).toBeNull();
+  });
+});

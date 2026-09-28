@@ -98,3 +98,6 @@
   font-size: 13px; color: var(--accent); font-weight: 600; flex: none; animation: bpIn 200ms ease-out both; text-align: left;
 }
 .loop-done:hover { background: var(--accent-tint); }
+
+.step-eye { color: var(--text-muted); border-radius: 6px; padding: 2px; display: flex; flex: none; }
+.step-eye:hover { color: var(--text); background: var(--raised); }

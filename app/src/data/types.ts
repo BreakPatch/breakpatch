@@ -107,6 +107,8 @@ export interface Step {
   durationMs?: number;
   url?: string; nav?: 'url' | 'reload' | 'back' | 'forward';
   sample?: SampleFile;
+  /** A Write into a field that hides what's typed (a password): shown as dots, the field's inside left out of checks. */
+  masked?: boolean;
   /** An upload of one of the user's own files: "files/<name>", in the tests folder. */
   file?: string;
   fileType?: string; minBytes?: number;

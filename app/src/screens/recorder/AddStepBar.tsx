@@ -191,6 +191,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
           <button type="button" className="rec-ai-link" onClick={() => { rec.cancelAi(); inputRef.current?.focus(); }}>OK</button>
         </div>
       )}
+      {rec.secretAsk && rec.ai.state === 'idle' && !rec.busy && <SecretAsk rec={rec} taken={secretNames} />}
       {extra}
       </div>
       <div className="rec-hint">{hint}</div>
@@ -215,6 +216,43 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
             onBack={() => setMenu('menu')} onClose={() => { setMenu('closed'); rec.setAction('click'); }} />
         )}
       </div>
+    </div>
+  );
+}
+
+const SECRET_NAME = /^[A-Z][A-Z0-9_]*$/;
+
+/** "This looks like a password. Save it as a saved secret?" after a Write into a masked field. */
+function SecretAsk({ rec, taken }: { rec: Recorder; taken: string[] }) {
+  const [naming, setNaming] = useState(false);
+  const free = (n: string) => { let x = n, i = 2; while (taken.includes(x)) x = `${n}_${i++}`; return x; };
+  const [name, setName] = useState(() => free('TEST_PASSWORD'));
+  const [error, setError] = useState<string | null>(null);
+  const bad = !SECRET_NAME.test(name) ? 'Use capital letters, numbers and _ only, starting with a letter.'
+    : taken.includes(name) ? 'There is already a saved secret with that name.' : null;
+  const save = async () => {
+    if (bad) return;
+    try { await rec.saveAsSecret(name); } catch (e) { setError(e instanceof Error ? e.message : "Couldn't save the secret."); }
+  };
+  if (naming) return (
+    <div className="rec-ai rec-ai-result" role="dialog" aria-label="Save as a saved secret">
+      <Icon name="key" size={20} className="rec-ai-icon" />
+      <label className="grow rec-secret-name">Name
+        <input className="rec-num mono" style={{ width: 200 }} value={name} autoFocus onChange={e => setName(e.target.value.toUpperCase())}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void save(); } if (e.key === 'Escape') setNaming(false); }} aria-invalid={!!bad} />
+        <span className={bad || error ? 'rec-secret-err' : 'faint'}>{bad ?? error ?? "Kept in this Mac's Keychain. The step then uses it."}</span>
+      </label>
+      <Button kind="primary" onClick={() => void save()} disabled={!!bad}>Save</Button>
+      <button type="button" className="rec-ai-link" onClick={() => setNaming(false)}>Back</button>
+    </div>
+  );
+  return (
+    <div className="rec-ai rec-ai-result" role="status">
+      <Icon name="password" size={20} className="rec-ai-icon" />
+      <div className="grow rec-ai-text">This looks like a password. Save it as a saved secret?</div>
+      <Button kind="primary" onClick={() => setNaming(true)}>Save as secret</Button>
+      <Button onClick={() => rec.keepTyped()}>Keep as typed text</Button>
+      <button type="button" className="rec-ai-link" onClick={() => rec.keepTyped(true)}>Don't ask again for this app</button>
     </div>
   );
 }

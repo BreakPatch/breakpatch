@@ -182,6 +182,11 @@ Per action:
   (`POST_CHANGE_SHARE`), so a click that only lights up a button that should have moved the page on
   fails with `noChange`. Steps saved without `change` keep the hash check alone. A `write` whose text changes per
   run (`generated`, `{i}`, `{time}`, `{date}`) gets no `post`.
+- A `write` into a field that hides what's typed (`type=password`, or text shown as dots with
+  `-webkit-text-security`; read from Playwright's isolated world) comes back with `masked: true` and,
+  for typed text, the label `Write "••••••••"`. The inside of the field is an ignore zone for this
+  step and for later steps on the page, so a value of another length (a generated one, a changed
+  secret) still passes, and without a blast radius its `post` is the area around the field.
 - `write` without `at` types into the focused field. With `secretRef`, pass the secret in
   `secrets` (see Saved secrets below; it is typed, never stored in the step); without it the call
   fails with `not_found` "The saved secret NAME isn't on this Mac.", and on a site the secret
