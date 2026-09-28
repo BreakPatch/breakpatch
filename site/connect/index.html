@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join a workspace · Breakpatch</title>
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+<style>.ws-where code { font-size: .95em; overflow-wrap: anywhere; }</style>
+</head>
+<body>
+<header class="top"><a class="brand" href="../"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a><nav></nav></header>
+<main class="connect">
+  <div class="card" id="mac" hidden>
+    <div class="ws-logo" id="logo"></div>
+    <h1 id="title">Join your team on Breakpatch.</h1>
+    <p id="body">Your team tests its web apps with Breakpatch. Open it to connect.</p>
+    <p class="small ws-where" id="where" hidden></p>
+    <div class="actions">
+      <a class="btn" id="open" href="#">Open in Breakpatch</a>
+      <a class="btn ghost" id="dl" href="../#install">Install Breakpatch</a>
+    </div>
+    <p class="small">Just installed it? Open the app, then click your link again.</p>
+    <p class="small">Invite links come from a Breakpatch Team workspace.</p>
+  </div>
+  <div class="card" id="notopen" hidden>
+    <div class="ws-logo"><span class="ear" style="width:34px;height:34px;border-radius:19px 4px 19px 19px" aria-hidden="true"></span></div>
+    <h1>Didn't open?</h1>
+    <p>It looks like Breakpatch isn't on this Mac yet. Install it, open it once, then come back to this page.</p>
+    <div class="actions">
+      <a class="btn" href="../#install">Install Breakpatch</a>
+      <a class="btn ghost" id="retry" href="#">Try opening again</a>
+    </div>
+    <p class="small">Needs a Mac with Apple Silicon and macOS 14 or later.</p>
+  </div>
+  <div class="card" id="other" hidden>
+    <div class="ws-logo" id="logo2"></div>
+    <h1>Open this link on your Mac.</h1>
+    <p>Breakpatch is a Mac app. Send this link to yourself and open it there.</p>
+    <p class="small ws-where" id="where2" hidden></p>
+    <div class="actions"><button class="btn" id="copy" type="button">Copy link</button></div>
+    <p class="small">The workspace details are in the link itself and never reach a server. Invite links come from a Breakpatch Team workspace.</p>
+  </div>
+  <div class="card" id="bad" hidden>
+    <h1>This link doesn't work.</h1>
+    <p>It may have been cut short when it was copied. Ask whoever sent it for a new one.</p>
+    <p class="small">Invite links come from a Breakpatch Team workspace, in Settings → Workspace.</p>
+  </div>
+</main>
+<footer class="site-foot rich"><div class="wrap"><p class="foot-small" style="margin:0">Breakpatch Team · <a href="../manual/">Manual</a> · <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></p></div></footer>
+<script>
+(function () {
+  // Everything after # stays in this browser. Format: base64url(JSON) with name, logo?, config, database, domain.
+  const raw = new URLSearchParams(location.hash.slice(1)).get('c');
+  const show = id => document.querySelectorAll('.card').forEach(c => (c.hidden = c.id !== id));
+  let ws = null;
+  try { ws = JSON.parse(decodeURIComponent(escape(atob(raw.replace(/-/g, '+').replace(/_/g, '/'))))); } catch (e) {}
+  if (!ws || !ws.name) return show('bad');
+  const logo = el => {
+    if (ws.logo && /^https:\/\//.test(ws.logo)) { const img = new Image(); img.alt = ''; img.src = ws.logo; el.appendChild(img); }
+    else { const s = document.createElement('span'); s.className = 'initial'; s.textContent = ws.name.trim()[0].toUpperCase(); el.appendChild(s); }
+  };
+  logo(document.getElementById('logo')); logo(document.getElementById('logo2'));
+  // Where the workspace really is: the name and logo are the link author's, the Firebase project is where the data goes.
+  const where = el => {
+    const c = ws.config || {};
+    if (typeof c.projectId !== 'string' || !c.projectId) return;
+    const code = t => { const e = document.createElement('code'); e.textContent = t; return e; };
+    el.append('Firebase project ', code(c.projectId));
+    if (typeof c.authDomain === 'string' && c.authDomain) el.append(' · sign-in domain ', code(c.authDomain));
+    el.append('. Only connect if you trust who sent the link.');
+    el.hidden = false;
+  };
+  where(document.getElementById('where')); where(document.getElementById('where2'));
+  document.getElementById('title').textContent = 'Join ' + ws.name + ' on Breakpatch.';
+  document.getElementById('body').textContent = 'Your team tests its web apps with Breakpatch. Open it to connect to the ' + ws.name + ' workspace.';
+  document.title = 'Join ' + ws.name + ' · Breakpatch';
+  const deep = 'breakpatch://connect#c=' + raw;
+  const isMac = /Mac/.test(navigator.platform || navigator.userAgent) && !/iPhone|iPad|iPod/.test(navigator.userAgent) && navigator.maxTouchPoints < 2;
+  if (!isMac) {
+    show('other');
+    document.getElementById('copy').onclick = async e => { try { await navigator.clipboard.writeText(location.href); e.target.textContent = 'Copied'; } catch (_) {} };
+    return;
+  }
+  show('mac');
+  const tryOpen = ev => {
+    if (ev) ev.preventDefault();
+    let left = false;
+    const onHide = () => { left = true; };
+    window.addEventListener('blur', onHide, { once: true });
+    document.addEventListener('visibilitychange', onHide, { once: true });
+    location.href = deep;
+    setTimeout(() => { if (!left) show('notopen'); }, 2500);
+  };
+  document.getElementById('open').onclick = tryOpen;
+  document.getElementById('retry').onclick = e => { show('mac'); tryOpen(e); };
+})();
+</script>
+</body>
+</html>

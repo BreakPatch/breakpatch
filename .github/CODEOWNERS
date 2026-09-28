@@ -1,0 +1,22 @@
+# Who must review what (security review C7, S1–S3). Enforced once the `main` ruleset has
+# "Require review from Code Owners" on. Later lines win.
+#
+# Everything: the owner. When a BreakPatch organisation team exists for maintainers, put it here
+# (e.g. `* @BreakPatch/maintainers`; a team that doesn't exist makes this line an error).
+*                                   @oscarshaitan
+
+# Always the owner, whoever else maintains the rest: CI, release and signing, the build and
+# install scripts, the native shell, the install command, the shared UI the back office bundles,
+# and every dependency manifest and lock file.
+/.github/                           @oscarshaitan
+/scripts/                           @oscarshaitan
+/app/src-tauri/                     @oscarshaitan
+/site/install                       @oscarshaitan
+/site/package.json                  @oscarshaitan
+/site/package-lock.json             @oscarshaitan
+/site/firebase.json                 @oscarshaitan
+/app/src/components/                @oscarshaitan
+/engine/pyproject.toml              @oscarshaitan
+/engine/locks/                      @oscarshaitan
+/app/package.json                   @oscarshaitan
+/app/package-lock.json              @oscarshaitan

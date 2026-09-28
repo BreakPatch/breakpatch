@@ -1,0 +1,62 @@
+/* Run report and Run history (design screens "MoraVision - Report", prototype isReport markup). */
+.rp-head {
+  flex: none; display: flex; align-items: center; gap: 24px; padding: 16px 20px; border-bottom: 1px solid var(--line);
+  background: var(--surface); min-height: 74px; animation: bpIn 260ms ease-out both;
+}
+.rp-head .pill { font-size: 18px; font-weight: 600; padding: 8px 14px 8px 10px; gap: 10px; flex: none; }
+.rp-head .pill .icon { font-size: 24px; }
+.rp-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-width: 200px; }
+.rp-meta-k { font-size: 12px; color: var(--text-faint); }
+.rp-meta-v { font-size: 14px; font-weight: 500; }
+.rp-count { font-size: 14px; color: var(--text-muted); }
+.rp-head .segmented { background: var(--bg); font-size: 13px; }
+.rp-head .segmented button { font-size: 13px; padding: 6px 12px; }
+
+.rp-body-wrap { flex: 1; min-height: 0; display: flex; }
+.rp-steps {
+  width: 360px; flex: none; background: var(--surface); border-right: 1px solid var(--line); display: flex; flex-direction: column;
+  gap: 6px; padding: 12px 10px; overflow: auto;
+}
+.rp-main { flex: 1; min-width: 0; overflow: auto; }
+.rp-detail { display: flex; flex-direction: column; gap: 16px; padding: 20px 24px; animation: bpIn 220ms ease-out both; }
+
+.rp-heading { display: flex; align-items: flex-start; gap: 12px; }
+.rp-heading > .icon { flex: none; }
+.rp-heading-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.rp-stepno { font-size: 12px; font-weight: 600; color: var(--text-faint); }
+.rp-headline { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+.rp-body { font-size: 14px; color: var(--text-muted); line-height: 1.5; max-width: 720px; }
+
+.rp-compare { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.rp-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.rp-col-label { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
+.rp-caption { font-size: 12px; color: var(--text-faint); }
+
+/* A screenshot at the test's aspect ratio (16:10 for the usual 1440 × 900). */
+.rp-shot { position: relative; aspect-ratio: 1440 / 900; border-radius: 4px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); background: var(--bg-sunk); display: flex; }
+.rp-shot .live-pane { background: transparent; overflow: hidden; }
+.rp-shot .live-frame { box-shadow: none; border-radius: 0; }
+.rp-shot.seen { box-shadow: 0 0 0 1px var(--failed); }
+.rp-shot-wide { width: 100%; max-width: 680px; }
+.rp-noshot { align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: var(--text-faint); }
+
+.rp-try { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.rp-try-title { font-size: 14px; font-weight: 600; }
+.rp-try-text { font-size: 14px; color: var(--text-muted); line-height: 1.5; }
+.rp-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rp-hint { font-size: 13px; color: var(--text-faint); }
+
+/* ---------- Run history ---------- */
+.rp-history-wrap { flex: 1; min-height: 0; overflow: auto; padding: 8px 20px; }
+.rp-history { display: flex; flex-direction: column; }
+.rh-row { display: grid; grid-template-columns: var(--rh-cols); gap: 16px; align-items: center; line-height: normal; }
+.rh-th { padding: 10px 12px; font-size: 12px; font-weight: 600; color: var(--text-faint); border-bottom: 1px solid var(--line); }
+.rh-tr { padding: 12px; font-size: 14px; border-bottom: 1px solid var(--line-soft); border-radius: 6px; cursor: pointer; transition: background var(--t-fast) ease-out; animation: bpIn 240ms ease-out both; }
+.rh-tr:hover { background: var(--surface); }
+.rh-tr.current { background: var(--line-soft); }
+.rh-tr .pill { justify-self: start; }
+.rh-2 { color: var(--text-2); min-width: 0; }
+.rh-3 { color: var(--text-muted); }
+.rh-where { display: flex; align-items: center; gap: 6px; color: var(--text-muted); min-width: 0; }
+.rh-where > .icon { flex: none; }
+.rh-machine { font-size: 12px; color: var(--text-faint); }

@@ -1,0 +1,32 @@
+node_modules/
+dist/
+target/
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.egg-info/
+
+# Private Team module, linked by scripts/link-team.sh
+app/src/edition/team
+
+# Local only: owner notes and Claude Code skills/settings
+founder/
+.claude/
+
+# Coverage output (CI publishes the totals to the badges branch)
+coverage/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+coverage.json
+lcov.info
+
+# Secrets that must never be committed (security review, ".gitignore gaps")
+*.p12
+*.pem
+.env*
+!.env.example
+*private*

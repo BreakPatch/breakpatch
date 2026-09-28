@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "breakpatch-engine"
+version = "0.1.0b1"  # PEP 440 for 0.1.0-beta.1 (breakpatch_engine.__version__, app/package.json)
+description = "Breakpatch engine sidecar: pixel-only browser automation, screen checks and replay."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+dependencies = [
+  "playwright>=1.49",
+  "numpy>=1.26",
+  "pillow>=10",
+  "imagehash>=4.3",
+  "opencv-python-headless>=4.9",
+  # Pinned: the resumable download is tested against it (spec §7). 1.9.x, not 2.x: transformers 5.x
+  # (the mlx extra) needs huggingface_hub below 2.0, so 2.0 can't be installed with the AI assistant.
+  "huggingface_hub==1.9.2",
+]
+
+[project.optional-dependencies]
+# Apple Silicon only. The engine imports it lazily; everything else works without it.
+# Pinned exactly (security review A3): the versions locator.py is written against (mlx_vlm.load,
+# load_config, generate, prompt_utils.apply_chat_template) and the model checks in models.py were
+# reviewed for (mlx-vlm 0.7.3 imports config.json's `model_file`; models.py refuses it). Update
+# them together, after reading what the new mlx-vlm does with model folders.
+mlx = ["mlx-vlm==0.7.3", "transformers==5.17.0"]
+# Release hardening (scripts/build-release.sh, src-tauri/README.md "Hardening"): Nuitka compiles
+# the paid breakpatch_team_engine to a native extension so no .py/.pyc of it ships; zstandard lets
+# Nuitka's onefile mode compress (the whole-sidecar SIDECAR_COMPILER=nuitka path).
+hardening = ["nuitka>=2", "zstandard>=0.22"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "pytest-cov>=7", "pyinstaller>=6"]
+
+[project.scripts]
+breakpatch-engine = "breakpatch_engine.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+breakpatch_engine = ["samples/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+# `python -m pytest --cov` (CI, for the README badge). The protocol and CLI tests start the engine
+# as a child process; coverage follows it there (needs coverage 7.10+, which pytest-cov 7 brings).
+[tool.coverage.run]
+source = ["breakpatch_engine"]
+patch = ["subprocess"]

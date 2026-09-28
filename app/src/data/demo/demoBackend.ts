@@ -1,0 +1,237 @@
+// In-memory backend for development, the browser preview and tests.
+// Behaves like the Firebase backend: live subscriptions, immutable versions, audit fields.
+import { AuthError, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type Unsubscribe } from '../backend';
+import type {
+  App, Member, Person, QueueItem, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
+} from '../types';
+import { people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
+
+export const DEMO_WORKSPACE: Workspace = {
+  name: 'Acme',
+  logo: '/assets/logo-badge-purple.png',
+  database: 'breakpatch',
+  domain: 'acme.example',
+  config: { apiKey: 'demo', authDomain: 'acme-qa.firebaseapp.com', projectId: 'acme-qa', appId: '1:000:web:demo' },
+};
+
+interface State {
+  user: Person | null;
+  apps: App[];
+  tests: Test[];
+  versions: Record<string, Version[]>;
+  groups: StepGroup[];
+  groupVersions: Record<string, Version[]>;
+  runs: Run[];
+  suites: Suite[];
+  runner: RunnerStatus | null;
+  queue: QueueItem[];
+  suiteRuns: SuiteRun[];
+  runRequests: RunRequest[];
+  members: Member[];
+}
+
+export interface DemoOptions { empty?: boolean; signedIn?: boolean; delayMs?: number }
+
+let uid = 1000;
+const newId = (p: string) => `${p}-${(uid++).toString(36)}`;
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'item';
+
+export class DemoBackend implements Backend {
+  readonly kind = 'demo' as const;
+  readonly workspace: Workspace;
+  private st: State;
+  private subs = new Set<() => void>();
+  private delay: number;
+
+  constructor(opts: DemoOptions = {}, workspace: Workspace = DEMO_WORKSPACE) {
+    this.workspace = workspace;
+    this.delay = opts.delayMs ?? 250;
+    const t = seedTests(); const g = seedGroups();
+    this.st = opts.empty
+      ? { user: opts.signedIn ? people.maria : null, apps: [], tests: [], versions: {}, groups: [], groupVersions: {}, runs: [], suites: [], runner: null, queue: [], suiteRuns: [], runRequests: [], members: [{ ...people.maria, role: 'admin', lastActive: Date.now() }] }
+      : { user: opts.signedIn ? people.maria : null, apps: seedApps(), tests: t.tests, versions: t.versions, groups: g.groups, groupVersions: g.versions, runs: seedRuns(t.tests), suites: seedSuites(), runner: seedRunner(), queue: seedQueue(), suiteRuns: seedSuiteRuns(), runRequests: [], members: seedMembers() };
+  }
+
+  // ---- plumbing ----
+  private emit() { this.subs.forEach(f => f()); }
+  private watch<T>(select: () => T, l: Listener<T>): Unsubscribe {
+    let alive = true;
+    const push = () => { if (alive) l(select()); };
+    const t = setTimeout(push, this.delay);     // first value arrives like a network read
+    this.subs.add(push);
+    return () => { alive = false; clearTimeout(t); this.subs.delete(push); };
+  }
+  private wait<T>(v: T): Promise<T> { return new Promise(r => setTimeout(() => r(v), Math.min(this.delay, 300))); }
+  private me(): Person { if (!this.st.user) throw new Error('Not signed in'); return this.st.user; }
+  private mutate(fn: (s: State) => void) { fn(this.st); this.emit(); }
+
+  // ---- auth ----
+  currentUser() { return this.st.user; }
+  onUser(l: Listener<Person | null>) { l(this.st.user); const f = () => l(this.st.user); this.subs.add(f); return () => { this.subs.delete(f); }; }
+  async signIn(email: string, password: string) {
+    await this.wait(null);
+    const domain = email.split('@')[1]?.toLowerCase();
+    if (domain !== this.workspace.domain) throw new AuthError('wrongDomain', `Only @${this.workspace.domain} accounts can sign in here.`);
+    if (password.length < 6) throw new AuthError('wrongPassword', 'Wrong email or password.');
+    const known = Object.values(people).find(p => p.email === email.toLowerCase());
+    const user = known ?? { uid: 'u-' + slug(email), name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), email };
+    this.mutate(s => { s.user = user; if (!s.members.some(m => m.uid === user.uid)) s.members.push({ ...user, role: 'member', lastActive: Date.now() }); });
+    return user;
+  }
+  async sendPasswordReset() { await this.wait(null); }
+  async signOut() { this.mutate(s => { s.user = null; }); }
+  myRole(): Role { return this.st.members.find(m => m.uid === this.st.user?.uid)?.role ?? 'member'; }
+
+  // ---- apps ----
+  apps(l: Listener<App[]>) { return this.watch(() => [...this.st.apps], l); }
+  async addApp(a: NewApp) {
+    const app: App = { id: slug(a.name) + '-' + (uid++).toString(36), ...a, icon: a.icon ?? 'language', createdBy: this.me(), createdAt: Date.now() };
+    this.mutate(s => { s.apps.push(app); });
+    return this.wait(app);
+  }
+  async updateApp(id: string, patch: Partial<NewApp>) { this.mutate(s => { s.apps = s.apps.map(a => a.id === id ? { ...a, ...patch } : a); }); }
+  async deleteApp(id: string) { this.mutate(s => { s.apps = s.apps.filter(a => a.id !== id); s.tests = s.tests.filter(t => t.appId !== id); }); }
+
+  // ---- tests ----
+  tests(appId: string, l: Listener<Test[]>) { return this.watch(() => this.st.tests.filter(t => t.appId === appId), l); }
+  test(appId: string, testId: string, l: Listener<Test | null>) { return this.watch(() => this.st.tests.find(t => t.appId === appId && t.id === testId) ?? null, l); }
+  async createTest(n: NewTest) {
+    const me = this.me(); const now = Date.now();
+    const test: Test = { id: slug(n.name) + '-' + (uid++).toString(36), appId: n.appId, name: n.name, description: n.description, startUrl: n.startUrl, viewport: n.viewport, setUp: n.setUp, cleanUp: n.cleanUp,
+      status: 'draft', currentVersion: 0, stepCount: 0, createdBy: me, createdAt: now, updatedBy: me, updatedAt: now };
+    this.mutate(s => { s.tests.push(test); s.versions[`${n.appId}/${test.id}`] = []; });
+    return this.wait(test);
+  }
+  versions(appId: string, testId: string, l: Listener<Version[]>) { return this.watch(() => [...(this.st.versions[`${appId}/${testId}`] ?? [])].reverse(), l); }
+  async version(appId: string, testId: string, n: number) { return this.wait(this.st.versions[`${appId}/${testId}`]?.find(v => v.number === n) ?? null); }
+  async saveTest(appId: string, testId: string, steps: Step[], note?: string) {
+    const me = this.me(); const key = `${appId}/${testId}`;
+    const list = this.st.versions[key] ?? [];
+    const v: Version = { number: list.length + 1, steps: steps.map(x => ({ ...x, rerecorded: undefined })), savedBy: me, savedAt: Date.now(), note: note || undefined };
+    this.mutate(s => {
+      s.versions[key] = [...list, v];
+      s.tests = s.tests.map(t => t.appId === appId && t.id === testId ? { ...t, currentVersion: v.number, stepCount: steps.length, updatedBy: me, updatedAt: v.savedAt } : t);
+    });
+    return this.wait(v);
+  }
+  async setTestStatus(appId: string, testId: string, status: TestStatus) { this.patchTest(appId, testId, { status }); }
+  async renameTest(appId: string, testId: string, name: string) { this.patchTest(appId, testId, { name }); }
+  private patchTest(appId: string, testId: string, p: Partial<Test>) {
+    const me = this.me();
+    this.mutate(s => { s.tests = s.tests.map(t => t.appId === appId && t.id === testId ? { ...t, ...p, updatedBy: me, updatedAt: Date.now() } : t); });
+  }
+  async duplicateTest(appId: string, testId: string) {
+    const src = this.st.tests.find(t => t.appId === appId && t.id === testId);
+    if (!src) throw new Error('Test not found');
+    const copy = await this.createTest({ appId, name: src.name + ' (copy)', description: src.description, startUrl: src.startUrl, viewport: src.viewport, setUp: src.setUp, cleanUp: src.cleanUp });
+    const last = this.st.versions[`${appId}/${testId}`]?.at(-1);
+    if (last) await this.saveTest(appId, copy.id, last.steps, `Copied from ${src.name}`);
+    return copy;
+  }
+  async deleteTest(appId: string, testId: string) { this.mutate(s => { s.tests = s.tests.filter(t => !(t.appId === appId && t.id === testId)); }); }
+
+  // ---- shared steps ----
+  stepGroups(appId: string, l: Listener<StepGroup[]>) { return this.watch(() => this.st.groups.filter(g => g.appId === appId), l); }
+  groupVersions(appId: string, groupId: string, l: Listener<Version[]>) { return this.watch(() => [...(this.st.groupVersions[`${appId}/${groupId}`] ?? [])].reverse(), l); }
+  async groupVersion(appId: string, groupId: string, n: number) { return this.wait(this.st.groupVersions[`${appId}/${groupId}`]?.find(v => v.number === n) ?? null); }
+  async createGroup(appId: string, name: string, description: string, steps: Step[]) {
+    const me = this.me(); const now = Date.now();
+    const g: StepGroup = { id: slug(name) + '-' + (uid++).toString(36), appId, name, description, currentVersion: 1, stepCount: steps.length, usedBy: [], createdBy: me, createdAt: now, updatedBy: me, updatedAt: now };
+    this.mutate(s => { s.groups.push(g); s.groupVersions[`${appId}/${g.id}`] = [{ number: 1, steps, savedBy: me, savedAt: now }]; });
+    return this.wait(g);
+  }
+  async saveGroup(appId: string, groupId: string, steps: Step[], note?: string) {
+    const me = this.me(); const key = `${appId}/${groupId}`;
+    const list = this.st.groupVersions[key] ?? [];
+    const v: Version = { number: list.length + 1, steps, savedBy: me, savedAt: Date.now(), note };
+    this.mutate(s => {
+      s.groupVersions[key] = [...list, v];
+      s.groups = s.groups.map(g => g.appId === appId && g.id === groupId ? { ...g, currentVersion: v.number, stepCount: steps.length, updatedBy: me, updatedAt: v.savedAt } : g);
+    });
+    return this.wait(v);
+  }
+
+  // ---- runs ----
+  runs(appId: string, l: Listener<Run[]>) { return this.watch(() => this.st.runs.filter(r => r.appId === appId).sort((a, b) => b.startedAt - a.startedAt), l); }
+  testRuns(appId: string, testId: string, l: Listener<Run[]>) { return this.watch(() => this.st.runs.filter(r => r.appId === appId && r.testId === testId).sort((a, b) => b.startedAt - a.startedAt), l); }
+  async run(appId: string, runId: string) { return this.wait(this.st.runs.find(r => r.appId === appId && r.id === runId) ?? null); }
+  async addRun(r: Omit<Run, 'id'>) {
+    const run: Run = { ...r, id: newId('run') };
+    this.mutate(s => {
+      s.runs.unshift(run);
+      const by = 'name' in r.startedBy ? r.startedBy.name : r.startedBy.serviceAccount;
+      s.tests = s.tests.map(t => t.appId === r.appId && t.id === r.testId ? { ...t, lastRun: { result: r.result === 'fail' ? 'fail' : r.healedCount ? 'healed' : 'pass', at: r.startedAt, by } } : t);
+    });
+    return this.wait(run);
+  }
+
+  // ---- suites and runner ----
+  suites(l: Listener<Suite[]>) { return this.watch(() => [...this.st.suites], l); }
+  async saveSuite(id: string | null, n: NewSuite) {
+    const me = this.me(); const now = Date.now();
+    let out: Suite;
+    if (id) {
+      out = { ...this.st.suites.find(x => x.id === id)!, ...n, updatedBy: me, updatedAt: now };
+      this.mutate(s => { s.suites = s.suites.map(x => x.id === id ? out : x); });
+    } else {
+      out = { id: slug(n.name) + '-' + Math.random().toString(16).slice(2, 6), ...n, createdBy: me, createdAt: now, updatedBy: me, updatedAt: now };
+      this.mutate(s => { s.suites.push(out); });
+    }
+    return this.wait(out);
+  }
+  async deleteSuite(id: string) { this.mutate(s => { s.suites = s.suites.filter(x => x.id !== id); }); }
+  runner(l: Listener<RunnerStatus | null>) { return this.watch(() => this.st.runner && { ...this.st.runner, lastSeen: this.st.runner.status === 'paused' ? this.st.runner.lastSeen : Date.now() }, l); }
+  queue(l: Listener<QueueItem[]>) { return this.watch(() => [...this.st.queue], l); }
+  suiteRuns(l: Listener<SuiteRun[]>) { return this.watch(() => [...this.st.suiteRuns], l); }
+  async requestSuiteRun(suiteId: string, note?: string) {
+    const suite = this.st.suites.find(x => x.id === suiteId);
+    if (!suite) throw new Error('Suite not found');
+    const me = this.me();
+    // Newest request for a suite wins: drop waiting ones for the same suite, recorded as Replaced.
+    this.mutate(s => {
+      const now = Date.now(), total = suite.tests.length;
+      for (const q of s.queue.filter(x => x.suiteId === suiteId)) {
+        s.suiteRuns.unshift({ id: newId('sr'), suiteId, suiteName: suite.name, result: 'replaced', counts: { total, passed: 0, fixed: 0, failed: 0, notRun: total }, testRunIds: [], requestedBy: q.requestedBy, replacedBy: me.name, startedAt: q.queuedAt, finishedAt: now });
+      }
+      s.queue = s.queue.filter(q => q.suiteId !== suiteId);
+      s.queue.push({ id: newId('q'), suiteId, suiteName: suite.name, requestedBy: me.name, source: 'button', queuedAt: now, note });
+    });
+    await this.wait(null);
+  }
+  async removeFromQueue(id: string) { this.mutate(s => { s.queue = s.queue.filter(q => q.id !== id); }); }
+
+  // ---- runner side ----
+  runRequests(l: Listener<RunRequest[]>) { return this.watch(() => [...this.st.runRequests], l); }
+  async claimRunRequest(requestId: string, item: Omit<QueueItem, 'id'>) {
+    const q: QueueItem = { ...item, id: newId('q') };
+    this.mutate(s => { s.runRequests = s.runRequests.filter(r => r.id !== requestId); s.queue.push(q); });
+    return this.wait(q);
+  }
+  async addToQueue(item: Omit<QueueItem, 'id'>) {
+    const q: QueueItem = { ...item, id: newId('q') };
+    this.mutate(s => { s.queue.push(q); });
+    return this.wait(q);
+  }
+  async heartbeat(status: RunnerStatus) { this.mutate(s => { s.runner = status; }); }
+  async addSuiteRun(r: Omit<SuiteRun, 'id'>) {
+    const sr: SuiteRun = { ...r, id: newId('sr') };
+    this.mutate(s => {
+      s.suiteRuns.unshift(sr);
+      s.suites = s.suites.map(x => x.id === r.suiteId ? { ...x, lastRun: { result: r.result, at: r.startedAt, by: r.requestedBy } } : x);
+    });
+    return this.wait(sr);
+  }
+  /** Demo/tests: what an outside tool (CI, a script) would add to runRequests. */
+  addRunRequest(r: Omit<RunRequest, 'id' | 'createdAt'>) { this.mutate(s => { s.runRequests.push({ ...r, id: newId('rq'), createdAt: Date.now() }); }); }
+
+  // ---- members ----
+  members(l: Listener<Member[]>) { return this.watch(() => [...this.st.members], l); }
+  async setRole(uid: string, role: Role) {
+    if (uid === this.st.user?.uid) throw new Error("You can't change your own role.");
+    this.mutate(s => { s.members = s.members.map(m => m.uid === uid ? { ...m, role } : m); });
+  }
+  async removeMember(uid: string) { this.mutate(s => { s.members = s.members.filter(m => m.uid !== uid); }); }
+
+  // ---- demo-only helpers ----
+  setRunnerStatus(r: RunnerStatus | null) { this.mutate(s => { s.runner = r; }); }
+}

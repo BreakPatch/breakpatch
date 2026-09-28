@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Breakpatch model test</title>
+<meta name="description" content="Let a local Claude Code session run the Breakpatch model test and pick the smallest AI assistant that finds the right button.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0..1,0&display=block">
+<style>
+:root{
+  --bg-sunk:#100D0B;--bg:#171412;--surface:#211C19;--line:#3A322C;
+  --text:#F6EFE9;--text-2:#E9DFD6;--text-muted:#CFC4BA;--text-faint:#A3978C;
+  --accent:#E0714A;--accent-hover:#B8502D;--on-accent:#1A0E08;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+html{background:var(--bg);}
+body{margin:0;background:var(--bg);}
+a{color:var(--accent);text-decoration:none;}
+a:hover{color:var(--text);}
+.icon{font-family:'Material Symbols Outlined';font-weight:normal;font-style:normal;line-height:1;letter-spacing:normal;text-transform:none;white-space:nowrap;direction:ltr;-webkit-font-smoothing:antialiased;user-select:none;}
+main{max-width:880px;margin:0 auto;padding:48px 24px 80px;display:flex;flex-direction:column;gap:28px;font-family:'Bricolage Grotesque',system-ui,sans-serif;color:var(--text);}
+
+.hero{display:flex;flex-direction:column;gap:10px;}
+.eyebrow{display:flex;align-items:center;gap:10px;}
+.ear{width:20px;height:20px;background:var(--accent);border-radius:11px 3px 11px 11px;transform:rotate(-14deg);flex:none;}
+.eyebrow-text{font-size:13px;font-weight:600;color:var(--text-faint);letter-spacing:0.06em;text-transform:uppercase;}
+h1{margin:0;font-size:44px;font-weight:600;letter-spacing:-0.02em;line-height:1.05;text-wrap:pretty;}
+.lede{margin:0;font-size:17px;color:var(--text-muted);line-height:1.55;text-wrap:pretty;}
+
+.models{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;}
+.model{display:flex;flex-direction:column;gap:6px;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;border-top:4px solid var(--c);}
+.model-head{display:flex;justify-content:space-between;align-items:baseline;}
+.model-key{font-size:18px;font-weight:700;}
+.model-size{font-size:12px;color:var(--text-faint);}
+.model-repo{font-size:12px;color:var(--text-muted);font-family:var(--mono);word-break:break-all;}
+.model-role{font-size:13px;color:var(--text-2);}
+
+.steps{display:flex;flex-direction:column;gap:28px;margin:0;padding:0;list-style:none;}
+.step{display:grid;grid-template-columns:44px minmax(0,1fr);gap:16px;}
+.step-n{width:36px;height:36px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;}
+.step-body{display:flex;flex-direction:column;gap:10px;min-width:0;}
+.step h2{margin:0;font-size:22px;font-weight:600;letter-spacing:-0.01em;padding-top:4px;}
+.step p{margin:0;font-size:15px;color:var(--text-muted);line-height:1.55;text-wrap:pretty;}
+.code{margin:0;font-family:var(--mono);font-size:13px;line-height:1.7;color:var(--text-2);background:var(--bg-sunk);border:1px solid var(--line);border-radius:12px;padding:14px 16px;white-space:pre;overflow:auto;}
+
+.prompt{display:flex;flex-direction:column;gap:12px;}
+.prompt-head{display:flex;align-items:center;gap:12px;}
+.prompt-head h2{flex:1;margin:0;font-size:22px;font-weight:600;}
+.copy{cursor:pointer;display:flex;align-items:center;gap:8px;background:var(--accent);color:var(--on-accent);border:0;border-radius:10px;padding:10px 16px;font:700 15px 'Bricolage Grotesque',system-ui,sans-serif;transition:background 150ms ease-out;}
+.copy:hover{background:var(--accent-hover);}
+.copy:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.copy:active{transform:scale(0.98);}
+.copy .icon{font-size:18px;}
+.prompt-text{margin:0;font-family:var(--mono);font-size:12px;line-height:1.65;color:var(--text-2);background:var(--bg-sunk);border:1px solid var(--line);border-radius:12px;padding:16px 18px;white-space:pre-wrap;max-height:520px;overflow:auto;}
+.prompt-note{margin:0;font-size:13px;color:var(--text-faint);}
+
+.rules{display:flex;flex-direction:column;gap:12px;padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:14px;}
+.rules h2{margin:0;font-size:22px;font-weight:600;}
+.rule{display:flex;gap:10px;align-items:flex-start;font-size:15px;line-height:1.5;}
+.rule .icon{font-size:19px;color:var(--c);}
+.rule span.d{color:var(--text-muted);}
+
+@media (prefers-reduced-motion:reduce){.copy{transition:none;}.copy:active{transform:none;}}
+</style>
+</head>
+<body>
+<main>
+  <header class="hero">
+    <div class="eyebrow"><div class="ear" aria-hidden="true"></div><div class="eyebrow-text">Breakpatch · Model test</div></div>
+    <h1>Let Claude run the model test for you.</h1>
+    <p class="lede">One prompt in a local Claude Code session. It takes the screenshots, gets the exact target boxes from the page, runs all four models with mlx-vlm and hands you a report and a winner.</p>
+  </header>
+
+  <section class="models" aria-label="Models in the test">
+    <div class="model" style="--c:#6CB8D6"><div class="model-head"><div class="model-key">2b</div><div class="model-size">~1.5 GB</div></div><div class="model-repo">OscarShaitan/Qwen3-VL-2B-Instruct-4bit</div><div class="model-role">Smallest. Best case: new default.</div></div>
+    <div class="model" style="--c:#E0714A"><div class="model-head"><div class="model-key">4b</div><div class="model-size">~3 GB</div></div><div class="model-repo">OscarShaitan/Qwen3-VL-4B-Instruct-4bit</div><div class="model-role">Current default.</div></div>
+    <div class="model" style="--c:#8CC56B"><div class="model-head"><div class="model-key">8b</div><div class="model-size">~5 GB</div></div><div class="model-repo">OscarShaitan/Qwen3-VL-8B-Instruct-4bit</div><div class="model-role">Larger, 32 GB+ Macs.</div></div>
+    <div class="model" style="--c:#E9B949"><div class="model-head"><div class="model-key">q35-4b</div><div class="model-size">~3 GB</div></div><div class="model-repo">OscarShaitan/Qwen3.5-4B-MLX-4bit</div><div class="model-role">Newer family. Only if clearly better.</div></div>
+  </section>
+
+  <ol class="steps">
+    <li class="step">
+      <div class="step-n">1</div>
+      <div class="step-body">
+        <h2>Open Claude Code in an empty folder</h2>
+        <p>On the Apple Silicon Mac you want to test on. Close heavy apps so the memory numbers are fair. The downloads are about 12 GB in total.</p>
+        <pre class="code">mkdir ~/breakpatch-model-test &amp;&amp; cd ~/breakpatch-model-test
+claude</pre>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-n">2</div>
+      <div class="step-body">
+        <h2>Tell it which apps to screenshot</h2>
+        <p>In the prompt, replace the two lines under "Apps to screenshot" with your real app addresses. If one needs a login, export a test account first so Claude can sign in.</p>
+        <pre class="code">export BP_TEST_EMAIL=qa@example.com
+export BP_TEST_PASSWORD=…</pre>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-n">3</div>
+      <div class="step-body">
+        <h2>Paste the prompt</h2>
+        <p>Copy it below and paste it into Claude Code. It sets up Python, takes 20 to 25 screenshots at 1440 × 900, reads the exact box of each target from the page, runs every model, then writes the report. Leave it running; it only asks if it gets stuck.</p>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-n">4</div>
+      <div class="step-body">
+        <h2>Send me the winner</h2>
+        <p>Claude ends with a summary table, the winner, its repo, commit hash and size, and results/index.html with every screenshot and box. Send me those and I’ll pin the model in the spec, the manual and the setup screen.</p>
+      </div>
+    </li>
+  </ol>
+
+  <section class="prompt">
+    <div class="prompt-head">
+      <h2>The prompt</h2>
+      <button class="copy" type="button"><span class="icon" aria-hidden="true">content_copy</span><span class="label">Copy prompt</span></button>
+    </div>
+    <!-- Copied from CLAUDE_PROMPT.md (everything below the --- line) so the page also works opened from disk. Keep the two in sync. -->
+    <pre class="prompt-text" id="prompt">You're running a model evaluation for Breakpatch, a macOS app that finds UI elements in screenshots of web apps using a local vision model. Pick the smallest model that reliably finds the right element. Work in this folder. Don't ask me questions unless you're blocked; make sensible choices and tell me what you chose at the end.
+
+## Models (my Hugging Face copies, all MLX 4-bit)
+
+| key | repo |
+|---|---|
+| 2b | `OscarShaitan/Qwen3-VL-2B-Instruct-4bit` |
+| 4b | `OscarShaitan/Qwen3-VL-4B-Instruct-4bit` |
+| 8b | `OscarShaitan/Qwen3-VL-8B-Instruct-4bit` |
+| q35-4b | `OscarShaitan/Qwen3.5-4B-MLX-4bit` |
+
+## Apps to screenshot
+
+- `https://app.example.com` — log in with the env vars `BP_TEST_EMAIL` / `BP_TEST_PASSWORD` (ask me to export them if missing)
+- `https://www.example.com` — public, no login
+
+## Steps
+
+1. **Environment.** Create a Python 3.11+ venv. Install `mlx-vlm`, `pillow`, `playwright`, then `playwright install chromium`. Print the versions.
+
+2. **Screenshots (20–25).** With Playwright (Chromium, headless, viewport **1440 × 900**, deviceScaleFactor 1), visit the apps above and capture real screens: login, main lists, a create dialog, a form, settings, a page with a row of icons. Save as `screenshots/&lt;name&gt;.png`. Don't capture real customer data; use test accounts only.
+
+3. **Cases with ground truth.** For every screenshot, pick 1–3 targets a person would describe (buttons, fields, icons, tabs, links). Include hard ones on purpose: look-alike buttons (two "Save"), small icons, the *second* item of a row, fields inside dialogs. For each target, get its **exact bounding box from the DOM** at capture time (`locator.bounding_box()`), and write `cases.csv` with columns `file,description,x1,y1,x2,y2` (pixels). Aim for 40–60 cases. Descriptions must be plain words, as a non-technical user would type them ("the Done button", "the search box", "the second tag"), never selectors.
+
+4. **Check each model reads images.** Run one `python -m mlx_vlm.generate` call per model on one screenshot with "Where is the &lt;target&gt;?". If a model errors or clearly ignores the image, drop it and say why.
+
+5. **Run the test.** Write `model_test.py` that, for each model in turn:
+   - loads it with `mlx_vlm.load(repo)`, times the load,
+   - for each case builds the prompt with `mlx_vlm.prompt_utils.apply_chat_template(processor, model.config, PROMPT, num_images=1)` where
+     `PROMPT = 'Find "{desc}" in this screenshot of a web app. Reply with JSON only, no other text: {"bbox_2d": [x1, y1, x2, y2]}'`,
+   - calls `mlx_vlm.generate(..., temperature=0.0, max_tokens=96)` and times it,
+   - parses the first `bbox_2d` (or first 4-number list). Qwen3-VL answers in **0–1000 units relative to the image**; convert to pixels. If boxes are clearly off for a model, try reading them as pixels instead and keep whichever matches the ground truth better — report which,
+   - scores a **hit** when the centre of the predicted box is inside the ground-truth box; also record IoU,
+   - records peak memory (`mx.get_peak_memory()` or `mx.metal.get_peak_memory()`), resets it and frees the model before the next one.
+   Run all models. Close nothing of mine; just note what else was using memory.
+
+6. **Report.** Create `results/index.html` (dark background is fine) with:
+   - a summary table per model: hits / total, hit rate, median and p90 answer time, load time, peak memory, answers with no box,
+   - the same split for **hard cases only**,
+   - a grid: one row per case, one column per model, each cell the screenshot with the ground-truth box (white) and the model's box (colour), hit/miss and time.
+   Also save `results/results.json`.
+
+7. **Recommend.** Apply these rules and state the winner:
+   - Good enough: ≥ 90 % hits overall **and** ≥ 80 % on hard cases.
+   - Fast enough: median answer ≤ 3 s on this Mac.
+   - Fits: peak memory ≤ 6 GB.
+   - Winner = smallest model that passes all three. If only 8B passes, say so: it becomes the option for 32 GB+ Macs and the local runner, and we need a plan for 16 GB Macs.
+   Then print, for the winner, the exact **commit hash** of the repo revision you used (`huggingface_hub.HfApi().model_info(repo).sha`) and the download size.
+
+## When you're done
+
+Reply with: the summary table, the winner, its repo + commit hash + size, anything surprising (e.g. a model that answers in pixels, systematic offsets, failures on a type of element), and the path to `results/index.html`. Keep it short.</pre>
+    <p class="prompt-note">Also saved as tools/model-test/CLAUDE_PROMPT.md in this project.</p>
+  </section>
+
+  <section class="rules">
+    <h2>How the winner is picked</h2>
+    <div class="rule" style="--c:#8CC56B"><span class="icon" aria-hidden="true">check_circle</span><div><b>Good enough:</b> <span class="d">at least 90 % correct overall and 80 % on the hard cases (look-alikes, small icons, second items).</span></div></div>
+    <div class="rule" style="--c:#6CB8D6"><span class="icon" aria-hidden="true">speed</span><div><b>Fast enough:</b> <span class="d">median answer 3 seconds or less on this Mac.</span></div></div>
+    <div class="rule" style="--c:#E9B949"><span class="icon" aria-hidden="true">memory</span><div><b>Fits:</b> <span class="d">peak memory 6 GB or less, so the browser and the app still have room.</span></div></div>
+    <div class="rule" style="--c:#E0714A"><span class="icon" aria-hidden="true">emoji_events</span><div><b>Winner:</b> <span class="d">the smallest model that passes all three. If only the 8B passes, it becomes the option for 32 GB Macs and the local runner.</span></div></div>
+  </section>
+</main>
+<script>
+(function () {
+  var btn = document.querySelector('.copy'), icon = btn.querySelector('.icon'), label = btn.querySelector('.label'), timer;
+  btn.addEventListener('click', function () {
+    var text = document.getElementById('prompt').textContent;
+    var done = function () {
+      icon.textContent = 'check'; label.textContent = 'Copied';
+      clearTimeout(timer);
+      timer = setTimeout(function () { icon.textContent = 'content_copy'; label.textContent = 'Copy prompt'; }, 1600);
+    };
+    var fallback = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta); done();
+    };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  });
+})();
+</script>
+</body>
+</html>

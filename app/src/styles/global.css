@@ -1,0 +1,62 @@
+/* Fonts and icons are bundled (src/assets/fonts, scripts/fonts.mjs) so the app works offline. */
+@import '../assets/fonts/fonts.css';
+@import './tokens.css';
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+input, textarea, select, button { font: inherit; color: inherit; }
+input, textarea { user-select: text; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--text); }
+.mono { font-family: var(--mono); }
+.selectable { user-select: text; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+.icon {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal; font-style: normal; line-height: 1; letter-spacing: normal;
+  text-transform: none; white-space: nowrap; direction: ltr; display: inline-block;
+  -webkit-font-smoothing: antialiased; user-select: none; flex: none;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* Motion (all turned off under Reduce motion) */
+@keyframes bpSpin { to { transform: rotate(360deg); } }
+@keyframes bpIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes bpPop { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+/* Plain fade for dimming layers (scrims): they cover the window, so they shouldn't move. */
+@keyframes bpFade { from { opacity: 0; } to { opacity: 1; } }
+/* The way out of bpIn, reversed: fades and sinks back the 8 px it rose. */
+@keyframes bpOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(8px); } }
+@keyframes bpPulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes bpRing { 0% { box-shadow: 0 0 0 0 var(--ring-accent); } 100% { box-shadow: 0 0 0 12px transparent; } }
+@keyframes bpGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes bpShimmer { from { background-position: -400px 0; } to { background-position: 400px 0; } }
+@keyframes bpSweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.anim-in { animation: bpIn 280ms ease-out both; }
+.anim-pop { animation: bpPop 160ms ease-out both; }
+.anim-pulse { animation: bpPulse 1.4s ease-in-out infinite; }
+.anim-spin { animation: bpSpin 1s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

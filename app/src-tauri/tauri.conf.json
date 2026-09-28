@@ -1,0 +1,145 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Breakpatch",
+  "version": "../package.json",
+  "identifier": "dev.breakpatch.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Breakpatch",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1280,
+        "minHeight": 800,
+        "center": true,
+        "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 20
+        },
+        "backgroundColor": "#171412",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "img-src": "'self' data: blob: asset: http://asset.localhost https://firebasestorage.googleapis.com https://*.googleusercontent.com",
+        "connect-src": "'self' ipc: http://ipc.localhost https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseremoteconfig.googleapis.com https://firebaseinstallations.googleapis.com https://firebase.googleapis.com https://firebasestorage.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com",
+        "frame-src": "https://*.firebaseapp.com",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'none'"
+      },
+      "devCsp": {
+        "default-src": "'self'",
+        "script-src": "'self' 'unsafe-inline'",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:",
+        "img-src": "'self' data: blob: asset: http://asset.localhost https://firebasestorage.googleapis.com https://*.googleusercontent.com",
+        "connect-src": "'self' ipc: http://ipc.localhost https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebaseremoteconfig.googleapis.com https://firebaseinstallations.googleapis.com https://firebase.googleapis.com https://firebasestorage.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com ws://localhost:1420 http://localhost:1420",
+        "frame-src": "https://*.firebaseapp.com",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'none'"
+      },
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ],
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$DATA/Breakpatch/screenshots/**"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "createUpdaterArtifacts": true,
+    "category": "DeveloperTool",
+    "shortDescription": "Record and replay web UI tests on your Mac",
+    "copyright": "Breakpatch contributors",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/breakpatch-engine"
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "bpworkspace"
+        ],
+        "name": "Breakpatch workspace",
+        "description": "Breakpatch workspace connection",
+        "role": "Viewer",
+        "rank": "Owner",
+        "mimeType": "application/x-breakpatch-workspace",
+        "exportedType": {
+          "identifier": "dev.breakpatch.workspace",
+          "conformsTo": [
+            "public.json"
+          ]
+        }
+      }
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0",
+      "hardenedRuntime": true,
+      "entitlements": "Entitlements.plist",
+      "dmg": {
+        "windowSize": {
+          "width": 660,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 180,
+          "y": 190
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 190
+        }
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "breakpatch"
+        ]
+      }
+    },
+    "updater": {
+      "_comment": "Replace pubkey with the contents of the .pub file from `npx tauri signer generate -w ~/.tauri/breakpatch.key` (see src-tauri/README.md). The private key and its password go in the TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD CI secrets.",
+      "endpoints": [
+        "https://github.com/BreakPatch/breakpatch/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMxQkVFODhCMDk3M0MzMUIKUldRYnczTUppK2krTVE5N0ZQYUFxa1Aybm5jY0JiK3lTRENVSDFQcWl3VmlhRzZ5OVRORVFzelgK",
+      "requireSignedVersion": true
+    }
+  }
+}

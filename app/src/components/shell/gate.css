@@ -1,0 +1,45 @@
+/* First-launch window: connect, sign in, setup (design "1 · Getting in"). */
+.gi-window { height: 100%; display: flex; flex-direction: row; background: var(--bg); overflow: hidden; position: relative; }
+.gi-drag { position: absolute; left: 0; right: 0; top: 0; height: 40px; z-index: 0; }
+.gi-traffic { position: absolute; left: 16px; top: 18px; display: flex; gap: 8px; z-index: 5; pointer-events: none; }
+.gi-traffic span { width: 12px; height: 12px; border-radius: 50%; display: block; background: #FF5F57; }
+.gi-traffic span:nth-child(2) { background: #FEBC2E; }
+.gi-traffic span:nth-child(3) { background: #28C840; }
+
+/* Brand panel */
+.gi-brand {
+  width: 520px; flex: none; background: var(--surface); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; justify-content: space-between; padding: 96px 56px 48px; position: relative; z-index: 1;
+}
+.gi-brand-top { display: flex; flex-direction: column; gap: 28px; }
+.gi-brand-word { font-size: 52px; letter-spacing: -0.035em; line-height: 1; }
+.gi-brand-word b { font-weight: 700; }
+.gi-brand-word span { font-weight: 400; }
+.gi-brand-hello { font-size: 48px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.02; }
+.gi-brand-line { font-size: 20px; line-height: 1.4; max-width: 380px; text-wrap: pretty; }
+.gi-brand-foot { font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+.gi-brand-foot .icon { font-size: 16px; }
+
+/* Right side */
+.gi-main { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: auto; position: relative; z-index: 1; padding: 40px 24px; }
+.gi-content { display: flex; flex-direction: column; gap: 24px; max-width: 100%; animation: bpIn 300ms ease-out both; }
+.gi-head { display: flex; flex-direction: column; gap: 8px; }
+.gi-title { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+.gi-lede { margin: 0; font-size: 15px; color: var(--text-muted); line-height: 1.5; }
+.gi-box { border: 1px solid var(--line); border-radius: var(--r-row); background: var(--surface); }
+.gi-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.gi-foot-note { font-size: 13px; color: var(--text-faint); line-height: 1.45; }
+
+/* Logo */
+.gi-logo { border-radius: 50%; object-fit: cover; flex: none; display: inline-block; }
+.gi-logo-letter { display: inline-flex; align-items: center; justify-content: center; background: var(--accent-tint); color: var(--accent); font-weight: 700; }
+
+/* Error / notice boxes (sign in, connect) */
+.gi-alert { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: var(--r-row); animation: bpIn 220ms ease-out both; }
+.gi-alert > .icon { font-size: 20px; }
+.gi-alert-title { font-size: 14px; font-weight: 600; }
+.gi-alert-body { font-size: 13px; color: var(--text-2); line-height: 1.45; margin-top: 4px; }
+.gi-alert.failed { background: var(--failed-tint); border: 1px solid var(--failed); }
+.gi-alert.failed > .icon { color: var(--failed); }
+.gi-alert.passed { background: var(--passed-tint); border: 1px solid var(--passed); }
+.gi-alert.passed > .icon { color: var(--passed); }

@@ -1,0 +1,542 @@
+#!/bin/sh
+# Installs or updates Breakpatch, the Mac app for recording UI tests.
+#
+#   curl -fsSL https://breakpatch.dev/install | sh                           install or update
+#   curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh  a given version
+#   curl -fsSL https://breakpatch.dev/install | BREAKPATCH_CHANNEL=beta sh   the newest, betas too
+#   curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall         remove the app
+#
+# What it does:
+#   1. Checks this is a Mac with Apple Silicon and macOS 14 or later.
+#   2. Asks GitHub for the latest release of BreakPatch/breakpatch (or BREAKPATCH_VERSION, or with
+#      BREAKPATCH_CHANNEL=beta the newest release, betas included).
+#   3. Downloads Breakpatch_aarch64.app.tar.gz from BreakPatch/breakpatch's releases (https only,
+#      also after redirects, and only from that address; with BREAKPATCH_GITHUB_TOKEN, from the
+#      repository's asset addresses on api.github.com) and checks it against the release's
+#      SHA256SUMS. With minisign on this Mac, also checks the archive's .sig against Breakpatch's
+#      update key (the one the app's updater uses), built into this script.
+#   4. Unpacks it and checks the app is signed with Breakpatch's certificate: its SHA-256 is built
+#      into this script (app/src-tauri/signing/fingerprint.txt), so a release someone else
+#      published doesn't install. SHA256SUMS alone only proves the download arrived intact.
+#   5. Quits Breakpatch if it's open, and puts the new Breakpatch.app in place of the old one:
+#      in /Applications, or ~/Applications when this account can't write to /Applications.
+#      No sudo (it refuses to run as root), nothing else on the Mac is changed.
+#   6. Opens it.
+#
+# The app is signed with Breakpatch's own certificate, not an Apple Developer ID. A download
+# made with curl isn't marked as quarantined, so macOS opens it without asking.
+#
+# Everything happens in main(), called on the last line: if the download of this script is
+# cut short, nothing runs.
+#
+# Environment:
+#   BREAKPATCH_VERSION   install this version (1.2.3, v1.2.3 or 0.1.0-beta.1) instead of the latest
+#   BREAKPATCH_CHANNEL   stable (default): the latest release, never a beta (GitHub's
+#                        releases/latest skips prereleases); beta: the newest release, betas included
+#   BREAKPATCH_GITHUB_TOKEN  private beta only, while BreakPatch/breakpatch is a private repository:
+#                        a GitHub token that can read it. It's sent to https://api.github.com only
+#                        (never after a redirect to another host), never shown, and never put on a
+#                        command line: curl reads the header from a file only this account can
+#                        read, deleted as soon as the downloads are done.
+#   BREAKPATCH_APPS_DIR  the folder to install into (default /Applications)
+#   BREAKPATCH_API       the GitHub API address of the repository (for tests and mirrors)
+#   BREAKPATCH_DOWNLOADS where the release files must come from (for tests and mirrors; https only)
+
+set -eu
+
+GITHUB_API=https://api.github.com/
+API=${BREAKPATCH_API:-${GITHUB_API}repos/BreakPatch/breakpatch}
+RELEASES=https://github.com/BreakPatch/breakpatch/releases
+DOWNLOADS=${BREAKPATCH_DOWNLOADS:-$RELEASES/download/}
+# SHA-256 of Breakpatch's code signing certificate: app/src-tauri/signing/fingerprint.txt, as hex.
+CERT_SHA256=25D8516500459226D00A500DEDDE0D13094B3BB48E560068B737BBA62427948E
+# The update archive's minisign public key: the key line of plugins.updater.pubkey in
+# app/src-tauri/tauri.conf.json (key id 31BEE88B0973C31B).
+MINISIGN_KEY=RWQbw3MJi+i+MQ97FPaAqkP2nnccBb+ySDCUH1PqiwViaG6y9TNEQszX
+APP=Breakpatch.app
+BUNDLE_ID=dev.breakpatch.app
+# shellcheck disable=SC2088  # written as ~ on purpose: it's shown, not used
+SUPPORT_DIR='~/Library/Application Support/Breakpatch'
+
+say() { printf '%s\n' "$*"; }
+fail() { printf '%s\n' "$*" >&2; exit 1; }
+
+usage() {
+  cat <<'EOF'
+Installs or updates Breakpatch on this Mac.
+
+  curl -fsSL https://breakpatch.dev/install | sh
+  curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh
+  curl -fsSL https://breakpatch.dev/install | BREAKPATCH_CHANNEL=beta sh
+  curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall
+
+Options:
+  --uninstall  remove Breakpatch.app (your tests and the AI assistant stay)
+  --help       show this
+
+It installs to /Applications, or ~/Applications if this account can't write there.
+EOF
+}
+
+# A path with the home folder written as ~, for messages.
+# shellcheck disable=SC2088  # a ~ to show, not to expand
+pretty() {
+  case "$1" in
+    "$HOME") printf '~' ;;
+    "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# ---------------------------------------------------------------- checks
+
+check_mac() {
+  need="Breakpatch needs a Mac with Apple Silicon (M1 or later) and macOS 14 or later."
+  [ "$(uname -s)" = Darwin ] || fail "$need"
+  if [ "$(uname -m)" != arm64 ]; then
+    # A Terminal running under Rosetta says x86_64 on Apple Silicon too.
+    [ "$(sysctl -in sysctl.proc_translated 2>/dev/null || true)" = 1 ] \
+      || fail "$need This Mac has an Intel processor."
+  fi
+  macos=$(sw_vers -productVersion 2>/dev/null || true)
+  major=${macos%%.*}
+  case "$major" in
+    '' | *[!0-9]*) fail "$need Couldn't tell which macOS this Mac has." ;;
+  esac
+  [ "$major" -ge 14 ] || fail "$need This Mac has macOS $macos."
+}
+
+# It installs for this account: as root (sudo) it would put a root-owned app in the way.
+check_not_root() {
+  [ "$(id -u)" != 0 ] || fail "Don't run the installer with sudo or as root. It installs Breakpatch for this account and needs no administrator password. Run it again without sudo."
+}
+
+check_tools() {
+  for tool in curl tar shasum codesign; do
+    command -v "$tool" >/dev/null 2>&1 \
+      || fail "The installer needs $tool, which comes with macOS but isn't on this Mac's PATH."
+  done
+}
+
+# ---------------------------------------------------------------- the token (private beta)
+
+# With BREAKPATCH_GITHUB_TOKEN: the "Authorization: Bearer" header goes in a file in $tmp (a
+# mktemp -d folder only this account can open, written with umask 077), and curl reads it with
+# -H @file, so the token is never in an argument `ps` shows. printf is a shell builtin (sh, bash
+# and dash), so writing it runs no command either. Only for https://api.github.com/.
+#
+# Redirects: GitHub answers an asset download with a redirect to objects.githubusercontent.com.
+# curl follows it (-L) and doesn't send a custom Authorization header to a host other than the
+# one it was asked for (curl 7.58.0 and later, CVE-2018-1000007), nor to another port or scheme
+# on the same host (7.83.0 and later, CVE-2022-27776). There's no --location-trusted here, which
+# would send it on, and check_curl refuses an older curl. scripts/test-install.sh checks the
+# asset host never gets the header.
+setup_token() {
+  auth=""
+  [ -n "$token" ] || return 0
+  case "$token" in
+    *[!A-Za-z0-9_]*) fail "BREAKPATCH_GITHUB_TOKEN isn't a GitHub token (they're letters, digits and _ only)." ;;
+  esac
+  case "$API" in
+    "$GITHUB_API"*) ;;
+    *) fail "BREAKPATCH_GITHUB_TOKEN is only ever sent to $GITHUB_API, and BREAKPATCH_API isn't there. Unset one of them." ;;
+  esac
+  check_curl
+  auth="$tmp/auth-header"
+  (umask 077 && printf 'Authorization: Bearer %s\n' "$token" >"$auth") 2>/dev/null \
+    || fail "Couldn't write to the temporary folder."
+  say "Using BREAKPATCH_GITHUB_TOKEN (private beta)."
+}
+
+# curl 7.83.0 or later: see above.
+check_curl() {
+  v=$(curl --version 2>/dev/null | sed -n '1s/^curl \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')
+  cmaj=${v% *} cmin=${v#* }
+  case "$cmaj$cmin" in '' | *[!0-9]*) fail "Couldn't tell which curl this Mac has." ;; esac
+  if [ "$cmaj" -lt 7 ] || { [ "$cmaj" -eq 7 ] && [ "$cmin" -lt 83 ]; }; then
+    fail "With BREAKPATCH_GITHUB_TOKEN the installer needs curl 7.83 or later (this Mac has $cmaj.$cmin)."
+  fi
+}
+
+# The token file goes as soon as nothing else is downloaded.
+drop_token() {
+  if [ -n "${auth:-}" ]; then rm -f "$auth"; fi
+  auth=""
+}
+
+# curl, with the token's header file when there is one.
+curl_gh() {
+  if [ -n "${auth:-}" ]; then curl -H @"$auth" "$@"; else curl "$@"; fi
+}
+
+# ---------------------------------------------------------------- the release
+
+# Fetches a URL to a file; prints the HTTP status ("000" when there was no answer). https only,
+# redirects too.
+fetch() {
+  curl_gh -sSL --proto =https --proto-redir =https -H 'Accept: application/vnd.github+json' \
+    -o "$2" -w '%{http_code}' "$1" 2>/dev/null || true
+}
+
+# A release file. octet-stream is what GitHub's asset addresses (…/releases/assets/ID) need to
+# send the file rather than its description; the download addresses ignore it.
+download() {
+  curl_gh -fsSL --proto =https --proto-redir =https -H 'Accept: application/octet-stream' \
+    -o "$2" "$1" 2>/dev/null
+}
+
+bad_file() {
+  fail "Breakpatch $version lists a file that isn't from Breakpatch's releases, so nothing was installed. Tell us: https://github.com/BreakPatch/breakpatch/issues"
+}
+
+# check_asset NAME URL: a release file's name is a plain file name, and its address one of
+# Breakpatch's own. Without a token: DOWNLOADS, then the tag and that name, nothing that could
+# lead elsewhere (no .., no query, no deeper path). With one: the repository's asset address on
+# api.github.com, API/releases/assets/ and a number.
+check_asset() {
+  case "$1" in '' | .* | *[!A-Za-z0-9._-]*) bad_file ;; esac
+  if [ -n "$auth" ]; then
+    case "$2" in "$API/releases/assets/"*) ;; *) bad_file ;; esac
+    case "${2#"$API/releases/assets/"}" in '' | *[!0-9]*) bad_file ;; esac
+    return 0
+  fi
+  case "$DOWNLOADS" in https://*) ;; *) fail "BREAKPATCH_DOWNLOADS must start with https://." ;; esac
+  case "$2" in
+    "$DOWNLOADS"*) rest=${2#"$DOWNLOADS"} ;;
+    *) bad_file ;;
+  esac
+  case "$rest" in
+    */*/* | *..* | *'?'* | *'#'* | *%* | *\\* | /* | */ | '') bad_file ;;
+  esac
+  [ "${2##*/}" = "$1" ] || bad_file
+}
+
+# GitHub's JSON as one line per value: its path, a tab, then the value as written (strings
+# without their quotes, escapes left in). Paths are like tag_name and assets.0.name, or
+# 0.tag_name in a list of releases. Just enough of a JSON reader for GitHub's answers, so the
+# installer needs no jq; strings are skipped whole, so text in a release's notes can't pass for
+# a value.
+json_flat() {
+  LC_ALL=C awk '
+    function here() { return d == 0 ? "" : (t[d] == "{" ? p[d] k[d] : p[d] ix[d]) }
+    { s = s $0 "\n" }
+    END {
+      n = length(s); d = 0; i = 1
+      while (i <= n) {
+        c = substr(s, i, 1)
+        if (c == "{" || c == "[") {
+          pre = d == 0 ? "" : here() "."
+          d++; t[d] = c; p[d] = pre; ix[d] = 0; k[d] = ""; key[d] = (c == "{"); i++
+        } else if (c == "}" || c == "]") {
+          if (d > 0) d--
+          i++
+        } else if (c == ",") {
+          if (d > 0) { if (t[d] == "[") ix[d]++; else key[d] = 1 }
+          i++
+        } else if (c == ":") {
+          key[d] = 0; i++
+        } else if (c == "\"") {
+          j = i + 1
+          while (j <= n) { c = substr(s, j, 1); if (c == "\\") j += 2; else if (c == "\"") break; else j++ }
+          v = substr(s, i + 1, j - i - 1); i = j + 1
+          if (d > 0 && t[d] == "{" && key[d]) { k[d] = v; key[d] = 0 } else print here() "\t" v
+        } else if (index(" \t\r\n", c)) {
+          i++
+        } else {
+          j = i
+          while (j <= n && !index(",}] \t\r\n", substr(s, j, 1))) j++
+          print here() "\t" substr(s, i, j - i); i = j
+        }
+      }
+    }' "$1"
+}
+
+# The value at a path in the release ($r is its place in a list of releases, else empty).
+field() {
+  LC_ALL=C awk -F '\t' -v k="$r$1" '$1 == k { print $2; exit }' "$tmp/release.txt"
+}
+
+# The release's files, as "index name" lines.
+asset_names() {
+  LC_ALL=C awk -F '\t' -v p="${r}assets." '
+    index($1, p) == 1 {
+      rest = substr($1, length(p) + 1); dot = index(rest, ".")
+      if (substr(rest, dot + 1) == "name" && substr(rest, 1, dot - 1) ~ /^[0-9]+$/) print substr(rest, 1, dot - 1) " " $2
+    }' "$tmp/release.txt"
+}
+
+# The address to download file number $1 from: its asset address with a token, else its
+# download address.
+asset_url() {
+  if [ -n "$auth" ]; then field "assets.$1.url"; else field "assets.$1.browser_download_url"; fi
+}
+
+find_release() {
+  channel=${BREAKPATCH_CHANNEL:-stable}
+  case "$channel" in
+    stable | beta) ;;
+    *) fail "BREAKPATCH_CHANNEL is stable or beta, not $channel." ;;
+  esac
+  wanted="" list=0
+  if [ -n "${BREAKPATCH_VERSION:-}" ]; then
+    wanted=${BREAKPATCH_VERSION#v}
+    case "$wanted" in
+      [0-9]*) ;;
+      *) fail "BREAKPATCH_VERSION is a version like 1.2.3 or 0.1.0-beta.1." ;;
+    esac
+    case "$wanted" in
+      *[!0-9A-Za-z.-]*) fail "BREAKPATCH_VERSION is a version like 1.2.3 or 0.1.0-beta.1." ;;
+    esac
+    status=$(fetch "$API/releases/tags/v$wanted" "$tmp/release.json")
+  elif [ "$channel" = beta ]; then
+    # Newest first; releases/latest would skip prereleases.
+    list=1
+    status=$(fetch "$API/releases?per_page=10" "$tmp/release.json")
+  else
+    status=$(fetch "$API/releases/latest" "$tmp/release.json")
+  fi
+  case "$status" in
+    200) ;;
+    401) fail "GitHub didn't accept BREAKPATCH_GITHUB_TOKEN. It may have expired: make a new one." ;;
+    404)
+      if [ -n "$auth" ] && [ -n "$wanted" ]; then fail "There's no Breakpatch $wanted, or BREAKPATCH_GITHUB_TOKEN can't read BreakPatch/breakpatch."; fi
+      if [ -n "$auth" ]; then fail "There's no Breakpatch release yet, or BREAKPATCH_GITHUB_TOKEN can't read BreakPatch/breakpatch."; fi
+      if [ -n "$wanted" ]; then fail "There's no Breakpatch $wanted. The versions are at $RELEASES."; fi
+      fail "There's no Breakpatch release yet. See $RELEASES." ;;
+    403 | 429)
+      if [ -n "$auth" ] && [ "$status" = 403 ]; then fail "GitHub refused BREAKPATCH_GITHUB_TOKEN (HTTP 403). Check it can read BreakPatch/breakpatch (Contents: read-only), or try again in a few minutes."; fi
+      fail "GitHub is limiting requests from this network right now. Try again in a few minutes." ;;
+    000) fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." ;;
+    *) fail "GitHub didn't answer as expected (HTTP $status). Try again in a few minutes." ;;
+  esac
+
+  json_flat "$tmp/release.json" >"$tmp/release.txt"
+  r=""
+  if [ "$list" -eq 1 ]; then
+    # The first release in the list that isn't a draft.
+    r=$(LC_ALL=C awk -F '\t' '
+      { i = $1; sub(/\..*/, "", i) }
+      $1 ~ /^[0-9]+\.tag_name$/ && !(i in seen) { seen[i] = 1; order[++m] = i }
+      $1 ~ /^[0-9]+\.draft$/ && $2 == "true" { draft[i] = 1 }
+      END { for (x = 1; x <= m; x++) if (!(order[x] in draft)) { print order[x] "."; exit } }' "$tmp/release.txt")
+    [ -n "$r" ] || fail "There's no Breakpatch release yet. See $RELEASES."
+  fi
+
+  tag=$(field tag_name)
+  case "$tag" in
+    v[0-9]*) ;;
+    *) fail "Couldn't read the release from GitHub. Try again in a few minutes." ;;
+  esac
+  case "$tag" in
+    *[!0-9A-Za-z.-]*) fail "Couldn't read the release from GitHub. Try again in a few minutes." ;;
+  esac
+  version=${tag#v}
+  if [ -n "$wanted" ] && [ "$version" != "$wanted" ]; then
+    fail "GitHub answered with Breakpatch $version, not $wanted. Try again in a few minutes."
+  fi
+
+  asset_names >"$tmp/assets.txt"
+  archive=$(awk '$2 ~ /\.app\.tar\.gz$/ { print $2; exit }' "$tmp/assets.txt")
+  archive_i=$(awk '$2 ~ /\.app\.tar\.gz$/ { print $1; exit }' "$tmp/assets.txt")
+  sums_i=$(awk '$2 == "SHA256SUMS" { print $1; exit }' "$tmp/assets.txt")
+  if [ -z "$archive_i" ] || [ -z "$sums_i" ]; then
+    fail "Breakpatch $version can't be installed with this command. Try an older version with BREAKPATCH_VERSION, or write to support@breakpatch.dev."
+  fi
+  sig_i=$(awk -v f="$archive.sig" '$2 == f { print $1; exit }' "$tmp/assets.txt")
+  archive_url=$(asset_url "$archive_i")
+  sums_url=$(asset_url "$sums_i")
+  check_asset "$archive" "$archive_url"
+  check_asset SHA256SUMS "$sums_url"
+  sig_url=""
+  if [ -n "$sig_i" ]; then
+    sig_url=$(asset_url "$sig_i")
+    check_asset "$archive.sig" "$sig_url"
+  fi
+}
+
+# ---------------------------------------------------------------- who made it
+
+# With minisign on this Mac: the archive's .sig must verify with Breakpatch's update key. The
+# .sig file is the base64 of a minisign signature, as the updater reads it.
+check_signature() {
+  command -v minisign >/dev/null 2>&1 || return 0
+  [ -n "$sig_url" ] || fail "Breakpatch $version has no signature for $archive, so it wasn't installed."
+  download "$sig_url" "$tmp/archive.sig.b64" \
+    || fail "Couldn't download the signature. Check your connection and run this again."
+  { base64 -d <"$tmp/archive.sig.b64" 2>/dev/null || base64 -D <"$tmp/archive.sig.b64"; } >"$tmp/archive.minisig" 2>/dev/null \
+    || fail "The download's signature can't be read, so it wasn't installed. Run this again."
+  minisign -V -q -P "$MINISIGN_KEY" -m "$tmp/$archive" -x "$tmp/archive.minisig" >/dev/null 2>&1 \
+    || fail "The download isn't signed with Breakpatch's key, so it wasn't installed. Tell us: https://github.com/BreakPatch/breakpatch/issues"
+}
+
+# The unpacked app must be validly code signed, with Breakpatch's certificate.
+check_certificate() {
+  bad="The download isn't signed with Breakpatch's certificate, so it wasn't installed. Tell us: https://github.com/BreakPatch/breakpatch/issues"
+  codesign --verify --deep --strict "$1" >/dev/null 2>&1 || fail "$bad"
+  codesign -d --extract-certificates="$tmp/cert" "$1" >/dev/null 2>&1 || fail "$bad"
+  [ -s "$tmp/cert0" ] || fail "$bad"
+  got=$(shasum -a 256 "$tmp/cert0" | awk '{ print $1 }' | tr 'a-f' 'A-F')
+  [ "$got" = "$CERT_SHA256" ] || fail "$bad"
+}
+
+# ---------------------------------------------------------------- the Mac
+
+# Where to install: where Breakpatch is already, else /Applications if this account can write
+# there, else ~/Applications.
+choose_folder() {
+  system_dir=${BREAKPATCH_APPS_DIR:-/Applications}
+  user_dir="$HOME/Applications"
+  if [ -d "$system_dir/$APP" ]; then
+    dest=$system_dir
+    [ -w "$dest" ] || fail "Breakpatch is in $dest, but this account can't change it. Run this from an administrator account, or delete it there to install in ~/Applications."
+  elif [ -d "$user_dir/$APP" ]; then
+    dest=$user_dir
+  elif [ -d "$system_dir" ] && [ -w "$system_dir" ]; then
+    dest=$system_dir
+  else
+    dest=$user_dir
+    mkdir -p "$dest" || fail "Couldn't make the folder $(pretty "$dest")."
+  fi
+}
+
+# The version in an installed Breakpatch.app (Tauri writes an XML Info.plist).
+installed_version() {
+  sed -n '/<key>CFBundleShortVersionString<\/key>/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' \
+    "$1/Contents/Info.plist" 2>/dev/null | head -n 1
+}
+
+is_running() {
+  osascript -e "application id \"$BUNDLE_ID\" is running" 2>/dev/null | grep -q true
+}
+
+# Asks Breakpatch to quit (like Breakpatch → Quit), and waits up to 30 seconds for it.
+quit_app() {
+  is_running || return 0
+  say "Quitting Breakpatch first…"
+  osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
+  waited=0
+  while is_running; do
+    waited=$((waited + 1))
+    [ "$waited" -le 30 ] || fail "Breakpatch is still open. Quit it and run this again."
+    sleep 1
+  done
+}
+
+# Swaps the new app in: it's moved next to the old one first, so the old app is only moved
+# aside at the last moment, and put back if the swap fails. Both wait in folders with names
+# nobody can guess (mktemp), so nothing prepared in advance is used.
+put_in_place() {
+  staged=$(mktemp -d "$dest/.Breakpatch.new.XXXXXXXX" 2>/dev/null) || { staged=""; fail "Couldn't write to $(pretty "$dest")."; }
+  mv "$tmp/unpacked/$APP" "$staged/$APP" 2>/dev/null || fail "Couldn't write to $(pretty "$dest")."
+  if [ -e "$dest/$APP" ]; then
+    old=$(mktemp -d "$dest/.Breakpatch.old.XXXXXXXX" 2>/dev/null) || { old=""; fail "Couldn't replace Breakpatch in $(pretty "$dest")."; }
+    mv "$dest/$APP" "$old/$APP" || fail "Couldn't replace Breakpatch in $(pretty "$dest")."
+  fi
+  if ! mv "$staged/$APP" "$dest/$APP"; then
+    if [ -n "$old" ] && [ -e "$old/$APP" ]; then mv "$old/$APP" "$dest/$APP"; fi
+    fail "Couldn't put Breakpatch in $(pretty "$dest")."
+  fi
+  if [ -n "$old" ]; then rm -rf "$old"; fi
+  rm -rf "$staged"
+  staged="" old=""
+}
+
+# Runs on exit: removes the download, and puts the old app back if the swap was cut short.
+cleanup() {
+  if [ -n "${old:-}" ] && [ -e "$old/$APP" ] && [ ! -e "$dest/$APP" ]; then mv "$old/$APP" "$dest/$APP"; fi
+  if [ -n "${old:-}" ] && [ ! -e "$old/$APP" ]; then rm -rf "$old"; fi
+  if [ -n "${staged:-}" ]; then rm -rf "$staged"; fi
+  if [ -n "${tmp:-}" ]; then rm -rf "$tmp"; fi
+}
+
+# ---------------------------------------------------------------- install and uninstall
+
+do_install() {
+  check_mac
+  check_tools
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/breakpatch-install.XXXXXX") || fail "Couldn't make a temporary folder."
+  staged="" old="" dest=""
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  setup_token
+  find_release
+  choose_folder
+  current=$(installed_version "$dest/$APP")
+  if [ ! -d "$dest/$APP" ]; then
+    say "Installing Breakpatch $version…"
+  elif [ "$current" = "$version" ]; then
+    say "Reinstalling Breakpatch $version…"
+  elif [ -n "$current" ]; then
+    say "Updating Breakpatch $current to $version…"
+  else
+    say "Updating Breakpatch to $version…"
+  fi
+
+  download "$archive_url" "$tmp/$archive" \
+    || fail "The download stopped. Check your connection and run this again."
+  download "$sums_url" "$tmp/SHA256SUMS" \
+    || fail "Couldn't download the checksums. Check your connection and run this again."
+  expected=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/SHA256SUMS" | tr 'A-F' 'a-f')
+  actual=$(shasum -a 256 "$tmp/$archive" | awk '{ print $1 }' | tr 'A-F' 'a-f')
+  [ -n "$expected" ] || fail "Breakpatch $version has no checksum for $archive, so it wasn't installed."
+  [ "$actual" = "$expected" ] \
+    || fail "The download doesn't match its checksum, so it wasn't installed. Run this again. If it keeps happening, tell us: https://github.com/BreakPatch/breakpatch/issues"
+  check_signature
+  drop_token
+
+  mkdir "$tmp/unpacked"
+  tar -xzf "$tmp/$archive" -C "$tmp/unpacked" 2>/dev/null \
+    || fail "The download couldn't be unpacked. Run this again."
+  [ -d "$tmp/unpacked/$APP/Contents" ] || fail "The download doesn't hold $APP, so nothing was installed."
+  check_certificate "$tmp/unpacked/$APP"
+
+  quit_app
+  put_in_place
+  # Nothing downloaded with curl is quarantined, but a copy made some other way might be.
+  xattr -dr com.apple.quarantine "$dest/$APP" 2>/dev/null || true
+
+  say "Breakpatch is in $(pretty "$dest"). Opening it now."
+  open "$dest/$APP" || say "Open it from $(pretty "$dest")."
+}
+
+remove_from() {
+  [ -d "$1/$APP" ] || return 1
+  rm -rf "${1:?}/$APP" || fail "Couldn't remove Breakpatch from $(pretty "$1")."
+  say "Removed Breakpatch from $(pretty "$1")."
+}
+
+do_uninstall() {
+  [ "$(uname -s)" = Darwin ] || fail "Breakpatch runs on macOS only, so there's nothing to remove here."
+  system_dir=${BREAKPATCH_APPS_DIR:-/Applications}
+  user_dir="$HOME/Applications"
+  if [ ! -d "$system_dir/$APP" ] && [ ! -d "$user_dir/$APP" ]; then
+    say "Breakpatch isn't in $(pretty "$system_dir") or ~/Applications. Nothing to remove."
+    return 0
+  fi
+  quit_app
+  remove_from "$system_dir" || true
+  remove_from "$user_dir" || true
+  say "Your tests are still in the tests folder you picked."
+  say "The AI assistant and Breakpatch's data are still in $SUPPORT_DIR. Delete that folder to free the space."
+}
+
+main() {
+  # The token stays in this shell only: nothing the installer runs gets it in its environment.
+  token=${BREAKPATCH_GITHUB_TOKEN:-}
+  unset BREAKPATCH_GITHUB_TOKEN
+  action=do_install
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --uninstall) action=do_uninstall ;;
+      -h | --help) usage; return 0 ;;
+      *) fail "Unknown option $1. Run with --help to see the options." ;;
+    esac
+    shift
+  done
+  check_not_root
+  "$action"
+}
+
+main "$@"

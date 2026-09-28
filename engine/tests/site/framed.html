@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Framed</title></head>
+<body style="margin:0;font:18px sans-serif">
+  <!-- ?src=URL in a frame that gets the keyboard focus. -->
+  <iframe id="fr" style="position:absolute;left:0;top:0;width:600px;height:300px;border:0"></iframe>
+  <script>
+    const fr = document.getElementById('fr');
+    // ?lie=1: the page pretends the focus is on its own body, not in the frame.
+    if (new URLSearchParams(location.search).get('lie')) {
+      Object.defineProperty(Document.prototype, 'activeElement', { get() { return document.body; } });
+    }
+    fr.onload = () => fr.focus();
+    fr.src = new URLSearchParams(location.search).get('src');
+  </script>
+</body></html>

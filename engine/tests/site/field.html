@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Field</title></head>
+<body style="margin:0;font:18px sans-serif">
+  <!-- One big field that has the focus. ?go=URL goes there once loaded (a redirect after sign in);
+       ?popup=URL opens it in a new window when the button is clicked. -->
+  <input id="f" autofocus style="position:absolute;left:20px;top:20px;width:400px;height:40px;font:18px monospace">
+  <button id="open" style="position:absolute;left:20px;top:100px;width:160px;height:40px">Open window</button>
+  <script>
+    const q = new URLSearchParams(location.search);
+    if (q.get('go')) setTimeout(() => { location.href = q.get('go'); }, 50);
+    document.getElementById("f").focus();
+    window.addEventListener("focus", () => document.getElementById("f").focus());
+    document.getElementById("open").onclick = () => window.open(q.get('popup'), '_blank', 'width=600,height=400');
+  </script>
+</body></html>

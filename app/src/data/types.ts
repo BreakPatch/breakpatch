@@ -1,0 +1,240 @@
+// Data model shared by the UI, the demo backend and the Firebase backend.
+// Mirrors specs/spec.md §12 (Firestore) and §12.4 (local runner).
+
+export type Millis = number;
+
+export interface Person { uid: string; name: string; email: string }
+
+export interface Viewport { width: number; height: number; dpr: 1 }
+
+export type Role = 'member' | 'admin' | 'runner' | 'ci';
+
+export interface Workspace {
+  name: string;
+  logo?: string;                 // data URL or https URL
+  config: FirebaseWebConfig;
+  database: string;              // named Firestore database, default "breakpatch"
+  domain: string;                // allowed email domain, e.g. "example.com"
+}
+
+export interface FirebaseWebConfig {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  appId: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
+  measurementId?: string;
+}
+
+export interface Member extends Person { role: Role; lastActive?: Millis }
+
+// ---------- Apps, tests, steps ----------
+
+export interface App {
+  id: string;
+  name: string;
+  baseUrl: string;
+  icon?: string;                 // Material Symbols name
+  defaultViewport: Viewport;
+  createdBy: Person; createdAt: Millis;
+}
+
+export type TestStatus = 'draft' | 'published';   // UI: "Only you" / "In team suite"
+
+/** A header on a set-up or clean-up call: a fixed value, or a saved secret's (by name). */
+export interface CallHeader { name: string; value?: string; secretRef?: string }
+
+/**
+ * A set-up or clean-up call (engine/PROTOCOL.md "Set-up and clean-up calls"): https to the app's
+ * own hosts unless `allowOtherHosts` ("Allow other hosts"), no redirects, no private addresses.
+ */
+export interface HttpCall {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  url: string;
+  headers?: CallHeader[];
+  allowOtherHosts?: boolean;
+}
+
+export interface Test {
+  id: string;
+  appId: string;
+  name: string;
+  description?: string;
+  startUrl: string;
+  status: TestStatus;
+  viewport: Viewport;            // locked at creation
+  currentVersion: number;
+  setUp?: HttpCall;
+  cleanUp?: HttpCall & { alsoOnFailure?: boolean };
+  stepCount: number;
+  lastRun?: RunSummary;
+  createdBy: Person; createdAt: Millis;
+  updatedBy: Person; updatedAt: Millis;
+}
+
+export type Box = [number, number, number, number];   // x1, y1, x2, y2 in viewport px at DPR 1
+export type Point = [number, number];
+
+export interface RegionCheck { region: Box; hash: string; tolerance: number; expectChange?: boolean }
+
+export type ActionKind =
+  | 'click' | 'doubleClick' | 'longClick' | 'rightClick' | 'hover'
+  | 'swipe' | 'scroll' | 'drag'
+  | 'write'
+  | 'waitUntil' | 'waitFor'
+  | 'navigate' | 'switchTab' | 'upload' | 'downloadCheck'
+  | 'checkpoint'
+  | 'loop' | 'group';
+
+export type Direction = 'up' | 'down' | 'left' | 'right';
+export type SampleFile = 'docx' | 'pdf' | 'jpeg' | 'mp4' | 'xlsx' | 'csv';
+export type Generated = 'uniqueName' | 'timeNow' | 'today' | 'repeatNumber';
+
+export interface Step {
+  id: string;
+  action: ActionKind;
+  label: string;                 // "Click Done"
+  target?: string;               // "What to look for"
+  at?: Point;
+  pre?: RegionCheck;
+  post?: RegionCheck;
+  ignore?: Box[];
+  // action-specific
+  from?: Point; to?: Point; direction?: Direction; distance?: number;
+  text?: string; secretRef?: string; generated?: Generated;
+  region?: Box; hash?: string; tolerance?: number; timeoutMs?: number;
+  durationMs?: number;
+  url?: string; nav?: 'url' | 'reload' | 'back' | 'forward';
+  sample?: SampleFile;
+  fileType?: string; minBytes?: number;
+  count?: number;                // loop
+  groupId?: string; groupVersion?: number | 'latest';
+  steps?: Step[];                // loop children; group children resolved before a run
+  // UI-only markers (not persisted by the engine)
+  rerecorded?: boolean;
+}
+
+export interface Version {
+  number: number;
+  steps: Step[];
+  savedBy: Person; savedAt: Millis;
+  note?: string;
+}
+
+export interface StepGroup {
+  id: string;
+  appId: string;
+  name: string;
+  description?: string;
+  currentVersion: number;
+  stepCount: number;
+  usedBy: { testId: string; version: number | 'latest' }[];
+  createdBy: Person; createdAt: Millis;
+  updatedBy: Person; updatedAt: Millis;
+}
+
+// ---------- Runs ----------
+
+export type StepResult = 'passed' | 'healed' | 'failed' | 'notRun';
+export type FailReason =
+  | 'targetNotFound' | 'unexpectedScreen' | 'noChange' | 'timeout'
+  | 'healFailed' | 'healingUnavailable' | 'secretMissing' | 'setUpFailed' | 'stopped';
+
+export type RunSource = 'desktop' | 'ci' | 'runner';
+
+export interface StepRun {
+  stepId: string;
+  result: StepResult;
+  reason?: FailReason;
+  preDistance?: number; postDistance?: number;
+  oldAt?: Point; newAt?: Point;
+  screenshotPath?: string;       // local only
+}
+
+export interface Run {
+  id: string;
+  appId: string;
+  testId: string;
+  testName: string;
+  testVersion: number;
+  startedBy: Person | { serviceAccount: string };
+  machine: string;
+  source: RunSource;
+  startedAt: Millis;
+  durationMs: number;
+  result: 'pass' | 'fail';
+  healedCount: number;
+  steps: StepRun[];
+}
+
+export interface RunSummary { result: 'pass' | 'fail' | 'healed'; at: Millis; by: string }
+
+// ---------- Suites and local runner ----------
+
+export type Weekday = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
+
+export interface Suite {
+  id: string;                    // e.g. "smoke-7f3a"
+  name: string;
+  tests: { appId: string; testId: string }[];
+  schedule: null | { days: Weekday[]; time: string };
+  resultUrl?: string;
+  lastRun?: { result: SuiteResult; at: Millis; by: string };
+  createdBy: Person; createdAt: Millis;
+  updatedBy: Person; updatedAt: Millis;
+}
+
+export type SuiteResult = 'passed' | 'passed_with_fixes' | 'failed' | 'replaced';
+
+export interface RunnerStatus {
+  name: string;
+  status: 'waiting' | 'running' | 'paused';
+  current?: { suiteId: string; suiteName: string; test: string; index: number; total: number; startedBy: string; startedAt: Millis; passed: number; failed: number };
+  lastSeen: Millis;
+  /** Set by the runner when a result message could not be sent after 3 tries (spec §20). */
+  warning?: string;
+  appVersion: string;
+  memoryGb: number;
+  model: string;
+}
+
+export interface QueueItem {
+  id: string;
+  suiteId: string;
+  suiteName: string;
+  requestedBy: string;
+  source: 'schedule' | 'button' | 'request';
+  queuedAt: Millis;
+  note?: string;
+}
+
+/** runRequests/{auto}: added by the Run button, schedules, CI or any tool; the runner queues it and deletes it. */
+export interface RunRequest {
+  id: string;
+  suiteId: string;
+  requestedBy?: string;
+  note?: string;
+  createdAt: Millis;
+}
+
+export interface SuiteRun {
+  id: string;
+  suiteId: string;
+  suiteName: string;
+  result: SuiteResult;
+  counts: { total: number; passed: number; fixed: number; failed: number; notRun: number };
+  testRunIds: string[];
+  requestedBy: string;
+  replacedBy?: string;
+  startedAt: Millis;
+  finishedAt: Millis;
+}
+
+// ---------- Local-only ----------
+
+/** A saved secret in Settings: never its value. `origins` are the sites it may be typed on. */
+export interface SecretInfo { name: string; usedBy: number; present: boolean; origins: string[]; runnerCanUse: boolean }
+
+/** What the shell keeps next to each saved secret's name (app/src-tauri/src/secrets.rs). */
+export interface SecretPolicy { name: string; origins: string[]; runnerCanUse: boolean }

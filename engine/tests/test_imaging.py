@@ -1,0 +1,158 @@
+import asyncio
+
+import numpy as np
+
+from breakpatch_engine import checks, imaging
+from breakpatch_engine.locator import map_box, parse_bbox, parse_describe
+
+
+def canvas(w=400, h=300, color=(240, 240, 240)):
+    a = np.zeros((h, w, 3), np.uint8)
+    a[:] = color
+    return a
+
+
+def rect(a, box, color=(30, 90, 200)):
+    x1, y1, x2, y2 = box
+    a[y1:y2, x1:x2] = color
+    return a
+
+
+def button(a, x, y):
+    """A 'button' with a label-like, asymmetric pattern (perfectly symmetric flat crops make phash
+    coefficients tie at the median, which real antialiased UI rarely does)."""
+    rect(a, [x, y, x + 60, y + 30], (40, 40, 40))
+    for i, (w, dy) in enumerate([(22, 8), (9, 8), (30, 16), (14, 21)]):
+        rect(a, [x + 6 + i * 3, y + dy, x + 6 + i * 3 + w, y + dy + 3], (250, 250, 250))
+    return a
+
+
+def test_hash_is_16_hex_and_stable():
+    a = button(canvas(), 100, 100)
+    h1 = imaging.region_hash(a, [90, 90, 170, 140])
+    h2 = imaging.region_hash(a.copy(), [90, 90, 170, 140])
+    assert len(h1) == 16 and int(h1, 16) >= 0
+    assert imaging.distance(h1, h2) == 0
+
+
+def test_distance_small_for_same_content_large_when_moved():
+    a = button(canvas(), 100, 100)
+    rng = np.random.default_rng(1)
+    b = np.clip(a.astype(int) + rng.integers(-2, 3, a.shape), 0, 255).astype(np.uint8)   # rendering jitter
+    moved = button(canvas(), 250, 200)
+    region = [85, 85, 175, 145]
+    h = imaging.region_hash(a, region)
+    assert imaging.distance(h, imaging.region_hash(b, region)) <= 6
+    assert imaging.distance(h, imaging.region_hash(moved, region)) > 10
+
+
+def test_ignore_zones_are_blanked_before_hashing():
+    a = button(canvas(), 100, 100)
+    b = button(canvas(), 100, 100)
+    rect(b, [100, 100, 130, 130], (255, 0, 0))   # e.g. a clock inside the region
+    region = [85, 85, 175, 145]
+    ignore = [[100, 100, 130, 130]]
+    assert imaging.distance(imaging.region_hash(a, region), imaging.region_hash(b, region)) > 0
+    assert imaging.distance(imaging.region_hash(a, region, ignore), imaging.region_hash(b, region, ignore)) == 0
+
+
+def test_hex_distance_counts_bits():
+    assert imaging.distance("0" * 16, "0" * 15 + "f") == 4
+    assert imaging.distance("ffffffffffffffff", "0000000000000000") == 64
+
+
+def test_merge_boxes_and_union():
+    boxes = imaging.merge_boxes([[0, 0, 10, 10], [5, 5, 20, 20], [100, 100, 110, 110]])
+    assert boxes == [[0, 0, 20, 20], [100, 100, 110, 110]]
+    assert imaging.union_box(boxes) == [0, 0, 110, 110]
+    assert imaging.merge_boxes([[0, 0, 10, 10], [14, 0, 20, 10]], gap=5) == [[0, 0, 20, 10]]
+
+
+def test_blast_radius_finds_changed_area_padded():
+    before = canvas()
+    after = rect(canvas(), [200, 150, 260, 190])   # a dialog appears
+    box = imaging.blast_radius(before, after, pad=16)
+    assert box == [184, 134, 276, 206]
+    assert imaging.blast_radius(before, before.copy()) is None
+
+
+def test_blast_radius_excludes_noise_and_merges_nearby_changes():
+    before = canvas()
+    after = canvas()
+    rect(after, [50, 50, 70, 70])
+    rect(after, [80, 50, 100, 70])       # close by: merged
+    rect(after, [350, 10, 390, 30])      # the clock, ignored
+    box = imaging.blast_radius(before, after, ignore=[[340, 0, 400, 40]], pad=10)
+    assert box == [40, 40, 110, 80]
+
+
+def test_noise_boxes_from_frames():
+    frames = []
+    for i in range(5):
+        a = canvas()
+        rect(a, [10 + i * 5, 10, 30 + i * 5, 20], (0, 0, 0))   # moving spinner
+        frames.append(a)
+    boxes = imaging.noise_boxes(frames, pad=4)
+    assert len(boxes) == 1
+    x1, y1, x2, y2 = boxes[0]
+    assert x1 <= 10 and x2 >= 50 and y1 <= 10 and y2 >= 20
+    assert imaging.noise_boxes([canvas(), canvas()]) == []
+
+
+class FakeScreen:
+    """Frames on demand: animates for `busy` shots, then stays still. A clock ticks at the corner."""
+
+    def __init__(self, busy=4, clock=True):
+        self.n = 0
+        self.busy = busy
+        self.clock = clock
+
+    async def shoot(self):
+        self.n += 1
+        a = canvas()
+        if self.clock:
+            rect(a, [350, 5, 395, 25], ((self.n * 40) % 255, 0, 0))
+        if self.n <= self.busy:
+            rect(a, [100 + self.n * 10, 100, 140 + self.n * 10, 140])
+        else:
+            rect(a, [100, 200, 200, 250])
+        return a
+
+
+async def test_watch_noise_marks_regions_that_change_by_themselves():
+    scr = FakeScreen(busy=0)
+    boxes, last = await checks.watch_noise(scr.shoot, duration=0.1, interval=0.01)
+    assert len(boxes) == 1
+    assert imaging.overlaps(boxes[0], [350, 5, 395, 25])
+    assert last.shape == (300, 400, 3)
+
+
+async def test_settle_waits_for_identical_frames_excluding_ignore():
+    scr = FakeScreen(busy=4)
+    frame, settled = await checks.settle(scr.shoot, [[340, 0, 400, 30]], interval=0.001, frames=3, timeout=2)
+    assert settled
+    assert scr.n >= 4 + 3
+    assert frame[225, 150].tolist() == [30, 90, 200]
+
+
+async def test_settle_times_out_when_the_clock_is_not_ignored():
+    scr = FakeScreen(busy=0)
+    _frame, settled = await checks.settle(scr.shoot, None, interval=0.001, frames=3, timeout=0.05)
+    assert not settled
+
+
+def test_region_changed():
+    a, b = canvas(), rect(canvas(), [10, 10, 20, 20])
+    assert imaging.region_changed(a, b, [0, 0, 50, 50])
+    assert not imaging.region_changed(a, b, [100, 100, 200, 200])
+    assert not imaging.region_changed(a, b, [0, 0, 50, 50], ignore=[[0, 0, 30, 30]])
+
+
+def test_parse_bbox_maps_1000_units_to_viewport():
+    assert parse_bbox('{"bbox_2d": [500, 500, 600, 550]}', 1280, 800) == [640, 400, 768, 440]
+    assert parse_bbox('```json\n[{"bbox_2d": [0, 0, 1000, 1000], "label": "x"}]\n```', 100, 50) == [0, 0, 100, 50]
+    assert parse_bbox("I can't find it", 1280, 800) is None
+    assert parse_bbox('{"bbox_2d": [10, 10, 5, 5]}', 1000, 1000) == [5, 5, 10, 10]
+    assert map_box([0, 0, 1200, 10], 1000, 1000) is None
+    assert parse_describe('{"name": "Done button", "target": "Done button, bottom right"}') == {
+        "name": "Done button", "target": "Done button, bottom right"}

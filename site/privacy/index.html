@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy · Breakpatch</title>
+<link rel="icon" href="../assets/favicon.svg">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+<link rel="stylesheet" href="../assets/pricing.css">
+</head>
+<body>
+<header class="top"><a class="brand" href="/" aria-label="Breakpatch home"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a><nav aria-label="Main"><a href="/#ai">AI</a><a class="wide" href="/#how">How it works</a><a class="wide" href="/#features">Features</a><a href="/pricing/">Pricing</a><a href="/manual/">Manual</a><a class="wide" href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a></nav><a class="btn" href="/#install">Install</a></header>
+<main class="page-narrow">
+  <h1>Privacy policy</h1>
+  <p class="updated">Last updated 28 September 2026.</p>
+
+  <p>Oscar Ivan Tigreros Bolanos, trading as Breakpatch (“Breakpatch”, “we”) makes Breakpatch, a Mac app for testing websites. Here's what we collect, in plain words first. The full details are further down.</p>
+
+  <h2>The short version</h2>
+  <ul>
+    <li><b>Your tests stay yours.</b> They live on your Mac, or in your company's own cloud account if you use Team. We never see them, and nor do we see screenshots or saved passwords.</li>
+    <li><b>The AI runs on your Mac.</b> Nothing you test is sent to an AI company.</li>
+    <li><b>The free version counts, it doesn't watch.</b> It sends us simple totals, like "12 tests run today", with nothing that says who you are. You can turn it off with one switch.</li>
+    <li><b>The paid version knows who has a seat.</b> To check a licence we keep your work email, which Mac uses the seat, and the same simple totals.</li>
+    <li><b>Paying is handled by Paddle.</b> We never see your card.</li>
+    <li><b>No tracking on this website.</b> No cookies and no analytics.</li>
+  </ul>
+
+  <h2>What we keep, at a glance</h2>
+  <div class="table-wrap"><table class="plain">
+    <thead><tr><th scope="col">If you use</th><th scope="col">We keep</th><th scope="col">We never get</th></tr></thead>
+    <tbody>
+      <tr><td>Breakpatch, free</td><td>Anonymous totals of tests and runs for everyone together. You can turn it off.</td><td>Your name, email, tests, websites, screenshots, passwords</td></tr>
+      <tr><td>Breakpatch Team</td><td>Your company's licence, who holds each seat (work email), which Mac uses it, simple usage totals</td><td>Your tests, websites, screenshots, passwords</td></tr>
+      <tr><td>Buying</td><td>Your name, email, company and what you bought, from Paddle</td><td>Your card details</td></tr>
+      <tr><td>This website</td><td>Nothing</td><td>Cookies, tracking</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Your choices</h2>
+  <ul>
+    <li><b>Turn off the counts</b> in the free version: Settings → Privacy. Nothing is sent after that.</li>
+    <li><b>Ask what we hold about you</b>, to fix it or to delete it: email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a>.</li>
+    <li><b>Leave a team:</b> your company's licence admin can free your seat at any time.</li>
+  </ul>
+
+  <h2>The details</h2>
+  <div class="faq">
+    <details>
+      <summary>The free version: exactly what's counted</summary>
+      <div class="a">
+        <p>The first time you open Breakpatch it tells you it counts, and you can press Turn off. Nothing is sent before you've seen that message.</p>
+        <p>After that, on each day you use it, the app sends one short message with: how many tests were created and how many were run, passed and failed since the last message; whether this is the first message today, this week, this month and ever (so we can count how many Macs use Breakpatch without knowing which ones); and the app version.</p>
+        <p>It never sends test names, website addresses, steps, screenshots, saved passwords, your name, your email, or anything that identifies you or your Mac. We add the numbers into totals for everyone and don't keep the message itself.</p>
+        <p>Your internet address is only used for a moment, to stop one address from sending too many messages. It's never stored. When you turn counting off, nothing is counted or sent, and anything waiting is dropped. Advanced users can also turn it off with <code>BREAKPATCH_NO_USAGE=1</code>. The code is open source, so anyone can check this.</p>
+        <p>We also see how many times each download was fetched, as counted by GitHub. The install command itself sends nothing.</p>
+      </div>
+    </details>
+    <details>
+      <summary>Breakpatch Team: what the licence check keeps</summary>
+      <div class="a">
+        <p>The licence service at account.breakpatch.dev runs on Google Cloud in Europe. It keeps:</p>
+        <ul>
+          <li><b>Your company's licence:</b> the company name, the licence admins' emails, the plan, seats and machines bought and in use, dates and status. The licence key itself is never stored in readable form.</li>
+          <li><b>Each seat:</b> the email of the person using it, or a runner or CI machine's name; a scrambled code for the Mac it's used on, which can't be turned back into anything about the Mac; the ID of your company's workspace; the app version; and when the seat was taken, last used and freed. A seat nobody uses for 30 days is freed.</li>
+          <li><b>Simple totals</b> with each check, about once a day: how many tests were created, how many runs there were and how many passed or failed, and on how many days Breakpatch was used. Only numbers. Your licence admins and Breakpatch can see them. They're part of how the licence works, so Team has no switch for them.</li>
+          <li><b>A log of licence changes:</b> seats taken and freed, admin changes and payments, with who made them.</li>
+          <li><b>Back office sign-in:</b> you sign in with a link sent to your email. Google's Firebase sends the email and keeps your email address and when you signed in.</li>
+        </ul>
+        <p>To stop abuse, the service briefly counts requests per internet address and per key tried. It never stores the address in readable form, and the counters are deleted within a day or two. Google keeps standard request logs, which include internet addresses, for a limited time. Our own logs never contain licence keys.</p>
+      </div>
+    </details>
+    <details>
+      <summary>Buying through Paddle</summary>
+      <div class="a">
+        <p>Paddle.com sells Breakpatch on our behalf (it's the Merchant of Record). When you buy, Paddle collects your name, email, billing address, payment details and any tax number, under Paddle's own privacy policy. We never see card details.</p>
+        <p>Paddle tells us your name and email, the company name you enter, what you bought (plan, seats, machines, billing period), whether it's paid, and Paddle's reference numbers. We keep those with your licence, and make that email the licence's first admin so you can sign in and get your key.</p>
+        <p>Paddle's checkout only loads when you press Buy on the pricing page.</p>
+      </div>
+    </details>
+    <details>
+      <summary>This website</summary>
+      <div class="a">
+        <p>breakpatch.dev is hosted by Google's Firebase. It sets no cookies and runs no analytics. Its fonts come from Google Fonts, so your browser asks Google's servers for them.</p>
+      </div>
+    </details>
+    <details>
+      <summary>Who handles data for us</summary>
+      <div class="a">
+        <ul>
+          <li><b>Google</b> (Firebase, Google Cloud): the website, the licence service and back office sign-in.</li>
+          <li><b>Paddle:</b> checkout, payments, invoices, tax and refunds.</li>
+          <li><b>GitHub:</b> app downloads and their counts, and issues you open there.</li>
+        </ul>
+      </div>
+    </details>
+    <details>
+      <summary>How long we keep it</summary>
+      <div class="a">
+        <p>Licence records, seats, usage totals and the change log are kept while the licence exists, and afterwards: billing and payment records for 6 years, as tax law requires, and seats and usage totals for 12 months. The free version's totals contain nothing personal and are kept.</p>
+      </div>
+    </details>
+    <details>
+      <summary>Your rights</summary>
+      <div class="a">
+        <p>You can ask for a copy of what we hold about you, ask us to correct it or delete it, or object to how we use it, by emailing support@breakpatch.dev. You can also ask to receive your data in a format you can take elsewhere, or ask us to limit how we use it. We answer within one month.</p>
+        <p>We use this data to provide the licence you or your company bought (a contract), and to keep the service safe and understand how it's used (our legitimate interests). If you're unhappy with how we handle your data, you can complain to the UK's Information Commissioner's Office at ico.org.uk. We'd rather you told us first, so we can put it right.</p>
+      </div>
+    </details>
+  </div>
+
+  <h2>Contact</h2>
+  <p>Oscar Ivan Tigreros Bolanos, trading as Breakpatch, 17 The Cloisters, Ramsgate, CT11 9PL, United Kingdom. <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></p>
+</main>
+<footer class="site-foot legal-foot"><span>Here to find what breaks.</span><a href="../pricing/">Pricing</a><a href="../terms/">Terms</a><a href="../privacy/">Privacy</a><a href="../refunds/">Refunds</a><a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>

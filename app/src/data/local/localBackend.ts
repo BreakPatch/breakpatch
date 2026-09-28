@@ -1,0 +1,621 @@
+// Community's backend: tests saved as JSON files in a folder the person picked (docs/editions.md).
+//
+//   <folder>/breakpatch.json                     { format, schemaVersion, name }
+//   <folder>/apps/<appId>/app.json
+//   <folder>/apps/<appId>/tests/<testId>.json    test fields + "steps" (latest only)
+//   <folder>/apps/<appId>/shared/<groupId>.json  shared steps + "steps"
+//   <folder>/apps/<appId>/runs/<testId>.json     the last run of that test
+//   <folder>/suites/<suiteId>.json
+//
+// Ids are the file and folder names (readable slugs), so they aren't repeated inside the files.
+// Derived values (step counts, last runs, where shared steps are used) aren't stored either.
+// The text of every file as last read or written is the source of truth; the model is parsed
+// from it. Saving the same thing writes nothing; outside edits (a `git pull`) are picked up on
+// window focus, through the storage's watcher, or by a light poll.
+import type { Backend, Listener, NewApp, NewSuite, NewTest, Unsubscribe } from '../backend';
+import type {
+  App, Member, Person, QueueItem, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Viewport,
+} from '../types';
+import { FORMAT, SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
+import { baseName, FileTooBig, join, type FolderStorage } from './storage';
+
+/** Stands for a file over 5 MB in the texts read from the folder: it's skipped, never parsed. */
+const TOO_BIG = '\u0000breakpatch: file too big\u0000';
+
+export type FolderProblem = 'missing' | 'notBreakpatch' | 'unreadable' | 'newer' | 'notWritable';
+
+/** Why a folder can't be opened. `message` is the plain line the screens show. */
+export class FolderError extends Error {
+  code: FolderProblem;
+  constructor(code: FolderProblem, message: string) { super(message); this.code = code; }
+}
+
+export const NEWER_MESSAGE = 'This folder was saved by a newer Breakpatch. Update to open it.';
+const NOT_HERE = 'Community runs tests and suites by hand on this Mac.';
+
+export interface FolderMeta { format: typeof FORMAT; schemaVersion: number; name: string }
+
+/**
+ * Everything in a tests folder at one moment, read the way the screens read it: each app with
+ * its tests and shared steps (latest steps included), the last run of each test, and the suites.
+ * For reading a folder as a whole, e.g. to copy it somewhere else. Reading it writes nothing.
+ */
+export interface FolderSnapshot {
+  /** The folder, absolute. */
+  path: string;
+  /** From breakpatch.json, else the folder's name. */
+  name: string;
+  /** From breakpatch.json (1 when it has none). */
+  schemaVersion: number;
+  /** Saved by a newer app (schemaVersion above this app's): what's here may be incomplete. */
+  newer: boolean;
+  apps: {
+    app: App;
+    tests: { test: Test; steps: Step[] }[];
+    groups: { group: StepGroup; steps: Step[] }[];
+    /** The last run of each test that has one. */
+    runs: Run[];
+  }[];
+  suites: Suite[];
+  /** Plain lines about files that couldn't be read and were left out (as onWarnings gives them). */
+  skipped: string[];
+}
+
+export interface LocalOptions {
+  storage: FolderStorage;
+  /** The folder, absolute. */
+  path: string;
+  person: Person;
+  /**
+   * Re-read on window focus and watch or poll for outside changes. Default true;
+   * tests turn it off and call reload() themselves.
+   */
+  live?: boolean;
+  /** Poll interval when the storage can't watch. Default 5 s. */
+  pollMs?: number;
+}
+
+type TestRec = { test: Omit<Test, 'id' | 'appId' | 'stepCount' | 'lastRun'>; steps: Step[] };
+type GroupRec = { group: Omit<StepGroup, 'id' | 'appId' | 'stepCount' | 'usedBy'>; steps: Step[] };
+type RunRec = Omit<Run, 'appId' | 'testId'>;
+interface AppRec { app: App; tests: Map<string, TestRec>; groups: Map<string, GroupRec>; runs: Map<string, RunRec> }
+interface Model { meta: FolderMeta | null; apps: Map<string, AppRec>; suites: Map<string, Suite> }
+
+const DEFAULT_VIEWPORT: Viewport = { width: 1440, height: 900, dpr: 1 };
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const str = (v: unknown, d = '') => (typeof v === 'string' ? v : d);
+const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const clone = <T>(v: T): T => structuredClone(v);
+/** Lists are in name order: files have no other order, and edits from outside keep it stable. */
+const byName = (a: { name: string; id: string }, b: { name: string; id: string }) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+
+/** Steps as saved: no UI-only markers, no undefined fields, children cleaned too. */
+function cleanSteps(steps: Step[]): Step[] {
+  return steps.map(s => {
+    const { rerecorded: _r, steps: kids, ...rest } = s;
+    const out = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)) as unknown as Step;
+    if (kids) out.steps = cleanSteps(kids);
+    return out;
+  });
+}
+
+function groupRefs(steps: Step[], out: { groupId: string; version: number | 'latest' }[] = []) {
+  for (const s of steps) {
+    if (s.action === 'group' && s.groupId) out.push({ groupId: s.groupId, version: s.groupVersion ?? 'latest' });
+    if (s.steps) groupRefs(s.steps, out);
+  }
+  return out;
+}
+
+function stamp(t: number): string {
+  return new Date(t).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+}
+
+/** Reads breakpatch.json. Throws a FolderError when the folder can't be opened. */
+/** breakpatch.json's text; one over 5 MB counts as unreadable. */
+export async function readMeta(st: FolderStorage, root: string): Promise<string | null> {
+  try { return await st.read(join(root, 'breakpatch.json')); }
+  catch (e) {
+    if (e instanceof FileTooBig) throw new FolderError('unreadable', "This folder's breakpatch.json is bigger than 5 MB, so it can't be a Breakpatch file. Fix the file or choose another folder.");
+    throw e;
+  }
+}
+
+export function parseMeta(text: string | null): FolderMeta {
+  if (text === null) throw new FolderError('missing', "This folder doesn't have a breakpatch.json file.");
+  let v: unknown;
+  try { v = fromFileText(text); } catch { throw new FolderError('unreadable', "This folder's breakpatch.json can't be read. Fix the file or choose another folder."); }
+  if (!isObj(v) || v.format !== FORMAT) throw new FolderError('notBreakpatch', "This folder's breakpatch.json isn't a Breakpatch file.");
+  const schemaVersion = num(v.schemaVersion, 1);
+  if (schemaVersion > SCHEMA_VERSION) throw new FolderError('newer', NEWER_MESSAGE);
+  return { format: FORMAT, schemaVersion, name: str(v.name) };
+}
+
+export class LocalBackend implements Backend {
+  readonly kind = 'local' as const;
+  readonly workspace = null;
+  readonly local: { path: string };
+
+  private st: FolderStorage;
+  private root: string;
+  private me: Person;
+  private texts = new Map<string, string>();
+  private model: Model = { meta: null, apps: new Map(), suites: new Map() };
+  private warnings: string[] = [];
+  private readOnly = false;
+  /** Suite results live only for this session: Community keeps no suite run history. */
+  private suiteLast = new Map<string, Suite['lastRun']>();
+  private subs = new Set<() => void>();
+  private warnSubs = new Set<Listener<string[]>>();
+  private roSubs = new Set<Listener<boolean>>();
+  private chain: Promise<unknown> = Promise.resolve();
+  private stops: (() => void)[] = [];
+  private closed = false;
+
+  private constructor(o: LocalOptions) {
+    this.st = o.storage; this.root = o.path.replace(/\/+$/, '') || '/'; this.me = o.person;
+    this.local = { path: this.root };
+  }
+
+  /** Opens a folder that already has a breakpatch.json (see folder.ts to set one up). */
+  static async open(o: LocalOptions): Promise<LocalBackend> {
+    const b = new LocalBackend(o);
+    parseMeta(await readMeta(o.storage, b.root));
+    await b.reload();
+    if (o.live !== false) b.startLive(o.pollMs ?? 5000);
+    return b;
+  }
+
+  /**
+   * Reads a folder once, without watching it, even one saved by a newer app (`newer` says so).
+   * Throws a FolderError when there's no breakpatch.json or it isn't a Breakpatch file.
+   */
+  static async read(o: Pick<LocalOptions, 'storage' | 'path' | 'person'>): Promise<FolderSnapshot> {
+    const b = new LocalBackend({ ...o, live: false });
+    try { parseMeta(await readMeta(o.storage, b.root)); }
+    catch (e) { if (!(e instanceof FolderError && e.code === 'newer')) throw e; }
+    try { await b.reload(); return await b.snapshot(); }
+    finally { b.close(); }
+  }
+
+  close() { this.closed = true; this.stops.splice(0).forEach(f => f()); this.subs.clear(); }
+
+  // ---- plumbing ----
+  private abs(rel: string) { return join(this.root, rel); }
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const p = this.chain.then(fn, fn);
+    this.chain = p.catch(() => {});
+    return p;
+  }
+  private emit() { this.subs.forEach(f => f()); }
+  private watch<T>(select: () => T, l: Listener<T>): Unsubscribe {
+    let alive = true, last: string | undefined;
+    const push = () => {
+      if (!alive) return;
+      const v = select(), key = JSON.stringify(v);
+      if (key !== last) { last = key; l(v); }
+    };
+    this.subs.add(push);
+    queueMicrotask(push);
+    return () => { alive = false; this.subs.delete(push); };
+  }
+
+  private startLive(pollMs: number) {
+    const again = () => { void this.reload().catch(() => {}); };
+    if (typeof window !== 'undefined') {
+      const onVis = () => { if (document.visibilityState === 'visible') again(); };
+      window.addEventListener('focus', again);
+      document.addEventListener('visibilitychange', onVis);
+      this.stops.push(() => { window.removeEventListener('focus', again); document.removeEventListener('visibilitychange', onVis); });
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const soon = () => { clearTimeout(timer); timer = setTimeout(again, 300); };
+    const poll = () => {
+      const id = setInterval(() => { if (typeof document === 'undefined' || document.visibilityState === 'visible') again(); }, pollMs);
+      this.stops.push(() => clearInterval(id));
+    };
+    if (this.st.watch) {
+      this.st.watch(this.root, soon).then(
+        off => { if (this.closed) off(); else this.stops.push(() => { clearTimeout(timer); off(); }); },
+        () => { if (!this.closed) poll(); },
+      );
+    } else poll();
+  }
+
+  /** Every file the folder format knows, relative path → text. Hidden and non-JSON files are left alone. */
+  private async scan(): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const json = (n: string) => !n.startsWith('.') && n.endsWith('.json');
+    const add = async (rel: string) => {
+      try { const t = await this.st.read(this.abs(rel)); if (t !== null) out.set(rel, t); }
+      catch (e) { if (e instanceof FileTooBig) out.set(rel, TOO_BIG); else throw e; }
+    };
+    await add('breakpatch.json');
+    for (const e of await this.st.list(this.abs('apps'))) {
+      if (!e.isDir || e.name.startsWith('.')) continue;
+      const dir = `apps/${e.name}`;
+      await add(`${dir}/app.json`);
+      if (!out.has(`${dir}/app.json`)) { out.set(`${dir}/app.json`, ''); continue; }
+      for (const sub of ['tests', 'shared', 'runs']) {
+        for (const f of await this.st.list(this.abs(`${dir}/${sub}`))) if (!f.isDir && json(f.name)) await add(`${dir}/${sub}/${f.name}`);
+      }
+    }
+    for (const f of await this.st.list(this.abs('suites'))) if (!f.isDir && json(f.name)) await add(`suites/${f.name}`);
+    return out;
+  }
+
+  /** Re-reads the folder; tells subscribers only when a file changed. */
+  reload(): Promise<void> {
+    return this.serial(async () => {
+      if (this.closed) return;
+      const next = await this.scan();
+      const same = next.size === this.texts.size && [...next].every(([k, v]) => this.texts.get(k) === v);
+      if (same && this.model.meta) return;
+      this.texts = next;
+      this.rebuild();
+    });
+  }
+
+  private rebuild() {
+    const warn: string[] = [];
+    const bad = (rel: string, what: string) => warn.push(`${rel}: ${what}`);
+    const parse = (rel: string): Record<string, unknown> | null => {
+      if (this.texts.get(rel) === TOO_BIG) { bad(rel, 'bigger than 5 MB, skipped'); return null; }
+      try { const v = fromFileText(this.texts.get(rel)!); if (isObj(v)) return v; bad(rel, 'not a Breakpatch file, skipped'); }
+      catch { bad(rel, 'not valid JSON, skipped'); }
+      return null;
+    };
+    const who = (v: unknown): Person => (isObj(v) && typeof v.name === 'string' ? { uid: str(v.uid, 'local'), name: v.name, email: str(v.email) } : this.me);
+
+    // breakpatch.json: a newer format makes the folder read-only; a broken one keeps the last good one.
+    let meta = this.model.meta;
+    let readOnly = this.readOnly;
+    try { meta = parseMeta(this.texts.get('breakpatch.json') ?? null); readOnly = false; }
+    catch (e) {
+      if (e instanceof FolderError && e.code === 'newer') readOnly = true;
+      else bad('breakpatch.json', (e as Error).message);
+    }
+
+    const apps = new Map<string, AppRec>();
+    const suites = new Map<string, Suite>();
+    for (const rel of [...this.texts.keys()].sort()) {
+      const m = /^apps\/([^/]+)\/(?:(app)\.json|(tests|shared|runs)\/(.+)\.json)$/.exec(rel);
+      if (m) {
+        const [, appId, isApp, kind, id] = m;
+        if (isApp) {
+          if (this.texts.get(rel) === '') { bad(`apps/${appId}`, 'no app.json, skipped'); continue; }
+          const v = parse(rel); if (!v) continue;
+          if (typeof v.name !== 'string') { bad(rel, 'the app has no name, skipped'); continue; }
+          const vp = isObj(v.defaultViewport) ? v.defaultViewport as unknown as Viewport : DEFAULT_VIEWPORT;
+          apps.set(appId, { app: { id: appId, name: v.name, baseUrl: str(v.baseUrl), icon: typeof v.icon === 'string' ? v.icon : undefined, defaultViewport: vp, createdBy: who(v.createdBy), createdAt: num(v.createdAt) }, tests: new Map(), groups: new Map(), runs: new Map() });
+          continue;
+        }
+        const app = apps.get(appId); if (!app) continue;
+        const v = parse(rel); if (!v) continue;
+        if (kind === 'runs') {
+          if (!Array.isArray(v.steps) || typeof v.startedAt !== 'number') { bad(rel, 'not a run, skipped'); continue; }
+          app.runs.set(id, { ...(v as unknown as RunRec), id: str(v.id, `${id}-${stamp(v.startedAt)}`) });
+          continue;
+        }
+        if (typeof v.name !== 'string' || (v.steps !== undefined && !Array.isArray(v.steps))) { bad(rel, `not ${kind === 'tests' ? 'a test' : 'shared steps'}, skipped`); continue; }
+        const { steps, version, id: _id, appId: _a, stepCount: _c, lastRun: _l, usedBy: _u, currentVersion: _cv, ...rest } = v;
+        const common = { ...rest, name: v.name, currentVersion: num(version), createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) };
+        const list = (steps as Step[] | undefined) ?? [];
+        if (kind === 'tests') {
+          app.tests.set(id, { test: { ...common, startUrl: str(v.startUrl, app.app.baseUrl), status: v.status === 'published' ? 'published' : 'draft', viewport: isObj(v.viewport) ? v.viewport as unknown as Viewport : app.app.defaultViewport } as TestRec['test'], steps: list });
+        } else {
+          app.groups.set(id, { group: common as GroupRec['group'], steps: list });
+        }
+        continue;
+      }
+      const s = /^suites\/(.+)\.json$/.exec(rel);
+      if (s) {
+        const v = parse(rel); if (!v) continue;
+        if (typeof v.name !== 'string' || !Array.isArray(v.tests)) { bad(rel, 'not a suite, skipped'); continue; }
+        suites.set(s[1], { id: s[1], name: v.name, tests: (v.tests as Suite['tests']).filter(t => isObj(t) && typeof t.appId === 'string' && typeof t.testId === 'string'), schedule: null, resultUrl: typeof v.resultUrl === 'string' ? v.resultUrl : undefined, createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) });
+      }
+    }
+
+    this.model = { meta, apps, suites };
+    this.emit();
+    if (warn.join('\n') !== this.warnings.join('\n')) { this.warnings = warn; this.warnSubs.forEach(l => l([...warn])); }
+    if (readOnly !== this.readOnly) { this.readOnly = readOnly; this.roSubs.forEach(l => l(readOnly)); }
+  }
+
+  /** Writes a file (temp file, then rename) unless it already says exactly this. */
+  private async put(rel: string, value: unknown) {
+    const text = toFileText(value);
+    if (this.texts.get(rel) === text) return;
+    const path = this.abs(rel);
+    const dir = path.slice(0, path.lastIndexOf('/'));
+    if (!(await this.st.exists(dir))) await this.st.mkdir(dir);
+    const tmp = join(dir, `.${baseName(path)}.${Math.random().toString(36).slice(2, 8)}.tmp`);
+    await this.st.write(tmp, text);
+    try { await this.st.rename(tmp, path); }
+    catch (e) { await this.st.remove(tmp).catch(() => {}); throw e; }
+    this.texts.set(rel, text);
+  }
+  private async drop(rel: string) {
+    await this.st.remove(this.abs(rel));
+    for (const k of [...this.texts.keys()]) if (k === rel || k.startsWith(rel + '/')) this.texts.delete(k);
+  }
+  /** Runs a write in order with the others and re-reads the model from the files it changed. */
+  private write<T>(fn: () => Promise<T>): Promise<T> {
+    return this.serial(async () => {
+      if (this.readOnly) throw new Error(NEWER_MESSAGE);
+      try { return await fn(); }
+      finally { this.rebuild(); }
+    });
+  }
+
+  private appRec(appId: string): AppRec {
+    const a = this.model.apps.get(appId);
+    if (!a) throw new Error('App not found');
+    return a;
+  }
+  private testRec(appId: string, testId: string): TestRec {
+    const t = this.appRec(appId).tests.get(testId);
+    if (!t) throw new Error('Test not found');
+    return t;
+  }
+
+  private testOut(appId: string, id: string, r: TestRec): Test {
+    const run = this.model.apps.get(appId)?.runs.get(id);
+    const lastRun: RunSummary | undefined = run && {
+      result: run.result === 'fail' ? 'fail' : run.healedCount ? 'healed' : 'pass', at: run.startedAt,
+      by: 'name' in run.startedBy ? run.startedBy.name : run.startedBy.serviceAccount,
+    };
+    return clone({ ...r.test, id, appId, stepCount: r.steps.length, lastRun });
+  }
+  private groupOut(appId: string, id: string, r: GroupRec): StepGroup {
+    const usedBy: StepGroup['usedBy'] = [];
+    for (const [testId, t] of this.appRec(appId).tests) for (const ref of groupRefs(t.steps)) if (ref.groupId === id) usedBy.push({ testId, version: ref.version });
+    return clone({ ...r.group, id, appId, stepCount: r.steps.length, usedBy });
+  }
+  private runOut(appId: string, testId: string, r: RunRec): Run { return clone({ ...r, appId, testId }); }
+
+  private testFile(r: TestRec) {
+    const { currentVersion, ...rest } = r.test;
+    return { ...rest, version: currentVersion, steps: r.steps };
+  }
+  private groupFile(r: GroupRec) {
+    const { currentVersion, ...rest } = r.group;
+    return { ...rest, version: currentVersion, steps: r.steps };
+  }
+
+  // ---- extras for the screens ----
+  /** Plain lines about files that were skipped (invalid JSON, unknown shape). Calls `l` at once. */
+  onWarnings(l: Listener<string[]>): Unsubscribe { this.warnSubs.add(l); l([...this.warnings]); return () => { this.warnSubs.delete(l); }; }
+  onReadOnly(l: Listener<boolean>): Unsubscribe { this.roSubs.add(l); l(this.readOnly); return () => { this.roSubs.delete(l); }; }
+  /** Folder name from breakpatch.json. */
+  get name(): string { return this.model.meta?.name || baseName(this.root); }
+  /** N apps · N tests for Settings. */
+  counts(l: Listener<{ apps: number; tests: number }>): Unsubscribe {
+    return this.watch(() => ({ apps: this.model.apps.size, tests: [...this.model.apps.values()].reduce((n, a) => n + a.tests.size, 0) }), l);
+  }
+
+  /** The whole folder as it is now (see FolderSnapshot). */
+  async snapshot(): Promise<FolderSnapshot> {
+    await this.chain;
+    let schemaVersion = 1;
+    try { const v = fromFileText(this.texts.get('breakpatch.json') ?? ''); if (isObj(v)) schemaVersion = num(v.schemaVersion, 1); }
+    catch { /* already in the warnings */ }
+    const apps = [...this.model.apps].map(([appId, a]) => ({
+      app: clone(a.app),
+      tests: [...a.tests].map(([id, r]) => ({ test: this.testOut(appId, id, r), steps: clone(r.steps) })).sort((x, y) => byName(x.test, y.test)),
+      groups: [...a.groups].map(([id, r]) => ({ group: this.groupOut(appId, id, r), steps: clone(r.steps) })).sort((x, y) => byName(x.group, y.group)),
+      runs: [...a.runs].map(([testId, r]) => this.runOut(appId, testId, r)).sort((x, y) => x.testId.localeCompare(y.testId)),
+    })).sort((x, y) => byName(x.app, y.app));
+    // Suite results live only for the session, so they aren't part of the folder.
+    const suites = [...this.model.suites.values()].map(s => clone({ ...s, lastRun: undefined })).sort(byName);
+    return { path: this.root, name: this.name, schemaVersion, newer: this.readOnly, apps, suites, skipped: [...this.warnings] };
+  }
+
+  // ---- the person (no sign-in) ----
+  currentUser() { return this.me; }
+  onUser(l: Listener<Person | null>) { l(this.me); return () => {}; }
+  async signIn(): Promise<Person> { throw new Error('There is no sign-in: your tests are saved in a folder on this Mac.'); }
+  async sendPasswordReset() { throw new Error('There is no sign-in: your tests are saved in a folder on this Mac.'); }
+  async signOut() { /* nothing to sign out of */ }
+  myRole(): Role { return 'admin'; }
+
+  // ---- apps ----
+  apps(l: Listener<App[]>) {
+    return this.watch(() => [...this.model.apps.values()].map(a => clone(a.app)).sort(byName), l);
+  }
+  addApp(a: NewApp) {
+    return this.write(async () => {
+      const id = uniqueSlug(a.name, x => this.model.apps.has(x) || this.texts.has(`apps/${x}/app.json`));
+      const app: App = { id, name: a.name, baseUrl: a.baseUrl, icon: a.icon ?? 'language', defaultViewport: a.defaultViewport, createdBy: this.me, createdAt: Date.now() };
+      const { id: _id, ...file } = app;
+      await this.put(`apps/${id}/app.json`, file);
+      return clone(app);
+    });
+  }
+  updateApp(id: string, patch: Partial<NewApp>) {
+    return this.write(async () => {
+      const { id: _id, ...file } = { ...this.appRec(id).app, ...patch };
+      await this.put(`apps/${id}/app.json`, file);
+    });
+  }
+  deleteApp(id: string) { return this.write(() => this.drop(`apps/${id}`)); }
+
+  // ---- tests ----
+  tests(appId: string, l: Listener<Test[]>) {
+    return this.watch(() => {
+      const a = this.model.apps.get(appId);
+      return a ? [...a.tests].map(([id, r]) => this.testOut(appId, id, r)).sort(byName) : [];
+    }, l);
+  }
+  test(appId: string, testId: string, l: Listener<Test | null>) {
+    return this.watch(() => { const r = this.model.apps.get(appId)?.tests.get(testId); return r ? this.testOut(appId, testId, r) : null; }, l);
+  }
+  createTest(n: NewTest) {
+    return this.write(async () => {
+      const app = this.appRec(n.appId);
+      const id = uniqueSlug(n.name, x => app.tests.has(x));
+      const now = Date.now();
+      const rec: TestRec = { test: { name: n.name, description: n.description, startUrl: n.startUrl, viewport: n.viewport, setUp: n.setUp, cleanUp: n.cleanUp, status: 'draft', currentVersion: 0, createdBy: this.me, createdAt: now, updatedBy: this.me, updatedAt: now }, steps: [] };
+      await this.put(`apps/${n.appId}/tests/${id}.json`, this.testFile(rec));
+      return this.testOut(n.appId, id, rec);
+    });
+  }
+  private current(r: TestRec | GroupRec): Version {
+    const meta = 'test' in r ? r.test : r.group;
+    return clone({ number: meta.currentVersion, steps: r.steps, savedBy: meta.updatedBy, savedAt: meta.updatedAt });
+  }
+  /** Only the latest version is kept. */
+  versions(appId: string, testId: string, l: Listener<Version[]>) {
+    return this.watch(() => { const r = this.model.apps.get(appId)?.tests.get(testId); return r && r.test.currentVersion > 0 ? [this.current(r)] : []; }, l);
+  }
+  /**
+   * Only the latest is kept, so any saved version number reads as the latest (a step pinned to
+   * an older version of shared steps runs the current ones).
+   */
+  async version(appId: string, testId: string, n: number) {
+    await this.chain;
+    const r = this.model.apps.get(appId)?.tests.get(testId);
+    return r && n > 0 && r.test.currentVersion > 0 ? this.current(r) : null;
+  }
+  saveTest(appId: string, testId: string, steps: Step[]) {
+    return this.write(async () => {
+      const r = this.testRec(appId, testId);
+      const clean = cleanSteps(steps);
+      // Nothing changed: no new number, no new file.
+      if (r.test.currentVersion > 0 && toFileText(clean) === toFileText(r.steps)) return this.current(r);
+      const now = Date.now();
+      const next: TestRec = { test: { ...r.test, currentVersion: r.test.currentVersion + 1, updatedBy: this.me, updatedAt: now }, steps: clean };
+      await this.put(`apps/${appId}/tests/${testId}.json`, this.testFile(next));
+      return this.current(next);
+    });
+  }
+  private patchTest(appId: string, testId: string, p: Partial<TestRec['test']>) {
+    return this.write(async () => {
+      const r = this.testRec(appId, testId);
+      if (Object.entries(p).every(([k, v]) => (r.test as Record<string, unknown>)[k] === v)) return;
+      await this.put(`apps/${appId}/tests/${testId}.json`, this.testFile({ ...r, test: { ...r.test, ...p, updatedBy: this.me, updatedAt: Date.now() } }));
+    });
+  }
+  setTestStatus(appId: string, testId: string, status: TestStatus) { return this.patchTest(appId, testId, { status }); }
+  renameTest(appId: string, testId: string, name: string) { return this.patchTest(appId, testId, { name }); }
+  duplicateTest(appId: string, testId: string) {
+    return this.write(async () => {
+      const app = this.appRec(appId), src = this.testRec(appId, testId);
+      const name = `${src.test.name} (copy)`;
+      const id = uniqueSlug(`${src.test.name} copy`, x => app.tests.has(x));
+      const now = Date.now();
+      const rec: TestRec = { test: { ...src.test, name, status: 'draft', currentVersion: src.steps.length ? 1 : 0, createdBy: this.me, createdAt: now, updatedBy: this.me, updatedAt: now }, steps: clone(src.steps) };
+      await this.put(`apps/${appId}/tests/${id}.json`, this.testFile(rec));
+      return this.testOut(appId, id, rec);
+    });
+  }
+  deleteTest(appId: string, testId: string) {
+    return this.write(async () => {
+      await this.drop(`apps/${appId}/tests/${testId}.json`);
+      await this.drop(`apps/${appId}/runs/${testId}.json`);
+    });
+  }
+
+  // ---- shared steps ----
+  stepGroups(appId: string, l: Listener<StepGroup[]>) {
+    return this.watch(() => {
+      const a = this.model.apps.get(appId);
+      return a ? [...a.groups].map(([id, r]) => this.groupOut(appId, id, r)).sort(byName) : [];
+    }, l);
+  }
+  groupVersions(appId: string, groupId: string, l: Listener<Version[]>) {
+    return this.watch(() => { const r = this.model.apps.get(appId)?.groups.get(groupId); return r ? [this.current(r)] : []; }, l);
+  }
+  async groupVersion(appId: string, groupId: string, n: number) {
+    await this.chain;
+    const r = this.model.apps.get(appId)?.groups.get(groupId);
+    return r && n > 0 ? this.current(r) : null;
+  }
+  createGroup(appId: string, name: string, description: string, steps: Step[]) {
+    return this.write(async () => {
+      const app = this.appRec(appId);
+      const id = uniqueSlug(name, x => app.groups.has(x));
+      const now = Date.now();
+      const rec: GroupRec = { group: { name, description: description || undefined, currentVersion: 1, createdBy: this.me, createdAt: now, updatedBy: this.me, updatedAt: now }, steps: cleanSteps(steps) };
+      await this.put(`apps/${appId}/shared/${id}.json`, this.groupFile(rec));
+      return { ...clone(rec.group), id, appId, stepCount: rec.steps.length, usedBy: [] };
+    });
+  }
+  saveGroup(appId: string, groupId: string, steps: Step[]) {
+    return this.write(async () => {
+      const r = this.appRec(appId).groups.get(groupId);
+      if (!r) throw new Error('Shared steps not found');
+      const clean = cleanSteps(steps);
+      if (toFileText(clean) === toFileText(r.steps)) return this.current(r);
+      const next: GroupRec = { group: { ...r.group, currentVersion: r.group.currentVersion + 1, updatedBy: this.me, updatedAt: Date.now() }, steps: clean };
+      await this.put(`apps/${appId}/shared/${groupId}.json`, this.groupFile(next));
+      return this.current(next);
+    });
+  }
+
+  // ---- runs: the last one per test ----
+  runs(appId: string, l: Listener<Run[]>) {
+    return this.watch(() => {
+      const a = this.model.apps.get(appId);
+      return a ? [...a.runs].map(([t, r]) => this.runOut(appId, t, r)).sort((x, y) => y.startedAt - x.startedAt) : [];
+    }, l);
+  }
+  testRuns(appId: string, testId: string, l: Listener<Run[]>) {
+    return this.watch(() => { const r = this.model.apps.get(appId)?.runs.get(testId); return r ? [this.runOut(appId, testId, r)] : []; }, l);
+  }
+  async run(appId: string, runId: string) {
+    await this.chain;
+    for (const [t, r] of this.model.apps.get(appId)?.runs ?? []) if (r.id === runId) return this.runOut(appId, t, r);
+    return null;
+  }
+  addRun(r: Omit<Run, 'id'>) {
+    return this.write(async () => {
+      this.appRec(r.appId);
+      const { appId, testId, ...rest } = r;
+      const rec: RunRec = { ...rest, id: `${testId}-${stamp(r.startedAt)}` };
+      await this.put(`apps/${appId}/runs/${testId}.json`, rec);
+      return this.runOut(appId, testId, rec);
+    });
+  }
+
+  // ---- suites ----
+  suites(l: Listener<Suite[]>) {
+    return this.watch(() => [...this.model.suites.values()].map(s => clone({ ...s, lastRun: this.suiteLast.get(s.id) })).sort(byName), l);
+  }
+  saveSuite(id: string | null, n: NewSuite) {
+    return this.write(async () => {
+      const now = Date.now();
+      const old = id ? this.model.suites.get(id) : undefined;
+      if (id && !old) throw new Error('Suite not found');
+      const sid = id ?? uniqueSlug(n.name, x => this.model.suites.has(x));
+      const rel = `suites/${sid}.json`;
+      const file = { name: n.name, tests: n.tests.map(t => ({ appId: t.appId, testId: t.testId })), resultUrl: n.resultUrl || undefined, createdBy: old?.createdBy ?? this.me, createdAt: old?.createdAt ?? now };
+      // Saved again unchanged: keep the file (and its updatedAt) as it is.
+      const same = !!old && this.texts.get(rel) === toFileText({ ...file, updatedBy: old.updatedBy, updatedAt: old.updatedAt });
+      const stamped = same ? { ...file, updatedBy: old!.updatedBy, updatedAt: old!.updatedAt } : { ...file, updatedBy: this.me, updatedAt: now };
+      if (!same) await this.put(rel, stamped);
+      return clone({ ...stamped, id: sid, schedule: null, lastRun: this.suiteLast.get(sid) });
+    });
+  }
+  deleteSuite(id: string) { return this.write(async () => { await this.drop(`suites/${id}.json`); this.suiteLast.delete(id); }); }
+  /** No suite run history in Community: the result shows on the suite until the app closes. */
+  async addSuiteRun(r: Omit<SuiteRun, 'id'>): Promise<SuiteRun> {
+    this.suiteLast.set(r.suiteId, { result: r.result, at: r.startedAt, by: r.requestedBy });
+    this.emit();
+    return { ...r, id: `${r.suiteId}-${stamp(r.startedAt)}` };
+  }
+
+  // ---- Team only: runner, queue, run requests, members ----
+  runner(l: Listener<RunnerStatus | null>) { queueMicrotask(() => l(null)); return () => {}; }
+  queue(l: Listener<QueueItem[]>) { queueMicrotask(() => l([])); return () => {}; }
+  suiteRuns(l: Listener<SuiteRun[]>) { queueMicrotask(() => l([])); return () => {}; }
+  runRequests(l: Listener<RunRequest[]>) { queueMicrotask(() => l([])); return () => {}; }
+  members(l: Listener<Member[]>) { queueMicrotask(() => l([])); return () => {}; }
+  async requestSuiteRun(): Promise<void> { throw new Error(NOT_HERE); }
+  async removeFromQueue(): Promise<void> { throw new Error(NOT_HERE); }
+  async claimRunRequest(): Promise<QueueItem> { throw new Error(NOT_HERE); }
+  async addToQueue(): Promise<QueueItem> { throw new Error(NOT_HERE); }
+  async heartbeat(): Promise<void> { throw new Error(NOT_HERE); }
+  async setRole(): Promise<void> { throw new Error('Community has no members: it is one person on one Mac.'); }
+  async removeMember(): Promise<void> { throw new Error('Community has no members: it is one person on one Mac.'); }
+}

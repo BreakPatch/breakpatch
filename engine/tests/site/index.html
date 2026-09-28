@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Fixture</title>
+<style>
+  body { margin: 0; font: 16px/1.2 sans-serif; background: #f6f3ef; color: #222; }
+  .abs { position: absolute; }
+  button { font: 15px sans-serif; border: 0; border-radius: 6px; background: #2d5fa8; color: #fff; }
+  #msg { left: 300px; top: 420px; width: 320px; height: 40px; }
+  #msg.on { background: #dff1e0; border: 1px solid #5a9e5f; }
+</style></head>
+<body>
+  <div id="rand" class="abs" style="left:12px;top:12px;width:120px">ID 00000</div>
+  <div id="clock" class="abs" style="right:12px;top:12px;width:140px;text-align:right">0</div>
+  <h1 class="abs" style="left:250px;top:60px;margin:0;font-size:24px">Projects</h1>
+  <button id="create" class="abs" style="top:200px;width:140px;height:44px">Create project</button>
+  <div id="msg" class="abs"></div>
+  <input id="name" class="abs" style="left:40px;top:300px;width:220px;height:28px;font-size:15px">
+  <div id="count" class="abs" style="left:40px;top:500px;width:200px">Rows: 0</div>
+  <button id="add" class="abs" style="left:40px;top:540px;width:100px;height:32px" onclick="rows++;document.getElementById('count').textContent='Rows: '+rows">Add row</button>
+  <button id="pop" class="abs" style="left:600px;top:120px;width:140px;height:36px" onclick="window.open('/popup.html','_blank','width=500,height=400')">Open popup</button>
+  <label id="filelabel" class="abs" style="left:600px;top:200px;width:160px;height:36px;background:#555;color:#fff;border-radius:6px;text-align:center;line-height:36px">Choose file
+    <input id="file" type="file" style="display:none"></label>
+  <div id="filename" class="abs" style="left:600px;top:250px;width:180px;height:24px"></div>
+  <a id="dl" class="abs" style="left:600px;top:320px" href="/report.csv" download="report.csv">Download report</a>
+<script>
+  var rows = 0;
+  var q = new URLSearchParams(location.search);
+  document.getElementById('create').style.left = (q.get('moved') ? 420 : 100) + 'px';
+  document.getElementById('rand').textContent = 'ID ' + Math.floor(Math.random() * 90000 + 10000);
+  var t0 = Date.now();
+  setInterval(function () { document.getElementById('clock').textContent = ((Date.now() - t0) / 1000).toFixed(1) + ' s'; }, 50);
+  document.getElementById('create').onclick = function () {
+    if (q.get('broken')) return;
+    setTimeout(function () {   // like a server round trip
+      var m = document.getElementById('msg'); m.className = 'abs on'; m.textContent = 'Project created';
+    }, 150);
+  };
+  document.getElementById('file').onchange = function (e) {
+    document.getElementById('filename').textContent = e.target.files[0] ? e.target.files[0].name : '';
+  };
+</script>
+</body></html>

@@ -1,0 +1,46 @@
+name: Website
+
+# Publishes site/ to https://breakpatch.dev (Firebase Hosting site `breakpatch-web`
+# in the `breakpatch-backoffice` project). Until the first Community release the
+# Deploys on every push that changes the site or the manual.
+#
+# Secret FIREBASE_HOSTING_SERVICE_ACCOUNT, in the `website` environment (deployment branch main
+# only): a service account that can only deploy Hosting (role "Firebase Hosting Admin"), so
+# this public repo can't touch licence data. That role still covers every Hosting site in the
+# project, back office included (security review C4); moving the website to its own Firebase
+# project is an owner step (README). firebase-tools is pinned exactly in site/package.json and
+# its lockfile, and installed without install scripts.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["site/**", "docs/manual.md", ".github/workflows/website.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: website
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Manual page is up to date
+        run: node site/build-manual.mjs --check
+      # Before the credentials exist: firebase-tools at the version and hashes in
+      # site/package-lock.json.
+      - name: Install firebase-tools
+        working-directory: site
+        run: npm ci --ignore-scripts
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
+        with:
+          credentials_json: ${{ secrets.FIREBASE_HOSTING_SERVICE_ACCOUNT }}
+      - name: Deploy
+        working-directory: site
+        run: npx --no-install firebase deploy --only hosting --project breakpatch-backoffice --non-interactive

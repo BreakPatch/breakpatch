@@ -1,0 +1,49 @@
+/* Run view and suite run view (README "4 · Run and report", prototype isRun markup). */
+.run-body { flex: 1; min-height: 0; display: flex; animation: bpIn 300ms ease-out both; }
+.run-left { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.run-strip {
+  flex: none; border-top: 1px solid var(--line); background: var(--surface); padding: 14px 16px;
+  display: flex; align-items: center; gap: 12px; min-height: 72px;
+}
+.run-strip-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.run-strip-title { font-size: 15px; font-weight: 600; }
+.run-strip-text { font-size: 13px; color: var(--text-muted); line-height: 1.4; }
+.run-strip-actions { display: flex; align-items: center; gap: 8px; flex: none; animation: bpIn 220ms ease-out both; }
+.run-strip-actions .btn { padding: 9px 16px; }
+
+.run-tone-running { color: var(--running); }
+.run-tone-passed { color: var(--passed); }
+.run-tone-fixed { color: var(--fixed); }
+.run-tone-failed { color: var(--failed); }
+.run-tone-muted { color: var(--text-faint); }
+
+.run-tally { flex: none; border-top: 1px solid var(--line); padding: 12px 16px; display: flex; gap: 16px; font-size: 13px; color: var(--text-muted); }
+.run-tally span { display: flex; align-items: center; gap: 5px; }
+
+.run-timer { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.run-timer .icon { font-size: 18px; }
+
+/* ---------- Suite run view (list after the runner's progress list) ---------- */
+.srun-side { width: var(--steps-w); flex: none; background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.srun-head { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px 10px; }
+.srun-head-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.srun-name { font-size: 16px; font-weight: 700; }
+.srun-count { font-size: 12px; color: var(--text-faint); white-space: nowrap; }
+.srun-sub { font-size: 12px; color: var(--text-muted); }
+.srun-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 2px; padding: 0 10px 10px; }
+.srun-t { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 10px; border: 1.5px solid transparent; min-height: 40px; animation: bpIn 220ms ease-out both; }
+.srun-t.running { background: var(--running-tint); border-color: var(--running); }
+.srun-t.failed, .srun-t.missing { background: var(--failed-tint); }
+.srun-t > .icon { font-size: 18px; flex: none; }
+.srun-t-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.srun-t-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srun-t.waiting .srun-t-name, .srun-t.notRun .srun-t-name { color: var(--text-faint); }
+.srun-t-note { font-size: 12px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srun-t.failed .srun-t-note, .srun-t.missing .srun-t-note { color: var(--failed); }
+.srun-t-app { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
+.srun-t-link { font-size: 12px; font-weight: 600; color: var(--accent); padding: 4px 6px; border-radius: 6px; white-space: nowrap; flex: none; }
+.srun-t-link:hover { color: var(--text); background: var(--raised); }
+.srun-foot { flex: none; border-top: 1px solid var(--line); padding: 12px 16px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-muted); }
+.srun-foot span { display: flex; align-items: center; gap: 5px; }
+.srun-foot .icon { font-size: 16px; }

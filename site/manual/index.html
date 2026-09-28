@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual · Breakpatch</title>
+<meta name="description" content="The Breakpatch manual: install, the tests folder, recording and running tests, suites, and the Team edition's workspace, local runner and run requests.">
+<link rel="canonical" href="https://breakpatch.dev/manual/">
+<meta name="theme-color" content="#171412" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#FBF7F3" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Breakpatch">
+<meta property="og:url" content="https://breakpatch.dev/manual/">
+<meta property="og:title" content="The Breakpatch manual">
+<meta property="og:description" content="Everything about Breakpatch on one page: install, recording, the report, suites, and the Team edition.">
+<meta property="og:image" content="https://breakpatch.dev/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/assets/site.css">
+<!-- Built from docs/manual.md by site/build-manual.mjs. Edit the Markdown, then run: node site/build-manual.mjs -->
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top"><a class="brand" href="/" aria-label="Breakpatch home"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a><nav aria-label="Main"><a href="/#ai">AI</a><a class="wide" href="/#how">How it works</a><a class="wide" href="/#features">Features</a><a href="/pricing/">Pricing</a><a href="/manual/" aria-current="page">Manual</a><a class="wide" href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a></nav><a class="btn" href="/#install">Install</a></header>
+<div class="docs">
+<aside class="toc" aria-label="Contents"><div class="toc-title">Getting started</div><a href="#install">Install</a><a href="#start-on-this-mac">Start on this Mac</a><a href="#setup">Setup</a><a href="#your-first-test">Your first test</a><div class="toc-title">Community</div><a href="#the-tests-folder">The tests folder</a><a href="#record-a-test">Record a test</a><a href="#run-a-test-and-read-the-report">Run a test and read the report</a><a href="#shared-steps">Shared steps</a><a href="#suites">Suites</a><a href="#saved-secrets">Saved secrets</a><a href="#the-ai-assistant">The AI assistant</a><a href="#updates">Updates</a><a href="#privacy">Privacy</a><a href="#troubleshooting">Troubleshooting</a><div class="toc-title">Team</div><a href="#what-team-adds">What Team adds</a><a href="#upgrading-to-team">Upgrading to Team</a><a href="#create-a-workspace">Create a workspace</a><a href="#invite-your-team">Invite your team</a><a href="#members-and-roles">Members and roles</a><a href="#version-history">Version history</a><a href="#fixed-automatically">Fixed automatically</a><a href="#schedules">Schedules</a><a href="#the-local-runner">The local runner</a><a href="#run-requests">Run requests</a><a href="#result-messages">Result messages</a><a href="#security-rules">Security rules</a><a href="#licences-and-seats">Licences and seats</a><a href="#the-back-office">The back office</a></aside>
+<main class="content" id="main"><h1>Manual</h1>
+<p class="lead">Everything about Breakpatch on one page. Use the contents or your browser's find.</p>
+<p>Breakpatch comes in two editions. <strong>Community</strong> is free and open source: one person, one Mac, tests saved as files. <strong>Team</strong> is paid and adds a shared workspace, version history, fixed automatically, schedules and a local runner. The last part of this manual is Team only.</p>
+<details class="toc-mobile"><summary>Contents<span class="toc-now"></span></summary><div class="toc-title">Getting started</div><a href="#install">Install</a><a href="#start-on-this-mac">Start on this Mac</a><a href="#setup">Setup</a><a href="#your-first-test">Your first test</a><div class="toc-title">Community</div><a href="#the-tests-folder">The tests folder</a><a href="#record-a-test">Record a test</a><a href="#run-a-test-and-read-the-report">Run a test and read the report</a><a href="#shared-steps">Shared steps</a><a href="#suites">Suites</a><a href="#saved-secrets">Saved secrets</a><a href="#the-ai-assistant">The AI assistant</a><a href="#updates">Updates</a><a href="#privacy">Privacy</a><a href="#troubleshooting">Troubleshooting</a><div class="toc-title">Team</div><a href="#what-team-adds">What Team adds</a><a href="#upgrading-to-team">Upgrading to Team</a><a href="#create-a-workspace">Create a workspace</a><a href="#invite-your-team">Invite your team</a><a href="#members-and-roles">Members and roles</a><a href="#version-history">Version history</a><a href="#fixed-automatically">Fixed automatically</a><a href="#schedules">Schedules</a><a href="#the-local-runner">The local runner</a><a href="#run-requests">Run requests</a><a href="#result-messages">Result messages</a><a href="#security-rules">Security rules</a><a href="#licences-and-seats">Licences and seats</a><a href="#the-back-office">The back office</a></details>
+<header class="part" id="getting-started"><div class="part-title">Getting started</div></header>
+<section id="install"><h2>Install</h2>
+<p>You need a Mac with Apple Silicon, 16 GB of memory and macOS 14 or later.</p>
+<p>Open Terminal and paste this:</p>
+<div class="code"><button class="copy" type="button">Copy</button><pre><code data-lang="sh">curl -fsSL https://breakpatch.dev/install | sh</code></pre></div>
+<p>It checks your Mac, downloads the latest Breakpatch from <a href="https://github.com/BreakPatch/breakpatch/releases" data-gh="/releases">GitHub Releases</a> (over https only, and only from Breakpatch's own releases), checks the download against the release's checksums, checks the app is signed with Breakpatch's certificate, puts Breakpatch in Applications and opens it. If you have <code>minisign</code>, it also checks the download's signature with Breakpatch's update key. If your account can't write to Applications, it uses <code>~/Applications</code> instead. It never asks for your password, changes nothing else on your Mac and sends nothing about you or your Mac to Breakpatch. Don't run it with <code>sudo</code>: it refuses to run as root. You can <a href="https://breakpatch.dev/install">read the script</a> first.</p>
+<p>For a given version, put it in front of <code>sh</code>: <code>curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh</code>.</p>
+<p><strong>Updating.</strong> Breakpatch updates itself (see <a href="#updates">Updates</a>). Running the command again updates it too: it quits Breakpatch first, then replaces the app. Your tests, saved secrets and the AI assistant stay as they are.</p>
+<p><strong>Uninstalling.</strong></p>
+<div class="code"><button class="copy" type="button">Copy</button><pre><code data-lang="sh">curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall</code></pre></div>
+<p>This removes the app only. Your tests stay in the folder you picked, saved secrets stay in your Keychain, and the AI assistant and Breakpatch's data stay in <code>~/Library/Application Support/Breakpatch</code>. Delete that folder to free the space.</p>
+<p><strong>Breakpatch's certificate.</strong> Breakpatch is signed with its own certificate, &quot;Breakpatch Code Signing&quot;, not with Apple's Developer ID. Every release is signed with the same one, so macOS knows each update is the same app and your saved secrets stay available without Keychain prompts. macOS doesn't mark files downloaded with <code>curl</code> as quarantined, so Breakpatch opens straight away.</p>
+</section>
+<section id="start-on-this-mac"><h2>Start on this Mac</h2>
+<p>The first time you open Breakpatch, it asks where to keep your tests.</p>
+<ol><li>Press <strong>Choose a folder</strong> and pick one. A folder inside your project's Git repo is a good choice, for example <code>web-app/breakpatch-tests</code>.</li><li>If the folder is empty, Breakpatch sets it up straight away. If it already has other files, it asks first: &quot;Breakpatch adds a breakpatch.json file and an apps folder.&quot;</li><li>If the folder already has a <code>breakpatch.json</code> (a clone of your repo, say), Breakpatch opens it as it is.</li></ol>
+<p>Next time, <strong>Open a recent folder</strong> takes you back to one you used before. To switch later, go to Settings → Tests folder → <strong>Change folder</strong>.</p>
+</section>
+<section id="setup"><h2>Setup</h2>
+<p>Straight after, Breakpatch gets this Mac ready. It runs by itself, and you only see it once.</p>
+<ul><li><strong>Installing the test browser.</strong> The browser your tests run in. It's separate from the one you use every day.</li><li><strong>Checking this Mac.</strong> Its chip, memory and macOS.</li><li><strong>Downloading the AI assistant.</strong> The Standard assistant, about 3 GB. See <a href="#the-ai-assistant">The AI assistant</a>.</li></ul>
+<p>It takes about 5 minutes on office Wi-Fi. It's safe to close Breakpatch: setup picks up where it left off, and a stopped download continues from where it was. If something doesn't work, press <strong>Copy details</strong> and send that to whoever helps you.</p>
+</section>
+<section id="your-first-test"><h2>Your first test</h2>
+<ol><li>On Home, press <strong>Add app</strong>. Give it a name and its address, for example <code>https://staging.example.com</code>.</li><li>Press <strong>New test</strong>, name it (for example <em>Log in</em>) and press <strong>Start recording</strong>.</li><li>Click through the page the way a person would. Each click becomes a step on the right.</li><li>Press <strong>Save</strong>, then <strong>Run</strong>.</li></ol>
+<p>Your first test takes about 5 minutes. The rest of this manual covers each part in more detail.</p>
+</section>
+<header class="part" id="community"><div class="part-title">Community</div><p>Everything in this part is free, and works the same in Team. In Team, tests are saved in the shared workspace instead of a folder.</p></header>
+<section id="the-tests-folder"><h2>The tests folder</h2>
+<p>Your tests are plain JSON files in the folder you picked. Breakpatch picks up changes made outside the app, like a <code>git pull</code> or an edit in your code editor, when you come back to its window.</p>
+<div class="code"><button class="copy" type="button">Copy</button><pre><code>breakpatch-tests/
+  breakpatch.json                 the folder's name and format version
+  apps/
+    web-app/
+      app.json                    name, address, screen size
+      tests/log-in.json           a test and its steps
+      shared/sign-in.json         shared steps
+      runs/log-in.json            the last run of that test
+  suites/
+    smoke.json                    a suite: its name and tests, in order</code></pre></div>
+<p>File and folder names come from the names you give things: <em>Log in</em> becomes <code>log-in.json</code>. Only the latest version of each test is kept, so saving overwrites the file. Each test keeps its last run only.</p>
+<p>A test file looks like this (shortened):</p>
+<div class="code"><button class="copy" type="button">Copy</button><pre><code data-lang="json">{
+  &quot;name&quot;: &quot;Log in&quot;,
+  &quot;startUrl&quot;: &quot;https://staging.example.com/login&quot;,
+  &quot;status&quot;: &quot;draft&quot;,
+  &quot;version&quot;: 3,
+  &quot;viewport&quot;: {
+    &quot;width&quot;: 1440,
+    &quot;height&quot;: 900,
+    &quot;dpr&quot;: 1
+  },
+  &quot;updatedAt&quot;: &quot;2026-09-25T14:32:05.000Z&quot;,
+  &quot;steps&quot;: [
+    {
+      &quot;id&quot;: &quot;s1&quot;,
+      &quot;action&quot;: &quot;click&quot;,
+      &quot;label&quot;: &quot;Click Log in&quot;,
+      &quot;target&quot;: &quot;Log in button, below the password field&quot;,
+      &quot;at&quot;: [712, 488]
+    }
+  ]
+}</code></pre></div>
+<p>The same test always gives the same file: two-space indents, keys in a fixed order, short lists of numbers on one line, times as dates and a newline at the end. So a change in the app shows up as a small, readable diff.</p>
+<h3 id="git-tips">Git tips</h3>
+<ul><li><strong>Keep the folder in your repo. Git is your history.</strong> Commit tests with the code they test, and go back to an older version with Git.</li><li><strong>Leave out the last runs if you like.</strong> Add <code>breakpatch-tests/apps/*/runs/</code> to <code>.gitignore</code>. They only hold the last run on your Mac.</li><li><strong>Secrets never land in the folder.</strong> Tests only store a secret's name. The value stays in this Mac's Keychain. See <a href="#saved-secrets">Saved secrets</a>.</li><li><strong>Pulled a change?</strong> Switch back to Breakpatch and it reads the folder again.</li><li><strong>Merge conflict in a test file?</strong> Fix it as you would any JSON file. Until it's valid again, Breakpatch skips that file and tells you which one.</li><li><strong>Saved by a newer Breakpatch?</strong> If <code>breakpatch.json</code> has a higher <code>schemaVersion</code> than your app knows, update Breakpatch to open the folder. If it changes while the folder is open, saving stops until you update.</li></ul>
+<p>Settings → Tests folder shows the folder, how many apps and tests it has, <strong>Show in Finder</strong> and <strong>Change folder</strong>. Changing folders leaves the old one as it is, with all its tests.</p>
+</section>
+<section id="record-a-test"><h2>Record a test</h2>
+<ol><li>Open an app → <strong>New test</strong>. Give it a name and a start address. The screen size is fixed once you start.</li><li>Optional: under <strong>Before and after the test</strong>, add a <strong>set-up call</strong> (for example, to add sample data) and a <strong>clean-up call</strong>. Each is a method (GET, POST, PUT, PATCH or DELETE), a web address and, if you like, headers; the run waits for the reply. <strong>Try it</strong> makes the call once.<ul><li>Calls use <code>https://</code> and go to the app's own address or another host under the same domain, for example <code>api.example.com</code> for an app at <code>app.example.com</code>. Plain <code>http://</code> is only for an app on this Mac (<code>localhost</code>).</li><li>Private and local network addresses are refused, unless the app itself is on one. <strong>Allow other hosts</strong> lets this test call any host and private addresses. Cloud metadata addresses are never called.</li><li>Redirects aren't followed: use the address the call ends up at.</li><li>A header's value can be a saved secret, for example an <code>Authorization</code> token. The secret must be allowed on the call's site, like typing it (see <a href="#saved-secrets">Saved secrets</a>).</li><li>Logs show the address without its query string, and never a header's value.</li></ul></li><li>Add steps. Both of these always work:<ul><li><strong>Click</strong> anything on the page.</li><li><strong>Describe</strong> it in the box below, for example &quot;click the Done button&quot;. The AI assistant highlights what it found. Press <strong>Confirm</strong> or <strong>Try again</strong>.</li></ul></li><li>Use the action button next to the box for everything else: double, long and right click, hover, swipe, scroll, drag and drop, <strong>Write text</strong>, <strong>Wait until</strong>, <strong>Go to address</strong>, reload, back and forward, tabs and popups, upload a sample file, check a download, <strong>Checkpoint</strong>, <strong>Repeat</strong> and <strong>Shared steps</strong>.</li><li>Press <strong>Save</strong>.</li></ol>
+<p>Screen checks are worked out automatically after every step. There's nothing to draw or approve.</p>
+<p>Select a step to change it in place. <strong>What to look for</strong> is the plain description of what the step acts on, for example &quot;Done button, bottom right of the Create project dialog&quot;. Edit it if it's wrong. From there you can also re-record, duplicate or delete the step.</p>
+<p><strong>Checkpoint</strong> checks that something is on screen, like &quot;Project created&quot;: click it, draw a box around it, or name it. <strong>Write text</strong> types a fixed text, a saved secret, or a value made at run time, like <code>Test project {time}</code>.</p>
+</section>
+<section id="run-a-test-and-read-the-report"><h2>Run a test and read the report</h2>
+<p>Press <strong>Run</strong>. The live view shows each step as it runs. Each step is checked before and after it acts, and the first failure stops the run with a plain reason, for example &quot;Couldn't find the Done button&quot;.</p>
+<p>The report shows what was expected next to what was on screen, why it stopped and what to try. Press <strong>Re-record this step</strong> to fix it straight away.</p>
+<p>Common reasons:</p>
+<ul><li><strong>Couldn't find the Done button.</strong> It wasn't where it was when the step was recorded. If the app changed on purpose, re-record the step. In Team, the AI assistant can find it for you: see <a href="#fixed-automatically">Fixed automatically</a>.</li><li><strong>The screen didn't look as expected after this step.</strong> The page looked different once the step was done.</li><li><strong>Nothing happened after this step.</strong> The step was done, but the screen stayed the same.</li><li><strong>Waited too long for the page.</strong> If the app was slow this time, run again.</li><li><strong>Saved secret is missing on this Mac.</strong> Add it in Settings → Saved secrets, then run again.</li><li><strong>STAGING_PASSWORD isn't allowed on login.example.com.</strong> The page wasn't one of the secret's sites, so nothing was typed. If that site is right, add it to the secret in Settings → Saved secrets.</li></ul>
+<p>Every error has <strong>Copy details</strong>, to paste into an issue or send to a developer.</p>
+</section>
+<section id="shared-steps"><h2>Shared steps</h2>
+<p>Steps that several tests repeat, like <em>Log in</em>. Make them in the app's <strong>Shared steps</strong> tab → <strong>New shared steps</strong>, then add them to a test with the action button → <strong>Shared steps</strong>.</p>
+<p>Edit them once and every test that uses them picks up the change. Before you save, Breakpatch tells you how many tests it affects.</p>
+</section>
+<section id="suites"><h2>Suites</h2>
+<p>A named set of tests, which can mix apps: <em>Smoke</em>, <em>Before release</em>. Pick the tests and the order they run in, then save.</p>
+<p>Press <strong>Run</strong> on a suite to run it on this Mac, one test after another, in the order you picked. You can watch each test as it runs, stop the suite, and open each test's report when it's done.</p>
+<p>In Community you run suites by hand. A suite's result is kept until you close Breakpatch, and each test keeps its last run. Schedules, a runner Mac and starting suites from CI come with <a href="#what-team-adds">Team</a>.</p>
+</section>
+<section id="saved-secrets"><h2>Saved secrets</h2>
+<p>Passwords and emails that tests type in. Add them in Settings → <strong>Saved secrets</strong> → <strong>Add a secret</strong>, then pick one when a test writes into a field.</p>
+<ul><li>Values stay in this Mac's Keychain and are never uploaded. Tests only store the name, so they're safe to commit.</li><li>Names use capital letters, numbers and <code>_</code> only, starting with a letter, for example <code>STAGING_PASSWORD</code>.</li><li>Saved secrets stay on each Mac. If a test needs one this Mac doesn't have, the run stops at that step and tells you which one to add.</li><li><strong>Each secret is only typed on the sites you allow</strong>, for example <code>https://app.example.com</code>. Add sites when you add the secret, or change them later with the edit button. Leave them empty and Breakpatch asks, the first time a test uses the secret, whether to allow the site of the test's app.</li><li>The site is checked just before typing and again before every key: after a redirect, in a popup or in a frame from another site, the test stops before typing and says which site it was, for example &quot;STAGING_PASSWORD isn't allowed on evil.example.&quot;</li><li>Secrets saved before sites existed have none yet. Breakpatch asks once to allow the test app's site. If you press <strong>Not now</strong>, tests stop before typing them until you add a site.</li><li><strong>Runner can use</strong> (Breakpatch Team) lets the <a href="#the-local-runner">local runner</a> type the secret in the runs it does on its own. It's off unless you turn it on, on the runner Mac.</li></ul>
+</section>
+<section id="the-ai-assistant"><h2>The AI assistant</h2>
+<p>A small AI model that runs only on your Mac. Your screens never leave it. It finds things on the page when you describe a step, and is unloaded when it's idle.</p>
+<ul><li><strong>Standard</strong> is downloaded during setup (about 3 GB). It works well for almost every team.</li><li><strong>Larger</strong> is optional on Macs with 32 GB of memory or more (about 5 GB). It's slower to load and rarely finds more.</li></ul>
+<p>Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Describing steps needs it. Clicking always works without it.</p>
+<p>It's kept in <code>~/Library/Application Support/Breakpatch/models/</code>.</p>
+</section>
+<section id="updates"><h2>Updates</h2>
+<p>Breakpatch checks for updates when it opens, and from Settings → About → <strong>Check for updates</strong>. Updates download in the background. Press <strong>Restart to update</strong>, or they install the next time you restart. Updates never change your tests.</p>
+<p>Settings → About also shows your version and edition.</p>
+</section>
+<section id="privacy"><h2>Privacy</h2>
+<p>Breakpatch counts <strong>tests created and runs</strong>, as anonymous totals for all users, so we can see that it's used and what to work on. The first time you open Breakpatch it says so:</p>
+<p>&gt; Breakpatch counts tests created and runs, as anonymous totals for all users. No names, addresses, screenshots or IDs are sent.</p>
+<p>Press <strong>OK</strong>, or <strong>Turn off</strong>. You can turn it off or on again at any time in <strong>Settings → Privacy</strong>, which also shows exactly what's waiting to be sent. To turn it off for good on a Mac, set the environment variable <code>BREAKPATCH_NO_USAGE=1</code> (for example with <code>launchctl setenv BREAKPATCH_NO_USAGE 1</code>).</p>
+<p><strong>What's sent.</strong> Nothing before you've seen that message. Then, on each day you use Breakpatch, one message to <code>https://account.breakpatch.dev/api/usage</code>, even when there's nothing to count, holding exactly:</p>
+<ul><li>how many tests were created, and how many tests were run, passed and failed, since the last message (at most 500 tests and 5,000 runs at a time; the rest waits for the next day);</li><li>whether this is the first message from this Mac today, this week and this month, and whether it's the very first ever. That's how the number of Macs using Breakpatch each day, week and month is counted without any ID: Breakpatch works these out from the date it last sent one, which is the only thing it keeps about it;</li><li>the app version and that it's Community.</li></ul>
+<p><strong>What's never sent.</strong> Test names, web addresses, steps, screenshots, saved secrets, your name or email, your tests folder, or any ID for you or your Mac. The counts are added into totals for everyone, per day, week and month, and the message itself isn't kept. Your IP address is only used to limit how often one address can send: it picks a counter by a one-way hash mixed with a random value that changes every day and is deleted after two days, so the address can't be worked out from it. The address itself is never stored.</p>
+<p><strong>When it's off</strong>, nothing is counted or sent, and anything waiting is dropped. A copy of Breakpatch you built yourself works the same way.</p>
+<p>The counts wait in <code>~/Library/Application Support/Breakpatch/usage.json</code>, with your choice and the last date one was sent. The code that sends them is in this repository: <code>app/src-tauri/src/usage.rs</code>.</p>
+<p><strong>Downloads</strong> are counted by GitHub, which shows how often each release file was downloaded; we read those totals once a day. The install command sends nothing.</p>
+<p><strong>Breakpatch Team</strong> works differently: see <a href="#licences-and-seats">Licences and seats</a>.</p>
+</section>
+<section id="troubleshooting"><h2>Troubleshooting</h2>
+<p><strong>&quot;Couldn't open this folder.&quot;</strong> The folder was moved or deleted, or Breakpatch can't save files there. Choose a folder you can write to.</p>
+<p><strong>&quot;This folder was saved by a newer Breakpatch. Update to open it.&quot;</strong> Someone saved these tests with a newer version. Update Breakpatch from Settings → About.</p>
+<p><strong>A test file was skipped.</strong> It isn't valid JSON, often after a merge conflict. Fix the file and switch back to Breakpatch.</p>
+<p><strong>&quot;Setup paused.&quot;</strong> The download stopped, usually because the connection dropped. Nothing's lost. It continues when you're back online.</p>
+<p><strong>&quot;The AI assistant isn't downloaded.&quot;</strong> Download it in Settings → AI assistant.</p>
+<p><strong>macOS asks to let Breakpatch use your Keychain.</strong> macOS only lets the app that saved a Keychain item read it without asking, and it tells apps apart by their code signature. Copies from the install command, the releases and the in-app updates are all signed with Breakpatch's certificate, so they never ask. When you're asked, the copy asking isn't signed that way: usually one you built yourself, or one from somewhere else.</p>
+<ul><li>If you built it yourself, press <strong>Allow</strong>. It lets that copy read that one item this time, and you're asked again next time. Don't press <strong>Always Allow</strong>: it would let any program signed like that copy read your saved secrets and licence from then on, without asking you.</li><li>If you didn't build it yourself, press <strong>Deny</strong>, delete that copy and install Breakpatch again with the <a href="#install">install command</a>.</li><li>The prompt names the item: one of your saved secrets (<code>dev.breakpatch.secrets</code>) or the Team licence (<code>dev.breakpatch.licence</code>).</li></ul>
+<p><strong>Copy details.</strong> Every error has a <em>Copy details</em> button. Paste that into an <a href="https://github.com/BreakPatch/breakpatch/issues" data-gh="/issues">issue</a>.</p>
+</section>
+<header class="part" id="team"><div class="part-title">Team</div><p>Everything in this part needs <strong>Breakpatch Team</strong>, the paid edition.</p></header>
+<section id="what-team-adds" class="team"><h2>What Team adds <span class="tag">Team</span></h2>
+<ul><li><strong>A shared workspace</strong> on your own Firebase project: your team's apps, tests, suites and runs in one place, joined with an invite link. A test is <em>Only you</em> until you add it to the team suite. Then it's <em>In team suite</em>.</li><li><strong>Members and roles</strong>: member, admin, a runner account and a CI account.</li><li><strong>Version history.</strong> Every save is kept. Runs show which version they tested, and you can restore any version.</li><li><strong>Fixed automatically.</strong> When a button has moved, the AI assistant finds it during the run and carries on. You accept the new position in the report.</li><li><strong>Schedules</strong> for suites, on any days and time.</li><li><strong>The local runner</strong>: one Mac that runs suites for the whole team.</li><li><strong>Run requests</strong> from CI or any other tool, and <strong>result messages</strong> after every suite run.</li><li><strong>One AI assistant choice</strong> for the whole workspace.</li></ul>
+</section>
+<section id="upgrading-to-team" class="team"><h2>Upgrading to Team <span class="tag">Team</span></h2>
+<p>Install Breakpatch Team over Community. The AI assistant, the test browser, your settings and your saved secrets stay as they are, and Breakpatch opens your tests folder like before. Then go to <strong>Settings → Upgrade to Team</strong> (or <strong>Upgrade to Team</strong> on Home):</p>
+<ol><li><strong>Connect a workspace</strong>: <a href="#create-a-workspace">create one</a>, or open an invite link from your team. Then sign in.</li><li><strong>Enter your licence key</strong> on this Mac. It looks like <code>BP-XXXX-XXXX-XXXX-XXXX</code>; your admin gives it to you. It isn't saved in the workspace; see <a href="#licences-and-seats">Licences and seats</a>.</li><li><strong>Copy your tests</strong>. Breakpatch shows what it will copy first, for example &quot;1 app, 12 tests, 3 shared steps and 2 suites will be copied.&quot;, then copies the apps, tests, shared steps, suites and the last run of each test into the workspace.</li></ol>
+<p>Good to know:</p>
+<ul><li><strong>The folder stays as it is.</strong> Nothing in it changes, so you can keep it in your project's repo.</li><li><strong>Each test starts at version 1</strong> in the workspace, because the folder keeps only the latest version.</li><li><strong>Saved secrets</strong> travel as names in the steps. Their values stay in this Mac's Keychain; teammates add their own in <strong>Settings → Saved secrets</strong>.</li><li><strong>Files that can't be read</strong> are listed and left out. Fix them in the folder and copy again.</li><li><strong>Copying again is safe.</strong> Only what's new is added, and nothing already in the workspace changes. That's also true when a teammate copies their clone of the same folder.</li><li>A folder saved by a newer Breakpatch can't be copied until you update.</li></ul>
+</section>
+<section id="create-a-workspace" class="team"><h2>Create a workspace <span class="tag">Team</span></h2>
+<p>Do this once for your organisation. You need owner access to a Firebase project. Use the project your product already signs in with, so everyone keeps their usual login.</p>
+<p>In Breakpatch: <strong>Connect a team workspace</strong> → <em>Setting up for your team?</em> → <strong>Create a workspace</strong>. Each step has <strong>Open Firebase console</strong>, which opens the right page.</p>
+<ol><li><strong>Create the web app.</strong> Project settings → General → Your apps → <strong>Add app</strong> → Web. Name it <code>Breakpatch</code>, leave Firebase Hosting off and click Register app. Ignore the code Firebase shows and click Continue to console.</li><li><strong>Paste the config.</strong> Under Web apps, pick Breakpatch. In SDK setup and configuration, choose Config, copy it and paste it into Breakpatch. Then fill in <strong>Who can sign in</strong>: just the part after @, for example <code>example.com</code>.</li><li><strong>Create the database.</strong> Firestore → Databases → <strong>Add database</strong>. Keep Standard edition, enter the database ID <code>breakpatch</code> (copy it from the app), pick the same location as your main database (you can't change it later), keep Production mode and click Create.</li><li><strong>Paste the rules.</strong> In Breakpatch press <strong>Copy rules</strong>. In Firestore pick the <code>breakpatch</code> database, open the Rules tab, replace everything with the rules you copied and click Publish.</li><li><strong>Connect.</strong> Check the summary, name the workspace, add a logo if you like and press <strong>Create workspace</strong>. Then sign in.</li></ol>
+<p>In Firebase, also check that Authentication → Sign-in method → <strong>Email/Password</strong> is on. People sign in with their work email and a password. The first time, Breakpatch sends them a link to confirm their email address.</p>
+<p>Whoever connects the workspace becomes its first admin.</p>
+</section>
+<section id="invite-your-team" class="team"><h2>Invite your team <span class="tag">Team</span></h2>
+<p>Settings → Workspace → <strong>Invite teammates</strong> → <strong>Copy link</strong>. Send it any way you like. It works for everyone and doesn't expire.</p>
+<div class="code"><button class="copy" type="button">Copy</button><pre><code>https://breakpatch.dev/connect#c=eyJuYW1lIjoiU3ltVGVycmEi…</code></pre></div>
+<p>Clicking it opens a page with <strong>Open in Breakpatch</strong> and <strong>Download for Mac</strong>. The workspace details are in the part after <code>#</code>, which browsers never send to a server.</p>
+<p><strong>Save as file</strong> gives the same thing as a <code>.bpworkspace</code> file, handy for a shared drive, CI or the local runner. Double-click it to connect.</p>
+<p>Teammates can also paste the link on the connect screen: <em>Got a link or a .bpworkspace file?</em> → <strong>Or paste the link here</strong>.</p>
+</section>
+<section id="members-and-roles" class="team"><h2>Members and roles <span class="tag">Team</span></h2>
+<p>Everyone from your email domain joins as a <strong>member</strong> the first time they sign in. Admins change roles in Settings → <strong>Members</strong>.</p>
+<div class="table"><table><thead><tr><th>Role</th><th>What they can do</th></tr></thead><tbody><tr><td><strong>Member</strong></td><td>Record, run and edit tests. Add tests to the team suite. Make suites.</td></tr><tr><td><strong>Admin</strong></td><td>Everything a member can, plus workspace settings, roles and deleting apps.</td></tr><tr><td><strong>Local runner</strong></td><td>For the runner Mac. Reads tests, runs suites, writes results.</td></tr><tr><td><strong>CI</strong></td><td>Can only ask for suite runs. Sees nothing else.</td></tr></tbody></table></div>
+<p>Only admins can change roles, and nobody can change their own. <strong>Remove from workspace</strong> stops someone opening it; their tests and runs stay. If they sign in again with an account from your domain, they join as a member again, so to keep someone out, disable their account in Firebase Authentication.</p>
+<p>Runner and CI accounts sign in once and join as a member. Then an admin changes their role.</p>
+</section>
+<section id="version-history" class="team"><h2>Version history <span class="tag">Team</span></h2>
+<p>Every save is a new version, with an optional note: <em>What changed?</em> → <strong>Save as version 4</strong>. Nothing is ever deleted.</p>
+<p>On a test or shared steps, open <strong>Version history</strong> to see each version, who saved it, what changed since the one before and the runs on that version. <strong>Restore version 2</strong> saves it again as the newest version. The current one stays in the history.</p>
+<p>Every run shows the version it tested. Shared steps show which tests use the latest version and which are kept on a fixed one.</p>
+</section>
+<section id="fixed-automatically" class="team"><h2>Fixed automatically <span class="tag">Team</span></h2>
+<p>When a button has moved, the AI assistant looks for it using its <em>What to look for</em> description, checks it's the same thing, and the run carries on. The step is marked <strong>Fixed automatically</strong>, and the suite result is <em>Passed with fixes</em>.</p>
+<p>Nothing changes until someone decides. In the report:</p>
+<ul><li><strong>Accept new position</strong>: the next run looks in the new spot.</li><li><strong>Dismiss</strong>: the next run looks in the old spot again.</li></ul>
+<p>Settings → <strong>Automatic fixing</strong>:</p>
+<ul><li><strong>Fix moved buttons automatically.</strong></li><li><strong>Fail the test if anything needed fixing.</strong> The run still finds the button, but the test counts as failed. Useful before a release.</li></ul>
+<p>These apply to runs on the Mac where you set them.</p>
+<p>The first few runs of a new test also learn which parts of the page change by themselves, like clocks and carousels, so they don't fail the test.</p>
+</section>
+<section id="schedules" class="team"><h2>Schedules <span class="tag">Team</span></h2>
+<p>Open a suite and set its <strong>Schedule</strong>: the days and a 24-hour time, like <em>Mon–Fri, 06:00</em>. The time is the local runner's clock. With no schedule, the suite is <em>By request only</em>: the Run button, CI or another tool.</p>
+<p>The suite shows its next run. If the runner was off when a run was due, the missed run happens once when it's back, not once for every time it missed.</p>
+</section>
+<section id="the-local-runner" class="team"><h2>The local runner <span class="tag">Team</span></h2>
+<p>One Mac per workspace that stays on and runs scheduled suites and run requests for everyone.</p>
+<ol><li>Install Breakpatch on that Mac and connect it to the workspace.</li><li>Sign in with a <strong>separate account</strong> (for example <code>runner@yourcompany.com</code>) so runs don't show under a person's name. Give it the <em>Local runner</em> role.</li><li>Settings → <strong>Local runner</strong> → <strong>Use this Mac as the local runner</strong>.</li></ol>
+<p>It then stays awake while it's plugged in, opens at login and starts in runner mode after a restart or update. Runner mode shows what it's doing: waiting, running (with a live view), the queue and the last runs. <strong>Pause after this test</strong> stops it cleanly. Press Resume to carry on.</p>
+<p>It uses the Standard AI assistant, like every Mac. With 32 GB of memory or more you can download the Larger one in the same place, but it's rarely needed.</p>
+<p>Anyone can press <strong>Run on runner</strong> on a suite. If the runner is offline, the request waits until it's back.</p>
+<p><strong>Queue rules</strong></p>
+<ul><li>First in, first out.</li><li>The newest request for a suite wins: a waiting request for the same suite is removed, and a running one stops after its current step. Both are recorded as <em>Replaced by a newer request</em>.</li><li>If the runner is offline, requests wait. Missed schedules run once when it's back.</li></ul>
+</section>
+<section id="run-requests" class="team"><h2>Run requests <span class="tag">Team</span></h2>
+<p>The runner starts a suite whenever a document is added here:</p>
+<div class="code"><button class="copy" type="button">Copy</button><pre><code>projects/&lt;your-project&gt;/databases/breakpatch/documents/runRequests</code></pre></div>
+<p>Settings → Local runner → <strong>How run requests work</strong> shows the exact path for your workspace. Each document is one request. Let Firestore make its ID.</p>
+<div class="table"><table><thead><tr><th>Field</th><th>Needed</th><th>What it's for</th></tr></thead><tbody><tr><td><code>suiteId</code></td><td>Yes</td><td>Which suite to run. Copy it from the suite, for example <code>smoke-7f3a</code>.</td></tr><tr><td><code>createdAt</code></td><td>Yes</td><td>When it was asked for. Set it to the server's time, not your own clock: the security rules check it.</td></tr><tr><td><code>requestedBy</code></td><td>No</td><td>Shown in the queue, the run history and the result message, for example <code>Codemagic · build 412</code>.</td></tr><tr><td><code>note</code></td><td>No</td><td>Any text you want in the result message.</td></tr></tbody></table></div>
+<p>The runner picks it up within a few seconds, queues it and deletes the document. The Run button and schedules add these for you.</p>
+<p><strong>How other tools add requests is up to you.</strong> A few examples:</p>
+<h3 id="from-ci-with-a-ci-account">From CI with a CI account</h3>
+<p>Create a user such as <code>ci@yourcompany.com</code> and give it the <code>ci</code> role (see <a href="#security-rules">Security rules</a>). Store its email and password, your Firebase web API key and your project ID as CI secrets.</p>
+<div class="code"><button class="copy" type="button">Copy</button><pre><code data-lang="sh">TOKEN=$(curl -s &quot;https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=$FIREBASE_API_KEY&quot; \
+  -H 'Content-Type: application/json' \
+  -d &quot;{\&quot;email\&quot;:\&quot;$BP_CI_EMAIL\&quot;,\&quot;password\&quot;:\&quot;$BP_CI_PASSWORD\&quot;,\&quot;returnSecureToken\&quot;:true}&quot; | jq -r .idToken)
+
+DB=&quot;projects/$FIREBASE_PROJECT/databases/breakpatch/documents&quot;
+
+curl -s -X POST &quot;https://firestore.googleapis.com/v1/$DB:commit&quot; \
+  -H &quot;Authorization: Bearer $TOKEN&quot; -H 'Content-Type: application/json' \
+  -d &quot;{\&quot;writes\&quot;:[{
+    \&quot;update\&quot;:{\&quot;name\&quot;:\&quot;$DB/runRequests/$(openssl rand -hex 10)\&quot;,\&quot;fields\&quot;:{
+      \&quot;suiteId\&quot;:{\&quot;stringValue\&quot;:\&quot;smoke-7f3a\&quot;},
+      \&quot;requestedBy\&quot;:{\&quot;stringValue\&quot;:\&quot;CI · build $BUILD_NUMBER\&quot;}}},
+    \&quot;updateTransforms\&quot;:[{\&quot;fieldPath\&quot;:\&quot;createdAt\&quot;,\&quot;setToServerValue\&quot;:\&quot;REQUEST_TIME\&quot;}],
+    \&quot;currentDocument\&quot;:{\&quot;exists\&quot;:false}}]}&quot;</code></pre></div>
+<p>Works the same in Codemagic, GitHub Actions, Bitrise or Jenkins.</p>
+<h3 id="from-a-script-node">From a script (Node)</h3>
+<div class="code"><button class="copy" type="button">Copy</button><pre><code data-lang="js">import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
+import { getFirestore, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+
+const app = initializeApp(firebaseConfig);
+await signInWithEmailAndPassword(getAuth(app), process.env.BP_CI_EMAIL, process.env.BP_CI_PASSWORD);
+await addDoc(collection(getFirestore(app, 'breakpatch'), 'runRequests'), {
+  suiteId: 'smoke-7f3a',
+  requestedBy: 'Release script',
+  createdAt: serverTimestamp(),
+});</code></pre></div>
+<h3 id="from-an-automation-tool">From an automation tool</h3>
+<p>n8n, Zapier or Make can add a Firestore document on any event: a deploy, a merged pull request, a button in a chat. Use the same path and fields, with <code>createdAt</code> set to the server's time.</p>
+</section>
+<section id="result-messages" class="team"><h2>Result messages <span class="tag">Team</span></h2>
+<p>Give a suite a <strong>Result address</strong> (<em>After each run, send the result to</em>): any web address that accepts a message. After every run, the runner sends it a <code>POST</code> with JSON:</p>
+<div class="code"><button class="copy" type="button">Copy</button><pre><code data-lang="json">{
+  &quot;suite&quot;: &quot;Smoke&quot;,
+  &quot;suiteId&quot;: &quot;smoke-7f3a&quot;,
+  &quot;result&quot;: &quot;failed&quot;,
+  &quot;counts&quot;: { &quot;total&quot;: 6, &quot;passed&quot;: 4, &quot;fixed&quot;: 0, &quot;failed&quot;: 1, &quot;notRun&quot;: 1 },
+  &quot;failures&quot;: [
+    { &quot;test&quot;: &quot;Create a project&quot;, &quot;step&quot;: &quot;Step 5: Click Done&quot;, &quot;reason&quot;: &quot;couldn't find the Done button&quot; }
+  ],
+  &quot;requestedBy&quot;: &quot;CI · build 412&quot;,
+  &quot;note&quot;: &quot;&quot;,
+  &quot;startedAt&quot;: &quot;2026-09-24T14:52:03.000Z&quot;,
+  &quot;durationSeconds&quot;: 292,
+  &quot;reportLink&quot;: &quot;breakpatch://report/run_8f21c&quot;,
+  &quot;text&quot;: &quot;Smoke failed: 4 of 6 tests passed, 1 failed, 1 not run · 4:52 · asked by CI · build 412&quot;
+}</code></pre></div>
+<p><code>result</code> is one of <code>passed</code>, <code>passed_with_fixes</code>, <code>failed</code> or <code>replaced</code>. <code>reportLink</code> opens the report in Breakpatch. Use <code>text</code> as it is, or build your own message.</p>
+<p>If the address doesn't answer, the runner tries 3 times over 5 minutes. <strong>Send a test message</strong> in the suite checks the address before you rely on it.</p>
+<p>Any relay works: an n8n workflow that posts to Teams, a Slack incoming webhook, an email service.</p>
+</section>
+<section id="security-rules" class="team"><h2>Security rules <span class="tag">Team</span></h2>
+<p><strong>Copy rules</strong> in workspace setup gives rules with your email domain filled in. They say:</p>
+<ul><li>Only signed-in accounts from your email domain, with a confirmed email address, can read or write. Runner and CI accounts are let in by their role.</li><li>There are four roles: <strong>member</strong>, <strong>admin</strong>, <strong>runner</strong> and <strong>ci</strong>, as in <a href="#members-and-roles">Members and roles</a>. Whoever connects the workspace is the first admin.</li><li>Versions can only be added. History can't be edited.</li><li><code>runRequests</code> accepts a small document of a fixed shape from members and from accounts with the <code>ci</code> role. Only the runner can read or delete them.</li></ul>
+<p>To give an account the <code>ci</code> role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set <code>role</code> to <code>&quot;ci&quot;</code> in its document <code>members/&lt;user id&gt;</code> in the <code>breakpatch</code> database. Disable the user in Firebase Authentication to cut it off.</p>
+<p>A service account using the Firebase Admin SDK skips the rules altogether. Use a normal user with the <code>ci</code> role instead.</p>
+</section>
+<section id="licences-and-seats" class="team"><h2>Licences and seats <span class="tag">Team</span></h2>
+<p>A Team licence has <strong>seats</strong> for people and <strong>machine licences</strong> for the local runner and CI machines. The licence belongs to the workspace, and only its admins can see the key there: it's kept in an admin-only part of the workspace (<code>workspace/licence</code>), so members can't read it.</p>
+<ul><li><strong>A new member enters the key on their own Mac</strong>: <strong>Settings → Licence</strong> → <strong>Enter licence key</strong> (it looks like <code>BP-XXXX-XXXX-XXXX-XXXX</code>; ask your admin for it). It's kept in that Mac's Keychain and isn't saved to the workspace. Until then they see &quot;Ask your admin for a licence key.&quot;</li><li>Each person takes a seat when they enter the key or sign in. A seat someone already holds keeps refreshing, so people who have one don't need the key again. Signing out gives the seat back; so does <strong>Release this Mac</strong> (admins).</li><li>A seat is tied to the Macs it's used on: one person can use it on a few of their own Macs, and a copy of the Keychain on another Mac doesn't work. On too many Macs you see &quot;Your seat is already used on too many Macs. Ask your admin to free one, then sign in again.&quot;</li><li>The local runner takes a machine licence. Machines count separately from people.</li><li>A seat nobody has used for 30 days is freed automatically. An admin can also free one in the <a href="#the-back-office">back office</a>.</li><li>Breakpatch checks the licence when it opens and every day, and keeps working for up to 30 days without a connection. If this Mac's clock is set back by more than a day, the licence stops working until Breakpatch can check it online again: &quot;This Mac's clock is behind. Set the right date and time, then reconnect to check your licence.&quot;</li><li><strong>Saved secrets in CI.</strong> <code>breakpatch-ci</code> takes a saved secret's value only from an environment variable named <code>BP_SECRET_&lt;NAME&gt;</code>, for example <code>BP_SECRET_STAGING_PASSWORD</code> for <code>STAGING_PASSWORD</code> (a <code>-</code> or <code>.</code> in the name is written <code>_</code>), never from other variables. <code>--secret NAME</code> (you can give it more than once) limits which secrets a run may use. It types them only on the test's start site.</li><li><strong>Usage counts go with the licence check.</strong> Each check sends how many tests were created and how many runs there were (by hand, from schedules, on the local runner and in CI), passed and failed, and on how many days Breakpatch was used, since the last check. Only numbers: never test names, addresses, steps or screenshots. The licence check already knows the licence and seat, so your admin sees the numbers per person and machine in the <a href="#the-back-office">back office</a>. They're part of how the licence works, so there's no switch for them in Team. <code>breakpatch-ci</code> counts its runs the same way in its licence file and sends them with its next check; on CI machines that don't keep that file between jobs they aren't sent.</li></ul>
+<p>Without a licence, Breakpatch keeps working as Community (tests, recording and running on this Mac) and Team features are off. A quiet banner under the title bar says why: &quot;Breakpatch Team needs a licence. Ask your admin, or enter one in Settings → Licence.&quot;, &quot;Your team is out of seats. Ask your admin to add one.&quot;, &quot;Reconnect to check your licence.&quot; (after 30 days offline) or &quot;Your licence has expired.&quot; A runner with no machine licence left gets &quot;Your team has no machine licences left. Ask your admin to add one.&quot;</p>
+<p>Other messages you may see:</p>
+<ul><li>&quot;This licence key isn't recognised. Check it and try again.&quot;</li><li>&quot;This licence has expired. Ask your admin to renew it.&quot;</li><li>&quot;This licence is no longer active. Ask your admin for help.&quot;</li><li>&quot;This seat was freed. Sign in again to take a seat.&quot;</li><li>&quot;Your team is using more seats than it pays for, so this Mac's seat was freed. Ask your admin to add seats, then sign in again.&quot;</li><li>&quot;This licence was activated on another Mac. Sign in again on this one.&quot;</li></ul>
+</section>
+<section id="the-back-office" class="team"><h2>The back office <span class="tag">Team</span></h2>
+<p>Your licence page is at <a href="https://account.breakpatch.dev">account.breakpatch.dev</a>. Enter your email and open the sign-in link we send you. There's no password.</p>
+<p>If you're one of your licence's admins, you see:</p>
+<ul><li>Your plan, when it renews and how many seats are used, for example <em>8 of 10 seats used</em>.</li><li>Who holds each seat and when it was last seen, and the machines.</li><li><strong>Free a seat</strong>, for someone who has left or a Mac you no longer use. Freeing a seat lets someone else take it.</li><li><strong>Usage</strong>: tests created and runs each week for the last 12 weeks (by hand, schedules, local runner and CI), the pass rate, and the same per person and machine.</li></ul>
+<p>If you bought Breakpatch Team on the <a href="https://breakpatch.dev/pricing/">pricing page</a>, sign in with the email you bought with: the first time, you see <strong>Your new licence key (shown once)</strong>. Press <strong>Show my licence key</strong> and keep it somewhere safe, because it isn't shown again. The same page has <strong>Manage billing</strong> (invoices, payment method, cancelling, through Paddle, our reseller) and <strong>Change seats</strong> (seats and extra machine licences, charged or credited for the rest of the billing period). A cancelled licence keeps working until the end of the period you paid for.</p>
+<p>For a licence you didn't buy on the site, contact Breakpatch to add seats or renew. If you see &quot;No licences for this email&quot;, ask whoever bought Breakpatch Team to add you as an admin.</p>
+</section>
+<footer class="foot">Found a mistake? <a href="https://github.com/BreakPatch/breakpatch/edit/main/docs/manual.md" data-gh="/edit/main/docs/manual.md">Edit this page on GitHub</a>, or write to <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a>.</footer>
+</main>
+</div>
+<a class="to-top" href="#main" aria-label="Back to the top">↑</a>
+<script src="/assets/site.js"></script>
+</body>
+</html>

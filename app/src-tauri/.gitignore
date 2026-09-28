@@ -1,0 +1,7 @@
+# Rust build output and generated schemas
+/target/
+/gen/schemas/
+
+# Engine sidecar binaries. The real PyInstaller build comes from engine/scripts/build_sidecar.sh
+# and the dev placeholder from app/scripts/dev-sidecar.sh; both are generated, never committed.
+/binaries/breakpatch-engine-*

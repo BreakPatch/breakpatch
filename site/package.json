@@ -1,0 +1,8 @@
+{
+  "name": "breakpatch-site",
+  "private": true,
+  "description": "Deploy tooling for site/ only (not served: firebase.json ignores it). firebase-tools is pinned exactly; the lockfile holds its hashes.",
+  "devDependencies": {
+    "firebase-tools": "15.31.0"
+  }
+}

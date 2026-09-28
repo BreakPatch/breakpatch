@@ -1,0 +1,4 @@
+# Build tools for the locked packages (scripts/lock-python.sh writes build.txt from this)
+pip
+setuptools>=68
+wheel

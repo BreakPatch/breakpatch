@@ -1,0 +1,25 @@
+/* Setup checklist (design "Setup"): rows 16 px padding, 24 px status icon. */
+.su-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.su-row { display: flex; gap: 14px; padding: 16px; border-bottom: 1px solid var(--line); transition: background var(--t-fast) ease-out; }
+.su-row:last-child { border-bottom: 0; }
+/* A fixed square box so the spinner rotates in place (a stretched flex item would orbit its centre). */
+.su-icon.icon { font-size: 24px; width: 24px; height: 24px; line-height: 1; flex: none; align-self: flex-start; transform-origin: 50% 50%; }
+.su-top { display: flex; justify-content: space-between; gap: 12px; }
+.su-name { font-size: 15px; font-weight: 600; }
+.su-state { font-size: 13px; font-weight: 600; }
+.su-note { font-size: 13px; color: var(--text-muted); line-height: 1.45; animation: bpIn 220ms ease-out both; }
+.su-bar { height: 6px; border-radius: 3px; background: var(--line); margin-top: 2px; overflow: hidden; }
+.su-bar > div { height: 100%; border-radius: 3px; background: var(--accent); transition: width 900ms ease-out, background var(--t-fast) ease-out; }
+.su-bar-text { font-size: 12px; color: var(--text-faint); }
+
+.su-row.waiting .su-icon, .su-row.waiting .su-state { color: var(--text-faint); }
+.su-row.waiting .su-name { color: var(--text-muted); }
+.su-row.busy .su-icon { color: var(--running); animation: bpSpin 1s linear infinite; }
+.su-row.busy .su-state { color: var(--running); }
+.su-row.done .su-icon, .su-row.done .su-state { color: var(--passed); }
+.su-row.paused .su-icon { color: var(--fixed); animation: bpPulse 1.6s ease-in-out infinite; }
+.su-row.paused .su-state { color: var(--fixed); }
+.su-row.paused .su-bar > div { background: var(--fixed); }
+.su-row.failed .su-icon, .su-row.failed .su-state { color: var(--failed); }
+
+.su-actions { display: flex; align-items: center; gap: 12px; min-height: 44px; }

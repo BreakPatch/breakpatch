@@ -1,0 +1,44 @@
+{
+  "description": "Licence token v1 test vector. Ed25519 key from RFC 8032 section 7.1 test 1 (public, for tests only).",
+  "kid": "test-1",
+  "privateKeySeedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+  "signingKeySecretLine": "test-1:nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A",
+  "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+  "publicKeyBase64url": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+  "token": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6InRlc3QtMSJ9.eyJpc3MiOiJicmVha3BhdGNoLWJhY2tvZmZpY2UiLCJ2IjoxLCJsaWNlbmNlSWQiOiJMaWMwVGVzdFZlY3RvcjAwMDAwMSIsImFjdGl2YXRpb25JZCI6InBfM2YxYzBlNGE5YjdkMmM2ZThmMGExYjJjM2Q0ZTVmNjA3MTgyOTNhNCIsInRpZXIiOiJ0ZWFtIiwiZmVhdHVyZXMiOlsiY29sbGFib3JhdGlvbiIsInZlcnNpb25zIiwiYXV0b0ZpeCIsImNhbGlicmF0aW9uIiwic2NoZWR1bGVzIiwicnVubmVyIiwiY2kiLCJtb2RlbE92ZXJyaWRlIl0sInNlYXRzIjoxMCwibWFjaGluZXMiOjEsInN1YmplY3RIYXNoIjoiM2YxYzBlNGE5YjdkMmM2ZThmMGExYjJjM2Q0ZTVmNjA3MTgyOTNhNGI1YzZkN2U4ZjkwYTFiMmMzZDRlNWY2YSIsImtpbmQiOiJwZXJzb24iLCJ3b3Jrc3BhY2VQcm9qZWN0SWQiOiJhY21lLWJyZWFrcGF0Y2giLCJpYXQiOjE3OTAwMDAwMDAsImV4cCI6MTc5MDYwNDgwMCwib2ZmbGluZVVudGlsIjoxNzkyNTkyMDAwLCJsaWNlbmNlRXhwaXJlc0F0IjoxODIxNTM2MDAwfQ.rruEw5jgC9a_LTlfNeKTqq3zSAAiHf3E2EMHLf8azEBHNwbovyzfycTtfKY8X83FhXQVWmpM7gITgsz62M74Bg",
+  "signingInput": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6InRlc3QtMSJ9.eyJpc3MiOiJicmVha3BhdGNoLWJhY2tvZmZpY2UiLCJ2IjoxLCJsaWNlbmNlSWQiOiJMaWMwVGVzdFZlY3RvcjAwMDAwMSIsImFjdGl2YXRpb25JZCI6InBfM2YxYzBlNGE5YjdkMmM2ZThmMGExYjJjM2Q0ZTVmNjA3MTgyOTNhNCIsInRpZXIiOiJ0ZWFtIiwiZmVhdHVyZXMiOlsiY29sbGFib3JhdGlvbiIsInZlcnNpb25zIiwiYXV0b0ZpeCIsImNhbGlicmF0aW9uIiwic2NoZWR1bGVzIiwicnVubmVyIiwiY2kiLCJtb2RlbE92ZXJyaWRlIl0sInNlYXRzIjoxMCwibWFjaGluZXMiOjEsInN1YmplY3RIYXNoIjoiM2YxYzBlNGE5YjdkMmM2ZThmMGExYjJjM2Q0ZTVmNjA3MTgyOTNhNGI1YzZkN2U4ZjkwYTFiMmMzZDRlNWY2YSIsImtpbmQiOiJwZXJzb24iLCJ3b3Jrc3BhY2VQcm9qZWN0SWQiOiJhY21lLWJyZWFrcGF0Y2giLCJpYXQiOjE3OTAwMDAwMDAsImV4cCI6MTc5MDYwNDgwMCwib2ZmbGluZVVudGlsIjoxNzkyNTkyMDAwLCJsaWNlbmNlRXhwaXJlc0F0IjoxODIxNTM2MDAwfQ",
+  "signatureHex": "aebb84c398e00bd6bf2d395f35e293aaadf34800221dfdc4d843072dff1acc40473706e8bf2cdfc9c4ed7ca63c5fcdc58574155a6a4cee021382ccfad8cef806",
+  "header": {
+    "alg": "EdDSA",
+    "typ": "JWT",
+    "kid": "test-1"
+  },
+  "payload": {
+    "iss": "breakpatch-backoffice",
+    "v": 1,
+    "licenceId": "Lic0TestVector000001",
+    "activationId": "p_3f1c0e4a9b7d2c6e8f0a1b2c3d4e5f60718293a4",
+    "tier": "team",
+    "features": [
+      "collaboration",
+      "versions",
+      "autoFix",
+      "calibration",
+      "schedules",
+      "runner",
+      "ci",
+      "modelOverride"
+    ],
+    "seats": 10,
+    "machines": 1,
+    "subjectHash": "3f1c0e4a9b7d2c6e8f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6a",
+    "kind": "person",
+    "workspaceProjectId": "acme-breakpatch",
+    "iat": 1790000000,
+    "exp": 1790604800,
+    "offlineUntil": 1792592000,
+    "licenceExpiresAt": 1821536000
+  },
+  "tamperedToken": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6InRlc3QtMSJ9.eyJpc3MiOiJicmVha3BhdGNoLWJhY2tvZmZpY2UiLCJ2IjoxLCJsaWNlbmNlSWQiOiJMaWMwVGVzdFZlY3RvcjAwMDAwMSIsImFjdGl2YXRpb25JZCI6InBfM2YxYzBlNGE5YjdkMmM2ZThmMGExYjJjM2Q0ZTVmNjA3MTgyOTNhNCIsInRpZXIiOiJ0ZWFtIiwiZmVhdHVyZXMiOlsiY29sbGFib3JhdGlvbiIsInZlcnNpb25zIiwiYXV0b0ZpeCIsImNhbGlicmF0aW9uIiwic2NoZWR1bGVzIiwicnVubmVyIiwiY2kiLCJtb2RlbE92ZXJyaWRlIl0sInNlYXRzIjoxMDAwLCJtYWNoaW5lcyI6MSwic3ViamVjdEhhc2giOiIzZjFjMGU0YTliN2QyYzZlOGYwYTFiMmMzZDRlNWY2MDcxODI5M2E0YjVjNmQ3ZThmOTBhMWIyYzNkNGU1ZjZhIiwia2luZCI6InBlcnNvbiIsIndvcmtzcGFjZVByb2plY3RJZCI6ImFjbWUtYnJlYWtwYXRjaCIsImlhdCI6MTc5MDAwMDAwMCwiZXhwIjoxNzkwNjA0ODAwLCJvZmZsaW5lVW50aWwiOjE3OTI1OTIwMDAsImxpY2VuY2VFeHBpcmVzQXQiOjE4MjE1MzYwMDB9.rruEw5jgC9a_LTlfNeKTqq3zSAAiHf3E2EMHLf8azEBHNwbovyzfycTtfKY8X83FhXQVWmpM7gITgsz62M74Bg",
+  "tamperedMustFail": true
+}

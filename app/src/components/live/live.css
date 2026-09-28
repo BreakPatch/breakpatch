@@ -1,0 +1,84 @@
+/* Live browser view (README "3 · Recorder": browser bar 44 px, page 16 px padding, 6 px radius, 1 px line ring). */
+.live { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.live-bar { height: var(--browserbar-h); flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--line); }
+.live-address {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: var(--surface); border-radius: 10px;
+  padding: 6px 10px; font-family: var(--mono); font-size: 13px; color: var(--text-muted); user-select: text;
+}
+.live-size { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-faint); white-space: nowrap; }
+.live-zoom { display: flex; align-items: center; gap: 2px; background: var(--surface); border-radius: 8px; padding: 2px; }
+.live-zoom button { height: 24px; min-width: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-muted); }
+.live-zoom button:hover:not(:disabled) { background: var(--raised); color: var(--text); }
+.live-zoom button:disabled { opacity: .4; cursor: default; }
+.live-zoom .live-pct { font-size: 12px; width: 42px; font-variant-numeric: tabular-nums; }
+
+.live-pill { display: flex; align-items: center; gap: 6px; border-radius: var(--r-pill); padding: 5px 12px; font-size: 13px; white-space: nowrap; flex: none; }
+.live-checking { background: var(--raised); color: var(--text); animation: bpIn 180ms ease-out both; }
+.live-checking .icon { font-size: 16px; color: var(--accent); }
+.live-checking .sweep { animation: bpSweep 1.2s linear infinite; }
+.live-checking .anim-pulse { animation-duration: 1.2s; }
+.live-saved { background: var(--passed-tint); color: var(--passed); font-weight: 600; animation: bpPop 200ms ease-out both; }
+
+.live-pane { flex: 1; min-height: 0; overflow: auto; display: flex; padding: 16px; background: var(--bg); }
+.live-frame { position: relative; flex: none; margin: auto; border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 1px var(--line); background: var(--bg-sunk); }
+.live-page { position: absolute; left: 0; top: 0; transform-origin: 0 0; container-type: inline-size; overflow: hidden; }
+.live-img { display: block; width: 100%; height: 100%; object-fit: fill; user-select: none; }
+.live-loading {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 1cqw;
+  font-size: 1.4cqw; color: var(--text-muted); background: var(--bg-sunk);
+}
+.live-loading .icon { font-size: 2cqw; color: var(--running); }
+.live-overlays { position: absolute; inset: 0; pointer-events: none; }
+.live-hit { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
+.live-hit.tool-point.on-target { cursor: pointer; }
+
+.live-hover {
+  position: absolute; border-radius: calc(6px / var(--s)); background: var(--accent-tint);
+  box-shadow: 0 0 0 calc(2px / var(--s)) var(--accent); transition: all 120ms ease-out;
+}
+.live-hover.pressed { background: color-mix(in srgb, var(--accent) 26%, transparent); transition-duration: 60ms; }
+
+/* Markers: sizes in cqw so they scale with the page, like the design; borders stay 2 px on screen. */
+.live-mark { position: absolute; box-sizing: border-box; border-radius: .5cqw; }
+.live-mark-label {
+  position: absolute; right: 0; top: calc(100% + .6cqw); display: flex; align-items: center; gap: .4cqw; white-space: nowrap;
+  font-family: var(--font); font-weight: 600; font-size: 1cqw; line-height: 1.3; padding: .35cqw .8cqw; border-radius: .3cqw;
+}
+.live-mark-label .icon { font-size: 1.3cqw; }
+.mark-locked { border: calc(2px / var(--s)) dashed var(--accent); animation: bpRing 1.8s ease-out infinite; }
+.mark-locked .live-mark-label { background: var(--accent); color: var(--on-accent); }
+.live-mark-badge {
+  position: absolute; left: -1.1cqw; top: -1.1cqw; width: 2.2cqw; height: 2.2cqw; border-radius: 50%; background: var(--accent); color: var(--on-accent);
+  font-family: var(--font); font-weight: 700; font-size: 1.1cqw; display: flex; align-items: center; justify-content: center; line-height: 1;
+}
+.mark-failed { border: calc(2.5px / var(--s)) dashed var(--failed); }
+.mark-failed .live-mark-label { left: 0; right: auto; background: var(--failed); color: var(--on-accent); }
+.mark-old { border: calc(2px / var(--s)) dashed var(--text-faint); background: color-mix(in srgb, var(--text-faint) 18%, transparent); }
+.mark-old .live-mark-label { left: 0; right: auto; top: auto; bottom: calc(100% + .6cqw); background: var(--line-strong); color: var(--text); }
+.mark-new { border: calc(2.5px / var(--s)) solid var(--fixed); }
+.mark-new .live-mark-label { left: 0; right: auto; background: var(--fixed); color: var(--on-accent); }
+
+.live-candidate {
+  position: absolute; box-sizing: border-box; border: calc(2px / var(--s)) solid var(--accent); border-radius: .5cqw;
+  box-shadow: 0 0 0 9999px color-mix(in srgb, var(--bg-sunk) 35%, transparent); animation: bpPop 170ms ease-out both;
+}
+.live-candidate .dot { position: absolute; width: .8cqw; height: .8cqw; border-radius: 50%; background: var(--accent); }
+.live-candidate .dot.tl { left: -.4cqw; top: -.4cqw; }
+.live-candidate .dot.br { right: -.4cqw; bottom: -.4cqw; }
+
+.live-thinking-scrim {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none;
+  background: color-mix(in srgb, var(--bg-sunk) 35%, transparent); animation: bpIn 200ms ease-out both;
+}
+.live-thinking {
+  display: flex; align-items: center; gap: .8cqw; background: var(--raised); color: var(--text); font-family: var(--font);
+  font-size: 1.4cqw; font-weight: 500; padding: 1cqw 1.8cqw; border-radius: var(--r-pill); box-shadow: var(--shadow-pop);
+  animation: bpIn 250ms ease-out, bpPulse 1.6s ease-in-out 250ms infinite;
+}
+.live-thinking .icon { font-size: 1.8cqw; color: var(--accent); }
+
+.live-drawbox { position: absolute; border: calc(2px / var(--s)) dashed var(--accent); background: var(--accent-tint); border-radius: calc(4px / var(--s)); }
+.live-dragline { position: absolute; left: 0; top: 0; overflow: visible; }
+.live-dragline line { stroke: var(--accent); stroke-width: calc(3px / var(--s)); stroke-dasharray: calc(8px / var(--s)) calc(6px / var(--s)); }
+.live-dragline circle { fill: var(--accent); }
+.live-dragline circle.end { fill: var(--on-accent); stroke: var(--accent); stroke-width: calc(3px / var(--s)); }

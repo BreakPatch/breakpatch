@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Breakpatch app icon: the ear mark (accent, radii 55% 12% 55% 55%, rotated -14deg) on the dark background. -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="#171412"/>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="185.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.08"/>
+  <path transform="rotate(-14 512 512)" fill="#E0714A"
+        d="M512 292 L684 292 A48 48 0 0 1 732 340 L732 512 A220 220 0 0 1 512 732 A220 220 0 0 1 292 512 A220 220 0 0 1 512 292 Z"/>
+</svg>

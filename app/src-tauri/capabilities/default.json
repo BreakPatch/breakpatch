@@ -1,0 +1,28 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the Breakpatch UI may call in the main window. File access is limited to paths the user picked in an open/save dialog: the dialog plugin adds them to the fs scope (a picked tests folder recursively) and tauri-plugin-persisted-scope restores them after a restart.",
+  "windows": ["main"],
+  "platforms": ["macOS", "linux", "windows"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-read-dir",
+    "fs:allow-mkdir",
+    "fs:allow-rename",
+    "fs:allow-remove",
+    "fs:allow-exists",
+    "fs:allow-stat",
+    "fs:allow-watch",
+    "fs:allow-unwatch",
+    "shell:allow-open",
+    "deep-link:default",
+    "updater:default",
+    "process:allow-restart",
+    "autostart:default"
+  ]
+}

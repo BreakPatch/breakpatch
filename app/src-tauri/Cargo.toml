@@ -1,0 +1,60 @@
+[package]
+name = "breakpatch"
+version = "0.1.0-beta.1"
+description = "Breakpatch desktop app"
+authors = ["Breakpatch contributors"]
+license = "Apache-2.0"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "breakpatch_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+serde_json = "1"
+# The licence keys are written masked into OUT_DIR (build.rs, src/licence_embed.rs).
+base64 = "0.22"
+sha2 = "0.10"
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+# "watch": the local tests folder picks up outside edits (git pull) as they happen.
+tauri-plugin-fs = { version = "2", features = ["watch"] }
+# Keeps the tests folders picked in the dialog in the fs scope across restarts.
+tauri-plugin-persisted-scope = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-log = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "time", "macros", "rt"] }
+log = "0.4"
+url = "2"
+reqwest = { version = "0.13", features = ["json"] }
+# Keychain on macOS; kernel keyutils on Linux (dev only), Credential Manager on Windows.
+keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"] }
+# Licence tokens (licence.rs): Ed25519 JWS checked offline against keys built in at compile time.
+ed25519-dalek = "2"
+base64 = "0.22"
+sha2 = "0.10"
+getrandom = "0.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["sync", "time", "macros", "rt", "rt-multi-thread", "test-util", "net", "io-util"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

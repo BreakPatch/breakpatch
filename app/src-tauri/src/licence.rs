@@ -1,0 +1,972 @@
+//! Breakpatch Team licence check (docs/editions.md; the Team back office README, "Licence tokens").
+//!
+//! The licence service hands out compact JWS tokens signed with Ed25519. This module checks them
+//! offline against public keys built into the app at compile time: `BREAKPATCH_LICENCE_PUBKEYS`,
+//! a JSON map kid → base64url key, which build.rs writes into the build masked and split
+//! (licence_embed.rs), never as a plain string. Community and source builds have no keys, so every
+//! licence command answers "not available in this edition".
+//!
+//! Each activation and refresh sends this Mac's `deviceId` (the hashed hardware id, or a random id
+//! kept in the Keychain). A token the service bound to a device (`dev`) only works on that Mac.
+//! The latest time seen is kept with the licence: a clock set back by more than a day makes the
+//! licence `invalid` until an online refresh works.
+//!
+//! The token, the licence key and who it was activated for live in one Keychain entry (service
+//! `dev.breakpatch.licence`). Keys and tokens never go to the log.
+//!
+//! Each refresh also carries this Mac's usage counts (usage.rs: numbers only), which are cleared
+//! only when the service answers `usageAccepted: true`.
+//!
+//! States (`Status::state`), checked on this Mac with no network:
+//! - `active`  the token's `exp` hasn't passed;
+//! - `grace`   after `exp`, before `offlineUntil` (capped at [`OFFLINE_DAYS`]): still unlocked;
+//! - `expired` after that, or once the licence's end date has passed;
+//! - `invalid` a bad signature or an unknown key id;
+//! - `none`    nothing stored, or the service refused (the code and message say why);
+//! - `unavailable` no keys built in.
+
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+use crate::secrets::SecretStore;
+use crate::usage::UsageStore;
+
+pub const KEYCHAIN_SERVICE: &str = "dev.breakpatch.licence";
+const ENTRY: &str = "licence";
+
+/// Longest a licence keeps working without reaching the service, counted from when its token was
+/// issued. The service puts the same limit in each token (`offlineUntil`); the app holds to the
+/// smaller of the two, so this is the one place to change it on the app side.
+pub const OFFLINE_DAYS: i64 = 30;
+const ISSUER: &str = "breakpatch-backoffice";
+const TOKEN_VERSION: i64 = 1;
+
+/// The public keys built in, masked (build.rs writes this from `BREAKPATCH_LICENCE_PUBKEYS`,
+/// set by scripts/build-release.sh).
+mod built {
+    include!(concat!(env!("OUT_DIR"), "/licence_keys.rs"));
+}
+#[path = "licence_embed.rs"]
+mod embed;
+
+/// A clock more than this far behind the latest time seen means someone set it back.
+pub const CLOCK_SLACK: i64 = 86_400;
+/// How often the latest time seen is written to the Keychain (not on every status check).
+const SEEN_EVERY: i64 = 3_600;
+const DEVICE_ENTRY: &str = "device";
+
+/// The service's address; `BP_LICENCE_URL` overrides it in development builds (tests, the emulator).
+pub const DEFAULT_URL: &str = match option_env!("BREAKPATCH_LICENCE_URL") {
+    Some(u) => u,
+    None => "https://account.breakpatch.dev/api",
+};
+
+// ---- Public keys -------------------------------------------------------------------------------
+
+#[derive(Clone, Default)]
+pub struct KeyTable(BTreeMap<String, VerifyingKey>);
+
+impl KeyTable {
+    /// The keys this build was compiled with; empty in Community and source builds.
+    pub fn compiled() -> Self {
+        // black_box: the optimiser mustn't fold the key back into a plain constant, and the
+        // digests build-release.sh checks for must stay in the binary.
+        let digests = std::hint::black_box(built::DIGESTS);
+        let masked = std::hint::black_box(&built::MASKED);
+        let pads = std::hint::black_box(&built::PADS);
+        let mut out = BTreeMap::new();
+        for (i, kid) in built::KIDS.iter().enumerate() {
+            match VerifyingKey::from_bytes(&embed::mask(&masked[i], &pads[i])) {
+                Ok(k) => {
+                    out.insert(kid.to_string(), k);
+                }
+                Err(e) => log::error!("the licence key {kid} built into this app is unusable: {e}"),
+            }
+        }
+        if out.len() != digests.split(';').filter(|d| !d.is_empty()).count() {
+            log::error!("the licence keys built into this app don't match their digests");
+        }
+        Self(out)
+    }
+
+    /// Whether this build has licence keys at all (Team), without reading them.
+    #[cfg(test)]
+    pub fn built_in() -> bool {
+        !built::KIDS.is_empty()
+    }
+
+    /// `{"<kid>": "<base64url 32-byte Ed25519 public key>", …}`
+    #[cfg(test)]
+    pub fn parse(json: &str) -> Result<Self, String> {
+        let map: BTreeMap<String, String> =
+            serde_json::from_str(json).map_err(|e| format!("not a JSON map of key id to key: {e}"))?;
+        let mut out = BTreeMap::new();
+        for (kid, b64) in map {
+            let bytes = URL_SAFE_NO_PAD.decode(b64.trim()).map_err(|e| format!("key {kid}: {e}"))?;
+            let raw: [u8; 32] = bytes.try_into().map_err(|_| format!("key {kid}: not 32 bytes"))?;
+            let key = VerifyingKey::from_bytes(&raw).map_err(|e| format!("key {kid}: {e}"))?;
+            out.insert(kid, key);
+        }
+        Ok(Self(out))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[cfg(test)]
+    pub fn kids(&self) -> Vec<&str> {
+        self.0.keys().map(String::as_str).collect()
+    }
+}
+
+// ---- Tokens ------------------------------------------------------------------------------------
+
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Claims {
+    pub iss: String,
+    pub v: i64,
+    pub licence_id: String,
+    pub activation_id: String,
+    pub tier: String,
+    pub features: Vec<String>,
+    pub seats: u32,
+    pub machines: u32,
+    pub subject_hash: String,
+    pub kind: Kind,
+    pub workspace_project_id: String,
+    pub iat: i64,
+    pub exp: i64,
+    pub offline_until: i64,
+    pub licence_expires_at: i64,
+    /// The device the service bound the seat to (R1): a hash of this Mac's `deviceId` with the
+    /// activation, see [`device_hash`]. Older tokens don't have it.
+    #[serde(default)]
+    pub dev: Option<String>,
+}
+
+/// The token's `dev` for `device` on `activation_id`, as the back office works it out
+/// (functions/src/licensing.ts `deviceHash`): SHA-256 of `device:<activationId>:<deviceId>`,
+/// first 32 hex characters.
+pub fn device_hash(activation_id: &str, device: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let d = Sha256::digest(format!("device:{activation_id}:{device}").as_bytes());
+    d.iter().take(16).map(|b| format!("{b:02x}")).collect()
+}
+
+/// Whether a token bound to a device (`dev`) belongs to this Mac. Tokens without `dev` do.
+pub fn dev_matches(c: &Claims, device: Option<&str>) -> bool {
+    match (&c.dev, device) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(dev), Some(me)) => dev == me || *dev == device_hash(&c.activation_id, me),
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum VerifyError {
+    Malformed,
+    UnknownKid,
+    BadSignature,
+    NotOurs,
+}
+
+#[derive(Deserialize)]
+struct Header {
+    alg: String,
+    kid: String,
+}
+
+/// Checks the signature with the key named by the header's `kid`, then the issuer and version.
+pub fn verify(token: &str, keys: &KeyTable) -> Result<Claims, VerifyError> {
+    let mut parts = token.trim().split('.');
+    let (h, p, s) = match (parts.next(), parts.next(), parts.next(), parts.next()) {
+        (Some(h), Some(p), Some(s), None) => (h, p, s),
+        _ => return Err(VerifyError::Malformed),
+    };
+    let header: Header = decode_json(h)?;
+    if header.alg != "EdDSA" {
+        return Err(VerifyError::NotOurs);
+    }
+    let key = keys.0.get(&header.kid).ok_or(VerifyError::UnknownKid)?;
+    let sig: [u8; 64] = URL_SAFE_NO_PAD
+        .decode(s)
+        .map_err(|_| VerifyError::Malformed)?
+        .try_into()
+        .map_err(|_| VerifyError::Malformed)?;
+    key.verify(format!("{h}.{p}").as_bytes(), &Signature::from_bytes(&sig)).map_err(|_| VerifyError::BadSignature)?;
+    let claims: Claims = decode_json(p)?;
+    if claims.iss != ISSUER || claims.v != TOKEN_VERSION {
+        return Err(VerifyError::NotOurs);
+    }
+    Ok(claims)
+}
+
+fn decode_json<T: for<'de> Deserialize<'de>>(part: &str) -> Result<T, VerifyError> {
+    let bytes = URL_SAFE_NO_PAD.decode(part).map_err(|_| VerifyError::Malformed)?;
+    serde_json::from_slice(&bytes).map_err(|_| VerifyError::Malformed)
+}
+
+// ---- What's stored, and the status the UI sees -----------------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Person,
+    Machine,
+}
+
+impl Kind {
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "person" => Some(Self::Person),
+            "machine" => Some(Self::Machine),
+            _ => None,
+        }
+    }
+}
+
+/// The Keychain entry. No `Debug`: it holds the licence key and the token.
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct Stored {
+    key: String,
+    subject: String,
+    kind: Kind,
+    workspace_project_id: String,
+    #[serde(default)]
+    machine_name: Option<String>,
+    #[serde(default)]
+    token: Option<String>,
+    /// From the service's last answer (the token doesn't carry them).
+    #[serde(default)]
+    seats_used: Option<u32>,
+    #[serde(default)]
+    machines_used: Option<u32>,
+    #[serde(default)]
+    customer_name: Option<String>,
+    /// The code of the refusal that left this Mac without a token (out_of_seats, revoked, …).
+    #[serde(default)]
+    error: Option<String>,
+    /// The latest time seen (Unix seconds), for spotting a clock set back (R7).
+    #[serde(default)]
+    seen_at: Option<i64>,
+    /// The clock was found set back: invalid until an online refresh works.
+    #[serde(default)]
+    clock_back: bool,
+}
+
+impl Stored {
+    fn same_holder(&self, subject: &str, kind: Kind, ws: &str) -> bool {
+        self.subject == subject && self.kind == kind && self.workspace_project_id == ws
+    }
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum State {
+    None,
+    Active,
+    Grace,
+    Expired,
+    Invalid,
+    Unavailable,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Status {
+    pub state: State,
+    /// Unlocked features: the token's while `active` or `grace`, else none.
+    pub features: Vec<String>,
+    pub tier: Option<String>,
+    pub seats: Option<u32>,
+    pub seats_used: Option<u32>,
+    pub machines: Option<u32>,
+    pub machines_used: Option<u32>,
+    pub customer_name: Option<String>,
+    pub kind: Option<Kind>,
+    /// Who holds the seat: the email for a person, this Mac's id for a machine.
+    pub subject: Option<String>,
+    pub workspace_project_id: Option<String>,
+    /// Unix seconds. `expiresAt` is the token's `exp` (refresh before it).
+    pub expires_at: Option<i64>,
+    pub offline_until: Option<i64>,
+    pub licence_expires_at: Option<i64>,
+    /// Last four characters of the key, for "key ending 7K2Q".
+    pub key_hint: Option<String>,
+    /// Why it's locked (a service code such as `out_of_seats`, or `offline_too_long`).
+    pub code: Option<String>,
+    pub message: Option<String>,
+}
+
+impl Status {
+    fn bare(state: State) -> Self {
+        Self {
+            state,
+            features: Vec::new(),
+            tier: None,
+            seats: None,
+            seats_used: None,
+            machines: None,
+            machines_used: None,
+            customer_name: None,
+            kind: None,
+            subject: None,
+            workspace_project_id: None,
+            expires_at: None,
+            offline_until: None,
+            licence_expires_at: None,
+            key_hint: None,
+            code: None,
+            message: None,
+        }
+    }
+    fn with_code(mut self, code: &str) -> Self {
+        self.message = Some(message_for(code, None));
+        self.code = Some(code.to_string());
+        self
+    }
+}
+
+/// Plain words for each code. Service codes first (they never change; new ones may be added),
+/// then the app's own.
+pub fn message_for(code: &str, service_message: Option<&str>) -> String {
+    let m = match code {
+        "bad_request" => "Something is missing from the request. Update Breakpatch and try again.",
+        "unknown_key" => "This licence key isn't recognised. Check it and try again.",
+        "revoked" => "This licence is no longer active. Ask your admin for help.",
+        "expired" => "Your licence has expired. Ask your admin to renew it.",
+        "out_of_seats" => "Your team is out of seats. Ask your admin to add one.",
+        "out_of_machines" => "Your team has no machine licences left. Ask your admin to add one.",
+        "invalid_token" => "This licence couldn't be checked. Sign in again.",
+        "released" => "This seat was freed. Sign in again to take a seat.",
+        "rate_limited" => "Too many tries. Wait a few minutes and try again.",
+        "over_seats" => "Your team is using more seats than it pays for, so this Mac's seat was freed. Ask your admin to add seats, then sign in again.",
+        "too_many_devices" => "Your seat is already used on too many Macs. Ask your admin to free one, then sign in again.",
+        "internal" => "Something went wrong on our side. Try again in a minute.",
+        "offline" => "Couldn't reach the licence service. Check your connection and try again.",
+        "offline_too_long" => "Reconnect to check your licence.",
+        "grace" => "Breakpatch couldn't check your licence lately. Reconnect soon to keep Team features.",
+        "other_workspace" => "This licence is for another workspace.",
+        "other_device" => "This licence was activated on another Mac. Sign in again on this one.",
+        "clock_back" => "This Mac's clock is behind. Set the right date and time, then reconnect to check your licence.",
+        "unavailable" => "Licences aren't available in this edition of Breakpatch.",
+        _ => return service_message.map(str::to_string).unwrap_or_else(|| "The licence couldn't be checked.".into()),
+    };
+    m.to_string()
+}
+
+/// The status of what's stored, at `now` (Unix seconds). `workspace`: the open workspace's
+/// project id, when the caller knows it; a token for another workspace unlocks nothing.
+/// `device`: this Mac's deviceId; a token bound to another device is invalid here.
+fn evaluate(
+    stored: Option<&Stored>,
+    keys: &KeyTable,
+    now: i64,
+    workspace: Option<&str>,
+    device: Option<&str>,
+) -> Status {
+    if keys.is_empty() {
+        return Status::bare(State::Unavailable).with_code("unavailable");
+    }
+    let Some(s) = stored else { return Status::bare(State::None) };
+    let mut st = Status::bare(State::None);
+    st.kind = Some(s.kind);
+    st.subject = Some(s.subject.clone());
+    st.workspace_project_id = Some(s.workspace_project_id.clone());
+    st.key_hint = key_hint(&s.key);
+    st.seats_used = s.seats_used;
+    st.machines_used = s.machines_used;
+    st.customer_name = s.customer_name.clone();
+    let Some(token) = &s.token else {
+        return match &s.error {
+            Some(code) => st.with_code(code),
+            None => st,
+        };
+    };
+    let c = match verify(token, keys) {
+        Ok(c) => c,
+        Err(_) => {
+            st.state = State::Invalid;
+            return st.with_code("invalid_token");
+        }
+    };
+    st.tier = Some(c.tier.clone());
+    st.seats = Some(c.seats);
+    st.machines = Some(c.machines);
+    st.workspace_project_id = Some(c.workspace_project_id.clone());
+    st.expires_at = Some(c.exp);
+    let offline_until = c.offline_until.min(c.iat + OFFLINE_DAYS * 86_400);
+    st.offline_until = Some(offline_until);
+    st.licence_expires_at = Some(c.licence_expires_at);
+    if !dev_matches(&c, device) {
+        st.state = State::Invalid;
+        return st.with_code("other_device");
+    }
+    if s.clock_back || now + CLOCK_SLACK < c.iat {
+        st.state = State::Invalid;
+        return st.with_code("clock_back");
+    }
+    if workspace.is_some_and(|w| w != c.workspace_project_id) {
+        return st.with_code("other_workspace");
+    }
+    if now >= c.licence_expires_at {
+        st.state = State::Expired;
+        return st.with_code("expired");
+    }
+    if now < c.exp {
+        st.state = State::Active;
+    } else if now < offline_until {
+        st.state = State::Grace;
+        st = st.with_code("grace");
+    } else {
+        st.state = State::Expired;
+        return st.with_code("offline_too_long");
+    }
+    st.features = c.features;
+    st
+}
+
+fn key_hint(key: &str) -> Option<String> {
+    let k: Vec<char> = key.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    (k.len() >= 4).then(|| k[k.len() - 4..].iter().collect::<String>().to_uppercase())
+}
+
+// ---- The service -------------------------------------------------------------------------------
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Failure {
+    pub code: String,
+    pub message: String,
+}
+
+impl Failure {
+    fn new(code: &str, service_message: Option<&str>) -> Self {
+        Self { code: code.into(), message: message_for(code, service_message) }
+    }
+}
+
+enum CallError {
+    /// No answer, or the service is having trouble (5xx, rate limited): nothing is decided.
+    Unreachable,
+    /// The service decided (`code` from its table).
+    Refused { code: String, message: Option<String> },
+}
+
+struct Service {
+    base: String,
+    client: reqwest::Client,
+}
+
+impl Service {
+    fn new(base: String) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(20))
+            .user_agent(concat!("Breakpatch/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .unwrap_or_default();
+        Self { base: base.trim_end_matches('/').to_string(), client }
+    }
+
+    async fn post(&self, endpoint: &str, body: &Value) -> Result<Value, CallError> {
+        let url = format!("{}/{endpoint}", self.base);
+        let res = match self.client.post(&url).json(body).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                // The error names the address only; the body (key, token) is never logged.
+                log::warn!("licence {endpoint}: couldn't reach the service ({})", e.without_url());
+                return Err(CallError::Unreachable);
+            }
+        };
+        let status = res.status();
+        let json: Value = res.json().await.unwrap_or(Value::Null);
+        if json.get("ok").and_then(Value::as_bool) == Some(true) {
+            return Ok(json);
+        }
+        let code = json.pointer("/error/code").and_then(Value::as_str);
+        log::info!("licence {endpoint}: HTTP {} {}", status.as_u16(), code.unwrap_or("-"));
+        match code {
+            Some("rate_limited" | "internal") => Err(CallError::Unreachable),
+            Some(code) => Err(CallError::Refused {
+                code: code.to_string(),
+                message: json.pointer("/error/message").and_then(Value::as_str).map(str::to_string),
+            }),
+            None if status.is_server_error() || status.as_u16() == 429 => Err(CallError::Unreachable),
+            None => Err(CallError::Refused { code: "internal".into(), message: None }),
+        }
+    }
+}
+
+// ---- Licensing -----------------------------------------------------------------------------------
+
+pub struct ActivateRequest {
+    pub key: String,
+    pub workspace_project_id: String,
+    /// The signed-in email (person); empty for a machine, which uses this Mac's own id.
+    pub subject: Option<String>,
+    pub kind: String,
+}
+
+type Clock = Box<dyn Fn() -> i64 + Send + Sync>;
+type MachineId = Box<dyn Fn() -> (String, Option<String>) + Send + Sync>;
+
+pub struct Licensing<S: SecretStore> {
+    store: S,
+    keys: KeyTable,
+    service: Service,
+    now: Clock,
+    machine: MachineId,
+    app_version: String,
+    /// What's in the Keychain, read once.
+    cache: Mutex<Option<Option<Stored>>>,
+    /// One activate, refresh or release at a time.
+    busy: tokio::sync::Mutex<()>,
+    /// The usage counts sent with each refresh (usage.rs).
+    usage: Option<Arc<UsageStore>>,
+    /// This Mac's hashed hardware id, when it has one (macOS); else a random id in the Keychain.
+    hardware: HardwareId,
+    device: std::sync::OnceLock<Option<String>>,
+}
+
+type HardwareId = Box<dyn Fn() -> Option<String> + Send + Sync>;
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
+}
+
+/// The address built in. `BP_LICENCE_URL` replaces it in development builds only (tests, the
+/// emulator): a release build always talks to the service it was built for.
+pub fn service_url() -> String {
+    service_url_from(std::env::var("BP_LICENCE_URL").ok(), cfg!(debug_assertions))
+}
+
+fn service_url_from(env: Option<String>, development: bool) -> String {
+    env.filter(|u| development && !u.trim().is_empty()).unwrap_or_else(|| DEFAULT_URL.to_string())
+}
+
+impl<S: SecretStore> Licensing<S> {
+    pub fn new(store: S, keys: KeyTable, base_url: String, machine: MachineId) -> Self {
+        Self {
+            store,
+            keys,
+            service: Service::new(base_url),
+            now: Box::new(unix_now),
+            machine,
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            cache: Mutex::new(None),
+            busy: tokio::sync::Mutex::new(()),
+            usage: None,
+            hardware: Box::new(|| platform_uuid().map(|u| hash_id(&u))),
+            device: std::sync::OnceLock::new(),
+        }
+    }
+
+    #[cfg(test)]
+    fn with_hardware(mut self, hardware: HardwareId) -> Self {
+        self.hardware = hardware;
+        self
+    }
+
+    /// This Mac's `deviceId` for the service: the hashed hardware id, else a random id made once
+    /// and kept in the Keychain (next to the licence). None only if neither can be had.
+    pub fn device_id(&self) -> Option<String> {
+        self.device
+            .get_or_init(|| {
+                if let Some(hw) = (self.hardware)() {
+                    return Some(hw);
+                }
+                match self.store.get(DEVICE_ENTRY) {
+                    Ok(Some(id)) if id.len() >= 16 && id.bytes().all(|b| b.is_ascii_hexdigit()) => return Some(id),
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::warn!("couldn't read this Mac's device id from the Keychain: {e}");
+                        return None;
+                    }
+                }
+                let mut bytes = [0u8; 16];
+                getrandom::fill(&mut bytes).ok()?;
+                let id: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+                if let Err(e) = self.store.set(DEVICE_ENTRY, &id) {
+                    log::warn!("couldn't keep this Mac's device id in the Keychain: {e}");
+                }
+                Some(id)
+            })
+            .clone()
+    }
+
+    /// Sends these usage counts with each refresh.
+    pub fn with_usage(mut self, usage: Arc<UsageStore>) -> Self {
+        self.usage = Some(usage);
+        self
+    }
+
+    #[cfg(test)]
+    fn with_clock(mut self, now: Clock) -> Self {
+        self.now = now;
+        self
+    }
+
+    fn load(&self) -> Option<Stored> {
+        let mut cache = self.cache.lock().unwrap();
+        if let Some(s) = cache.as_ref() {
+            return s.clone();
+        }
+        let s = match self.store.get(ENTRY) {
+            Ok(Some(text)) => serde_json::from_str::<Stored>(&text).ok().or_else(|| {
+                log::warn!("the stored licence is unreadable; starting without one");
+                None
+            }),
+            Ok(None) => None,
+            Err(e) => {
+                log::warn!("couldn't read the licence from the Keychain: {e}");
+                None
+            }
+        };
+        *cache = Some(s.clone());
+        s
+    }
+
+    fn save(&self, s: Option<Stored>) {
+        let res = match &s {
+            Some(v) => serde_json::to_string(v).map_err(|e| e.to_string()).and_then(|t| self.store.set(ENTRY, &t)),
+            None => self.store.delete(ENTRY),
+        };
+        if let Err(e) = res {
+            log::warn!("couldn't save the licence in the Keychain: {e}");
+        }
+        *self.cache.lock().unwrap() = Some(s);
+    }
+
+    pub fn status(&self, workspace: Option<&str>) -> Status {
+        if self.keys.is_empty() {
+            return evaluate(None, &self.keys, 0, None, None);
+        }
+        let now = (self.now)();
+        let stored = self.observe_clock(now);
+        evaluate(stored.as_ref(), &self.keys, now, workspace, self.device_id().as_deref())
+    }
+
+    /// Keeps the latest time seen with the licence (R7), and marks the clock as set back when
+    /// `now` is more than [`CLOCK_SLACK`] behind it or behind when the token was issued. Only a
+    /// successful online refresh or activation clears that. Returns what's stored now.
+    fn observe_clock(&self, now: i64) -> Option<Stored> {
+        let mut s = self.load()?;
+        let issued = s.token.as_deref().and_then(|t| verify(t, &self.keys).ok()).map(|c| c.iat);
+        let latest = s.seen_at.into_iter().chain(issued).max();
+        let changed = if latest.is_some_and(|l| now + CLOCK_SLACK < l) {
+            if !s.clock_back {
+                log::warn!("this Mac's clock is more than a day behind the latest time seen; the licence is invalid until it refreshes online");
+            }
+            !std::mem::replace(&mut s.clock_back, true)
+        } else if match s.seen_at {
+            None => true,
+            Some(seen) => now >= seen + SEEN_EVERY,
+        } {
+            s.seen_at = Some(now.max(s.seen_at.unwrap_or(now)));
+            true
+        } else {
+            false
+        };
+        if changed {
+            self.save(Some(s.clone()));
+        }
+        Some(s)
+    }
+
+    /// Whether this Mac holds a licence token (Team usage is counted only then).
+    pub fn holds_token(&self) -> bool {
+        !self.keys.is_empty() && self.load().is_some_and(|s| s.token.is_some())
+    }
+
+    /// The stored token, for the engine sidecar (`licence.set`, engine/PROTOCOL.md). The Team engine
+    /// checks it again itself with the same keys, so this is only a hand-over, never a decision.
+    /// None without built-in keys or without a token.
+    pub fn engine_token(&self) -> Option<String> {
+        if self.keys.is_empty() {
+            return None;
+        }
+        // Not while the clock is set back or the token is another Mac's: the engine can't tell.
+        let st = self.status(None);
+        if matches!(st.code.as_deref(), Some("clock_back" | "other_device")) {
+            return None;
+        }
+        self.load().and_then(|s| s.token)
+    }
+
+    pub async fn activate(&self, req: ActivateRequest) -> Result<Status, Failure> {
+        if self.keys.is_empty() {
+            return Err(Failure::new("unavailable", None));
+        }
+        let kind = Kind::parse(&req.kind).ok_or_else(|| Failure::new("bad_request", None))?;
+        let (subject, machine_name) = match (kind, req.subject.as_deref().map(str::trim)) {
+            (Kind::Machine, None | Some("")) => (self.machine)(),
+            (Kind::Machine, Some(s)) => (s.to_string(), (self.machine)().1),
+            (Kind::Person, Some(s)) if !s.is_empty() => (s.to_string(), None),
+            (Kind::Person, _) => return Err(Failure { code: "bad_request".into(), message: "Sign in first.".into() }),
+        };
+        let key = req.key.trim().to_string();
+        let ws = req.workspace_project_id.trim().to_string();
+        if key.is_empty() || ws.is_empty() {
+            return Err(Failure::new("bad_request", None));
+        }
+        let _g = self.busy.lock().await;
+        let prev = self.load();
+        // Moving to another person, machine or workspace: give the old seat back first.
+        if let Some(p) = &prev {
+            if let (Some(token), false) = (&p.token, p.same_holder(&subject, kind, &ws)) {
+                self.release_token(token).await;
+            }
+        }
+        let next = Stored {
+            key,
+            subject,
+            kind,
+            workspace_project_id: ws,
+            machine_name,
+            token: None,
+            seats_used: None,
+            machines_used: None,
+            customer_name: None,
+            error: None,
+            seen_at: prev.as_ref().and_then(|p| p.seen_at),
+            clock_back: prev.as_ref().is_some_and(|p| p.clock_back),
+        };
+        self.activate_as(next, prev).await
+    }
+
+    async fn activate_as(&self, mut next: Stored, prev: Option<Stored>) -> Result<Status, Failure> {
+        let mut body = json!({
+            "key": next.key, "workspaceProjectId": next.workspace_project_id, "subject": next.subject,
+            "kind": next.kind, "appVersion": self.app_version,
+        });
+        if let Some(n) = &next.machine_name {
+            body["machineName"] = json!(n);
+        }
+        if let Some(d) = self.device_id() {
+            body["deviceId"] = json!(d);
+        }
+        match self.service.post("activate", &body).await {
+            Ok(v) => {
+                self.take_answer(&mut next, &v)?;
+                self.save(Some(next));
+                Ok(self.status(None))
+            }
+            Err(CallError::Refused { code, message }) => {
+                // A licence that still works here stays when someone tries another key.
+                let now = (self.now)();
+                let device = self.device_id();
+                let keeps = prev.as_ref().is_some_and(|p| {
+                    p.key != next.key
+                        && p.same_holder(&next.subject, next.kind, &next.workspace_project_id)
+                        && matches!(
+                            evaluate(Some(p), &self.keys, now, None, device.as_deref()).state,
+                            State::Active | State::Grace
+                        )
+                });
+                if !keeps {
+                    next.error = Some(code.clone());
+                    self.save(Some(next));
+                }
+                Err(Failure::new(&code, message.as_deref()))
+            }
+            Err(CallError::Unreachable) => Err(Failure::new("offline", None)),
+        }
+    }
+
+    /// Takes a good answer's token and counts. A token this app can't check, or one bound to
+    /// another device, is refused. The service answered, so the clock is trusted again.
+    fn take_answer(&self, s: &mut Stored, v: &Value) -> Result<(), Failure> {
+        let token = v.get("token").and_then(Value::as_str).unwrap_or_default();
+        let Ok(claims) = verify(token, &self.keys) else {
+            log::warn!("the licence service answered with a token this app can't check");
+            return Err(Failure::new("invalid_token", None));
+        };
+        if !dev_matches(&claims, self.device_id().as_deref()) {
+            log::warn!("the licence service answered with a token for another device");
+            return Err(Failure::new("invalid_token", None));
+        }
+        s.clock_back = false;
+        s.seen_at = Some((self.now)());
+        let lic = v.get("licence");
+        let num = |k: &str| lic.and_then(|l| l.get(k)).and_then(Value::as_u64).map(|n| n as u32);
+        s.token = Some(token.to_string());
+        s.seats_used = num("seatsUsed");
+        s.machines_used = num("machinesUsed");
+        s.customer_name = lic.and_then(|l| l.get("customerName")).and_then(Value::as_str).map(str::to_string);
+        s.error = None;
+        Ok(())
+    }
+
+    /// A new token for the seat this Mac holds. Offline or while the service has trouble, the
+    /// stored token stays (grace). A freed seat or a token the service no longer accepts is taken
+    /// again with the stored key.
+    pub async fn refresh(&self) -> Status {
+        if self.keys.is_empty() {
+            return self.status(None);
+        }
+        let _g = self.busy.lock().await;
+        let Some(mut s) = self.load() else { return self.status(None) };
+        let Some(token) = s.token.clone() else { return self.status(None) };
+        // Usage counts since the last report the service took (usage.rs): numbers only.
+        let usage = self.usage.as_ref().and_then(|u| u.pending_team());
+        let mut body = json!({ "token": token });
+        if let Some(d) = self.device_id() {
+            body["deviceId"] = json!(d);
+        }
+        if let Some(c) = &usage {
+            body["usage"] = c.team_payload();
+        }
+        match self.service.post("refresh", &body).await {
+            Ok(v) => match self.take_answer(&mut s, &v) {
+                Ok(()) => {
+                    if let (Some(u), Some(sent)) = (&self.usage, &usage) {
+                        if v.get("usageAccepted").and_then(Value::as_bool) == Some(true) {
+                            u.reported(sent, (self.now)());
+                        }
+                    }
+                    self.save(Some(s));
+                    self.status(None)
+                }
+                Err(_) => self.status(None),
+            },
+            Err(CallError::Refused { code, .. }) if code == "released" || code == "invalid_token" => {
+                s.token = None;
+                match self.activate_as(s.clone(), None).await {
+                    Ok(st) => st,
+                    Err(f) => {
+                        if f.code == "offline" {
+                            // Couldn't ask again: the seat is gone either way.
+                            s.error = Some(code);
+                            self.save(Some(s));
+                        }
+                        self.status(None)
+                    }
+                }
+            }
+            Err(CallError::Refused { code, .. }) => {
+                s.token = None;
+                s.error = Some(code);
+                self.save(Some(s));
+                self.status(None)
+            }
+            Err(CallError::Unreachable) => {
+                let mut st = self.status(None);
+                if st.state == State::Active {
+                    st.code = Some("offline".into());
+                    st.message = Some(message_for("offline", None));
+                }
+                st
+            }
+        }
+    }
+
+    /// Gives this Mac's seat back and forgets the licence here.
+    pub async fn release(&self) -> Status {
+        if self.keys.is_empty() {
+            return self.status(None);
+        }
+        let _g = self.busy.lock().await;
+        if let Some(token) = self.load().and_then(|s| s.token) {
+            self.release_token(&token).await;
+        }
+        self.save(None);
+        self.status(None)
+    }
+
+    /// Best effort: offline, the seat frees itself after 30 days unseen.
+    async fn release_token(&self, token: &str) {
+        match self.service.post("release", &json!({ "token": token })).await {
+            Ok(_) => {}
+            Err(CallError::Refused { code, .. }) => log::info!("licence release refused: {code}"),
+            Err(CallError::Unreachable) => {
+                log::info!("licence release: service unreachable; the seat frees itself later")
+            }
+        }
+    }
+}
+
+// ---- This Mac's id, for the local runner's machine licence -------------------------------------
+
+/// A stable id for this machine and its name. On macOS the hardware UUID, hashed (the raw id
+/// never leaves the Mac); elsewhere a random id kept in the app data folder.
+pub fn machine_identity(data_dir: &Path) -> (String, Option<String>) {
+    let id = platform_uuid().map(|u| hash_id(&u)).unwrap_or_else(|| stored_id(data_dir));
+    (id, machine_name())
+}
+
+fn hash_id(raw: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let d = Sha256::digest(format!("breakpatch-machine-v1:{}", raw.trim()).as_bytes());
+    d.iter().take(16).map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(target_os = "macos")]
+fn platform_uuid() -> Option<String> {
+    let out =
+        std::process::Command::new("/usr/sbin/ioreg").args(["-rd1", "-c", "IOPlatformExpertDevice"]).output().ok()?;
+    parse_ioreg_uuid(&String::from_utf8_lossy(&out.stdout))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn platform_uuid() -> Option<String> {
+    None
+}
+
+#[cfg_attr(not(any(test, target_os = "macos")), allow(dead_code))]
+fn parse_ioreg_uuid(text: &str) -> Option<String> {
+    let line = text.lines().find(|l| l.contains("\"IOPlatformUUID\""))?;
+    let v = line.split('=').nth(1)?.trim().trim_matches('"');
+    (!v.is_empty()).then(|| v.to_string())
+}
+
+fn stored_id(data_dir: &Path) -> String {
+    let path = data_dir.join("machine-id");
+    if let Ok(s) = std::fs::read_to_string(&path) {
+        let s = s.trim();
+        if s.len() >= 16 && s.chars().all(|c| c.is_ascii_hexdigit()) {
+            return s.to_string();
+        }
+    }
+    let mut bytes = [0u8; 16];
+    if getrandom::fill(&mut bytes).is_err() {
+        // No OS randomness: still unique enough for a seat id.
+        let seed = format!("{:?}{}", std::time::SystemTime::now(), std::process::id());
+        return hash_id(&seed);
+    }
+    let id: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    let _ = std::fs::create_dir_all(data_dir);
+    if let Err(e) = std::fs::write(&path, &id) {
+        log::warn!("couldn't save this machine's id: {e}");
+    }
+    id
+}
+
+fn machine_name() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("/usr/sbin/scutil").args(["--get", "ComputerName"]).output().ok()?;
+        let n = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (!n.is_empty()).then(|| n.chars().take(80).collect())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::env::var("HOSTNAME").ok().filter(|n| !n.is_empty()).map(|n| n.chars().take(80).collect())
+    }
+}
+
+#[cfg(test)]
+#[path = "licence_tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "licence_e2e.rs"]
+mod e2e;

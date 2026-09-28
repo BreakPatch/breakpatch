@@ -1,0 +1,275 @@
+name: Release
+
+# Push a tag like v0.2.0 (matching app/package.json "version") to build, sign and publish
+# Breakpatch for Apple Silicon. A tag with a "-" (v0.1.0-beta.1) is published as a GitHub
+# prerelease: never "Latest", so it stays out of the stable updater feed and the default install
+# command (see the publish job). The release carries the .app.tar.gz + .sig (updates,
+# and what the install command https://breakpatch.dev/install downloads), latest.json, which
+# the in-app updater reads from the URL in app/src-tauri/tauri.conf.json
+# (plugins.updater.endpoints), and SHA256SUMS, which the install command checks against.
+#
+# Releases are the Team edition (docs/editions.md), built by scripts/build-release.sh, the same
+# script people use: it links the private module, installs the Team engine, builds the sidecar,
+# the frontend and the app, and puts the checkout back to Community at the end. This workflow
+# only checks the two repos out side by side and publishes what the script built.
+# Licence checks decide at run time what a copy may use.
+#
+# Jobs (security review S1, S2, S5, R3):
+#   build       tag runs only, in the `release` environment (the owner approves each run; tags
+#               v* only), which holds the signing secrets. Dependencies are installed first,
+#               with no secret in the environment (build-release.sh --deps-only: hashed pip
+#               lock, npm ci --ignore-scripts, cargo fetch --locked); only the build-and-sign
+#               step gets the secrets (--no-deps --release: nothing is downloaded there). No
+#               caches are restored, so no other run can poison a release. Always --release:
+#               the real licence keys only, never the public test key.
+#   publish     needs build; the only job that can write (contents: write). It downloads the
+#               build's files, checks SHA256SUMS and creates the GitHub release. No checkout.
+#   test-build  manual runs (workflow_dispatch): an unsigned Community build on macOS, with no
+#               secrets at all (not even the Team repo token), kept as a workflow artifact for
+#               3 days. It tries the macOS build, the AI assistant bundle and the hardened
+#               runtime (ad-hoc signed) before a tag. A signed Team build only ever comes from
+#               a tag; to try one first, run scripts/build-release.sh --edition team on a Mac.
+#
+# Code signing (scripts/build-release.sh picks the first that's set):
+#   1. APPLE_* secrets: Apple Developer ID, notarised, hardened runtime.
+#   2. BP_CODESIGN_P12 + BP_CODESIGN_P12_PASSWORD: Breakpatch's own certificate
+#      (scripts/make-signing-cert.sh), hardened runtime. It must match
+#      app/src-tauri/signing/fingerprint.txt, so every release keeps the same signing identity
+#      and the Keychain doesn't ask after updates.
+#   A tag build fails without the updater key and one of those.
+#
+# Settings (Settings → Environments → release; SECURITY-REPORT section 7):
+#   environment `release`  required reviewer: the owner; deployment refs: tags v* only
+#     secrets  TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD,
+#              BP_CODESIGN_P12, BP_CODESIGN_P12_PASSWORD (or the APPLE_* ones),
+#              TEAM_REPO_TOKEN (fine-grained, breakpatch-team only, Contents read-only)
+#   vars (repository)  TEAM_REPO  the Team repo. Default BreakPatch/breakpatch-team
+#                      TEAM_REF   its branch or tag to build (default main)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  # A newer manual run replaces a test build; a tag build always finishes.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: macOS arm64 (signed release)
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-15 # Apple Silicon
+    environment: release
+    env:
+      TARGET: aarch64-apple-darwin
+    defaults:
+      run:
+        working-directory: breakpatch
+    steps:
+      # Side by side, as scripts/link-team.sh and build-release.sh expect:
+      # $GITHUB_WORKSPACE/breakpatch and $GITHUB_WORKSPACE/breakpatch-team.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: breakpatch
+          persist-credentials: false
+      - name: Check out the Team module
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ vars.TEAM_REPO || 'BreakPatch/breakpatch-team' }}
+          ref: ${{ vars.TEAM_REF || 'main' }}
+          token: ${{ secrets.TEAM_REPO_TOKEN }}
+          path: breakpatch-team
+          persist-credentials: false
+
+      # The app's version is app/package.json's (tauri.conf.json points there). The crate and the
+      # engine carry the same one: the engine's names the Nuitka sidecar's unpack folder
+      # ({CACHE_DIR}/breakpatch-engine/<version>), so a release with an unchanged engine version
+      # would start the files an earlier one unpacked.
+      - name: Tag matches the app version
+        run: |
+          app_version=$(node -p "require('./app/package.json').version")
+          if [ "v$app_version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match app/package.json version $app_version"
+            exit 1
+          fi
+          crate_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' app/src-tauri/Cargo.toml | head -n 1)
+          engine_version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' engine/src/breakpatch_engine/__init__.py)
+          for v in "app/src-tauri/Cargo.toml:$crate_version" "engine/src/breakpatch_engine/__init__.py:$engine_version"; do
+            if [ "${v#*:}" != "$app_version" ]; then
+              echo "::error::${v%%:*} has version ${v#*:}, app/package.json $app_version"
+              exit 1
+            fi
+          done
+
+      # No caches on a tag build (security review S5): setup-node without `cache`, no
+      # rust-cache, no ccache or Nuitka cache.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master, 2026-09
+        with:
+          toolchain: 1.98.1
+          targets: aarch64-apple-darwin
+
+      # Everything third-party is installed here, with no secret in the environment: the build
+      # venv from engine/locks/macos-arm64.dev-hardening-mlx.txt (--require-hashes), Nuitka's
+      # downloads, npm ci --ignore-scripts, cargo fetch --locked.
+      - name: Install dependencies (no secrets)
+        env:
+          PYTHON: python                     # setup-python's 3.11, for the build venv
+          ENGINE_EXTRAS: dev,mlx,hardening   # mlx-vlm (AI assistant) + Nuitka (Team hardening)
+        run: bash scripts/build-release.sh --edition team --target "$TARGET" --deps-only
+
+      # With the APPLE_* secrets the Tauri CLI imports APPLE_CERTIFICATE, signs the app and the
+      # sidecar with APPLE_SIGNING_IDENTITY (hardened runtime, Entitlements.plist) and notarises
+      # with APPLE_ID / APPLE_PASSWORD (app-specific password) / APPLE_TEAM_ID. Without them,
+      # the script imports BP_CODESIGN_P12 into a temporary keychain (only once the sidecar and
+      # the frontend are built), checks it against the committed fingerprint and has Tauri sign
+      # with it. Either way the script verifies the signed app, the update archive and the .dmg,
+      # and the Tauri key signs the update archive. The script keeps these variables out of the
+      # environment of everything but the signing commands.
+      - name: Build and sign the Team edition
+        env:
+          TEAM_DIR: breakpatch-team      # relative to the folder that holds this checkout
+          ENGINE_EXTRAS: dev,mlx,hardening
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BP_CODESIGN_P12: ${{ secrets.BP_CODESIGN_P12 }}
+          BP_CODESIGN_P12_PASSWORD: ${{ secrets.BP_CODESIGN_P12_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bash scripts/build-release.sh --edition team --target "$TARGET" --bundles app,dmg --no-deps --release
+
+      - name: Collect the release files
+        id: files
+        run: |
+          version=$(node -p "require('./app/package.json').version")
+          bundle="app/src-tauri/target/$TARGET/release/bundle"
+          out="$RUNNER_TEMP/release"
+          mkdir -p "$out"
+          # The .dmg is built (build-release.sh checks it holds the signed app) but not published:
+          # Breakpatch is installed with the install command only, so macOS never quarantines it.
+          cp "$bundle/macos/Breakpatch.app.tar.gz" "$out/Breakpatch_aarch64.app.tar.gz"
+          cp "$bundle/macos/Breakpatch.app.tar.gz.sig" "$out/Breakpatch_aarch64.app.tar.gz.sig"
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/v$version/Breakpatch_aarch64.app.tar.gz"
+          # shellcheck disable=SC2016  # the single-quoted text is JavaScript, not shell
+          SIG="$(cat "$out/Breakpatch_aarch64.app.tar.gz.sig")" URL="$url" VERSION="$version" node -e '
+            const p = { signature: process.env.SIG, url: process.env.URL };
+            const doc = { version: process.env.VERSION, notes: `Breakpatch ${process.env.VERSION}`,
+              pub_date: new Date().toISOString(), platforms: { "darwin-aarch64": p, "darwin-aarch64-app": p } };
+            require("fs").writeFileSync(process.argv[1], JSON.stringify(doc, null, 2) + "\n");
+          ' "$out/latest.json"
+          # Checksums of everything in the release; the install command checks the archive.
+          (cd "$out" && shasum -a 256 -- * > SHA256SUMS)
+          cat "$out/SHA256SUMS"
+          ls -l "$out"
+          echo "dir=$out" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: breakpatch-release
+          path: ${{ steps.files.outputs.dir }}
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # creates the release; the only job in this workflow that can write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: breakpatch-release
+          path: release
+      # Published straight away. The stable updater feed is releases/latest/download/latest.json
+      # (app/src-tauri/tauri.conf.json), and releases/latest is the release marked "Latest",
+      # which GitHub never makes a draft or a prerelease. The install command's default is the
+      # same releases/latest. So each release carries its own latest.json, and a prerelease's
+      # (a tag with "-", v0.1.0-beta.1) is only reachable at its own tag: stable copies never
+      # see it, and beta copies move on to the next stable release (0.1.0 > 0.1.0-beta.1).
+      # Betas install with BREAKPATCH_CHANNEL=beta or BREAKPATCH_VERSION.
+      - name: Check and publish
+        working-directory: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha256sum --check --strict SHA256SUMS
+          version=${GITHUB_REF_NAME#v}
+          case "$GITHUB_REF_NAME" in
+            *-*)
+              prerelease=1
+              flags=(--prerelease --latest=false)
+              notes="Beta. Install or update from Terminal: \`curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=$version sh\`, or the newest beta with \`BREAKPATCH_CHANNEL=beta\` (Apple Silicon, macOS 14 or later). Betas aren't offered to stable copies." ;;
+            *)
+              prerelease=0
+              flags=()
+              notes="Install or update from Terminal: \`curl -fsSL https://breakpatch.dev/install | sh\` (Apple Silicon, macOS 14 or later). Installed copies update themselves." ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" ./* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Breakpatch $GITHUB_REF_NAME" \
+            --notes "$notes" \
+            "${flags[@]}"
+          if [ "$prerelease" -eq 1 ]; then
+            # The stable feed must still be a stable release (or none yet: HTTP 404).
+            latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+            if [ "$latest" = "$GITHUB_REF_NAME" ]; then
+              echo "::error::$GITHUB_REF_NAME became the Latest release: mark it as a prerelease in the release's settings now"
+              exit 1
+            fi
+            echo "Published $GITHUB_REF_NAME as a prerelease; Latest is ${latest:-none yet}."
+          fi
+
+  test-build:
+    name: macOS arm64 (unsigned Community test build)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-15
+    env:
+      TARGET: aarch64-apple-darwin
+      ENGINE_EXTRAS: dev,mlx
+      PYTHON: python
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master, 2026-09
+        with:
+          toolchain: 1.98.1
+          targets: aarch64-apple-darwin
+      # Caches are fine here (tag builds never restore them).
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: app/src-tauri
+      - name: Install dependencies
+        run: bash scripts/build-release.sh --target "$TARGET" --deps-only
+      # No signing secrets: ad-hoc signed (hardened runtime on), no update archive.
+      - name: Build (unsigned)
+        run: bash scripts/build-release.sh --target "$TARGET" --bundles app,dmg --no-deps
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: breakpatch-community-test-macos-arm64
+          path: app/src-tauri/target/${{ env.TARGET }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 3

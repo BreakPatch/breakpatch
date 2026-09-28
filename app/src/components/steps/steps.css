@@ -1,0 +1,97 @@
+/* Steps panel and rows (README "3 · Recorder" → Steps panel, "Loops"; prototype stepRows). */
+.steps-panel { width: var(--steps-w); flex: none; background: var(--surface); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.steps-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
+.steps-head h2 { margin: 0; font-size: 16px; font-weight: 700; }
+.steps-head span { font-size: 12px; color: var(--text-faint); }
+.steps-list { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; padding: 2px 10px 10px; }
+
+.step-card {
+  position: relative; display: flex; flex-direction: column; border-radius: 10px; border: 1.5px solid transparent; flex: none;
+  transition: background 160ms ease-out, border-color 160ms ease-out;
+}
+.step-card.fresh { animation: bpIn 220ms ease-out both; }
+.step-card:hover:not(.sel):not(.failed) { background: var(--raised); }
+.step-card.sel { background: var(--accent-tint); border-color: var(--accent); }
+.step-card.failed { background: var(--failed-tint); border-color: var(--failed); }
+.step-card.nested { border-left: 3px solid var(--accent); }
+.step-card.loop:not(.sel) { background: var(--selected); border-color: var(--line-strong); }
+.step-card.drop-before::before, .step-card.drop-after::after {
+  content: ''; position: absolute; left: 6px; right: 6px; height: 2px; border-radius: 2px; background: var(--accent); pointer-events: none;
+}
+.step-card.drop-before::before { top: -5px; }
+.step-card.drop-after::after { bottom: -5px; }
+
+.step-head { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; cursor: pointer; min-width: 0; }
+.step-head:focus-visible { outline-offset: 0; }
+.step-head[draggable="true"] { cursor: grab; }
+.step-n { width: 18px; flex: none; font-size: 12px; color: var(--text-faint); text-align: right; font-variant-numeric: tabular-nums; }
+.step-disc {
+  width: 30px; height: 30px; border-radius: 50%; background: var(--raised); color: var(--text-muted); flex: none;
+  display: flex; align-items: center; justify-content: center; transition: background 160ms ease-out;
+}
+.step-card.loop:not(.sel) .step-disc { color: var(--accent); }
+.step-card.sel .step-disc { background: var(--accent); color: var(--on-accent); }
+.step-card.failed .step-disc { background: var(--raised); color: var(--failed); }
+.step-disc.checking { animation: bpFlashRing .9s ease-out infinite; }
+@keyframes bpFlashRing { 0% { box-shadow: 0 0 0 0 var(--ring-accent); } 100% { box-shadow: 0 0 0 10px transparent; } }
+.step-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.step-label { font-size: 14px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.step-label.faint { color: var(--text-faint); }
+.step-note { font-size: 12px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step-note.tone-muted { color: var(--text-muted); }
+.step-note.tone-failed { color: var(--failed); }
+.step-note.tone-passed { color: var(--passed); }
+.step-note.tone-fixed { color: var(--fixed); }
+.step-note.tone-accent { color: var(--accent); }
+.step-chev { color: var(--text-muted); }
+.step-status { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; white-space: nowrap; flex: none; }
+.step-status .pop { animation: bpPop 200ms ease-out both; }
+.st-passed { color: var(--passed); }
+.st-running { color: var(--running); }
+.st-failed { color: var(--failed); }
+.st-fixed { color: var(--fixed); }
+.st-muted { color: var(--text-faint); }
+
+.step-edit { display: flex; flex-direction: column; gap: 12px; padding: 4px 14px 14px 66px; cursor: default; animation: bpIn 180ms ease-out both; }
+.look-for { display: flex; flex-direction: column; gap: 4px; }
+.look-label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.look-label .icon { color: var(--accent); }
+.look-text {
+  font: inherit; font-size: 13px; line-height: 1.4; color: var(--text); background: transparent; resize: none; overflow: hidden;
+  border: 0; border-bottom: 1.5px dashed var(--line-strong); border-radius: 0; padding: 0 0 4px; outline: none; width: 100%;
+}
+.look-text:focus { border-bottom-color: var(--accent); border-bottom-style: solid; }
+.look-text:focus-visible { outline: none; }
+.step-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.step-card.nested .step-edit { padding-left: 52px; padding-right: 10px; }
+.step-btn {
+  display: inline-flex; align-items: center; gap: 6px; border: 1.5px solid var(--line-strong); border-radius: var(--r-button);
+  padding: 7px 12px; font-size: 13px; color: var(--text); white-space: nowrap; transition: border-color var(--t-fast) ease-out, transform 120ms ease-out;
+}
+.step-btn:hover { border-color: var(--accent); }
+.step-btn:active { transform: scale(.98); }
+.step-btn.danger { color: var(--failed); }
+.step-btn.icon-only { padding: 7px; }
+.step-btn.danger:hover { border-color: var(--failed); }
+.step-delete { margin-left: auto; }
+.loop-count { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); }
+.loop-count .input { width: 64px; padding: 5px 8px; font-size: 14px; text-align: center; }
+
+.group-toggle { display: flex; align-items: center; gap: 2px; font-size: 12px; color: var(--text-faint); border-radius: 6px; padding: 2px 2px 2px 6px; flex: none; }
+.group-toggle:hover { color: var(--text); background: var(--raised); }
+.group-children { display: flex; flex-direction: column; gap: 2px; padding: 0 10px 10px 38px; cursor: default; }
+.group-child { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-left: 2px solid var(--line-strong); font-size: 13px; color: var(--text-muted); min-width: 0; }
+.group-child .gc-n { width: 26px; flex: none; color: var(--text-faint); font-size: 12px; }
+.group-foot { display: flex; align-items: center; gap: 6px; padding: 8px 8px 0; font-size: 12px; color: var(--text-faint); }
+.group-edit { color: var(--accent); font-weight: 600; font-size: 12px; }
+.group-edit:hover { color: var(--text); }
+
+.step-next {
+  display: flex; align-items: center; gap: 8px; padding: 10px; border: 1.5px dashed var(--line-strong); border-radius: 10px;
+  font-size: 13px; color: var(--text-faint); flex: none;
+}
+.loop-done {
+  display: flex; align-items: center; gap: 8px; border: 1.5px dashed var(--accent); border-radius: 10px; padding: 8px 12px;
+  font-size: 13px; color: var(--accent); font-weight: 600; flex: none; animation: bpIn 200ms ease-out both; text-align: left;
+}
+.loop-done:hover { background: var(--accent-tint); }

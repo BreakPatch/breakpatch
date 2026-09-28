@@ -1,0 +1,354 @@
+<!--
+  Badges. The CI badge (GitHub Actions) and the coverage badges (shields.io reading
+  raw.githubusercontent.com/BreakPatch/breakpatch/badges/*.json) both need to read this repo, so
+  while it's private they don't render for anyone outside it, and shields.io can't read the
+  coverage files at all. They work for everyone once the repo is public. The coverage files are
+  written to the orphan branch `badges` by .github/workflows/ci.yml on every push to main, with
+  the workflow's own token. The latest release badge fills in with the first public release.
+-->
+
+<p align="center">
+  <img src="app/src-tauri/icons/128x128@2x.png" width="104" height="104" alt="">
+</p>
+
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wordmark-dark.svg">
+    <img src="docs/assets/wordmark-light.svg" width="340" height="72" alt="breakpatch">
+  </picture>
+</h1>
+
+<p align="center"><strong>Here to find what breaks.</strong></p>
+
+<p align="center">
+  AI-powered UI testing that runs on your Mac. Click through your web app or describe a step in plain
+  words, replay it any time, and see exactly what broke. No code, no selectors, no cloud.
+</p>
+
+<p align="center">
+  <a href="https://github.com/BreakPatch/breakpatch/actions/workflows/ci.yml"><img src="https://github.com/BreakPatch/breakpatch/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/BreakPatch/breakpatch/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/BreakPatch/breakpatch/badges/coverage-app.json" alt="Coverage: app"></a>
+  <a href="https://github.com/BreakPatch/breakpatch/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/BreakPatch/breakpatch/badges/coverage-engine.json" alt="Coverage: engine"></a>
+  <a href="https://github.com/BreakPatch/breakpatch/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/BreakPatch/breakpatch/badges/coverage-shell.json" alt="Coverage: shell"></a>
+  <br>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licence-Apache%202.0-blue" alt="Licence: Apache 2.0"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%2014%2B%20%C2%B7%20Apple%20Silicon-lightgrey" alt="Platform: macOS 14 or later on Apple Silicon">
+  <a href="https://github.com/BreakPatch/breakpatch/releases/latest"><img src="https://img.shields.io/github/v/release/BreakPatch/breakpatch?label=release" alt="Latest release"></a>
+</p>
+
+<p align="center">
+  <a href="https://breakpatch.dev">Website</a> ·
+  <a href="https://breakpatch.dev/manual/">Manual</a> ·
+  <a href="https://breakpatch.dev/pricing/">Pricing</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#for-developers">For developers</a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: light)" srcset="site/assets/shots/recorder-light@2x.webp">
+    <img src="site/assets/shots/recorder-dark@2x.webp" width="880" alt="The Breakpatch recorder. The web app being tested is on the left, the recorded steps are on the right, and the AI assistant asks “Is this the New project button?” with Confirm and Try again.">
+  </picture>
+  <br>
+  <sub>The recorder. You described a step, and the AI on your Mac found the button.</sub>
+</p>
+
+## Install
+
+Open Terminal and paste:
+
+```sh
+curl -fsSL https://breakpatch.dev/install | sh
+```
+
+The command checks your Mac, downloads the latest release from
+[GitHub Releases](https://github.com/BreakPatch/breakpatch/releases), checks it against the
+release's checksums, puts Breakpatch in Applications and opens it. It never asks for your password,
+and you can [read the script](https://breakpatch.dev/install) first. This command is the only way
+to install Breakpatch: there's no disk image to download.
+
+On first launch you pick a folder for your tests, and setup gets the Mac ready by itself: the test
+browser and the AI assistant (about 3 GB, downloaded once). After that, Breakpatch updates itself.
+
+- **A given version:** `curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh`
+- **The newest beta:** `curl -fsSL https://breakpatch.dev/install | BREAKPATCH_CHANNEL=beta sh`
+  (without it you only ever get stable releases)
+- **Uninstall:** `curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall` (removes the
+  app; your tests and saved secrets stay where they are)
+
+Breakpatch is signed with its own certificate, the same one for every release, so updates keep
+access to your saved secrets. macOS doesn't quarantine files downloaded with `curl`, so it opens
+straight away.
+
+### Requirements
+
+| | |
+|---|---|
+| Mac | Apple Silicon (M1 or later) |
+| Memory | 16 GB or more (32 GB for the optional Larger AI assistant) |
+| macOS | 14 Sonoma or later |
+| Disk | About 3 GB for the AI assistant, plus the test browser |
+
+## What it does
+
+- **Describe a step, and the AI finds it.** Type “click the Done button”. A vision model on your Mac
+  finds that element on screen and outlines it; press **Confirm** or **Try again**. Clicking always
+  works too, with or without the AI.
+- **The AI names what you click.** Steps read “Click New project”, not coordinates, and each keeps a
+  plain *What to look for* that you can edit.
+- **The AI runs on your Mac.** Qwen3-VL 4B, an open-weights model, on Apple Silicon through MLX.
+  Your screens never leave the Mac, there are no API keys and no per-run fees, and it works
+  offline once it's downloaded.
+- **Screen checks you don't set up.** After every step, Breakpatch checks that the screen changed
+  the way it did when you recorded it. It's a perceptual comparison, not AI, so the same screen
+  always gets the same answer, and it leaves out the parts that change by themselves, like clocks
+  and carousels.
+- **Know what broke.** The first thing that's wrong stops the run. The report shows what was
+  expected next to what was on screen, and why, in plain words, with **Re-record this step** right
+  there.
+- **Every action a person does.** Click, double, long and right click, hover, swipe, scroll, drag
+  and drop, typing, uploads, downloads, tabs and popups, plus checkpoints, loops, shared steps
+  (record *Log in* once, use it everywhere) and suites.
+- **Tests are plain files.** Each test is a readable JSON file in a folder you pick. Keep the folder
+  in your project's Git repo and Git is your history.
+- **Anything your Mac can open.** Staging behind a VPN, an internal tool or `localhost`, with no
+  tunnel.
+
+**Privacy.** Your tests, screenshots and saved secrets stay on your Mac. Breakpatch sends only
+anonymous daily usage counts, with no names, addresses, screenshots or IDs. Turn them off in
+**Settings → Privacy** or with `BREAKPATCH_NO_USAGE=1`. The manual's
+[Privacy](https://breakpatch.dev/manual/#privacy) section lists exactly what's sent; the code is
+in [`usage.rs`](app/src-tauri/src/usage.rs) and [`countUsage.ts`](app/src/data/countUsage.ts).
+
+## Community and Team
+
+This repository is **Breakpatch Community**: free and open source. **Breakpatch Team** is the paid
+edition for teams, built from a separate private module on top of this one.
+
+| | Community | Team |
+|---|---|---|
+| Price | Free, Apache 2.0 | Paid, per person ([pricing](https://breakpatch.dev/pricing/)) |
+| People | One person, one Mac | Your whole team, with members and roles |
+| Recording, AI assistant, screen checks, reports | Yes | Yes |
+| Where tests live | JSON files in a folder you pick | A shared workspace in your company's own cloud |
+| History | The latest version and the last run of each test | Version history with restore, and the team's full run history |
+| When a button moves | The step fails and says why | Fixed automatically: the AI finds it again, and you accept or dismiss the fix |
+| Running | By hand: tests and suites | Also schedules, a local runner, run requests from CI, result messages and the `breakpatch-ci` command line |
+
+The exact line between them is in [docs/editions.md](docs/editions.md). Moving from Community to
+Team keeps your settings, saved secrets and AI assistant, and copies your tests folder into the
+workspace.
+
+## Documentation
+
+- **[The manual](https://breakpatch.dev/manual/)**: installing, recording, running, reading the
+  report, shared steps, suites, saved secrets, the AI assistant, privacy and troubleshooting. Its
+  source is [docs/manual.md](docs/manual.md).
+- [docs/editions.md](docs/editions.md): what's in each edition, and how the code is split.
+- [engine/PROTOCOL.md](engine/PROTOCOL.md): the protocol between the app and the engine.
+- [engine/README.md](engine/README.md) and [app/src-tauri/README.md](app/src-tauri/README.md): the
+  engine and the desktop shell in more depth.
+
+## For developers
+
+### Architecture
+
+```mermaid
+flowchart LR
+  UI["React UI<br/>app/src"] -- "Tauri commands and events" --> Shell["Tauri shell (Rust)<br/>app/src-tauri"]
+  Shell -- "JSON lines over stdio" --> Engine["Engine sidecar (Python)<br/>engine/"]
+  Engine -- "Playwright" --> Browser["Pinned Chromium"]
+  Engine -- "mlx-vlm" --> Model["Qwen3-VL, 4-bit MLX"]
+```
+
+| Part | What it does |
+|---|---|
+| **React UI** (`app/src`) | Every screen: Home, the recorder, the run view and report, suites, setup and settings. TypeScript, Vite and Zustand. It reaches the engine only through the shell. |
+| **Tauri shell** (`app/src-tauri`) | The native app: the window, starting and supervising the engine, saved secrets in the Keychain, the updater and the usage counts. Rust and Tauri 2. |
+| **Engine sidecar** (`engine/`) | A Python process the shell starts. It drives a pinned Chromium with Playwright using only screenshots, mouse and keyboard, records steps and their screen checks, replays tests, and asks the local model to describe or find targets. |
+| **Protocol** ([`engine/PROTOCOL.md`](engine/PROTOCOL.md)) | JSON Lines on stdin and stdout: requests with an id, exactly one response per id, and events such as live frames and progress. The shell forwards requests (`engine_request`) and passes events on to the UI. It's the contract: change it there first. |
+
+Screen checks are perceptual hashes of the areas each step affects, with the parts that change by
+themselves blanked out. The browser runs at a fixed viewport and scale, so coordinates and hashes
+replay the same way every time.
+
+### Repository layout
+
+```
+app/                  the desktop app
+  src/                React UI: screens/, components/, data/ (storage), engine/ (engine clients), edition/
+  src-tauri/          Tauri shell in Rust: src/, tauri.conf.json, capabilities/, icons/
+  scripts/            dev-sidecar.sh, a placeholder sidecar that runs engine/.venv
+engine/               the Python engine sidecar
+  src/breakpatch_engine/   protocol, browser, recorder, runner, screen checks, AI assistant, setup
+  tests/              pytest, with local test pages in tests/site/
+  PROTOCOL.md         the app ↔ engine contract
+scripts/              build-release.sh, the install command's tests, signing and edition helpers
+tools/model-test/     compares candidate AI models on real screenshots
+docs/                 the manual's source, editions, repository settings
+site/                 breakpatch.dev, a static site
+```
+
+### Quick start
+
+You need **Node 22**, **Python 3.11** and **Rust** (stable). The full app runs on a Mac; the UI
+preview, the engine tests and the shell's checks also run on Linux, with the WebKit development
+libraries listed in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+
+```sh
+git clone https://github.com/BreakPatch/breakpatch.git
+cd breakpatch
+```
+
+**The UI in a browser**, with a demo workspace and a simulated engine. No Python or Rust needed:
+
+```sh
+cd app
+npm ci
+npm run dev          # then open http://localhost:1420/?demo  (add &ready to skip setup)
+```
+
+**The engine**, in its own virtual environment:
+
+```sh
+cd engine
+python3.11 -m venv .venv
+.venv/bin/pip install -e '.[dev]'           # add ,mlx on an Apple Silicon Mac for the AI assistant
+.venv/bin/playwright install chromium       # or let the app's setup download it
+```
+
+CI and release builds install the exact, hash-checked versions in `engine/locks/` instead
+(`pip install --require-hashes`); `scripts/build-release.sh` does too. After changing dependencies
+in `engine/pyproject.toml`, run `scripts/lock-python.sh` (needs [uv](https://docs.astral.sh/uv/))
+and commit `engine/locks/`, or CI fails with a message saying so.
+
+**The whole app**: Tauri, Vite on port 1420, and the engine from `engine/.venv`:
+
+```sh
+cd app
+npm run tauri:dev    # writes the dev sidecar, then runs `tauri dev`
+```
+
+**The shell on its own**:
+
+```sh
+cd app/src-tauri
+cargo check && cargo clippy --all-targets -- -D warnings
+```
+
+### Running the tests
+
+| Part | Command | Notes |
+|---|---|---|
+| UI | `cd app && npx vitest run` | Vitest and Testing Library in jsdom. Also `npx tsc -b` and `npm run lint`. |
+| Engine | `cd engine && .venv/bin/python -m pytest -q` | About 90 seconds, most of it real headless Chromium. Browser tests are skipped when there's no browser, and nothing touches the network. |
+| Shell | `cd app/src-tauri && cargo test` | Run `sh ../scripts/dev-sidecar.sh` once first: the build needs a sidecar file to exist. |
+| Install command | `scripts/test-install.sh` | Runs the installer against fake releases, on Linux. |
+
+Coverage, measured the way CI measures it for the badges:
+
+```sh
+cd app && npx vitest run --coverage                  # summary in app/coverage/
+cd engine && .venv/bin/python -m pytest -q --cov     # follows the engine into its child processes
+cd app/src-tauri && cargo llvm-cov                   # needs cargo-llvm-cov and llvm-tools-preview
+```
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of them on every pull request,
+plus a Community release build on Linux.
+
+### Building
+
+To build the app the way releases are built, run one script from the repo root:
+
+```sh
+scripts/build-release.sh --edition community
+```
+
+It builds the engine sidecar (PyInstaller), the frontend and then the Tauri app, and checks that
+each part is the Community edition. On a Mac you get `Breakpatch.app` in
+`app/src-tauri/target/release/bundle/`; elsewhere, the app binary (`--no-bundle`, or
+`--bundles deb` for a Debian package). Without signing keys in the environment the Mac build is
+signed ad hoc, which is fine to try but not to share. `scripts/build-release.sh --help` lists the
+options, and [app/src-tauri/README.md](app/src-tauri/README.md#code-signing) explains signing.
+
+The script has two halves, which the release workflow runs as separate steps so that no
+third-party install code runs next to the signing keys: `--deps-only` installs everything (the
+hashed Python lock, `npm ci --ignore-scripts`, `cargo fetch --locked`) and refuses to run with
+signing variables set, and `--no-deps` builds offline with what's installed. Without either flag
+it runs both.
+
+### Releases, CI and the website: owner settings
+
+The workflows expect these GitHub settings; the release and the website don't deploy until they
+exist.
+
+- **Environment `release`** (Settings → Environments): required reviewer, deployment refs tags
+  `v*` only, holding the secrets `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`,
+  `BP_CODESIGN_P12`, `BP_CODESIGN_P12_PASSWORD` and `TEAM_REPO_TOKEN`. Delete the repository-level
+  copies once they're in it. Manual runs of the Release workflow are unsigned Community test
+  builds with no secrets.
+- **Environment `website`**: deployment branch `main`, holding `FIREBASE_HOSTING_SERVICE_ACCOUNT`.
+- **Move the website to its own Firebase project** (an owner step, security review C4). The site
+  `breakpatch-web` lives in the back office's project `breakpatch-backoffice`, and the role
+  "Firebase Hosting Admin" covers every Hosting site in a project, so the website's deploy account
+  can also replace the back office app and `/install`. With its own project, change `--project`
+  in `.github/workflows/website.yml` and the service account in the `website` environment.
+- `.github/CODEOWNERS` asks the owner to review workflows, scripts, the shell, the install
+  script, dependencies and lock files; turn on "Require review from Code Owners" in the `main`
+  ruleset for it to be enforced. Dependabot (`.github/dependabot.yml`) proposes weekly updates,
+  including the actions, which are pinned to commit SHAs.
+
+### Private beta
+
+While `BreakPatch/breakpatch` is private, the install command can't see its releases without a
+token. To install a beta the real way, on a Mac:
+
+```
+curl -fsSL https://breakpatch.dev/install | BREAKPATCH_GITHUB_TOKEN=<token> BREAKPATCH_CHANNEL=beta sh
+```
+
+- **The token:** a fine-grained personal access token (GitHub → Settings → Developer settings →
+  Fine-grained tokens), repository access `BreakPatch/breakpatch` only, permission Contents
+  read-only, expiring in 7 days. Revoke it when the beta is done. The command line goes into
+  your shell history with it.
+- **What the script does with it:** sends it as `Authorization: Bearer` to `https://api.github.com`
+  only (it refuses a `BREAKPATCH_API` elsewhere), from a 0600 header file that curl reads with
+  `-H @file` and that's deleted once the downloads are done, so it's never printed or in `ps`.
+  The files come from the API's asset addresses (`/releases/assets/{id}`, `Accept:
+  application/octet-stream`), which redirect to `objects.githubusercontent.com`; curl drops the
+  header on the way (another host). The checksum, signature and certificate checks are the same.
+  `scripts/test-install.sh` checks all of this against a stand-in for GitHub.
+- **Betas:** a tag with a `-` (`v0.1.0-beta.1`) is published as a GitHub prerelease, never
+  "Latest". So the stable updater feed (`releases/latest/download/latest.json`) and the plain
+  install command skip it. `BREAKPATCH_CHANNEL=beta` takes the newest release, betas included;
+  `BREAKPATCH_VERSION=0.1.0-beta.1` a given one. The tag must match `app/package.json`,
+  `app/src-tauri/Cargo.toml` and `engine/src/breakpatch_engine/__init__.py` (the release
+  workflow checks); `engine/pyproject.toml` has the PEP 440 spelling (`0.1.0b1`).
+- **Updates:** the in-app updater reads the feed without a token, so while the repository is
+  private it finds nothing. Run the command again for the next beta. Once a stable release is
+  out, beta copies update to it (0.1.0 is newer than 0.1.0-beta.1).
+- **When the repository is public** the token isn't needed: drop `BREAKPATCH_GITHUB_TOKEN` and
+  delete the token. The script's token mode can go then too.
+
+### Roadmap
+
+What's planned is tracked as
+[GitHub issues with the `roadmap` label](https://github.com/BreakPatch/breakpatch/issues?q=is%3Aissue+label%3Aroadmap).
+
+### Contributing
+
+Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: it covers
+setting up, the product's voice for UI text, tests, and the few things we won't merge (such as
+selector-based automation: Breakpatch works from pixels only).
+
+### Security
+
+Please don't report security problems in public issues. Email
+[support@breakpatch.dev](mailto:support@breakpatch.dev) instead; [SECURITY.md](SECURITY.md) has the
+details.
+
+## Licence
+
+[Apache 2.0](LICENSE). The AI model, Qwen3-VL by the Qwen team, is Apache 2.0 too.
+
+The ear mark is Mora's, our brindle dog, who also finds things that are broken.

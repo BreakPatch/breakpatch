@@ -1,0 +1,36 @@
+/* Shared small pieces (components/common). */
+.cm-rel { position: relative; }
+
+.cm-chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 28px; align-items: flex-start; }
+.cm-chip { font-weight: 600; }
+.cm-chip .icon { font-size: 16px; }
+
+.cm-tally { display: flex; gap: 14px; font-size: 13px; color: var(--text-muted); }
+.cm-tally > span { display: inline-flex; align-items: center; gap: 5px; }
+.cm-tally .icon { font-size: 16px; }
+
+.cm-filter { padding: 6px 10px 6px 12px; }
+.cm-filter .icon { font-size: 17px; }
+
+.cm-search .input { padding-top: 7px; padding-bottom: 7px; font-size: 14px; border-radius: var(--r-row); }
+.cm-search .input-wrap > .input.has-lead { padding-left: 34px; }
+.cm-search .input-wrap > .icon.lead { left: 10px; font-size: 18px; }
+
+.cm-sizes { display: flex; gap: 8px; }
+.cm-size {
+  flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--r-input);
+  border: 1.5px solid var(--line-strong); text-align: left; transition: border-color var(--t-fast) ease-out, background var(--t-fast) ease-out;
+}
+.cm-size:hover { border-color: var(--accent); }
+.cm-size[aria-checked="true"] { border-color: var(--accent); background: var(--selected); }
+.cm-size-name { font-size: 14px; font-weight: 600; }
+.cm-size-px { font-size: 12px; color: var(--text-muted); }
+
+.cm-confirm-text { font-size: 14px; color: var(--text-muted); line-height: 1.5; margin-top: -6px; }
+
+.cm-impact { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-input); max-height: 380px; overflow: auto; }
+.cm-impact li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); font-size: 14px; }
+.cm-impact li:last-child { border-bottom: 0; }
+.cm-impact li.latest .icon, .cm-impact li.latest .cm-impact-mode { color: var(--accent); }
+.cm-impact li.pinned .icon, .cm-impact li.pinned .cm-impact-mode { color: var(--text-faint); }
+.cm-impact-mode { font-size: 12px; font-weight: 600; white-space: nowrap; }

@@ -1,0 +1,114 @@
+/* Breakpatch design tokens. Values from the design handoff README (dark is the default). */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg-sunk: #100D0B;
+  --bg: #171412;
+  --surface: #211C19;
+  --raised: #2C2521;
+  --selected: #332A25;
+  --line: #3A322C;
+  --line-soft: #2A231F;
+  --line-strong: #4A3F37;
+  --text: #F6EFE9;
+  --text-2: #E9DFD6;
+  --text-muted: #CFC4BA;
+  --text-faint: #A3978C;
+  --accent: #E0714A;
+  --accent-hover: #B8502D;
+  --on-accent: #1A0E08;
+  --passed: #8CC56B;
+  --fixed: #E9B949;
+  --failed: #F2667A;
+  --running: #6CB8D6;
+
+  /* Tints: status and accent colours at 10-16 % alpha */
+  --accent-tint: rgba(224, 113, 74, .14);
+  --passed-tint: rgba(140, 197, 107, .15);
+  --fixed-tint: rgba(233, 185, 73, .15);
+  --failed-tint: rgba(242, 102, 122, .14);
+  --running-tint: rgba(108, 184, 214, .14);
+  --ring-accent: rgba(224, 113, 74, .5);
+
+  --scrim: rgba(16, 13, 11, .72);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, .35);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-sunk: #EFE8E1;
+  --bg: #FBF7F3;
+  --surface: #FFFFFF;
+  --raised: #F3ECE5;
+  --selected: #FBEAE2;
+  --line: #E6DCD2;
+  --line-soft: #EFE7DF;
+  --line-strong: #D9CCBF;
+  --text: #221A15;
+  --text-2: #3A2E26;
+  --text-muted: #5A4C42;
+  --text-faint: #7D6E62;
+  --accent: #B8502D;
+  --accent-hover: #9A3F20;
+  --on-accent: #FFFFFF;
+  --passed: #3E7A2A;
+  --fixed: #8A6410;
+  --failed: #B42B45;
+  --running: #1F6D8C;
+
+  --accent-tint: rgba(184, 80, 45, .12);
+  --passed-tint: rgba(62, 122, 42, .12);
+  --fixed-tint: rgba(138, 100, 16, .12);
+  --failed-tint: rgba(180, 43, 69, .10);
+  --running-tint: rgba(31, 109, 140, .11);
+  --ring-accent: rgba(184, 80, 45, .45);
+
+  --scrim: rgba(34, 26, 21, .45);
+  --shadow-pop: 0 8px 24px rgba(60, 40, 20, .14);
+}
+
+/*
+ * Increase contrast (macOS Accessibility → Display): firmer lines and no faint text, so borders
+ * and meta text read without relying on subtle tone steps. The accents and statuses stay as designed.
+ */
+@media (prefers-contrast: more) {
+  :root, :root[data-theme="dark"] {
+    --line: #5E5249; --line-soft: #463B34; --line-strong: #85766A;
+    --text-muted: #E9DFD6; --text-faint: #CFC4BA;
+    --scrim: rgba(16, 13, 11, .85);
+  }
+  :root[data-theme="light"] {
+    --line: #B9A999; --line-soft: #D3C5B8; --line-strong: #8C7B6D;
+    --text-muted: #3A2E26; --text-faint: #5A4C42;
+    --scrim: rgba(34, 26, 21, .62);
+  }
+}
+/* Reduce transparency: the dialog scrim is near-solid, so the screen behind doesn't show through. */
+@media (prefers-reduced-transparency: reduce) {
+  :root, :root[data-theme="dark"] { --scrim: rgba(16, 13, 11, .92); }
+  :root[data-theme="light"] { --scrim: rgba(34, 26, 21, .72); }
+}
+
+:root {
+  --font: 'Bricolage Grotesque', system-ui, -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --r-window: 14px;
+  --r-card: 14px;
+  --r-dialog: 16px;
+  --r-input: 12px;
+  --r-button: 10px;
+  --r-row: 8px;
+  --r-check: 5px;
+  --r-pill: 100px;
+
+  --titlebar-h: 52px;
+  --browserbar-h: 44px;
+  --steps-w: 380px;
+  --settings-side-w: 220px;
+  --queue-w: 420px;
+  --suite-side-w: 460px;
+
+  --ease: cubic-bezier(.2, .7, .3, 1);
+  --t-fast: 150ms;
+}

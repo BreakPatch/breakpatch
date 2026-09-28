@@ -1,0 +1,25 @@
+.window { height: 100%; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+.titlebar {
+  height: var(--titlebar-h); flex: none; background: var(--surface); border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 14px; padding: 0 16px; position: relative; z-index: 20;
+}
+.traffic { display: flex; gap: 8px; margin-right: 10px; }
+.traffic span { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.traffic-space { width: 64px; height: 100%; flex: none; }
+.titlebar-sep { width: 1px; height: 22px; background: var(--line); flex: none; }
+.titlebar-back { display: flex; color: var(--text-muted); border-radius: 6px; padding: 2px; }
+.titlebar-back { transition: background var(--t-fast) ease-out, color var(--t-fast) ease-out, transform 120ms ease-out; }
+.titlebar-back:hover { color: var(--text); background: var(--raised); }
+.titlebar-back:active { color: var(--text); background: var(--selected); transform: scale(.96); }
+.titlebar-title { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.titlebar-title h1 { margin: 0; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.titlebar-crumb { font-size: 12px; color: var(--text-faint); white-space: nowrap; }
+.titlebar-actions { display: flex; align-items: center; gap: 10px; }
+.hairline { height: 3px; flex: none; background: var(--line-soft); }
+.hairline > div { height: 100%; transition: width 400ms ease-out, background var(--t-fast); }
+.hairline.running > div { background: var(--running); }
+.hairline.passed > div { background: var(--passed); }
+.hairline.failed > div { background: var(--failed); }
+.window-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; position: relative; }
+.page { padding: 32px 40px; display: flex; flex-direction: column; gap: 24px; animation: bpIn 300ms ease-out both; }
+.page-title { font-size: 26px; font-weight: 600; letter-spacing: -0.015em; margin: 0; }

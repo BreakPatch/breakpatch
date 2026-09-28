@@ -1,0 +1,115 @@
+"""Paths and timings. Every path can be overridden with an environment variable (tests do)."""
+from __future__ import annotations
+
+import os
+import sys
+from dataclasses import dataclass, fields, replace
+from pathlib import Path
+
+
+def is_release() -> bool:
+    """True in a packaged sidecar (PyInstaller sets `sys.frozen`, Nuitka `__compiled__`): the
+    development switches below (`BP_NO_SANDBOX`, `HF_ENDPOINT`, `HF_TOKEN`) are ignored there."""
+    return bool(getattr(sys, "frozen", False)) or "__compiled__" in globals()
+
+
+def dev_env(name: str) -> str | None:
+    """An environment variable that only development runs may use; None in a release build."""
+    if is_release():
+        return None
+    return os.environ.get(name) or None
+
+
+def app_home() -> Path:
+    """Base folder for everything the engine keeps on disk."""
+    env = os.environ.get("BP_HOME")
+    if env:
+        return Path(env).expanduser()
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Breakpatch"
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "Breakpatch"
+
+
+def models_dir() -> Path:
+    env = os.environ.get("BP_MODELS_DIR")
+    return Path(env).expanduser() if env else app_home() / "models"
+
+
+def browsers_dir() -> Path:
+    """Where Playwright's Chromium lives. An existing PLAYWRIGHT_BROWSERS_PATH wins (developer machines, CI)."""
+    env = os.environ.get("BP_BROWSERS_PATH") or os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    return Path(env).expanduser() if env else app_home() / "browsers"
+
+
+def screenshots_dir() -> Path:
+    """Failure and heal screenshots, kept locally for the report (spec §11.6)."""
+    env = os.environ.get("BP_SCREENSHOTS_DIR")
+    return Path(env).expanduser() if env else app_home() / "screenshots"
+
+
+def chromium_executable() -> str | None:
+    """Explicit Chromium binary (development only). Normally Playwright finds its pinned build."""
+    return os.environ.get("BP_CHROMIUM") or None
+
+
+def chromium_sandbox() -> bool:
+    """Chromium's own sandbox: always on in a release build and on macOS. Development runs can turn
+    it off with `BP_NO_SANDBOX=1`. On Linux, which is only for development and CI (the app ships for
+    macOS), it's off unless `BP_SANDBOX=1`: containers and CI runners can't start it (no user
+    namespaces, or running as root)."""
+    if is_release():
+        return True
+    if os.environ.get("BP_NO_SANDBOX") == "1":
+        return False
+    if sys.platform.startswith("linux"):
+        return os.environ.get("BP_SANDBOX") == "1"
+    return True
+
+
+def apply_browser_env() -> None:
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers_dir())
+
+
+@dataclass(frozen=True)
+class Timings:
+    """All waits in seconds. The app chooses them (spec §5.7); tests shrink them."""
+    noise_watch: float = 2.5          # §10.3.1 watch before an action
+    noise_interval: float = 0.25
+    settle_interval: float = 0.15     # §11.1.3 frame spacing while settling
+    settle_frames: int = 3            # identical consecutive frames needed
+    settle_timeout: float = 8.0
+    late_change: float = 1.5         # recording: how long to wait for a delayed result when nothing changed
+    pre_wait: float = 3.0             # how long replay keeps retrying a pre-check before giving up
+    pre_interval: float = 0.2
+    long_click: float = 0.8
+    popup_timeout: float = 10.0
+    chooser_timeout: float = 5.0
+    download_timeout: float = 15.0
+    navigate_timeout: float = 30.0
+    http_timeout: float = 30.0
+    reload_diff: bool = True          # §10.3.5 background reload while recording
+    frame_min_gap: float = 0.1        # at most ~10 frames per second
+
+    @classmethod
+    def from_env(cls) -> "Timings":
+        t = cls.fast() if os.environ.get("BP_FAST") == "1" else cls()
+        return t
+
+    @classmethod
+    def fast(cls) -> "Timings":
+        return cls(noise_watch=0.5, noise_interval=0.1, settle_interval=0.08, settle_timeout=3.0,
+                   late_change=0.6, pre_wait=0.6, pre_interval=0.1, long_click=0.3, popup_timeout=3.0, chooser_timeout=2.0,
+                   download_timeout=3.0, navigate_timeout=10.0, http_timeout=5.0)
+
+    def with_(self, **kw) -> "Timings":
+        names = {f.name for f in fields(self)}
+        return replace(self, **{k: v for k, v in kw.items() if k in names})
+
+
+# Check sizes and tolerances (spec §12.1 example values).
+PRE_RADIUS = 32         # pre-check region is a 64 x 64 box around the target
+PRE_TOLERANCE = 6
+POST_TOLERANCE = 10
+CHECKPOINT_TOLERANCE = 8
+BOX_PAD = 16            # padding around changed areas
+DIFF_THRESHOLD = 24     # per-channel difference that counts as "changed"

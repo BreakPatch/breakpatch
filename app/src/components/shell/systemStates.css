@@ -1,0 +1,49 @@
+/* System banners and the error dialog (design "System States"). */
+.sys-banner {
+  flex: none; display: flex; align-items: center; gap: 12px; padding: 10px 20px;
+  border-bottom: 1px solid var(--sys-border); background: var(--sys-bg); animation: bpIn 220ms ease-out both;
+  line-height: normal; /* the design's banner text and buttons use the font's own line height */
+}
+.sys-banner > .icon { font-size: 22px; color: var(--sys-fg); }
+.sys-banner.accent { --sys-fg: var(--accent); --sys-bg: color-mix(in srgb, var(--accent) 12%, transparent); --sys-border: color-mix(in srgb, var(--accent) 35%, transparent); }
+.sys-banner.fixed { --sys-fg: var(--fixed); --sys-bg: color-mix(in srgb, var(--fixed) 10%, transparent); --sys-border: color-mix(in srgb, var(--fixed) 30%, transparent); }
+.sys-banner-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sys-banner-title { font-size: 14px; font-weight: 600; }
+.sys-banner-text { font-size: 13px; color: var(--text-muted); }
+.sys-banner-actions { display: flex; align-items: center; gap: 12px; }
+.sys-banner-btn { height: 31px; }
+.sys-banner-btn.btn-primary { padding: 0 12.5px; } /* design: 14 px sides with no border; ours has a 1.5 px transparent border */
+.sys-banner-btn.btn-secondary { padding: 0 10.5px; font-weight: 400; }
+
+.sys-offline-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; max-width: 760px; animation: bpIn 300ms ease-out both; }
+.sys-offline-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); }
+.sys-offline-head { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.sys-offline-head .icon { font-size: 18px; }
+.sys-offline-text { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+/* Error dialog */
+.sys-err { display: flex; flex-direction: column; gap: 18px; margin: 2px; }
+.sys-err-head { display: flex; align-items: flex-start; gap: 14px; }
+.sys-err-head > .icon { font-size: 30px; color: var(--failed); }
+.sys-err-title { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; line-height: normal; margin: 0; }
+.sys-err-reason { font-size: 15px; color: var(--text-muted); line-height: 1.5; margin: 0; }
+.sys-err-toggle { height: 22px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-muted); border-radius: 6px; align-self: flex-start; }
+.sys-err-toggle .icon { font-size: 18px; }
+.sys-err-toggle:hover { color: var(--text); }
+.sys-err-details {
+  font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--text-muted); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; white-space: pre; overflow: auto; max-height: 180px;
+  margin: 0; user-select: text; animation: bpIn 180ms ease-out both;
+}
+.sys-err-actions { display: flex; align-items: center; gap: 10px; line-height: normal; }
+/* Heights measured from the design (its icons keep the font's tall line box). */
+.sys-err-actions .btn { font-size: 15px; height: 42px; padding: 0 16px; gap: 8px; }
+.sys-err-actions .btn-primary { padding: 0 14.5px; }
+.sys-err-actions .btn-secondary { font-weight: 400; }
+.sys-err-close { font-size: 15px; color: var(--text-muted); padding: 9px 6px; border-radius: 8px; margin-left: auto; }
+.sys-err-close:hover { color: var(--text); }
+.sys-banner-line { display: block; font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }
+
+/* Community's one-time usage notice (UsageNotice.tsx). */
+.usage-notice-text { font-size: 15px; color: var(--text-2); line-height: 1.5; margin: 0; }
+.usage-notice-note { font-size: 13px; color: var(--text-faint); line-height: 1.5; margin: -8px 0 0; }
