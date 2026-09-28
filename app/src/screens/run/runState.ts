@@ -23,6 +23,8 @@ export interface RunView {
   passes: Record<string, Pick<StepRun, 'passedBy' | 'why'>>;
   /** Where each step's time went. */
   timings: Record<string, NonNullable<StepRun['timings']>>;
+  /** Steps whose checks covered nothing. */
+  unchecked: Record<string, string[]>;
   startedAt?: number;
   result?: 'pass' | 'fail';
   durationMs?: number;
@@ -37,7 +39,7 @@ export type RunAction =
   | { type: 'ended'; ev: RunEnded }
   | { type: 'error'; message: string };
 
-export const INITIAL_RUN: RunView = { phase: 'idle', ids: [], states: {}, reasons: {}, fixes: {}, screenshots: {}, passes: {}, timings: {} };
+export const INITIAL_RUN: RunView = { phase: 'idle', ids: [], states: {}, reasons: {}, fixes: {}, screenshots: {}, passes: {}, timings: {}, unchecked: {} };
 
 const FROM_RESULT: Record<StepRun['result'], StepState> = { passed: 'passed', healed: 'fixed', failed: 'failed', notRun: 'notRun' };
 
@@ -56,6 +58,7 @@ export function runReducer(s: RunView, a: RunAction): RunView {
       if (state === 'fixed') next.fixes = { ...s.fixes, [ev.stepId]: { oldAt: ev.oldAt, newAt: ev.newAt } };
       if (ev.screenshot) next.screenshots = { ...s.screenshots, [ev.stepId]: ev.screenshot };
       if (ev.timings) next.timings = { ...s.timings, [ev.stepId]: ev.timings };
+      if (ev.unchecked?.length) next.unchecked = { ...s.unchecked, [ev.stepId]: ev.unchecked };
       if (ev.passedBy) next.passes = { ...s.passes, [ev.stepId]: { passedBy: ev.passedBy, why: ev.why } };
       if (state === 'failed') {
         if (ev.reason) next.reasons = { ...s.reasons, [ev.stepId]: ev.reason };

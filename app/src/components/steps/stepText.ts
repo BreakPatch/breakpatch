@@ -26,6 +26,9 @@ export function stepIcon(s: Pick<Step, 'action' | 'nav' | 'secretRef'>): string 
   return actionInfo(s.action)?.icon ?? 'radio_button_checked';
 }
 
+/** A step whose check covered nothing (it compares nothing): shown on the step, in amber. */
+export const UNCHECKED_NOTE = "This step's check covers nothing. Re-record it.";
+
 /** A typed value written into a masked field reads as dots in the list (an eye shows it). */
 export const MASKED_LABEL = 'Write "••••••••"';
 

@@ -32,11 +32,12 @@ export function BrandPanel({ heading, line = 'Tests your web apps by looking at 
 }
 
 /** Two columns: brand panel and the centred content. */
-export function GateSplit({ brand, width, children }: { brand?: ReactNode; width: number; children: ReactNode }) {
+/** `top`: the content starts at a fixed place and grows downward (setup, whose rows gain details). */
+export function GateSplit({ brand, width, children, top }: { brand?: ReactNode; width: number; children: ReactNode; top?: boolean }) {
   return (
     <GateWindow className="gi-split">
       {brand ?? <BrandPanel />}
-      <main className="gi-main">
+      <main className={'gi-main' + (top ? ' top' : '')}>
         <div className="gi-content" style={{ width }}>{children}</div>
       </main>
     </GateWindow>

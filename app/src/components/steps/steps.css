@@ -26,6 +26,10 @@
 .step-card.drop-after::after { bottom: -5px; }
 
 .step-head { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 9px; cursor: pointer; min-width: 0; }
+/* One height for every row, whatever its status or note says: nothing jumps while a test runs (DESK-14). */
+.step-card:not(.sel) .step-head:not(:has(.step-note.full)) { height: 52px; box-sizing: border-box; }
+.step-head > * { min-width: 0; }
+.step-status, .group-toggle { white-space: nowrap; flex: none; }
 .step-head:focus-visible { outline-offset: 0; }
 .step-head[draggable="true"] { cursor: grab; }
 .step-n { width: 18px; flex: none; font-size: 12px; color: var(--text-faint); text-align: right; font-variant-numeric: tabular-nums; }
@@ -88,6 +92,8 @@
 .group-toggle:hover { color: var(--text); background: var(--raised); }
 .group-children { display: flex; flex-direction: column; gap: 2px; padding: 0 10px 10px 38px; cursor: default; }
 .group-child { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-left: 2px solid var(--line-strong); font-size: 13px; color: var(--text-muted); min-width: 0; }
+/* A shared step's name in full, wrapped (a saved secret's name was cut off, DESK-12). */
+.group-child .gc-label { white-space: normal; overflow-wrap: anywhere; }
 .group-child .gc-n { width: 26px; flex: none; color: var(--text-faint); font-size: 12px; }
 .group-foot { display: flex; align-items: center; gap: 6px; padding: 8px 8px 0; font-size: 12px; color: var(--text-faint); }
 .group-edit { color: var(--accent); font-weight: 600; font-size: 12px; }
@@ -113,7 +119,7 @@
   font: inherit; font-size: 13px; color: var(--text); background: var(--raised); border: 1px solid var(--line-strong);
   border-radius: var(--r-pill); padding: 3px 10px; cursor: pointer; max-width: 100%;
 }
-.expect-add-note { font-size: 12px; color: var(--accent); font-weight: 600; }
+.expect-add-note { font-size: 12px; color: var(--accent); font-weight: 600; white-space: nowrap; flex: none; }
 .expect-add-note:hover { color: var(--text); }
 .step-more { position: relative; margin-left: auto; }
 .step-confirm { font-size: 13px; color: var(--failed); }

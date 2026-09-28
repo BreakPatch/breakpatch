@@ -70,10 +70,10 @@ describe('the open step card', () => {
     expect(screen.queryAllByTitle('Add a step here')).toHaveLength(0);
   });
 
-  it('drops "Not played since the change" once the step shows as passed, and adds "Try it" next to Added', () => {
+  it('drops "Not played since the change" once the step shows as passed; no "Try it" crowding "Added"', () => {
     panel({ selectedId: null, unplayedIds: new Set(['w', 'n']), statuses: { w: 'passed', a: 'added' } });
     expect(screen.getAllByText('Not played since the change. Run the test to check them.')).toHaveLength(1);
-    expect(screen.getByText('Try it')).toBeInTheDocument();
+    expect(screen.queryByText('Try it')).toBeNull();                 // Play this step does it (DESK-13)
   });
 });
 

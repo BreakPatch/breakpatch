@@ -16,6 +16,8 @@ import { addressOf, useBrowserSession } from './browserSession';
 import { hasFeature } from '../../edition';
 import { filesDir } from '../../lib/testFiles';
 import { editorStatuses, playUpToFirst, useEditorRun, type EditorRunDone } from './editorRun';
+import { checksNothing, UNCHECKED_NOTE } from '../run/reasons';
+import { preorder } from '../run/resolve';
 import { getEngine } from '../../engine';
 import { recordedOnForSave } from './recordedOn';
 
@@ -137,6 +139,8 @@ export default function RecorderScreen() {
   const { statuses, notes: runNotes } = editorStatuses(editorRun.view, rec.steps, editorRun.mode);
   const notes = { ...runNotes };
   for (const id of rec.handPlayed) if (!notes[id]) notes[id] = 'Played on a page set up by hand';
+  // Steps saved with a check that covers nothing (a whole-screen ignore zone): say so, to re-record.
+  for (const s of preorder(rec.steps)) if (!notes[s.id] && checksNothing(s, viewport)) notes[s.id] = UNCHECKED_NOTE;
   const n = (id: string) => numberOf(rec.steps, id);
   let footer = null;
   if (editorRun.running) footer = <div className="rec-runfoot" role="status"><span className="grow">{editorRun.mode === 'play' ? 'Playing the steps in this browser…' : 'Running the test in this browser…'}</span></div>;

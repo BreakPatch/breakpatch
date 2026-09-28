@@ -15,6 +15,20 @@ const VERB: Partial<Record<Step['action'], string>> = {
   write: 'write in', drag: 'drag', swipe: 'swipe', scroll: 'scroll', upload: 'upload to',
 };
 
+/** A step whose check covered nothing: said on the step, never a silent pass. */
+export { UNCHECKED_NOTE } from '../../components/steps/stepText';
+
+/** Whether a step's own checks leave anything to compare (DESK-01: a whole-screen ignore zone). */
+export function checksNothing(step: Pick<Step, 'action' | 'pre' | 'post' | 'region' | 'ignore'>, vp = { width: 1440, height: 900 }): boolean {
+  const ignore = step.ignore ?? [];
+  if (!ignore.length) return false;
+  const regions = [step.pre?.region, step.post?.region, step.action === 'checkpoint' || step.action === 'waitUntil' ? step.region : undefined]
+    .filter((r): r is NonNullable<typeof r> => !!r);
+  if (!regions.length) return false;
+  const covered = (r: number[]) => ignore.some(b => b[0] <= r[0] && b[1] <= r[1] && b[2] >= Math.min(r[2], vp.width) && b[3] >= Math.min(r[3], vp.height));
+  return regions.every(covered);
+}
+
 /** Over this, a step says where its time went. */
 export const SLOW_MS = 2000;
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)} s`;

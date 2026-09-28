@@ -50,6 +50,8 @@ export interface StepRowProps {
   dropEdge?: 'before' | 'after' | null;
   /** Fade up 8 px when it first appears. */
   fresh?: boolean;
+  /** Show the whole note, wrapped (the report's reasons). */
+  noteWrap?: boolean;
 }
 
 export function StepRow(p: StepRowProps) {
@@ -75,7 +77,7 @@ export function StepRow(p: StepRowProps) {
         <div className="step-main">
           <div className={'step-label' + (faintLabel ? ' faint' : '')}>{step.label}</div>
           {/* Open (the card expanded): the whole note, wrapped. Closed: one line, the rest on hover. */}
-          {p.note && <div className={'step-note tone-' + (p.noteTone ?? 'muted') + (p.children ? ' full' : '')} title={typeof p.note === 'string' ? p.note : undefined}>{p.note}</div>}
+          {p.note && <div className={'step-note tone-' + (p.noteTone ?? 'muted') + (p.children || p.noteWrap ? ' full' : '')} title={typeof p.note === 'string' ? p.note : undefined}>{p.note}</div>}
         </div>
         {p.trailing}
         {st && (

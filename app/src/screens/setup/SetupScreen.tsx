@@ -109,7 +109,7 @@ export default function SetupScreen() {
   );
 
   return (
-    <GateSplit width={500} brand={brand}>
+    <GateSplit width={500} brand={brand} top>
       <div className="gi-head" style={{ gap: 6 }}>
         <h1 className="gi-title" aria-live="polite">{heading}</h1>
         <p className="gi-lede">{lede}</p>

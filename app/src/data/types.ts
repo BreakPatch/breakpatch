@@ -175,6 +175,8 @@ export interface StepRun {
   why?: string;
   /** Where the step's time went (engine run.step `timings`). */
   timings?: StepTimings;
+  /** Checks that had nothing left to compare (their ignore zones cover them), so they were skipped. */
+  unchecked?: string[];
 }
 
 /** A step's phases in a run, in ms: the check before it, the action, waiting for the page to settle, the check after. */

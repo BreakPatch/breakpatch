@@ -214,3 +214,26 @@ export function seedMembers(): Member[] {
     { ...people.ci, role: 'ci', lastActive: at('14:52') },
   ];
 }
+
+/**
+ * The demo as the Community edition shows it (DESK-17): no Team-only results. Fixed steps read as
+ * passed, runs from the local runner or CI are this Mac's own, and there are no schedules, no run
+ * queue and no suite webhooks.
+ */
+export function communityDemo<S extends { tests: Test[]; runs: Run[]; suites: Suite[]; suiteRuns: SuiteRun[]; runner: unknown; queue: unknown[] }>(st: S): S {
+  const mine = people.maria;
+  return {
+    ...st,
+    tests: st.tests.map(t => (t.lastRun ? { ...t, lastRun: { ...t.lastRun, result: t.lastRun.result === 'healed' ? 'pass' : t.lastRun.result, by: mine.name } } : t)),
+    runs: st.runs.map(r => ({
+      ...r, source: 'desktop', startedBy: mine, machine: "Maria's MacBook Pro", healedCount: 0,
+      steps: r.steps.map(s => (s.result === 'healed' ? { stepId: s.stepId, result: 'passed' as const } : s)),
+    })),
+    suites: st.suites.map(s => ({ ...s, schedule: null, resultUrl: undefined })),
+    suiteRuns: st.suiteRuns.filter(r => r.result !== 'replaced').map(r => ({
+      ...r, requestedBy: mine.name, result: r.result === 'passed_with_fixes' ? 'passed' : r.result,
+      counts: { ...r.counts, passed: r.counts.passed + r.counts.fixed, fixed: 0 },
+    })),
+    runner: null, queue: [],
+  };
+}

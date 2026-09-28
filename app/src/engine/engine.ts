@@ -93,7 +93,7 @@ export interface RunStepEvent {
   runId: string; index: number; stepId: string;
   state: 'running' | 'looking' | 'passed' | 'healed' | 'failed';
   reason?: StepRun['reason']; oldAt?: Point; newAt?: Point; screenshot?: string;
-  passedBy?: StepRun['passedBy']; why?: string; timings?: StepRun['timings'];
+  passedBy?: StepRun['passedBy']; why?: string; timings?: StepRun['timings']; unchecked?: string[];
 }
 export interface RunEnded {
   runId: string; result: 'pass' | 'fail'; durationMs: number; steps: StepRun[];

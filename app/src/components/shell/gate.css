@@ -22,6 +22,8 @@
 
 /* Right side */
 .gi-main { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: auto; position: relative; z-index: 1; padding: 40px 24px; }
+/* The setup list gains details as it goes: it's anchored at the top so it grows downward (DESK-15). */
+.gi-main.top { align-items: flex-start; padding-top: max(40px, 14vh); }
 .gi-content { display: flex; flex-direction: column; gap: 24px; max-width: 100%; animation: bpIn 300ms ease-out both; }
 .gi-head { display: flex; flex-direction: column; gap: 8px; }
 .gi-title { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }

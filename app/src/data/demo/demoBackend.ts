@@ -1,10 +1,11 @@
 // In-memory backend for development, the browser preview and tests.
 // Behaves like the Firebase backend: live subscriptions, immutable versions, audit fields.
+import { edition } from '../../edition';
 import { AuthError, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type Unsubscribe } from '../backend';
 import type {
   App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
 } from '../types';
-import { people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
+import { communityDemo, people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
 
 export const DEMO_WORKSPACE: Workspace = {
   name: 'Acme',
@@ -50,6 +51,7 @@ export class DemoBackend implements Backend {
     this.st = opts.empty
       ? { user: opts.signedIn ? people.maria : null, apps: [], tests: [], versions: {}, groups: [], groupVersions: {}, runs: [], suites: [], runner: null, queue: [], suiteRuns: [], runRequests: [], members: [{ ...people.maria, role: 'admin', lastActive: Date.now() }] }
       : { user: opts.signedIn ? people.maria : null, apps: seedApps(), tests: t.tests, versions: t.versions, groups: g.groups, groupVersions: g.versions, runs: seedRuns(t.tests), suites: seedSuites(), runner: seedRunner(), queue: seedQueue(), suiteRuns: seedSuiteRuns(), runRequests: [], members: seedMembers() };
+    if (!opts.empty && edition.name === 'community') this.st = communityDemo(this.st);
   }
 
   // ---- plumbing ----

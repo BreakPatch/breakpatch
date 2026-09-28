@@ -40,10 +40,11 @@ export function AboutSection() {
   };
 
   const ready = updateReady ?? (result?.state === 'ready' ? result.version : null);
-  const browser = info ? (info.browser.version ? `${info.browser.version}, pinned` : 'Not installed') : '…';
+  // Plain words here; the exact versions are in Copy details (DESK-16).
+  const browser = info ? (info.browser.version ? 'Installed, the same version on every Mac' : 'Not installed') : '…';
   const ai = info ? (info.model.installed ? `${modelSize(info)}, same on every Mac` : 'Not downloaded') : '…';
   const mac = info ? `Apple silicon · ${info.memoryGb} GB · ${info.os}` : '…';
-  const library = online ? 'Connected' : 'Offline · changes wait until you’re back';
+  const library = online ? 'Online' : 'Offline · changes wait until you’re back';
 
   const details = () => [
     `Breakpatch ${version}${isTauri() ? '' : ' (browser preview)'}`,
@@ -86,7 +87,7 @@ export function AboutSection() {
       <div className="set-facts two">
         <Fact label="Test browser" value={browser} />
         <Fact label="AI assistant" value={ai} />
-        {local ? <Fact label="Tests folder" value={baseName(local.path)} /> : <Fact label="Shared library" value={library} />}
+        {local ? <Fact label="Tests folder" value={baseName(local.path)} /> : <Fact label="Team workspace" value={library} />}
         <Fact label="This Mac" value={mac} />
       </div>
 

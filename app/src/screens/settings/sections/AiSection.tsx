@@ -1,3 +1,4 @@
+import { hasFeature } from '../../../edition';
 import { useEffect, useState } from 'react';
 import { Button, Disc, Icon, Skeleton, StatusPill, useToast } from '../../../components/ui';
 import { getEngine, MODELS, type SystemInfo } from '../../../engine';
@@ -19,6 +20,8 @@ export function modelSize(info: SystemInfo | null): 'Standard' | 'Larger' {
 }
 
 export function AiSection() {
+  // Fixing moved buttons is Team only (DESK-08).
+  const fixing = hasFeature('autoFix');
   const info = useSystemInfo();
   const toast = useToast();
   const [confirm, setConfirm] = useState(false);
@@ -37,7 +40,7 @@ export function AiSection() {
           <Disc icon="auto_awesome" size={44} color="var(--accent)" />
           <div className="grow col" style={{ gap: 2 }}>
             <div style={{ fontSize: 16, fontWeight: 600 }}>AI assistant</div>
-            <div className="set-card-sub sm">Finds things on the page when you describe them, and fixes moved buttons during runs.</div>
+            <div className="set-card-sub sm">{fixing ? 'Names each step, finds what you describe, and fixes moved buttons during runs.' : 'Names each step and finds what you describe.'}</div>
           </div>
           {!info ? <Skeleton w={70} h={26} r={13} /> : installed ? <StatusPill status="passed">Ready</StatusPill> : <StatusPill status="failed">Not downloaded</StatusPill>}
         </div>
@@ -55,7 +58,7 @@ export function AiSection() {
 
       <div className="col" style={{ gap: 8 }}>
         <div><Button kind="danger" icon="delete" disabled={!installed} onClick={() => setConfirm(true)}>Remove from this Mac</Button></div>
-        <p className="set-note">Frees {size}. You won't be able to record tests or fix moved buttons until you download it again.</p>
+        <p className="set-note">Frees {size}. You won't be able to record tests{fixing ? ' or fix moved buttons' : ''} until you download it again.</p>
       </div>
 
       <Confirm open={confirm} onClose={() => setConfirm(false)} icon="delete"

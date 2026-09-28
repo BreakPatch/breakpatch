@@ -9,7 +9,7 @@ import type { Expect, Generated, SampleFile, Step } from '../../data/types';
 import { GENERATED, SAMPLES } from '../../engine/labels';
 import { Button, Icon, Menu } from '../ui';
 import { StepRow, type RowStatus } from './StepRow';
-import { defaultLabel, stepIcon, stepNote } from './stepText';
+import { defaultLabel, stepIcon, stepNote, UNCHECKED_NOTE } from './stepText';
 import { countRows, duplicateStep, flatRows, moveAfter, moveBefore, moveBy, removeStep, updateStep, type RowInfo } from './stepTree';
 import './steps.css';
 
@@ -145,7 +145,7 @@ export function StepsPanel(p: StepsPanelProps) {
     // The step being recorded can't be edited yet: it expands once it is added.
     const editable = !(edit && p.checkingId === s.id) && !p.locked;
     let note: ReactNode = p.notes?.[s.id] ?? stepNote(s, { range: r.range });
-    let tone: 'muted' | 'failed' | 'passed' | 'accent' = status === 'failed' ? 'failed' : 'muted';
+    let tone: 'muted' | 'failed' | 'passed' | 'accent' | 'fixed' = status === 'failed' ? 'failed' : note === UNCHECKED_NOTE ? 'fixed' : 'muted';
     // A step that shows as passed has been played since the change.
     if (edit && p.unplayedIds?.has(s.id) && !p.notes?.[s.id] && status !== 'passed' && status !== 'fixed') note = 'Not played since the change. Run the test to check them.';
     if (edit && p.rerecordingId === s.id) { note = 'Re-recording: do this step again on the page'; tone = 'accent'; }
@@ -165,11 +165,9 @@ export function StepsPanel(p: StepsPanelProps) {
         {children ? `${children.length} steps` : 'Shared'}<Icon name={groupOpen ? 'expand_less' : 'expand_more'} size={18} />
       </button>
     ) : edit && selected && !isGroup && editable ? <Icon name="expand_less" size={20} className="step-chev" /> : null;
-    // The step just added: "Try it" plays it once more from the page before it.
-    const tryIt = edit && status === 'added' && p.onPlayStep && !p.locked ? (
-      <button type="button" className="step-try" onClick={e => { e.stopPropagation(); p.onPlayStep!(s.id); }}>Try it</button>
-    ) : null;
-    const trailing = eye || tryIt ? <>{eye}{tryIt}{trailing0}</> : trailing0;
+    // (No "Try it" next to "Added": Play this step now plays up to it by itself, so it did the same
+    // thing and crowded the title, DESK-13.)
+    const trailing = eye ? <>{eye}{trailing0}</> : trailing0;
 
     const expanded = (
       <>
@@ -229,7 +227,7 @@ function GroupChildren({ number, steps, onEdit }: { number: number; steps?: Step
     <div className="group-children">
       {steps === undefined && <div className="group-child faint">Loading…</div>}
       {steps?.map((c, i) => (
-        <div key={c.id} className="group-child"><span className="gc-n">{number}.{i + 1}</span><Icon name={stepIcon(c)} size={16} /><span className="ellipsis">{c.label}</span></div>
+        <div key={c.id} className="group-child"><span className="gc-n">{number}.{i + 1}</span><Icon name={stepIcon(c)} size={16} /><span className="gc-label" title={c.label}>{c.label}</span></div>
       ))}
       <div className="group-foot">
         <Icon name="lock" size={14} />Read-only here
