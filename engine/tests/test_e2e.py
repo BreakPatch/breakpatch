@@ -738,3 +738,21 @@ async def test_no_blinking_cursor_so_typing_settles_at_once(site):
         await hx.call("browser.close")
     ended = await hx.run([step], site + "/field.html")
     assert ended["result"] == "pass", ended
+
+
+# ---------- a click on the live view is only a proposal until confirmed ----------
+
+async def test_propose_names_the_element_and_touches_nothing(site):
+    hx = Harness(FakeLocator(None))
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        await _latest_frame(hx)
+        got = await hx.call("record.propose", {"at": STILL_ADD})
+        assert got["box"] == [100, 200, 240, 244]                   # the Add button
+        assert got["name"] == "Create project button" and got["target"].startswith("Create project")
+        assert isinstance(got["frame"], int)
+        assert await hx.engine.browser.page.text_content("#n") == "Clicks: 0"   # nothing was clicked
+        quick = await hx.call("record.propose", {"at": [700, 580], "name": False})
+        assert "name" not in quick and "box" not in quick           # the page itself: no box
+    finally:
+        await hx.call("browser.close")

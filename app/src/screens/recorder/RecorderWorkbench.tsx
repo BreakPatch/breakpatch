@@ -42,8 +42,8 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
     <div className="rec-body">
       <div className="rec-left">
         <LiveView address={address} viewport={viewport} status={status} tool={loading ? 'none' : toolFor(rec.action)}
-          onPoint={rec.pagePoint} onDrag={rec.pageDrag} onBox={rec.pageBox} blocked={blocked}
-          markers={marker ? [marker] : []} candidate={rec.ai.state === 'result' ? rec.ai.box : null} thinking={rec.thinking} loading={loading} />
+          onPoint={rec.pagePoint} onDrag={rec.pageDrag} onBox={rec.pageBox} onScroll={rec.pageScroll} blocked={blocked}
+          markers={marker ? [marker] : []} candidate={rec.ai.state === 'result' || rec.ai.state === 'proposal' ? rec.ai.box : null} thinking={rec.thinking} loading={loading} />
         <AddStepBar rec={rec} appId={appId} allowGroups={allowGroups} onInsertGroup={insertGroup} frozen={run?.running ? 'The test is playing in this browser. Stop it, or wait for it to finish, to add steps.' : null} />
       </div>
       {loading ? (

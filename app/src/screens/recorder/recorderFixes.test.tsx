@@ -8,6 +8,7 @@ import type { Step } from '../../data/types';
 import { StepsPanel } from '../../components/steps';
 import { ActionMenu } from './ActionMenu';
 import { phaseText, useRecorder } from './useRecorder';
+import liveSource from '../../components/live/LiveView.tsx?raw';
 
 const fsModule = 'node:fs', urlModule = 'node:url', pathModule = 'node:path';
 const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync(path: string, enc: 'utf8'): string };
@@ -27,6 +28,7 @@ describe('a click is recorded against the frame it was made on', () => {
     const spy = vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: 's1', action: p.action, label: 'Click Next button', at: p.at }));
     const { result } = hook();
     act(() => { result.current.pagePoint([700, 500], 42); });
+    act(() => { result.current.confirmAi(); });
     await waitFor(() => expect(spy).toHaveBeenCalled());
     expect(spy.mock.calls[0][0]).toEqual({ action: 'click', at: [700, 500], frame: 42 });
     await waitFor(() => expect(result.current.steps[0]?.id).toBe('s1'));
@@ -39,6 +41,7 @@ describe('a click is recorded against the frame it was made on', () => {
     const onError = vi.fn();
     const { result } = hook(onError);
     act(() => { result.current.pagePoint([700, 500], 7); });
+    act(() => { result.current.confirmAi(); });
     await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.stringContaining('nothing was clicked')));
     expect(result.current.steps).toHaveLength(0);
     expect(result.current.busy).toBe(false);
@@ -170,5 +173,56 @@ describe('a failed step says why in full', () => {
     note = container.querySelector('.step-note')!;
     expect(note.className).not.toContain('full');
     expect(note.getAttribute('title')).toBe(why);
+  });
+});
+
+describe('nothing reaches the page until it is confirmed', () => {
+  it('a click on the page only proposes the step, named, and Confirm records it', async () => {
+    const rec = vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: 's9', action: p.action, label: p.label ?? 'Click here', at: p.at, target: p.target }));
+    const prop = vi.spyOn(getEngine(), 'propose').mockResolvedValue({ at: [700, 500], box: [600, 480, 800, 520], name: 'Next button', target: 'Next button, under the email field' });
+    const { result } = hook();
+    act(() => { result.current.pagePoint([700, 500], 3); });
+    expect(result.current.ai.state).toBe('proposal');
+    expect(result.current.ask).toBe('Click here?');
+    await waitFor(() => expect(result.current.ask).toBe('Click Next button?'));
+    expect(prop).toHaveBeenCalledWith([700, 500]);
+    expect(rec).not.toHaveBeenCalled();                                   // nothing was clicked yet
+    act(() => { result.current.pagePoint([610, 490], 4); });              // the same thing again: confirms
+    await waitFor(() => expect(rec).toHaveBeenCalledTimes(1));
+    expect(rec.mock.calls[0][0]).toEqual({ action: 'click', at: [700, 500], frame: 3, target: 'Next button, under the email field', label: 'Click Next button' });
+    await waitFor(() => expect(result.current.steps[0]?.label).toBe('Click Next button'));
+  });
+
+  it('Cancel and Try again leave the page alone', () => {
+    const rec = vi.spyOn(getEngine(), 'recordPoint');
+    vi.spyOn(getEngine(), 'propose').mockResolvedValue({ at: [1, 1] });
+    const { result } = hook();
+    act(() => { result.current.pagePoint([10, 10], 1); });
+    act(() => { result.current.cancelAi(); });
+    expect(result.current.ai.state).toBe('idle');
+    act(() => { result.current.pagePoint([10, 10], 1); });
+    act(() => { result.current.retryAi(); });
+    expect(result.current.ai.state).toBe('idle');
+    expect(result.current.retryNote).toBe(true);
+    expect(rec).not.toHaveBeenCalled();
+  });
+
+  it('scrolling over the page proposes a scroll step instead of scrolling it', () => {
+    const pointer = vi.spyOn(getEngine(), 'pointer');
+    const { result } = hook();
+    act(() => { result.current.pageScroll([400, 300], 0, 120, 2); });
+    act(() => { result.current.pageScroll([400, 300], 0, 180, 2); });
+    expect(result.current.ai.state).toBe('proposal');
+    expect(result.current.ask).toBe('Scroll down 300 px?');
+    expect(pointer).not.toHaveBeenCalled();
+  });
+
+  it('the live view sends nothing to the engine for a wheel', () => {
+    const pointer = vi.spyOn(getEngine(), 'pointer');
+    const onScroll = vi.fn();
+    const { container } = render(<LiveView address="x" viewport={vp} source="sample" onScroll={onScroll} />);
+    fireEvent.wheel(container.querySelector('.live-hit')!, { deltaY: 100 });
+    expect(pointer).not.toHaveBeenCalled();
+    expect(liveSource).not.toMatch(/\.pointer\(/);
   });
 });

@@ -29,6 +29,20 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
   const input = composerInput(action);
   const busy = rec.busy || rec.ai.state === 'thinking' || !!frozen;
 
+  // The bar that asks "Click Next button?": Enter confirms, Esc cancels (not while typing in a field).
+  const asking = rec.ai.state === 'result' || rec.ai.state === 'proposal';
+  useEffect(() => {
+    if (!asking) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && (el as HTMLInputElement).value !== ''));
+      if (e.key === 'Escape') { e.preventDefault(); rec.cancelAi(); }
+      else if (e.key === 'Enter' && !typing && !(el?.tagName === 'BUTTON')) { e.preventDefault(); rec.confirmAi(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [asking, rec]);
+
   useEffect(() => { void secrets.list().then(setSecretNames).catch(() => setSecretNames([])); }, []);
   useEffect(() => { if (action === 'write' && o.writeSource === 'secret' && !o.secretRef && secretNames[0]) rec.setOptions({ secretRef: secretNames[0] }); }, [action, o.writeSource, o.secretRef, secretNames, rec]);
 
@@ -151,6 +165,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
   const leadIcon = CLICK_FAMILY.has(action) ? 'auto_awesome' : actionInfo(action).icon;
   const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' : action === 'write' && o.writeSource !== 'typed' ? true : !!rec.text.trim());
 
+  if (rec.retryNote && !rr) hint = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click the page again to pick another spot.</>;
   if (frozen) hint = <><Icon name="play_arrow" size={16} className="rec-hint-icon" /><span className="grow">{frozen}</span></>;
   else if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span></>;
 
@@ -159,12 +174,13 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
       {/* Everything that comes and goes (AI bars, the chosen action's options) floats over the bottom of the
           page, never in the layout: the add step bar keeps one height and the page view never moves. */}
       <div className="rec-float">
-      {rec.ai.state === 'result' && (
+      {(rec.ai.state === 'result' || rec.ai.state === 'proposal') && (
         <div className="rec-ai rec-ai-result" role="status">
-          <Icon name="auto_awesome" size={20} className="rec-ai-icon" />
+          <Icon name={rec.ai.state === 'proposal' ? actionInfo(rec.ai.params.action).icon : 'auto_awesome'} size={20} className="rec-ai-icon" />
           <div className="grow rec-ai-text">{rec.ask}</div>
           <Button kind="primary" onClick={rec.confirmAi} autoFocus>Confirm</Button>
           <Button onClick={rec.retryAi}>Try again</Button>
+          <span className="rec-ai-keys">Enter confirms · Esc cancels</span>
           <button type="button" className="rec-ai-link" onClick={rec.cancelAi}>Cancel</button>
         </div>
       )}

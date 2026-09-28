@@ -70,6 +70,7 @@ class Engine:
             "record.point": self.record_point,
             "record.locate": self.record_locate,
             "record.checkpoint": self.record_checkpoint,
+            "record.propose": self.record_propose,
             "run.start": self.run_start,
             "run.stop": self.run_stop,
             "call.try": self.call_try,
@@ -159,6 +160,12 @@ class Engine:
             raise EngineError("bad_request", "Draw a box around what should be visible.")
         return {"step": await self._recording(
             lambda: self.recorder.checkpoint([int(v) for v in region], phase, p.get("frame")))}
+
+    async def record_propose(self, p: dict):
+        self._not_during_run()
+        if self._activity == "recording":
+            raise EngineError("busy", "The engine is still checking the last step.")
+        return await self.recorder.propose(p)
 
     async def record_locate(self, p: dict):
         self._not_during_run()

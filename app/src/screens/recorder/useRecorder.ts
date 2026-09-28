@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActionKind, Box, Direction, Generated, Point, SampleFile, Step, Viewport } from '../../data/types';
 import { demoEngine, getEngine, EngineError, type CheckingPhase, type RecordParams } from '../../engine';
 import { around, gesture, inside, sampleApp } from '../../components/live';
+import { actionInfo } from '../../engine/labels';
 import { appendStep, defaultLabel, findStep, flatRows, insertAfter, numberOf, removeStep, replaceStep, stepsBefore, updateStep } from '../../components/steps';
 import { POINT_KINDS, STICKY } from './actions';
 import { secrets } from '../../platform';
@@ -15,7 +16,12 @@ export type AiState =
   | { state: 'idle' }
   | { state: 'thinking'; text: string; what: string }
   | { state: 'result'; text: string; what: string; box: Box; at: Point; target: string; frame?: number }
-  | { state: 'notfound'; text: string; what: string };
+  | { state: 'notfound'; text: string; what: string }
+  /**
+   * A click, drag or scroll on the live view: nothing reached the page. The bar asks "Click Next
+   * button?" and the step is done and recorded only on Confirm (Enter, or the same spot again).
+   */
+  | { state: 'proposal'; params: RecordParams; frame?: number; box: Box; label: string; target?: string; named: boolean };
 
 export interface ActionOptions {
   writeSource: 'typed' | 'secret' | 'generated';
@@ -170,7 +176,8 @@ export function useRecorder({ viewport, onError, appUrl }: {
       const secretValues = extra.checkpoint ? undefined : await secretFor(params.secretRef, appUrl);
       const sent: RecordParams = { ...params, ...(secretValues ? { secrets: secretValues } : {}), ...(extra.frame !== undefined ? { frame: extra.frame } : {}),
         // Found with the AI assistant: the user's words are what to look for (the engine still names it).
-        ...(extra.target && !extra.checkpoint ? { target: extra.target } : {}) };
+        ...(extra.target && !extra.checkpoint ? { target: extra.target } : {}),
+        ...(extra.label && !extra.checkpoint && params.action !== 'checkpoint' ? { label: extra.label } : {}) };
       const got = extra.checkpoint ? await engine.recordCheckpoint(extra.checkpoint, extra.frame) : await engine.recordPoint(sent);
       const step: Step = { ...got, label: extra.label ?? (CLICKS.has(params.action) ? got.label : defaultLabel({ ...params, ...got, action: got.action })), target: extra.target ?? got.target ?? (params.action === 'write' ? 'The focused field' : undefined) };
       if (sample) sampleApp.perform(step, viewport);
@@ -218,8 +225,34 @@ export function useRecorder({ viewport, onError, appUrl }: {
     else { setAi({ state: 'notfound', text: t, what }); setText(t); }
   }
   const cancelAi = () => { aiToken.current++; setAi({ state: 'idle' }); };
-  const retryAi = () => { if (ai.state === 'result' || ai.state === 'notfound') void describe(ai.text); };
+
+  // ---------- Proposals: the page only gets what the user confirmed ----------
+  function propose(params: RecordParams, frame: number | undefined, box: Box, label: string, at?: Point) {
+    const token = ++aiToken.current;
+    setAi({ state: 'proposal', params, frame, box, label, named: !at || sample });
+    if (!at) return;
+    // The element's box and name come a moment later; the bar asks at once with "here".
+    void engine.propose(at).then(got => {
+      if (token !== aiToken.current) return;
+      setAi(a => a.state !== 'proposal' ? a : {
+        ...a, box: got.box ?? a.box, named: true,
+        ...(got.name ? { label: `${actionInfo(a.params.action).verb} ${got.name}`, target: got.target } : {}),
+      });
+    }).catch(() => { if (token === aiToken.current) setAi(a => (a.state === 'proposal' ? { ...a, named: true } : a)); });
+  }
+  function confirmProposal() {
+    if (ai.state !== 'proposal') return;
+    const a = ai; aiToken.current++; setAi({ state: 'idle' });
+    // Named by the AI assistant already: the engine needn't ask it again.
+    void record(a.params, { frame: a.frame, ...(a.target ? { label: a.label, target: a.target } : {}) });
+  }
+  const retryAi = () => {
+    if (ai.state === 'proposal') { cancelAi(); setRetryNote(true); return; }     // pick again on the page
+    if (ai.state === 'result' || ai.state === 'notfound') void describe(ai.text);
+  };
+  const [retryNote, setRetryNote] = useState(false);
   function confirmAi() {
+    if (ai.state === 'proposal') { confirmProposal(); return; }
     if (ai.state !== 'result') return;
     const a = ai; setAi({ state: 'idle' });
     const x = { target: a.target, frame: a.frame };
@@ -231,22 +264,43 @@ export function useRecorder({ viewport, onError, appUrl }: {
 
   // ---------- Page ----------
   const pageBusy = () => busyRef.current || ai.state === 'thinking';
-  // `frame`: the live view frame the user pressed on; the engine refuses the step if the page has changed since.
+  // Nothing a user does on the live view reaches the page: a click, drag or scroll proposes the step,
+  // and only Confirm does it. `frame`: the live view frame the user pressed on; the engine refuses
+  // the step if the page has changed since.
   function pagePoint(p: Point, frame?: number) {
     if (pageBusy()) return;
+    setRetryNote(false);
+    // The same spot again confirms.
+    if (ai.state === 'proposal' && ai.params.at && inside(p, ai.box)) { confirmProposal(); return; }
     if (ai.state !== 'idle') cancelAi();
     const kind: ActionKind = POINT_KINDS.has(action) && action !== 'swipe' && action !== 'scroll' ? action : 'click';
-    void record({ action: kind, at: p, ...(kind === 'upload' ? { sample: options.sample } : {}) }, { frame });
+    const params: RecordParams = { action: kind, at: p, ...(kind === 'upload' ? { sample: options.sample } : {}) };
+    propose(params, frame, around(p, 24), guessLabel(params, sample), p);
   }
   function pageDrag(from: Point, to: Point, frame?: number) {
     if (pageBusy()) return;
+    setRetryNote(false);
     if (ai.state !== 'idle') cancelAi();
-    if (action === 'drag') void record({ action: 'drag', from, to }, { frame });
+    const box = [Math.min(from[0], to[0]), Math.min(from[1], to[1]), Math.max(from[0], to[0]), Math.max(from[1], to[1])] as Box;
+    if (action === 'drag') { const params: RecordParams = { action: 'drag', from, to }; propose(params, frame, box, 'Drag and drop from here to there'); }
     else {
       const g = gesture(from, to);
       setOptions({ direction: g.direction, distance: g.distance });
-      void record({ action: action === 'scroll' ? 'scroll' : 'swipe', from, direction: g.direction, distance: g.distance }, { frame });
+      const params: RecordParams = { action: action === 'scroll' ? 'scroll' : 'swipe', from, direction: g.direction, distance: g.distance };
+      propose(params, frame, box, `${defaultLabel(params)} ${g.distance} px`);
     }
+  }
+  /** Scrolling on the live view proposes a scroll step (it adds up while the bar is open). */
+  function pageScroll(at: Point, dx: number, dy: number, frame?: number) {
+    if (pageBusy() || (!dx && !dy)) return;
+    const prev = ai.state === 'proposal' && ai.params.action === 'scroll' && ai.params.nav === undefined ? ai : null;
+    const vert = Math.abs(dy) >= Math.abs(dx);
+    const signed = (vert ? dy : dx) + (prev ? (prev.params.direction === 'up' || prev.params.direction === 'left' ? -1 : 1) * (prev.params.distance ?? 0) : 0);
+    const direction = vert ? (signed >= 0 ? 'down' : 'up') : (signed >= 0 ? 'right' : 'left');
+    const params: RecordParams = { action: 'scroll', from: prev?.params.from ?? at, direction, distance: Math.round(Math.abs(signed)) };
+    if (!params.distance) { cancelAi(); return; }
+    aiToken.current++;
+    setAi({ state: 'proposal', params, frame: prev?.frame ?? frame, box: around(params.from!, 24), label: `${defaultLabel(params)} ${params.distance} px`, named: true });
   }
   function pageBox(box: Box | null, at: Point, frame?: number) {
     if (pageBusy()) return;
@@ -293,11 +347,11 @@ export function useRecorder({ viewport, onError, appUrl }: {
     /** "Clicking…", "Waiting for the page…": what the step being recorded is doing now. */
     phaseText: busyId !== null ? phaseText(phase, busyAction) : null,
     stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
-    load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi,
+    load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi, pageScroll, retryNote,
     insertAfterId, setInsertAfter, unplayed, atStepId, played,
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),
     thinking: ai.state === 'thinking' ? thinkingText(ai.what) : null,
-    ask: ai.state === 'result' ? askText(ai.what) : null,
+    ask: ai.state === 'result' ? askText(ai.what) : ai.state === 'proposal' ? `${ai.label}?` : null,
     notFound: ai.state === 'notfound' ? notFoundText(ai.what) : null,
     busy: busyId !== null,
   };

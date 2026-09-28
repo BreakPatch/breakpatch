@@ -449,6 +449,34 @@ class BrowserSession:
             await mouse.move(float(at[0]), float(at[1]))
         await mouse.wheel(float(dx), float(dy))
 
+    async def element_box(self, at: Sequence[float]) -> list[int] | None:
+        """The border box of the element at `at` (viewport px), read through the DevTools protocol
+        so no page script runs or can answer. None when there's nothing there."""
+        page = await self.live()
+        cdp = None
+        try:
+            cdp = await self.context.new_cdp_session(page)
+            await cdp.send("DOM.enable")
+            got = await cdp.send("DOM.getNodeForLocation", {"x": int(at[0]), "y": int(at[1]),
+                                                            "includeUserAgentShadowDOM": False})
+            model = await cdp.send("DOM.getBoxModel", {"backendNodeId": got["backendNodeId"]})
+            q = model["model"]["border"]
+            xs, ys = q[0::2], q[1::2]
+            box = imaging.clamp_box([min(xs), min(ys), max(xs), max(ys)], self.width, self.height)
+            # The whole page or a huge wrapper says nothing about what was clicked.
+            if imaging.box_area(box) == 0 or imaging.box_area(box) > 0.5 * self.width * self.height:
+                return None
+            return box
+        except Exception as e:  # noqa: BLE001
+            log.debug("no element box at %s: %s", at, e)
+            return None
+        finally:
+            if cdp is not None:
+                try:
+                    await cdp.detach()
+                except Exception:  # noqa: BLE001
+                    pass
+
     async def type_text(self, text: str) -> None:
         await (await self.live()).keyboard.type(text, delay=10)
 

@@ -276,6 +276,24 @@ class Recorder:
                 "hash": imaging.region_hash(last, region, noise), "tolerance": config.CHECKPOINT_TOLERANCE,
                 "ignore": noise}
 
+    async def propose(self, p: dict) -> dict:
+        """What a click on the live view would act on, without touching the page: the element's
+        box and, with the AI assistant, its name. The app shows it as "Click Next button?" and
+        records the step only when the user confirms."""
+        self.b.require()
+        at = _point(p.get("at"))
+        if at is None:
+            raise EngineError("bad_request", "The engine received a position it couldn't read.")
+        out: dict = {"at": at, "frame": self.b.last_seq}
+        box = await self.b.element_box(at)
+        if box is not None:
+            out["box"] = box
+        if p.get("name") is not False:
+            got = await self._name(await self.b.shoot(), at)
+            if got:
+                out.update(name=got["name"], target=got["target"])
+        return out
+
     async def locate(self, description: str):
         if not description or not description.strip():
             raise EngineError("bad_request", "Describe what to look for.")

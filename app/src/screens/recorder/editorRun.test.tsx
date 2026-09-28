@@ -71,6 +71,7 @@ describe('new steps go where the page is', () => {
     const { result } = renderHook(() => useRecorder({ viewport: { width: 1440, height: 900 }, onError: vi.fn() }));
     act(() => { result.current.load(steps); result.current.setInsertAfter('a'); });
     act(() => { result.current.pagePoint([5, 5], 1); });
+    act(() => { result.current.confirmAi(); });
     await waitFor(() => expect(result.current.steps.map(s => s.id)).toEqual(['a', 'n1', 'L', 'c']));
     expect(result.current.insertAfterId).toBe('n1');
     expect([...result.current.unplayed].sort()).toEqual(['L', 'b', 'c']);

@@ -1,7 +1,7 @@
 // Simulated engine for the browser preview and tests. Timings follow the prototype:
 // "Checking the screen…" ~1 s, run steps ~750 ms each, AI thinking ~1.5 s.
 import type { Box, FailReason, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import type { CallReply, Engine, EngineEvents, LocateResult, RecordParams, RunStart, SetupTaskName, SystemInfo } from './engine';
+import type { CallReply, Engine, EngineEvents, LocateResult, Proposal, RecordParams, RunStart, SetupTaskName, SystemInfo } from './engine';
 import { edition } from '../edition';
 import { labelFor } from './labels';
 import { MODELS_DIR } from './paths';
@@ -93,6 +93,14 @@ export class DemoEngine implements Engine {
     const hit = this.targets.find(t => t.visible() && t.words.some(w => low.includes(w)));
     if (!hit) return null;
     return { box: hit.box, at: [(hit.box[0] + hit.box[2]) / 2, (hit.box[1] + hit.box[3]) / 2], target: hit.target };
+  }
+
+  async propose(at: Point, opts: { name?: boolean } = {}): Promise<Proposal> {
+    const hit = this.targets.find(t => t.visible() && inside(at, t.box));
+    if (!hit) return { at };
+    if (opts.name === false) return { at, box: hit.box };
+    await this.sleep(300);
+    return { at, box: hit.box, name: hit.label.replace(/^Click /, ''), target: hit.target };
   }
 
   async recordCheckpoint(region: Box): Promise<Step> {

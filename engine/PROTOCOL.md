@@ -145,6 +145,13 @@ The browser methods answer `busy` during a run.
 | `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
 | `record.locate` | `{ description }` | `{ box, at, target, frame } \| null` — AI assistant; `null` means not found |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
+| `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
+
+Nothing the user does on the live view reaches the page by itself: the app turns a click, drag or
+scroll into a proposed step ("Click Next button?"), using `record.propose` for the element's box
+(read through the DevTools protocol, no page script) and the AI assistant's name for it (skipped
+with `name: false`), and calls `record.point` only when the user confirms. The app no longer
+sends `browser.pointer`.
 
 `record.point` performs the action in the live browser and runs the automatic checks
 (spec §10.3): noise watch, pre-check hash around the target, the action, settle, blast

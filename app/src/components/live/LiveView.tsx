@@ -45,6 +45,8 @@ export interface LiveViewProps {
   onDrag?: (from: Point, to: Point, frame?: number) => void;
   /** A drawn box, or `null` with the point when the user only clicked. */
   onBox?: (box: Box | null, at: Point, frame?: number) => void;
+  /** Scrolling over the page (nothing reaches the page: the recorder proposes a scroll step). */
+  onScroll?: (at: Point, dx: number, dy: number, frame?: number) => void;
   /**
    * The page can't take a click now (a step is still being recorded): presses and scrolling do
    * nothing, and a press shows this text over the page for a moment.
@@ -103,7 +105,7 @@ export function LiveView(props: LiveViewProps) {
   const [blockedNote, setBlockedNote] = useState<string | null>(null);
   useEffect(() => { if (!blockedNote) return; const t = setTimeout(() => setBlockedNote(null), 2500); return () => clearTimeout(t); }, [blockedNote]);
   const pointer = usePagePointer({ tool, scale, vp, frameRef, source, seqRef, blocked: props.blocked ?? null, onBlocked: setBlockedNote,
-    onPoint: props.onPoint, onDrag: props.onDrag, onBox: props.onBox });
+    onPoint: props.onPoint, onDrag: props.onDrag, onBox: props.onBox, onScroll: props.onScroll });
 
   const pct = Math.round(scale * 100);
   const pageStyle = { width: vp.width, height: vp.height, transform: `scale(${scale})`, '--s': scale } as CSSProperties;
@@ -156,7 +158,7 @@ export function LiveView(props: LiveViewProps) {
           {tool !== 'none' && (
             <div className={'live-hit tool-' + tool + (pointer.hover ? ' on-target' : '') + (props.blocked ? ' blocked' : '')} aria-label="Live page. Click anything on the page to add a step."
               onPointerDown={pointer.down} onPointerMove={pointer.move} onPointerUp={pointer.up} onPointerLeave={pointer.leave}
-              onWheel={source === 'frames' ? pointer.wheel : undefined} />
+              onWheel={pointer.wheel} />
           )}
         </div>
       </div>
@@ -193,12 +195,13 @@ interface PointerOpts {
   seqRef: React.RefObject<number | undefined>;
   blocked: string | null; onBlocked: (note: string) => void;
   onPoint?: (p: Point, frame?: number) => void; onDrag?: (from: Point, to: Point, frame?: number) => void; onBox?: (box: Box | null, at: Point, frame?: number) => void;
+  onScroll?: (at: Point, dx: number, dy: number, frame?: number) => void;
 }
 
 /** A press that moves less than this (viewport px) counts as a click. */
 const CLICK_SLOP = 6;
 
-function usePagePointer({ tool, scale, vp, frameRef, source, seqRef, blocked, onBlocked, onPoint, onDrag, onBox }: PointerOpts) {
+function usePagePointer({ tool, scale, vp, frameRef, source, seqRef, blocked, onBlocked, onPoint, onDrag, onBox, onScroll }: PointerOpts) {
   const [start, setStart] = useState<Point | null>(null);      // pointer is down here
   const startSeq = useRef<number | undefined>(undefined);      // the frame the user saw when pressing
   const pendingSeq = useRef<number | undefined>(undefined);
@@ -261,7 +264,8 @@ function usePagePointer({ tool, scale, vp, frameRef, source, seqRef, blocked, on
       wheelAcc.current = acc;
       requestAnimationFrame(() => {
         const a = wheelAcc.current; wheelAcc.current = null;
-        if (a) getEngine().pointer('scroll', a.at, Math.round(a.dx), Math.round(a.dy)).catch(() => undefined);
+        // Never to the page itself: the user's scroll becomes a proposed step (or nothing).
+        if (a) onScroll?.(a.at, Math.round(a.dx), Math.round(a.dy), seqRef.current);
       });
     }
   };

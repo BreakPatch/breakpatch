@@ -22,6 +22,7 @@
 .rec-ai-result .rec-ai-text { font-weight: 600; }
 .rec-ai-notfound { background: color-mix(in srgb, var(--fixed) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--fixed) 35%, transparent); }
 .rec-ai-notfound .rec-ai-icon { color: var(--fixed); }
+.rec-ai-keys { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
 .rec-ai-link { font-size: 14px; color: var(--text-muted); padding: 6px; border-radius: 6px; }
 .rec-ai-link:hover { color: var(--text); }
 

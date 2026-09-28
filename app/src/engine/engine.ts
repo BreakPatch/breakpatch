@@ -32,7 +32,12 @@ export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' 
   frame?: number;
   /** What to look for, when the user already said it (a step found with the AI assistant). */
   target?: string;
+  /** The step's name, when the app already has one (the engine then doesn't ask the AI assistant). */
+  label?: string;
 };
+
+/** What a click on the live view would act on (nothing is done to the page): `record.propose`. */
+export interface Proposal { at: Point; frame?: number; box?: Box; name?: string; target?: string }
 
 /** `frame`: the live view frame the box was found on (pass it on when recording the step). */
 export interface LocateResult { box: Box; at: Point; target: string; frame?: number }
@@ -113,6 +118,8 @@ export interface Engine {
 
   recordPoint(p: RecordParams): Promise<Step>;
   locate(description: string): Promise<LocateResult | null>;
+  /** The element at a point and its name, without acting. `name: false` skips the AI assistant. */
+  propose(at: Point, opts?: { name?: boolean }): Promise<Proposal>;
   recordCheckpoint(region: Box, frame?: number): Promise<Step>;
 
   startRun(r: RunStart): Promise<void>;
