@@ -135,9 +135,14 @@ async def test_settle_waits_for_identical_frames_excluding_ignore():
     assert frame[225, 150].tolist() == [30, 90, 200]
 
 
-async def test_settle_times_out_when_the_clock_is_not_ignored():
+async def test_a_small_spot_that_keeps_changing_does_not_hold_settling_up():
+    """A clock or a caret the page draws itself (DESK-06): after it has changed on its own a few
+    times in the same small place it's left out of the wait. Something big still counts."""
     scr = FakeScreen(busy=0)
-    _frame, settled = await checks.settle(scr.shoot, None, interval=0.001, frames=3, timeout=0.05)
+    _frame, settled = await checks.settle(scr.shoot, None, interval=0.001, frames=3, timeout=0.5)
+    assert settled
+    busy = FakeScreen(busy=10_000)                  # a big area moving on every frame
+    _frame, settled = await checks.settle(busy.shoot, [[350, 5, 395, 25]], interval=0.001, frames=3, timeout=0.05)
     assert not settled
 
 

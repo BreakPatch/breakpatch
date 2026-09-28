@@ -2,8 +2,15 @@
 <body style="margin:0;font:16px sans-serif;background:#fff">
   <!-- A plain file input, as most sites have: clicking it opens the file picker. -->
   <input id="f" type="file" accept="image/*" style="position:absolute;left:40px;top:40px;width:300px;height:40px">
+  <!-- ?late=1: an "Add photo" button that opens the picker a second after the click, as Flutter does. -->
+  <button id="late" style="position:absolute;left:400px;top:40px;width:160px;height:40px">Add photo</button>
   <div id="names" style="position:absolute;left:40px;top:120px;width:500px;height:30px"></div>
   <script>
+    document.getElementById('late').onclick = function () {
+      setTimeout(function () { var i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*';
+        i.onchange = function () { document.getElementById('names').textContent = [...i.files].map(f => f.name + ' ' + f.size).join(', '); };
+        i.click(); }, 1000);
+    };
     document.getElementById('f').onchange = function (e) {
       document.getElementById('names').textContent = [...e.target.files].map(f => f.name + ' ' + f.size).join(', ');
     };

@@ -15,6 +15,10 @@
   <div id="dlg"><h2>What's new</h2><p>Reports now load twice as fast. Try the new filters on the left.</p><button id="x">×</button></div>
   <script>
     var q = new URLSearchParams(location.search);
+    if (q.get('big')) {        // ?big=1: a dialog over most of the screen, like a full-screen What's new
+      var d0 = document.getElementById('dlg'); d0.style.left = '40px'; d0.style.top = '20px'; d0.style.width = '720px'; d0.style.height = '560px';
+      document.getElementById('x').style.cssText = 'position:fixed;left:556px;top:162px;width:32px;height:32px';
+    }
     var colors = q.get('bg') === '2' ? ['#1b5e20', '#b71c1c', '#bbdefb', '#e65100', '#4a148c', '#006064'] : ['#c8e6c9', '#ffcdd2', '#bbdefb', '#ffe0b2', '#e1bee7', '#b2ebf2'];
     var at = q.get('bg') === '2' ? [[60, 260], [300, 170], [480, 60], [240, 420], [420, 330], [100, 80]] : [[40, 60], [260, 60], [480, 60], [40, 220], [260, 220], [480, 220]];
     at.forEach(function (p, i) { var d = document.createElement('div'); d.className = 'tile'; d.style.cssText = 'left:' + p[0] + 'px;top:' + p[1] + 'px;background:' + colors[i]; document.getElementById('tiles').appendChild(d); });

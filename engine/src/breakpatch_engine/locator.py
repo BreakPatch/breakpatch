@@ -21,14 +21,17 @@ from .protocol import EngineError
 log = logging.getLogger("breakpatch.locator")
 
 LOCATE_PROMPT = ('Find "{desc}" in this screenshot of a web app. Reply with JSON only, no other text: '
-                 '{{"bbox_2d": [x1, y1, x2, y2]}}')
+                 '{{"bbox_2d": [x1, y1, x2, y2]}}. If it isn\'t in the screenshot, reply {{"bbox_2d": null}}.')
 JUDGE_PROMPT = ('This is a screenshot of a web app just after a test step. The step should have done this: '
                 '"{note}". Did it happen? Reply with JSON only, no other text: '
                 '{{"happened": true, "why": "the dialog is gone"}}')
+# No concrete example: the small model copied it ("Done button, bottom right of the Create Project
+# dialog") for cards, photos and empty areas (DESK-02). Replies that still echo a template are unknown.
 DESCRIBE_PROMPT = ('In this screenshot of a web app, look at the element at point [{x}, {y}] '
-                   '(coordinates from 0 to 1000). Name it the way a tester would, and say where it is. '
-                   'Reply with JSON only, no other text: '
-                   '{{"name": "Done button", "target": "Done button, bottom right of the Create Project dialog"}}')
+                   '(coordinates from 0 to 1000). Name it the way a tester would, from what it says or shows, '
+                   'and say where it is. If there is nothing there you can name, reply {{"name": null}}. '
+                   'Reply with JSON only, no other text: {{"name": "<its name>", "target": "<its name>, <where it is>"}}')
+ECHOES = ("create project dialog", "<its name>", "<where it is>")
 
 
 class Locator(Protocol):
@@ -96,6 +99,12 @@ def parse_judge(text: str) -> dict | None:
     return None
 
 
+def echoes(text: str) -> bool:
+    """Whether a reply is the prompt's template, or the old prompt's example, and not a name."""
+    t = " ".join(str(text).lower().replace("\u2019", "'").split())
+    return any(e in t for e in ECHOES)
+
+
 def parse_describe(text: str) -> dict | None:
     for c in re.findall(r"\{[^{}]*\}", text or ""):
         try:
@@ -105,6 +114,8 @@ def parse_describe(text: str) -> dict | None:
         if isinstance(obj, dict) and isinstance(obj.get("name"), str) and obj["name"].strip():
             name = obj["name"].strip()[:80]
             target = obj.get("target") if isinstance(obj.get("target"), str) else name
+            if echoes(name) or echoes(target):
+                return None                              # the prompt's own words back: unknown
             return {"name": name, "target": target.strip()[:200] or name}
     return None
 

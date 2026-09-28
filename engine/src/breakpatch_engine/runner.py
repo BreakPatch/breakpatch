@@ -291,7 +291,7 @@ class Runner:
             self._event(step, rec["result"], iteration, preDistance=rec.get("preDistance"),
                         postDistance=rec.get("postDistance"), oldAt=rec.get("oldAt"), newAt=rec.get("newAt"),
                         screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"), why=rec.get("why"),
-                        timings=rec.get("timings"))
+                        timings=rec.get("timings"), unchecked=rec.get("unchecked"))
             self._stop_if_reached(step)
         return True
 
@@ -396,6 +396,20 @@ class Runner:
             lap("actionMs")
             return rec
 
+        # A check whose ignore zones cover its whole area compares nothing (a blank area always
+        # hashes the same): it is skipped and the step is flagged "unchecked", never passed silently.
+        unchecked: list[str] = []
+
+        def usable(region, what: str) -> bool:
+            if imaging.uncovered_share(region, ignore, self.b.width, self.b.height) >= config.MIN_CHECKED:
+                return True
+            unchecked.append(what)
+            rec["unchecked"] = unchecked
+            return False
+
+        if kind in ("checkpoint", "waitUntil") and step.get("region") and not usable(step["region"], kind):
+            return rec
+
         if kind == "checkpoint":
             tol = config.check_tolerance(step.get("tolerance", config.CHECKPOINT_TOLERANCE), self.relaxed)
             dist = await self._wait_region(step["region"], step["hash"], tol, ignore)
@@ -407,6 +421,8 @@ class Runner:
         at = step.get("at")
         frm = step.get("from")
         pre = step.get("pre")
+        if pre and not usable(pre["region"], "pre"):
+            pre = None
         if pre:
             tol = config.check_tolerance(pre.get("tolerance", config.PRE_TOLERANCE), self.relaxed)
             dist = await self._wait_region(pre["region"], pre["hash"], tol, ignore)
@@ -434,6 +450,8 @@ class Runner:
         lap("actionMs")
 
         post = step.get("post")
+        if post and not usable(post["region"], "post"):
+            post = None
         settle_ignore = ignore
         after, settled = await checks.settle(self.b.shoot, settle_ignore, self.t.settle_interval,
                                              self.t.settle_frames, self.t.settle_timeout)

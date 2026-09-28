@@ -525,9 +525,9 @@ async def test_a_click_on_a_still_page_goes_at_once_and_is_named_after(site):
         step = (await hx.call("record.point", {"action": "click", "at": STILL_ADD, "frame": seen}))["step"]
         assert stamps["acting"] - t0 < hx.engine.timings.noise_watch / 2, "the click waited for a noise watch"
         assert await hx.engine.browser.page.text_content("#n") == "Clicks: 1"
-        # The AI assistant names the step after the click, not before it.
-        assert "acting" in hx.locator.phases_when_asked
-        assert step["label"] == "Click Add button" and step["target"] == "Add button, top left"
+        # The page names its own button, so the AI assistant isn't asked at all.
+        assert hx.locator.phases_when_asked is None
+        assert step["label"] == "Click Add button" and step["target"].startswith("Add button, ")
         # Given a target (a step found with the AI assistant), it keeps it and still gets a name.
         step = (await hx.call("record.point", {"action": "click", "at": STILL_ADD, "target": "the add button"}))["step"]
         assert step["label"] == "Click Add button" and step["target"] == "the add button"
@@ -749,7 +749,7 @@ async def test_propose_names_the_element_and_touches_nothing(site):
         await _latest_frame(hx)
         got = await hx.call("record.propose", {"at": STILL_ADD})
         assert got["box"] == [100, 200, 240, 244]                   # the Add button
-        assert got["name"] == "Create project button" and got["target"].startswith("Create project")
+        assert got["name"] == "Add button" and got["target"].startswith("Add button")        # the page's own name
         assert isinstance(got["frame"], int)
         assert await hx.engine.browser.page.text_content("#n") == "Clicks: 0"   # nothing was clicked
         quick = await hx.call("record.propose", {"at": [700, 580], "name": False})
@@ -997,7 +997,7 @@ async def test_settle_waits_out_a_slow_fade_that_changes_little_per_frame():
 
     async def shoot():                      # a fade 10 levels per frame: under the "changed" threshold each time
         level[0] = min(200, level[0] + 10)
-        return np.full((20, 20, 3), level[0], np.uint8)
+        return np.full((100, 100, 3), level[0], np.uint8)
     last, settled = await checks.settle(shoot, None, 0.001, 3, 5.0)
     assert settled and int(last[0, 0, 0]) == 200
 
@@ -1096,7 +1096,7 @@ async def test_a_file_picker_opened_by_hand_only_feeds_the_page(site):
     try:
         await hx.call("browser.hand", {"on": True})
         await hx.call("browser.input", {"kind": "click", "at": [190, 60]})
-        for _ in range(100):
+        for _ in range(250):
             if hx.of("browser.fileChooser"):
                 break
             await asyncio.sleep(0.02)
@@ -1107,3 +1107,219 @@ async def test_a_file_picker_opened_by_hand_only_feeds_the_page(site):
         assert hx.of("record.fileChooser") == [] and hx.of("record.checking") == []
     finally:
         await hx.call("browser.close")
+
+
+
+# ---------- DESK-01: noise never grows over the whole screen ----------
+
+async def test_a_step_that_changes_the_whole_screen_does_not_leave_everything_ignored(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/dialog.html?big=1", "viewport": VIEWPORT})
+    try:
+        await _latest_frame(hx)
+        rec = hx.engine.recorder
+        # What a reload of a page that shows a dialog now and then looked like: all of it "moving".
+        rec.remember_noise([[0, 0, 800, 600]])
+        close = (await hx.call("record.point", {"action": "click", "at": [572, 178]}))["step"]
+        after = (await hx.call("record.checkpoint", {"region": [40, 60, 220, 180]}))["step"]
+    finally:
+        await hx.call("browser.close")
+    for step in (close, after):
+        assert all(imaging_area(b) < 0.25 * 800 * 600 for b in step["ignore"]), step["ignore"]
+    assert after["hash"] != "8000000000000000"
+
+
+def imaging_area(b):
+    return max(0, b[2] - b[0]) * max(0, b[3] - b[1])
+
+
+async def test_a_check_with_nothing_left_to_compare_is_flagged_not_passed(site):
+    """Steps saved with a whole-screen ignore zone (the owner's Test2, steps 12-27)."""
+    hx = Harness()
+    blank = "8000000000000000"
+    wait = {"id": "u", "action": "waitUntil", "region": [0, 0, 800, 600], "hash": blank, "tolerance": 8,
+            "timeoutMs": 1000, "ignore": [[0, 0, 800, 600]]}
+    check = {"id": "c", "action": "checkpoint", "region": [100, 100, 300, 200], "hash": blank, "tolerance": 8,
+             "ignore": [[0, 0, 800, 600]]}
+    click = {"id": "k", "action": "click", "at": [170, 222], "ignore": [[0, 0, 800, 600]],
+             "pre": {"region": [138, 190, 202, 254], "hash": blank, "tolerance": 6},
+             "post": {"region": [0, 0, 800, 600], "hash": blank, "tolerance": 10, "expectChange": False}}
+    ended = await hx.run([wait, check, click], site + "/still.html")
+    assert ended["result"] == "pass", ended
+    assert [s.get("unchecked") for s in ended["steps"]] == [["waitUntil"], ["checkpoint"], ["pre", "post"]]
+    assert all(d.get("unchecked") for d in hx.of("run.step") if d["state"] == "passed")
+
+
+async def test_closing_a_big_dialog_whose_check_is_the_whole_screen_passes_when_gone(site):
+    """DESK-05: Test2 step 9, a full-screen after-check with about 0.6 of it changing."""
+    _, close = await _record_one(site, "/dialog.html?big=1", {"action": "click", "at": [572, 178]})
+    post = close["post"]
+    assert post["expectChange"] and close["expect"] == "closes"
+    assert imaging_area(post["region"]) > 0.6 * 800 * 600 and 0.3 < post["change"] < 0.9, post
+    hx = Harness()
+    assert (await hx.run([close], site + "/dialog.html?big=1"))["result"] == "pass"
+    other = await hx.run([close], site + "/dialog.html?big=1&bg=2")
+    assert other["result"] == "pass" and other["steps"][0].get("passedBy") in (None, "gone"), other
+    assert (await hx.run([close], site + "/dialog.html?big=1&bg=2&stay=1"))["result"] == "fail"
+
+
+async def test_a_click_on_a_frame_too_old_to_be_kept_is_refused(site):
+    """DESK-18: an evicted frame counts as stale, and nothing is clicked."""
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        seen = await _latest_frame(hx)
+        b = hx.engine.browser
+        for k in range(1, 205):                      # the page moved on long enough to push it out
+            b.remember_frame(seen + 1000 + k, "x")
+        with pytest.raises(EngineError) as e:
+            await hx.call("record.point", {"action": "click", "at": STILL_ADD, "frame": seen})
+        assert e.value.code == "stale"
+        assert await b.page.text_content("#n") == "Clicks: 0"
+    finally:
+        await hx.call("browser.close")
+
+
+# ---------- DESK-06: a caret the page draws itself doesn't stop the page settling ----------
+
+async def test_a_caret_drawn_on_a_canvas_does_not_hold_up_a_write(site):
+    import time
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/canvas.html", "viewport": VIEWPORT})
+    try:
+        await asyncio.sleep(0.5)
+        t0 = time.monotonic()
+        step = (await hx.call("record.point", {"action": "write", "text": "oscar@example.com"}))["step"]
+        recorded = time.monotonic() - t0
+    finally:
+        await hx.call("browser.close")
+    assert recorded < 4, recorded
+    ended = await hx.run([step], site + "/canvas.html")
+    assert ended["result"] == "pass", ended
+    t = ended["steps"][0]["timings"]
+    assert t["settled"] and t["settleMs"] < 1500, t
+
+
+async def test_settle_leaves_out_a_blinking_spot_but_not_a_real_change():
+    import numpy as np
+    from breakpatch_engine import checks
+    n = [0]
+
+    def frame(blink, big=False):
+        a = np.full((100, 100, 3), 255, np.uint8)
+        if blink:
+            a[40:60, 50:52] = 0                   # the caret
+        if big:
+            a[0:30, 0:100] = 0                    # something that really changed
+        return a
+
+    async def caret():
+        n[0] += 1
+        return frame(n[0] % 2 == 0)
+    last, settled = await checks.settle(caret, None, 0.001, 3, 2.0)
+    assert settled
+
+    m = [0]
+
+    async def moving():                           # a caret blinking, and a big area changing every frame
+        m[0] += 1
+        return frame(m[0] % 2 == 0, big=m[0] % 3 == 0)
+    _, settled = await checks.settle(moving, None, 0.001, 3, 0.3)
+    assert not settled
+
+
+
+async def test_a_file_picker_that_opens_a_second_after_the_click_is_still_caught(site):
+    """DESK-07."""
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/upload.html", "viewport": VIEWPORT})
+    try:
+        rec = asyncio.ensure_future(hx.call("record.point", {"action": "click", "at": [480, 60]}))
+        for _ in range(300):
+            if hx.of("record.fileChooser") or rec.done():
+                break
+            await asyncio.sleep(0.02)
+        assert hx.of("record.fileChooser"), "the late picker wasn't caught"
+        await hx.call("record.chooseFile", {"sample": "jpeg"})
+        step = (await rec)["step"]
+        assert step["action"] == "upload" and step["sample"] == "jpeg"
+        assert (await hx.engine.browser.page.text_content("#names")).startswith("sample.jpeg ")
+    finally:
+        await hx.call("browser.close")
+
+
+async def test_a_start_address_that_never_answers_fails_soon_and_plainly():
+    import socket
+    import time
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(8)                                   # accepts, never answers
+    url = f"http://127.0.0.1:{srv.getsockname()[1]}/"
+    hx = Harness()
+    t0 = time.monotonic()
+    try:
+        with pytest.raises(EngineError) as e:
+            await hx.call("browser.open", {"url": url, "viewport": VIEWPORT})
+        took = time.monotonic() - t0
+        assert e.value.code == "network" and "didn't load in 3 seconds" in e.value.message, e.value.message
+        assert took < hx.engine.timings.start_timeout + 5, took
+        ended = await hx.run([{"id": "w", "action": "waitFor", "durationMs": 10}], url)
+        assert ended["result"] == "fail" and "didn't load in 3 seconds" in ended["message"]
+    finally:
+        await hx.call("browser.close")
+        srv.close()
+
+
+async def test_locate_says_not_found_for_a_box_over_most_of_the_page(site):
+    """DESK-04: "the purple elephant" came back as the whole screen and got clicked."""
+    from breakpatch_engine.protocol import NULL
+    hx = Harness(FakeLocator([0, 0, 800, 600]))
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        assert await hx.call("record.locate", {"description": "the purple elephant"}) is NULL
+        hx.locator.box = [100, 200, 240, 244]
+        assert (await hx.call("record.locate", {"description": "the Add button"}))["box"] == [100, 200, 240, 244]
+        # A propose box as big as a dialog round a small control isn't shown (DESK-09).
+        await hx.engine.browser.page.evaluate("""() => { const d = document.createElement('div');
+            d.style.cssText = 'position:absolute;left:20px;top:20px;width:700px;height:500px;background:#eee';
+            document.body.appendChild(d); }""")
+        got = await hx.call("record.propose", {"at": [400, 500], "name": False})
+        assert "box" not in got
+    finally:
+        await hx.call("browser.close")
+
+
+def test_the_naming_prompt_has_no_example_to_copy_and_echoes_count_as_unknown():
+    """DESK-02."""
+    from breakpatch_engine.locator import DESCRIBE_PROMPT, LOCATE_PROMPT, parse_bbox, parse_describe
+    assert "Done button" not in DESCRIBE_PROMPT and "Create Project" not in DESCRIBE_PROMPT
+    assert '"bbox_2d": null' in LOCATE_PROMPT
+    assert parse_describe('{"name": "Done button", "target": "Done button, bottom right of the Create Project dialog"}') is None
+    assert parse_describe('{"name": "<its name>", "target": "<its name>, <where it is>"}') is None
+    assert parse_describe('{"name": null}') is None
+    assert parse_describe('{"name": "Add photo card", "target": "Add photo card, top left"}') == {
+        "name": "Add photo card", "target": "Add photo card, top left"}
+    assert parse_bbox('{"bbox_2d": null}', 800, 600) is None
+
+
+async def test_names_come_from_the_page_first_and_blank_space_says_so(site):
+    """DESK-03: the page's own name wins over the model's; nothing to name says so plainly."""
+    class Echo(FakeLocator):
+        async def describe(self, image, at):
+            return None                            # the model unsure (or it echoed the prompt)
+    hx = Harness(Echo(None))
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        named = (await hx.call("record.point", {"action": "click", "at": STILL_ADD}))["step"]
+        blank = (await hx.call("record.point", {"action": "click", "at": [600, 500]}))["step"]
+    finally:
+        await hx.call("browser.close")
+    assert named["label"] == "Click Add button"
+    assert blank["label"] == "Click the spot you clicked" and blank["target"].startswith("The spot you clicked")
+    hx = Harness(FakeLocator(None))                 # the model says "Create project button"
+    await hx.call("browser.open", {"url": site + "/canvas.html", "viewport": VIEWPORT})
+    try:                                            # a canvas: the page names nothing, the model is used
+        drawn = (await hx.call("record.point", {"action": "click", "at": [400, 324]}))["step"]
+    finally:
+        await hx.call("browser.close")
+    assert drawn["label"] == "Click Create project button"

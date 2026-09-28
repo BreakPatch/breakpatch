@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Canvas</title></head>
+<body style="margin:0;background:#fff">
+  <!-- Drawn on a canvas, like a Flutter web app: no DOM names for anything. A field with the focus
+       draws its own caret, which fades in and out all the time (caret-color can't hide it). Typing
+       goes to a hidden input and is drawn in the field. -->
+  <canvas id="c" width="800" height="600" style="position:absolute;left:0;top:0"></canvas>
+  <input id="i" autofocus style="position:absolute;left:-1000px;top:0;width:10px;opacity:0">
+  <script>
+    var c = document.getElementById('c').getContext('2d'), i = document.getElementById('i');
+    var photo = false;
+    function draw(t) {
+      c.fillStyle = '#fff'; c.fillRect(0, 0, 800, 600);
+      c.fillStyle = '#6b3fd4'; c.fillRect(200, 300, 400, 48);            // a "Next" button, drawn
+      c.fillStyle = '#fff'; c.font = '18px sans-serif'; c.fillText('Next', 380, 330);
+      c.strokeStyle = '#999'; c.strokeRect(200, 200, 400, 44);           // the field
+      c.fillStyle = '#222'; c.fillText(i.value, 210, 228);
+      var x = 212 + c.measureText(i.value).width;
+      c.globalAlpha = 0.5 + 0.5 * Math.sin(t / 150);                      // the caret, always fading
+      c.fillRect(x, 208, 2, 28); c.globalAlpha = 1;
+      if (photo) { c.fillStyle = '#2e7d32'; c.fillRect(620, 40, 140, 30); }
+      requestAnimationFrame(draw);
+    }
+    requestAnimationFrame(draw);
+    document.addEventListener('click', function () { i.focus(); });
+    i.focus();
+  </script>
+</body></html>

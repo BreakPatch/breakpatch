@@ -220,6 +220,26 @@ def edge_density(arr: np.ndarray, box: Sequence[float], ignore: Iterable[Sequenc
     return float((cv2.Canny(gray, 60, 160) > 0).mean())
 
 
+def uncovered_share(box: Sequence[float], ignore: Iterable[Sequence[float]] | None, width: int, height: int) -> float:
+    """Share (0-1) of a check region that its ignore zones leave to compare."""
+    x1, y1, x2, y2 = clamp_box(box, width, height)
+    if x2 <= x1 or y2 <= y1:
+        return 0.0
+    m = np.ones((y2 - y1, x2 - x1), dtype=bool)
+    for b in ignore or []:
+        a1, b1, a2, b2 = clamp_box(b, width, height)
+        m[max(0, b1 - y1):max(0, b2 - y1), max(0, a1 - x1):max(0, a2 - x1)] = False
+    return float(m.mean())
+
+
+def cap_noise(boxes: Iterable[Sequence[int]], width: int, height: int, max_share: float) -> list[Box]:
+    """Noise zones without any that cover more than `max_share` of the screen: that much "changing
+    by itself" is a page that looked different (a reload that showed a dialog, a new screen), not
+    noise, and ignoring it would leave the checks nothing to compare."""
+    area = max(1, width * height)
+    return [list(map(int, b)) for b in boxes if box_area(clamp_box(b, width, height)) <= max_share * area]
+
+
 def noise_boxes(frames: Sequence[np.ndarray], pad: int = BOX_PAD) -> list[Box]:
     """Areas that changed by themselves across a series of frames (spec §10.3.1)."""
     if len(frames) < 2:

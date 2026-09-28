@@ -181,7 +181,7 @@ class BrowserSession:
         page = await self.context.new_page()
         await self._switch_to(page)
         if url:
-            await self.goto(url)
+            await self.goto(url, start=True)
 
     async def close(self) -> None:
         await self._stop_stream()
@@ -190,12 +190,12 @@ class BrowserSession:
         for obj in (self.context, self._browser):
             if obj is not None:
                 try:
-                    await obj.close()
+                    await asyncio.wait_for(obj.close(), 10)
                 except Exception:  # noqa: BLE001
                     pass
         if self._pw is not None:
             try:
-                await self._pw.stop()
+                await asyncio.wait_for(self._pw.stop(), 10)
             except Exception:  # noqa: BLE001
                 pass
         self._pw = self._browser = self.context = self.page = None
@@ -384,6 +384,10 @@ class BrowserSession:
         except Exception:  # noqa: BLE001
             return None
 
+    def changed_since(self, t: float) -> bool:
+        """Whether the frame stream saw the page change after monotonic time `t`."""
+        return self._changed_at is not None and self._changed_at > t
+
     def quiet_for(self) -> float:
         """Seconds since the frame stream last saw the page change (it only sends frames on a
         change), or 0 when there is no stream to go by."""
@@ -393,12 +397,17 @@ class BrowserSession:
 
     # ---------- navigation ----------
 
-    async def goto(self, url: str) -> None:
+    async def goto(self, url: str, start: bool = False) -> None:
         url = check_address(url)
         page = await self.live()
+        # The start page gets a shorter wait: an address that doesn't answer should say so soon.
+        limit = self.timings.start_timeout if start else self.timings.navigate_timeout
         try:
-            await page.goto(url, wait_until="load", timeout=self.timings.navigate_timeout * 1000)
+            await page.goto(url, wait_until="load", timeout=limit * 1000)
         except Exception as e:  # noqa: BLE001
+            if start and "Timeout" in type(e).__name__ + str(e):
+                raise EngineError("network", f"The start page at {url} didn't load in {round(limit)} seconds. "
+                                             "Check the address, and that the site is up.", str(e))
             raise EngineError("network", f"The page at {url} didn't load.", str(e))
 
     async def navigate(self, nav: str, url: str | None = None) -> None:
@@ -490,6 +499,38 @@ class BrowserSession:
                     await cdp.detach()
                 except Exception:  # noqa: BLE001
                     pass
+
+    async def element_name(self, at: Sequence[float]) -> dict | None:
+        """What the page itself calls the element at `at` (its accessible name and role, read through
+        the DevTools protocol), e.g. {"name": "Sign in", "role": "button"}; None when it has none."""
+        page = await self.live()
+        cdp = None
+        try:
+            cdp = await self.context.new_cdp_session(page)
+            await cdp.send("DOM.enable")
+            got = await cdp.send("DOM.getNodeForLocation", {"x": int(at[0]), "y": int(at[1]),
+                                                            "includeUserAgentShadowDOM": False})
+            tree = await cdp.send("Accessibility.getPartialAXTree", {"backendNodeId": got["backendNodeId"],
+                                                                     "fetchRelatives": True})
+        except Exception as e:  # noqa: BLE001
+            log.debug("no accessible name at %s: %s", at, e)
+            return None
+        finally:
+            if cdp is not None:
+                try:
+                    await cdp.detach()
+                except Exception:  # noqa: BLE001
+                    pass
+        for node in tree.get("nodes", []):             # the node itself first, then its ancestors
+            if node.get("ignored"):
+                continue
+            name = ((node.get("name") or {}).get("value") or "").strip()
+            role = (node.get("role") or {}).get("value") or ""
+            if name and role not in ("RootWebArea", "WebArea", "generic", "none", "presentation", "StaticText"):
+                return {"name": " ".join(name.split())[:80], "role": role}
+            if role in ("RootWebArea", "WebArea"):
+                break
+        return None
 
     async def type_text(self, text: str) -> None:
         await (await self.live()).keyboard.type(text, delay=10)
@@ -668,11 +709,13 @@ class FrameStream:
             if t is not None:
                 t.cancel()
         if self.cdp is not None:
-            try:
-                await self.cdp.send("Page.stopScreencast")
-                await self.cdp.detach()
-            except Exception:  # noqa: BLE001
-                pass
+            # A page stuck loading (an address that never answers) can leave these unanswered:
+            # never wait long for them, or closing the browser would hang.
+            for call in (lambda: self.cdp.send("Page.stopScreencast"), lambda: self.cdp.detach()):
+                try:
+                    await asyncio.wait_for(call(), 2)
+                except Exception:  # noqa: BLE001
+                    pass
 
     def _on_frame(self, params: dict) -> None:
         if self.cdp is not None:

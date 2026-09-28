@@ -86,6 +86,7 @@ class Timings:
     chooser_timeout: float = 5.0
     download_timeout: float = 15.0
     navigate_timeout: float = 30.0
+    start_timeout: float = 15.0       # the start page (browser.open, a run's startUrl)
     http_timeout: float = 30.0
     reload_diff: bool = True          # §10.3.5 background reload while recording
     frame_min_gap: float = 0.1        # at most ~10 frames per second
@@ -99,7 +100,7 @@ class Timings:
     def fast(cls) -> "Timings":
         return cls(noise_watch=0.5, noise_interval=0.1, settle_interval=0.08, settle_timeout=3.0,
                    late_change=0.6, pre_wait=0.6, pre_interval=0.1, long_click=0.3, popup_timeout=3.0, chooser_timeout=2.0,
-                   download_timeout=3.0, navigate_timeout=10.0, http_timeout=5.0)
+                   download_timeout=3.0, navigate_timeout=10.0, start_timeout=3.0, http_timeout=5.0)
 
     def with_(self, **kw) -> "Timings":
         names = {f.name for f in fields(self)}
@@ -108,8 +109,13 @@ class Timings:
 
 # Check sizes and tolerances (spec §12.1 example values).
 PRE_RADIUS = 32         # pre-check region is a 64 x 64 box around the target
-FRAMES_KEPT = 64        # live view frames kept for that check (a few seconds of a busy page)
+FRAMES_KEPT = 200       # live view frames kept for that check (20 s of a page that changes all the time)
+CHOOSER_WINDOW = 3.0        # recording: how long after a click a page's file picker may still open
 CHOOSE_FILE_TIMEOUT = 600.0   # recording: how long a page's file picker waits for the user's choice
+NOISE_MAX_SHARE = 0.25   # a noise zone bigger than this share of the screen isn't noise (DESK-01)
+MIN_CHECKED = 0.1        # a check must leave at least this share of its region to compare
+LOCATE_MAX_SHARE = 0.6   # record.locate: a box over more of the page than this is "not found"
+PROPOSE_MAX_SHARE = 0.12 # record.propose: a box bigger than this share isn't the control's
 SEEN_RADIUS = 48        # recording: the 96 x 96 box around a click that must still look as the user saw it
 PRE_TOLERANCE = 6
 POST_TOLERANCE = 10
@@ -119,6 +125,7 @@ GONE_SHARE = 0.5            # ... with at least this share of the change seen wh
 POST_CHANGE_SHARE = 0.25   # replay: a step must change at least this share of what it changed when recorded
 CHECKPOINT_TOLERANCE = 8
 BOX_PAD = 16            # padding around changed areas
+BLINK_MAX_AREA = 2500   # settle: a spot this small (50 x 50 px) that keeps changing is a caret or spinner
 SETTLE_THRESHOLD = 8    # settle: screenshots of a still page are identical, so a small, slow change still counts
 DIFF_THRESHOLD = 24     # per-channel difference that counts as "changed"
 

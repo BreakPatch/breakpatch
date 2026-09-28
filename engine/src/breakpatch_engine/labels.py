@@ -46,7 +46,8 @@ def default_label(action: str, p: dict, name: str | None = None) -> str:
         return "Check something is visible"
     if name:
         return f"{verb} {name}"
-    return f"{verb} here"
+    # Nothing to name it by (no name in the page, the AI assistant unsure): say so plainly.
+    return f"{verb} the spot you clicked" if action in ("click", "doubleClick", "longClick", "rightClick") else f"{verb} here"
 
 
 def where(at: Sequence[float], width: int, height: int) -> str:

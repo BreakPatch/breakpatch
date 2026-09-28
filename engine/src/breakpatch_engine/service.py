@@ -145,6 +145,10 @@ class Engine:
             self._hand = True
             self._hand_page = page
             page.on("filechooser", self._hand_chooser)
+            # Playwright turns file picker interception on in the background: a round trip makes
+            # sure it's on before the user's first click.
+            await asyncio.sleep(0.05)
+            await page.evaluate("0")
         elif not on and self._hand:
             self._hand = False
             try:

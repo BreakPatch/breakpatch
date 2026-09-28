@@ -23,6 +23,9 @@ ACTIONS = POINTER_ACTIONS | {"write", "waitUntil", "waitFor", "navigate", "switc
 PASS_THROUGH = ("from", "to", "direction", "distance", "text", "secretRef", "generated", "durationMs", "url", "nav",
                 "sample", "fileType", "minBytes", "timeoutMs", "count", "groupId", "groupVersion", "steps")
 Phase = Callable[[str], None]
+ROLE_WORDS = {"button": "button", "link": "link", "textbox": "field", "searchbox": "field", "checkbox": "checkbox",
+              "radio": "option", "combobox": "list", "menuitem": "menu item", "tab": "tab", "switch": "switch",
+              "img": "image", "heading": "heading"}
 CLICKY = {"click", "doubleClick", "longClick", "rightClick"}   # what can open a page's file picker
 
 
@@ -79,6 +82,7 @@ class Recorder:
         self.t = timings
         self._download_mark = 0
         self._noise: dict[str, list] = {}
+        self._last_watch: list = []
 
     async def _settle(self, shoot, ignore=None):
         return await checks.settle(shoot, ignore, self.t.settle_interval, self.t.settle_frames, self.t.settle_timeout)
@@ -130,6 +134,7 @@ class Recorder:
         seen = self._seen(p, anchor)
         phase("watching")
         noise, before = await self._watch(seen)
+        noise_now = list(self._last_watch)
 
         target = p.get("target")
         if anchor is not None and not target:
@@ -140,6 +145,8 @@ class Recorder:
 
         # Straight after the last look at the page: the click lands on what that look (and the
         # user) saw. Naming what was clicked only needs that look, so it runs while the page reacts.
+        # What the page calls the element, read before the action changes it (DESK-03).
+        dom_name = await self.b.element_name(anchor) if anchor is not None and not p.get("label") else None
         phase("acting")
         url_before = self.b.url
         if len(self.b.downloads) < self._download_mark:
@@ -158,24 +165,54 @@ class Recorder:
         page = self.b.page
         if watching:
             page.on("filechooser", on_chooser)
+            try:
+                await asyncio.sleep(0.05)             # interception is turned on in the background
+                await page.evaluate("0")
+            except Exception:  # noqa: BLE001
+                pass
         try:
+            clicked = time.monotonic()
             await perform(self.b, step, ctx)
             if watching and not choosers:
-                await asyncio.sleep(0.2)              # the chooser event follows the click at once
+                await asyncio.sleep(0.2)              # most pickers open with the click itself
         except ActionFailed as e:
+            if watching:
+                page.remove_listener("filechooser", on_chooser)
             raise EngineError("not_found" if e.reason in ("secretMissing", "targetNotFound", "fileMissing")
                               else "bad_request", e.message)
-        finally:
+        answered = bool(choosers)
+
+        def unwatch() -> None:
             if watching:
                 try:
                     page.remove_listener("filechooser", on_chooser)
                 except Exception:  # noqa: BLE001
                     pass
         if choosers:
-            await self._choose_file(choosers[0], step, phase)
+            try:
+                await self._choose_file(choosers[0], step, phase)
+            except BaseException:
+                unwatch()
+                raise
+
+        async def late_chooser() -> bool:
+            """A page can open its file picker a while after the click (after an async step, as
+            Flutter does): the listener stays on for CHOOSER_WINDOW after it, while the page settles
+            (DESK-07). True when one opened late and was answered."""
+            if not watching:
+                return False
+            try:
+                while not choosers and time.monotonic() - clicked < config.CHOOSER_WINDOW:
+                    await asyncio.sleep(0.05)
+            finally:
+                unwatch()
+            if choosers and not answered:
+                await self._choose_file(choosers[0], step, phase)
+                return True
+            return False
         if action == "downloadCheck":
             self._download_mark = ctx.download_mark
-        naming = asyncio.ensure_future(self._name(before, anchor)) if anchor is not None and not p.get("label") else None
+        naming = asyncio.ensure_future(self._name(before, anchor, dom_name or {})) if anchor is not None and not p.get("label") else None
         field_box = None
         if action == "write":
             # A field that hides what's typed (a password): the step says so, and its checks, and
@@ -195,6 +232,9 @@ class Recorder:
         try:
             phase("settling")
             after, _settled = await self._settle(self.b.shoot, noise)
+            if await late_chooser():
+                phase("settling")
+                after, _settled = await self._settle(self.b.shoot, noise)
             blast = imaging.blast_radius(before, after, noise)
             if blast is None and action not in ("hover", "waitFor"):
                 # A slow server can leave the screen still for a moment before the result shows up.
@@ -207,8 +247,15 @@ class Recorder:
                 phase("reloading")
                 shots = await self.b.background_reload_shots(lambda s: self._settle(s, noise))
                 if shots is not None:
-                    ignore = imaging.merge_boxes(ignore + imaging.noise_boxes(list(shots)))
+                    ignore = imaging.merge_boxes(ignore + imaging.cap_noise(imaging.noise_boxes(list(shots)), w, h,
+                                                                             config.NOISE_MAX_SHARE))
+                    ignore = imaging.cap_noise(ignore, w, h, config.NOISE_MAX_SHARE)
                     self.remember_noise(ignore)
+            # A step that changed most of the screen (a dialog closed, a new screen in an app whose
+            # address never changes): what earlier steps saw moving belongs to the old screen.
+            if blast is not None and imaging.box_area(blast) > 0.5 * w * h:
+                self._noise = {}
+                self.remember_noise(imaging.cap_noise(noise_now, w, h, config.NOISE_MAX_SHARE))
 
             if anchor is not None:
                 pre_region = imaging.box_around(anchor, config.PRE_RADIUS, w, h)
@@ -232,7 +279,9 @@ class Recorder:
                     # (a miss) changes far less than one that moved to the next screen.
                     step["post"]["change"] = round(imaging.changed_share(before, after, post_region, ignore), 4)
             step["ignore"] = ignore
+            self._refuse_unchecked(step, w, h)
         except BaseException:
+            unwatch()
             if naming is not None:
                 naming.cancel()
             raise
@@ -271,6 +320,10 @@ class Recorder:
             ref = str(choice.get("file") or "")
             path = Path(str(choice.get("path") or ""))
             if not FILE_REF.match(ref) or not path.is_file() or path.name != ref.split("/", 1)[1]:
+                try:
+                    await chooser.set_files([])           # close the page's picker, nothing chosen
+                except Exception:  # noqa: BLE001
+                    pass
                 raise EngineError("bad_request", "That file can't be used. Pick it again.", ref[:120])
             await chooser.set_files(str(path))
             step.update(action="upload", file=ref)
@@ -285,8 +338,19 @@ class Recorder:
         self._choice.set_result(p if isinstance(p, dict) else {"cancel": True})
         return {}
 
-    async def _name(self, before, anchor) -> dict | None:
-        """The AI assistant's name for what is at `anchor` on the screen before the action."""
+    async def _name(self, before, anchor, dom: dict | None = None) -> dict | None:
+        """The name for what is at `anchor`: what the page itself calls it (its accessible name),
+        else the AI assistant's, else None ("the spot you clicked"). When both exist and differ,
+        the page's own name wins (DESK-03)."""
+        if dom is None:                                  # {} = already looked, nothing there
+            try:
+                dom = await self.b.element_name(anchor)
+            except Exception:  # noqa: BLE001
+                dom = None
+        if dom:
+            word = ROLE_WORDS.get(dom["role"], "")
+            name = dom["name"] if not word or dom["name"].lower().endswith(word) else f"{dom['name']} {word}"
+            return {"name": name, "target": f"{name}, {labels.where(anchor, self.b.width, self.b.height)}"}
         loc = self.locator_fn()
         if not loc.available():
             return None
@@ -303,8 +367,13 @@ class Recorder:
             return None
         img = self.b.seen_frame(p["frame"])
         if img is None:
-            log.info("frame %s is no longer kept; acting without the check", p["frame"])
-            return None
+            # Too old to be kept (the page kept changing since) or from before the browser reopened:
+            # the page may be anywhere by now, so it counts as changed (DESK-18).
+            if p.get("action") in ("checkpoint", "waitUntil"):
+                raise EngineError("stale", "The page changed after you drew the box, so nothing was added. "
+                                           "Draw it again on the page as it is now.")
+            raise EngineError("stale", "The page changed before your click reached it, so nothing was clicked. "
+                                       "Look at the page again, then click.")
         if region is None:
             if anchor is None:
                 return None
@@ -349,11 +418,27 @@ class Recorder:
                 await shoot()
             noise, last = imaging.noise_boxes(frames), frames[-1]
             self._check_seen(seen, last)
+        w, h = self.b.width, self.b.height
+        noise = imaging.cap_noise(noise, w, h, config.NOISE_MAX_SHARE)
+        self._last_watch = noise
         known = self._noise.get(page, []) if page else []
-        merged = imaging.merge_boxes(known + noise)
+        merged = imaging.cap_noise(imaging.merge_boxes(known + noise), w, h, config.NOISE_MAX_SHARE)
         if page:
             self._noise = {page: merged}     # only the current page; other pages start fresh
         return merged, last
+
+    @staticmethod
+    def _unchecked(region, ignore, w: int, h: int) -> bool:
+        return imaging.uncovered_share(region, ignore, w, h) < config.MIN_CHECKED
+
+    def _refuse_unchecked(self, step: dict, w: int, h: int) -> None:
+        """Never save a check that has nothing left to compare (its ignore zones cover it)."""
+        ignore = step.get("ignore") or []
+        for key in ("pre", "post"):
+            c = step.get(key)
+            if c and self._unchecked(c["region"], ignore, w, h):
+                raise EngineError("unchecked", "This step can't be checked: the whole screen moves. "
+                                               "Wait until it's still, then try again.", key)
 
     def remember_noise(self, boxes) -> None:
         page = self.b.url.split("#")[0]
@@ -377,6 +462,9 @@ class Recorder:
             raise EngineError("bad_request", "Draw a bigger box around what should be visible.")
         phase("watching")
         noise, last = await self._watch(self._seen({"frame": frame, "action": "checkpoint"}, None, region))
+        if self._unchecked(region, noise, self.b.width, self.b.height):
+            raise EngineError("unchecked", "This can't be checked: everything in the box keeps moving. "
+                                           "Draw it around something that stays still.")
         return {"id": new_id(), "action": "checkpoint", "label": "Check something is visible",
                 "target": "The area you picked", "region": region,
                 "hash": imaging.region_hash(last, region, noise), "tolerance": config.CHECKPOINT_TOLERANCE,
@@ -392,7 +480,9 @@ class Recorder:
             raise EngineError("bad_request", "The engine received a position it couldn't read.")
         out: dict = {"at": at, "frame": self.b.last_seq}
         box = await self.b.element_box(at)
-        if box is not None:
+        # A box far bigger than a control (the whole dialog around a small button) is worse than
+        # none: the app then shows the spot instead (DESK-09).
+        if box is not None and imaging.box_area(box) <= config.PROPOSE_MAX_SHARE * self.b.width * self.b.height:
             out["box"] = box
         if p.get("name") is not False:
             got = await self._name(await self.b.shoot(), at)
@@ -412,5 +502,9 @@ class Recorder:
         if box is None:
             return NULL
         box = imaging.clamp_box(box, self.b.width, self.b.height)
+        # A box over most of the page isn't an answer: the model boxes the whole screen when what
+        # was described isn't there (DESK-04). Not found, so nothing is clicked.
+        if imaging.box_area(box) > config.LOCATE_MAX_SHARE * self.b.width * self.b.height:
+            return NULL
         at = [round((box[0] + box[2]) / 2, 1), round((box[1] + box[3]) / 2, 1)]
         return {"box": box, "at": at, "target": description.strip(), "frame": seq}

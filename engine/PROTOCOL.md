@@ -21,7 +21,8 @@ All coordinates are **viewport pixels at DPR 1**. Boxes are `[x1, y1, x2, y2]`.
 ```
 
 Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`, `busy`,
-`stale` (the page changed after the frame the user acted on; nothing was done), `network`,
+`stale` (the page changed after the frame the user acted on; nothing was done), `unchecked`
+(recording: the step's check would have nothing left to compare, because everything in it moves), `network`,
 `stopped`, `internal`. `message` is plain language, safe to show; `details`
 (optional) goes behind "Copy details".
 
@@ -29,7 +30,8 @@ Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`,
   `run.stop`, `setup.pause` or `system.info`. Responses can therefore arrive out of order.
 - A line that isn't JSON gets `{"id": null, "error": {"code": "bad_request", ...}}`. Blank lines are ignored.
 - `params` must be an object (or omitted). A result of `{}` means "done, nothing to return";
-  `record.locate` can return `null`.
+  `record.locate` can return `null` (also for a box over more than 60% of the page: the model boxes
+the whole screen when what was described isn't there).
 - When stdin closes, requests still in flight get 3 s to answer, the rest are answered with
   `stopped`, Chromium is closed and the process exits 0. SIGTERM and SIGINT do the same.
 
@@ -180,8 +182,8 @@ the page reacts, so it never delays the click.
 the one it found the box on). Right before acting, and at its first look, the engine checks that
 the page still looks like that frame around the click (96 × 96 px) or inside the drawn box; if it
 doesn't, the call fails with `stale` ("The page changed before your click reached it, so nothing
-was clicked…") and nothing is sent to the page. Without `frame`, or for a frame too old to be kept
-(the last 64), there is no check. The action follows the last look straight away. The noise watch
+was clicked…") and nothing is sent to the page. A frame too old to be kept (the last 200) or from
+before the browser reopened counts as changed: `stale` too. Without `frame` there is no check. The action follows the last look straight away. The noise watch
 is skipped when the frame stream has seen the page sit still for the whole watch (it only sends
 frames on a change), so a click on a still page goes at once.
 
@@ -220,6 +222,16 @@ Per action:
   replying `{happened, why}`). If it happened, the step passes with `passedBy: "note"` and `why`
   ("The note says this closes the What's new dialog; it did, so this passed."); if not, the failure
   message says why ("…; it's still open."). Passing runs never call the model for it.
+- Noise zones (areas that change by themselves) are capped: none may cover more than a quarter of the
+  screen, and a step that changes most of the screen resets what earlier steps saw moving. A step
+  whose `pre` or `post` would have less than 10% of its area left after its ignore zones is refused
+  with `unchecked`. On replay, such a check (from an older recording) is skipped and the step's
+  result says `unchecked: ["pre" | "post" | "checkpoint" | "waitUntil"]`; it is never passed silently.
+- Names: what the page itself calls the element (its accessible name and role, read through the
+  DevTools protocol before the action) comes first; else the AI assistant's name, unless its reply
+  echoes a template; else "Click the spot you clicked". `record.propose` leaves out a box bigger
+  than 12% of the page.
+- A click that opens the page's file picker up to 3 s later (after an async step) is still caught.
 - `waitFor` (Wait N seconds) only waits: it's recorded with no `pre`, `post`, `ignore` or `expect`, and
   replay ignores any of those an older file has on it. The next step's pre-check guards the page.
 - `waitUntil` needs `region`; nothing is performed. The step stores `region`, `hash` (how the
@@ -253,6 +265,9 @@ screenshots in a row match the first of them (a slow fade changes each frame onl
 click that starts a crossfade waits it out itself and the next step doesn't pay for it.
 
 `run.start` also takes `keepOpen` and `upToStepId` for the recorder's own Run and Play to here.
+The start page (`browser.open`, a run's `startUrl`) gets 15 s to load; then the call or the run fails
+with `network` "The start page at … didn't load in 15 seconds. Check the address, and that the site is up."
+
 With `keepOpen: true` the run is the same (a brand-new browser at `startUrl`: no cookies, storage,
 cache or service workers from the recording session; set-up call, secrets,
 shared steps and repeats as given) but the browser stays open at the end, frames keep coming, and
