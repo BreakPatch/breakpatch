@@ -156,7 +156,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
 
   return (
     <div className="rec-bar">
-      {/* Over the bottom of the page, not in the layout: the page view never moves when it comes and goes. */}
+      {/* Everything that comes and goes (AI bars, the chosen action's options) floats over the bottom of the
+          page, never in the layout: the add step bar keeps one height and the page view never moves. */}
       <div className="rec-float">
       {rec.ai.state === 'result' && (
         <div className="rec-ai rec-ai-result" role="status">
@@ -174,6 +175,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
           <button type="button" className="rec-ai-link" onClick={() => { rec.cancelAi(); inputRef.current?.focus(); }}>OK</button>
         </div>
       )}
+      {extra}
       </div>
       <div className="rec-hint">{hint}</div>
       <div className="rec-composer-wrap">
@@ -197,7 +199,6 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
             onBack={() => setMenu('menu')} onClose={() => { setMenu('closed'); rec.setAction('click'); }} />
         )}
       </div>
-      {extra}
     </div>
   );
 }

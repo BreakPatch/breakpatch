@@ -74,7 +74,8 @@ export function StepRow(p: StepRowProps) {
         <div className={'step-disc' + (p.checking ? ' checking' : '')}><Icon name={stepIcon(step)} size={17} /></div>
         <div className="step-main">
           <div className={'step-label' + (faintLabel ? ' faint' : '')}>{step.label}</div>
-          {p.note && <div className={'step-note tone-' + (p.noteTone ?? 'muted')}>{p.note}</div>}
+          {/* Open (the card expanded): the whole note, wrapped. Closed: one line, the rest on hover. */}
+          {p.note && <div className={'step-note tone-' + (p.noteTone ?? 'muted') + (p.children ? ' full' : '')} title={typeof p.note === 'string' ? p.note : undefined}>{p.note}</div>}
         </div>
         {p.trailing}
         {st && (

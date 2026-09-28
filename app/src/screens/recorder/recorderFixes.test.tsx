@@ -139,3 +139,36 @@ describe('clicks map to true page pixels', () => {
     expect(screen.getByText('Wait for step 2 to finish, then click.')).toBeInTheDocument();
   });
 });
+
+describe('nothing under or over the page moves it', () => {
+  it('keeps the add step bar to the hint and the composer for every action; the rest floats', async () => {
+    const { AddStepBar } = await import('./AddStepBar');
+    const { menuGroups } = await import('./actions');
+    const { result } = hook();
+    for (const item of menuGroups({ allowGroups: true }).flatMap(g => g.items)) {
+      if (item.nav || item.kind === 'group') continue;
+      act(() => { result.current.setAction(item.kind); });
+      const { container, unmount } = render(<AddStepBar rec={result.current} appId="a" allowGroups onInsertGroup={() => undefined} />);
+      const inFlow = [...container.querySelector('.rec-bar')!.children].map(c => c.className.split(' ')[0]);
+      expect(inFlow, item.kind).toEqual(['rec-float', 'rec-hint', 'rec-composer-wrap']);
+      unmount();
+    }
+    expect(css('recorder.css')).toMatch(/\.rec-float \{ position: absolute;/);
+  });
+});
+
+describe('a failed step says why in full', () => {
+  const steps: Step[] = [{ id: 'a', action: 'click', label: 'Click Next button', at: [10, 10] }];
+  const why = 'The step was done, but nothing changed on the page the way it did when it was recorded.';
+  it('wraps the whole reason when the card is open, and keeps it on hover when closed', () => {
+    const { container, rerender } = render(<StepsPanel steps={steps} mode="edit" selectedId="a" statuses={{ a: 'failed' }} notes={{ a: why }} onChange={() => undefined} onSelect={() => undefined} />);
+    let note = container.querySelector('.step-note')!;
+    expect(note).toHaveTextContent(why);
+    expect(note.className).toContain('full');
+    expect(css('../../components/steps/steps.css')).toMatch(/\.step-note\.full \{ white-space: normal;/);
+    rerender(<StepsPanel steps={steps} mode="run" statuses={{ a: 'failed' }} notes={{ a: why }} />);
+    note = container.querySelector('.step-note')!;
+    expect(note.className).not.toContain('full');
+    expect(note.getAttribute('title')).toBe(why);
+  });
+});

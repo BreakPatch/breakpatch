@@ -38,6 +38,7 @@
 .step-label { font-size: 14px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .step-label.faint { color: var(--text-faint); }
 .step-note { font-size: 12px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step-note.full { white-space: normal; overflow: visible; }
 .step-note.tone-muted { color: var(--text-muted); }
 .step-note.tone-failed { color: var(--failed); }
 .step-note.tone-passed { color: var(--passed); }
