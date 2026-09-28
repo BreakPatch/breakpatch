@@ -120,6 +120,18 @@ the app config, or (Breakpatch Team) the workspace's model override.
 | `browser.navigate` | `{ nav: "url"\|"reload"\|"back"\|"forward", url? }` | `{}` |
 | `browser.pointer` | `{ kind: "move"\|"scroll", at, dx?, dy? }` | `{}` — lets the user scroll/hover the live view without recording; `busy` while a step records |
 
+**Use the page** (the recorder's ✋ toggle) lets the user work the page directly, a deliberate
+exception to "nothing reaches the page until it's confirmed":
+
+| Method | Params | Result |
+|---|---|---|
+| `browser.hand` | `{ on }` | `{}` — while on, `record.point`, `record.checkpoint` and `record.propose` answer `busy`; a run or `browser.open`/`close` turns it off |
+| `browser.input` | `{ kind: "down"\|"up"\|"move"\|"click"\|"wheel"\|"key"\|"text", at?, button?, dx?, dy?, key?, text? }` | `{}` — straight to the page, no frame check; `bad_request` unless `browser.hand` is on |
+| `browser.chooseFile` | `{ sample }` \| `{ file, path }` \| `{ cancel: true }` | `{}` — the answer to a `browser.fileChooser` `{ accept, multiple }` event: a file picker the page opened while used by hand |
+
+Nothing is recorded in this mode, and key values and typed text are never logged (only the kind of
+input, at debug level).
+
 The test browser only shows web pages: `http://` and `https://` addresses, and `about:blank`.
 `browser.open`, `browser.navigate` (`nav: "url"`), a run's `startUrl` and a `navigate` step refuse
 anything else (`file:`, `chrome:`, `chrome-extension:`, `view-source:`, `devtools:`, other `about:`

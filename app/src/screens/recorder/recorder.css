@@ -160,3 +160,7 @@
 .fc-error { font-size: 13px; color: var(--failed); padding: 8px; }
 .rec-secret-name { display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }
 .rec-secret-err { color: var(--failed); font-size: 12px; }
+.rec-banner { background: var(--surface); border: 1px solid var(--line-strong); }
+.rec-banner .rec-ai-icon { color: var(--accent); }
+.rec-banner.ok .rec-ai-icon { color: var(--passed); }
+.rec-banner.bad .rec-ai-icon { color: var(--failed); }

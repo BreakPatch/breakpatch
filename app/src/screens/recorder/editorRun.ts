@@ -27,6 +27,15 @@ export interface EditorRunDone {
   passedIds?: string[];
 }
 
+/**
+ * Play this step: the step to play up to first, when the page isn't just after the step before it,
+ * else null. Never after the page was used by hand, nor for "Play on the page as it is".
+ */
+export function playUpToFirst(rows: string[], id: string, atStepId: string | null, manual: boolean, asIs = false): string | null {
+  const prev = rows[rows.indexOf(id) - 1] ?? null;
+  return !asIs && !manual && prev && atStepId !== prev ? prev : null;
+}
+
 /** Row statuses and notes for the steps list, from a run's live state. */
 export function editorStatuses(view: RunView, steps: Step[], mode: EditorRunMode | null): { statuses: Record<string, RowStatus>; notes: Record<string, string> } {
   const statuses: Record<string, RowStatus> = {};

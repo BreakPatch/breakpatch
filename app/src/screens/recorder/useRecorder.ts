@@ -124,6 +124,22 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   // "Checking the screen…" follows the engine's record.checking events while a step records.
   // A click opened the page's file picker: the app asks which file (FileChooserDialog).
   const [fileAsk, setFileAsk] = useState<FileChooserEvent | null>(null);
+  // "Use the page": the user works the page directly; nothing is recorded or proposed. Afterwards
+  // the page is "set up by hand": where it is among the steps is unknown.
+  const [hand, setHandState] = useState(false);
+  const [manual, setManual] = useState(false);
+  const manualRef = useRef(false);
+  useEffect(() => { manualRef.current = manual; }, [manual]);
+  const [handAsk, setHandAsk] = useState<FileChooserEvent | null>(null);
+  useEffect(() => engine.on('browser.fileChooser', d => setHandAsk(d)), [engine]);
+  const setHand = useCallback(async (on: boolean) => {
+    if (on) { aiToken.current++; setAi({ state: 'idle' }); }
+    try { await engine.hand(on); } catch (e) { onErrorRef.current(e instanceof Error ? e.message : "Couldn't do that."); return; }
+    setHandState(on);
+    if (!on) { setManual(true); setAtStepId(null); setHandAsk(null); }
+  }, [engine]);
+  // Steps played on a page set up by hand: "Played on a page set up by hand" until the next full Run.
+  const [handPlayed, setHandPlayed] = useState<Set<string>>(new Set());
   // A typed password (a Write into a masked field): offer once to save it as a saved secret.
   const [secretAsk, setSecretAsk] = useState<string | null>(null);
   useEffect(() => engine.on('record.fileChooser', d => { if (busyRef.current) setFileAsk(d); }), [engine]);
@@ -154,8 +170,11 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     return appendStep(s, step, openLoopId);
   };
   /** After a Run (all played) or Play to here: where the page is now, and where new steps go. */
-  const played = useCallback((opts: { full: boolean; at: string | null; insertAfter: string | null; passed?: string[] }) => {
-    if (opts.full) setUnplayed(new Set());
+  const played = useCallback((opts: { full: boolean; at: string | null; insertAfter: string | null; passed?: string[]; fresh?: boolean; step?: string }) => {
+    if (opts.full) { setUnplayed(new Set()); setHandPlayed(new Set()); }
+    // Run and Play to here start in a brand-new browser: the page is no longer set up by hand.
+    if (opts.fresh) setManual(false);
+    else if (opts.step && manualRef.current) setHandPlayed(h => new Set([...h, opts.step!]));
     // A step that just passed has been played since the change, whichever way it was played.
     else if (opts.passed?.length) setUnplayed(u => new Set([...u].filter(id => !opts.passed!.includes(id))));
     setAtStepId(opts.at); setInsertAfter(opts.insertAfter); setAddedId(null); setSelectedId(null);
@@ -280,7 +299,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   }
 
   // ---------- Page ----------
-  const pageBusy = () => busyRef.current || ai.state === 'thinking';
+  const pageBusy = () => busyRef.current || ai.state === 'thinking' || hand;
   // Nothing a user does on the live view reaches the page: a click, drag or scroll proposes the step,
   // and only Confirm does it. `frame`: the live view frame the user pressed on; the engine refuses
   // the step if the page has changed since.
@@ -330,7 +349,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
 
   // ---------- Composer ----------
   function send() {
-    if (busyRef.current || ai.state === 'thinking') return;
+    if (busyRef.current || ai.state === 'thinking' || hand) return;
     const t = text.trim();
     switch (action) {
       case 'write': {
@@ -366,6 +385,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi, pageScroll, retryNote,
     insertAfterId, setInsertAfter, unplayed, atStepId, played,
+    hand, setHand, manual, handPlayed, handAsk,
+    handChooseFile: (c: FileChoice) => { setHandAsk(null); void engine.handChooseFile(c).catch(() => undefined); },
     /** A step was edited: when it now does something else to the page, the steps after it haven't been played since. */
     edited: (id: string, affectsPage: boolean) => {
       if (!affectsPage) return;

@@ -1051,3 +1051,59 @@ async def test_a_seconds_wait_only_waits_and_records_no_checks(site):
            "expect": "changes"}
     ended = await hx.run([old], site + "/still.html")
     assert ended["result"] == "pass", ended
+
+
+
+# ---------- "Use the page": the user's input goes to the page, nothing is recorded ----------
+
+async def test_using_the_page_by_hand_reaches_it_and_records_nothing(site, caplog):
+    import logging
+    caplog.set_level(logging.DEBUG, logger="breakpatch")
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/field.html", "viewport": VIEWPORT})
+    try:
+        page = hx.engine.browser.page
+        with pytest.raises(EngineError):
+            await hx.call("browser.input", {"kind": "text", "text": "x"})           # only while it's on
+        await hx.call("browser.hand", {"on": True})
+        await hx.call("browser.input", {"kind": "click", "at": [200, 40]})
+        await hx.call("browser.input", {"kind": "text", "text": "hunter2-secret"})
+        await hx.call("browser.input", {"kind": "key", "key": "Backspace"})
+        await hx.call("browser.input", {"kind": "wheel", "at": [200, 40], "dx": 0, "dy": 50})
+        assert await page.input_value("#f") == "hunter2-secre"
+        with pytest.raises(EngineError) as e:
+            await hx.call("record.point", {"action": "click", "at": [100, 120]})
+        assert e.value.code == "busy"
+        with pytest.raises(EngineError):
+            await hx.call("record.propose", {"at": [100, 120]})
+        assert hx.of("record.checking") == []                                        # nothing recorded
+        assert "hunter2" not in caplog.text and "Backspace" not in caplog.text        # key values never logged
+        await hx.call("browser.hand", {"on": False})
+        with pytest.raises(EngineError):
+            await hx.call("browser.input", {"kind": "text", "text": "x"})
+        # A run afterwards starts in a brand-new browser: nothing typed by hand is there.
+        await hx.call("browser.hand", {"on": True})
+        ended = await hx.run([{"id": "w", "action": "waitFor", "durationMs": 10}], site + "/field.html", keepOpen=True)
+        assert ended["result"] == "pass" and hx.engine._hand is False
+        assert await hx.engine.browser.page.input_value("#f") == ""
+    finally:
+        await hx.call("browser.close")
+
+
+async def test_a_file_picker_opened_by_hand_only_feeds_the_page(site):
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/upload.html", "viewport": VIEWPORT})
+    try:
+        await hx.call("browser.hand", {"on": True})
+        await hx.call("browser.input", {"kind": "click", "at": [190, 60]})
+        for _ in range(100):
+            if hx.of("browser.fileChooser"):
+                break
+            await asyncio.sleep(0.02)
+        assert hx.of("browser.fileChooser") == [{"accept": "image/*", "multiple": False}]
+        await hx.call("browser.chooseFile", {"sample": "jpeg"})
+        await asyncio.sleep(0.2)
+        assert (await hx.engine.browser.page.text_content("#names")).startswith("sample.jpeg ")
+        assert hx.of("record.fileChooser") == [] and hx.of("record.checking") == []
+    finally:
+        await hx.call("browser.close")

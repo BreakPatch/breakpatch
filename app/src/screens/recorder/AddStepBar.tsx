@@ -16,10 +16,12 @@ const CLICK_FAMILY = new Set(['click', 'doubleClick', 'longClick', 'rightClick',
 const FILE_TYPES = [['', 'Any type'], ['pdf', 'PDF'], ['csv', 'CSV'], ['xlsx', 'Excel sheet'], ['docx', 'Word document'], ['jpeg', 'JPEG image'], ['mp4', 'MP4 video']];
 const GEN: [Generated, string][] = [['uniqueName', 'A unique name'], ['timeNow', 'The time now'], ['today', "Today's date"], ['repeatNumber', 'The repeat number']];
 
-export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
+export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, banner }: {
   rec: Recorder; appId: string; allowGroups: boolean; onInsertGroup: (g: StepGroup, version: number | 'latest') => void;
   /** Adding steps waits (the test is playing in this browser): says why. */
   frozen?: string | null;
+  /** A line floating over the page ("Playing steps 1–9 first…", "You're using the page directly…"). */
+  banner?: { text: string; tone?: 'ok' | 'bad'; action?: { label: string; onClick: () => void } } | null;
 }) {
   const [menu, setMenu] = useState<'closed' | 'menu' | 'picker'>('closed');
   const [secretNames, setSecretNames] = useState<string[]>([]);
@@ -174,6 +176,13 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen }: {
       {/* Everything that comes and goes (AI bars, the chosen action's options) floats over the bottom of the
           page, never in the layout: the add step bar keeps one height and the page view never moves. */}
       <div className="rec-float">
+      {banner && (
+        <div className={'rec-ai rec-banner' + (banner.tone ? ' ' + banner.tone : '')} role="status">
+          <Icon name={banner.action ? 'back_hand' : banner.tone === 'bad' ? 'cancel' : banner.tone === 'ok' ? 'check_circle' : 'play_arrow'} size={20} className="rec-ai-icon" />
+          <div className="grow">{banner.text}</div>
+          {banner.action && <Button kind="primary" onClick={banner.action.onClick}>{banner.action.label}</Button>}
+        </div>
+      )}
       {(rec.ai.state === 'result' || rec.ai.state === 'proposal') && (
         <div className="rec-ai rec-ai-result" role="status">
           <Icon name={rec.ai.state === 'proposal' ? actionInfo(rec.ai.params.action).icon : 'auto_awesome'} size={20} className="rec-ai-icon" />

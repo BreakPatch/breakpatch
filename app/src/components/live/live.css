@@ -90,3 +90,11 @@
 .live-dragline line { stroke: var(--accent); stroke-width: calc(3px / var(--s)); stroke-dasharray: calc(8px / var(--s)) calc(6px / var(--s)); }
 .live-dragline circle { fill: var(--accent); }
 .live-dragline circle.end { fill: var(--on-accent); stroke: var(--accent); stroke-width: calc(3px / var(--s)); }
+
+/* "Use the page": a coloured ring round the page (a shadow, so nothing moves) and a normal cursor. */
+.live.hand .live-frame { box-shadow: 0 0 0 3px var(--fixed); }
+.live-hit.tool-hand { cursor: default; outline: none; }
+.live-hand-btn { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); border-radius: 8px; padding: 4px 8px; flex: none; white-space: nowrap; }
+.live-hand-btn:hover:not(:disabled) { background: var(--raised); color: var(--text); }
+.live-hand-btn:disabled { opacity: .4; cursor: default; }
+.live-hand-btn.on { background: var(--fixed); color: var(--on-accent); font-weight: 600; }

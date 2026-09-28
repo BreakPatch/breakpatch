@@ -23,6 +23,11 @@ export type CheckingPhase = 'watching' | 'acting' | 'settling' | 'reloading' | '
 
 /** A click opened the page's file picker: the app asks which file to use (`record.chooseFile`). */
 export interface FileChooserEvent { accept: string; multiple: boolean }
+export type HandInput =
+  | { kind: 'down' | 'up' | 'move' | 'click'; at: Point; button?: 'left' | 'right' | 'middle' }
+  | { kind: 'wheel'; at: Point; dx: number; dy: number }
+  | { kind: 'key'; key: string }
+  | { kind: 'text'; text: string };
 export type FileChoice = { sample: SampleFile } | { file: string; path: string } | { cancel: true };
 
 export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' | 'post' | 'ignore'>> & {
@@ -103,6 +108,8 @@ export interface EngineEvents {
   'setup.progress': SetupProgress;
   'record.checking': { phase: CheckingPhase };
   'record.fileChooser': FileChooserEvent;
+  /** A file picker the page opened while the user uses it by hand (answer with handChooseFile). */
+  'browser.fileChooser': FileChooserEvent;
   'run.step': RunStepEvent;
   'run.ended': RunEnded;
 }
@@ -134,6 +141,11 @@ export interface Engine {
   propose(at: Point, opts?: { name?: boolean }): Promise<Proposal>;
   /** The answer to a `record.fileChooser` event. */
   chooseFile(choice: FileChoice): Promise<void>;
+  /** "Use the page": the user's own input goes straight to the page; nothing is recorded. */
+  hand(on: boolean): Promise<void>;
+  /** One piece of input while it's on. Key values are never logged. */
+  input(i: HandInput): Promise<void>;
+  handChooseFile(choice: FileChoice): Promise<void>;
   recordCheckpoint(region: Box, frame?: number): Promise<Step>;
 
   startRun(r: RunStart): Promise<void>;

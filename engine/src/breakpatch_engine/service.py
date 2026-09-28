@@ -54,6 +54,9 @@ class Engine:
         self._activity: str | None = None      # "recording" | "run"
         self._run: tuple[str, asyncio.Task, asyncio.Event] | None = None
         self._browser_lock = asyncio.Lock()
+        self._hand = False                      # "Use the page" is on
+        self._hand_page = None
+        self._pending_chooser = None
 
     def handlers(self) -> dict:
         return {
@@ -67,6 +70,9 @@ class Engine:
             "browser.close": self.browser_close,
             "browser.navigate": self.browser_navigate,
             "browser.pointer": self.browser_pointer,
+            "browser.hand": self.browser_hand,
+            "browser.input": self.browser_input,
+            "browser.chooseFile": self.browser_choose_file,
             "record.point": self.record_point,
             "record.locate": self.record_locate,
             "record.checkpoint": self.record_checkpoint,
@@ -107,12 +113,14 @@ class Engine:
 
     async def browser_open(self, p: dict) -> dict:
         self._not_during_run()
+        await self.browser_hand({"on": False})
         async with self._browser_lock:
             await self.browser.open(p.get("url") or "", p.get("viewport") or {})
         return {}
 
     async def browser_close(self, p: dict) -> dict:
         self._not_during_run()
+        await self.browser_hand({"on": False})
         async with self._browser_lock:
             await self.browser.close()
         return {}
@@ -121,6 +129,97 @@ class Engine:
         self._not_during_run()
         self.browser.require()
         await self.browser.navigate(p.get("nav") or "url", p.get("url"))
+        return {}
+
+    # ---------- "Use the page": the user's own input goes straight to the page ----------
+    # Nothing is recorded or proposed, and there's no frame check: the user sees the page and acts
+    # on it like any browser. Key values are typed and never logged.
+
+    async def browser_hand(self, p: dict) -> dict:
+        self._not_during_run()
+        on = bool(p.get("on"))
+        if on and self._activity == "recording":
+            raise EngineError("busy", "Wait for the step to finish first.")
+        page = self.browser.require() if on else self.browser.page
+        if on and not self._hand:
+            self._hand = True
+            self._hand_page = page
+            page.on("filechooser", self._hand_chooser)
+        elif not on and self._hand:
+            self._hand = False
+            try:
+                self._hand_page.remove_listener("filechooser", self._hand_chooser)
+            except Exception:  # noqa: BLE001
+                pass
+            self._hand_page = None
+            self._pending_chooser = None
+        return {}
+
+    def _hand_chooser(self, chooser) -> None:
+        """A file picker the page opened while the user uses it: the app asks which file, the same
+        way as when recording, and it only goes to the page."""
+        self._pending_chooser = chooser
+
+        async def ask():
+            try:
+                accept = await chooser.element.get_attribute("accept") or ""
+            except Exception:  # noqa: BLE001
+                accept = ""
+            self.emit("browser.fileChooser", {"accept": accept, "multiple": bool(chooser.is_multiple())})
+        asyncio.ensure_future(ask())
+
+    async def browser_choose_file(self, p: dict) -> dict:
+        from .actions import FILE_REF, sample_path
+        chooser, self._pending_chooser = self._pending_chooser, None
+        if chooser is None:
+            raise EngineError("bad_request", "No file picker is waiting.")
+        if p.get("cancel"):
+            return {}
+        if p.get("sample"):
+            await chooser.set_files(str(sample_path(p["sample"])))
+            return {}
+        ref, path = str(p.get("file") or ""), Path(str(p.get("path") or ""))
+        if not FILE_REF.match(ref) or not path.is_file() or path.name != ref.split("/", 1)[1]:
+            raise EngineError("bad_request", "That file can't be used. Pick it again.", ref[:120])
+        await chooser.set_files(str(path))
+        return {}
+
+    async def browser_input(self, p: dict) -> dict:
+        """One piece of the user's input, straight to the page (only while "Use the page" is on):
+        `{ kind: "down"|"up"|"move"|"click"|"wheel"|"key"|"text", at?, button?, dx?, dy?, key?, text? }`."""
+        if not self._hand:
+            raise EngineError("bad_request", "Turn on Use the page first.")
+        self._not_during_run()
+        page = await self.browser.live()
+        kind = p.get("kind")
+        at = p.get("at")
+        pos = (float(at[0]), float(at[1])) if isinstance(at, list) and len(at) == 2 else None
+        button = p.get("button") if p.get("button") in ("left", "right", "middle") else "left"
+        if kind in ("down", "up", "move", "click", "wheel") and pos is None:
+            raise EngineError("bad_request", "The engine received a position it couldn't read.", repr(at))
+        if kind == "move":
+            await page.mouse.move(*pos)
+        elif kind == "down":
+            await page.mouse.move(*pos)
+            await page.mouse.down(button=button)
+        elif kind == "up":
+            await page.mouse.move(*pos)
+            await page.mouse.up(button=button)
+        elif kind == "click":
+            await page.mouse.click(*pos, button=button)
+        elif kind == "wheel":
+            await page.mouse.move(*pos)
+            await page.mouse.wheel(float(p.get("dx") or 0), float(p.get("dy") or 0))
+        elif kind == "key":
+            key = str(p.get("key") or "")
+            if not key or len(key) > 40:
+                raise EngineError("bad_request", "The engine received a key it couldn't read.")
+            await page.keyboard.press(key)
+        elif kind == "text":
+            await page.keyboard.insert_text(str(p.get("text") or "")[:1000])
+        else:
+            raise EngineError("bad_request", "The engine doesn't know that kind of input.", str(kind)[:20])
+        log.debug("used the page: %s", kind)          # the kind only, never a key or text
         return {}
 
     async def browser_pointer(self, p: dict) -> dict:
@@ -142,6 +241,8 @@ class Engine:
 
     async def _recording(self, fn):
         self._not_during_run()
+        if self._hand:
+            raise EngineError("busy", "Recording is paused while you use the page. Press Done first.")
         if self._activity == "recording":
             raise EngineError("busy", "The engine is still checking the last step.")
         self._activity = "recording"
@@ -168,6 +269,8 @@ class Engine:
 
     async def record_propose(self, p: dict):
         self._not_during_run()
+        if self._hand:
+            raise EngineError("busy", "Recording is paused while you use the page. Press Done first.")
         if self._activity == "recording":
             raise EngineError("busy", "The engine is still checking the last step.")
         return await self.recorder.propose(p)
@@ -182,6 +285,8 @@ class Engine:
     async def run_start(self, p: dict) -> dict:
         if self._activity is not None:
             raise EngineError("busy", "Another test is running or a step is being recorded.")
+        if self._hand:
+            await self.browser_hand({"on": False})     # a run never starts while the page is used by hand
         if not isinstance(p.get("steps"), list):
             raise EngineError("bad_request", "This test has no steps to run.")
         if not install.browser_status().get("installed"):

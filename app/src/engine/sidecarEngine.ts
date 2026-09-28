@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSystem } from '../state/system';
 import { listen } from '@tauri-apps/api/event';
 import type { Box, HttpCall, Point, Step, Viewport } from '../data/types';
-import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type LocateResult, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
+import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
 
 interface Wire { event: keyof EngineEvents; data: unknown }
 
@@ -48,6 +48,9 @@ export class SidecarEngine implements Engine {
   async recordPoint(p: RecordParams) { return (await this.call<{ step: Step }>('record.point', p)).step; }
   locate(description: string) { return this.call<LocateResult | null>('record.locate', { description }); }
   async chooseFile(choice: FileChoice) { await this.call('record.chooseFile', choice); }
+  async hand(on: boolean) { await this.call('browser.hand', { on }); }
+  async input(i: HandInput) { await this.call('browser.input', i); }
+  async handChooseFile(choice: FileChoice) { await this.call('browser.chooseFile', choice); }
   propose(at: Point, opts: { name?: boolean } = {}) { return this.call<Proposal>('record.propose', { at, ...(opts.name === false ? { name: false } : {}) }); }
   async recordCheckpoint(region: Box, frame?: number) { return (await this.call<{ step: Step }>('record.checkpoint', { region, frame })).step; }
 

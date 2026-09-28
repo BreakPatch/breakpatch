@@ -15,7 +15,7 @@ import { useRecorder } from './useRecorder';
 import { addressOf, useBrowserSession } from './browserSession';
 import { hasFeature } from '../../edition';
 import { filesDir } from '../../lib/testFiles';
-import { editorStatuses, useEditorRun, type EditorRunDone } from './editorRun';
+import { editorStatuses, playUpToFirst, useEditorRun, type EditorRunDone } from './editorRun';
 import { getEngine } from '../../engine';
 import { recordedOnForSave } from './recordedOn';
 
@@ -37,7 +37,13 @@ export default function RecorderScreen() {
   const browser = useBrowserSession(test?.startUrl, test ? viewport : undefined, m => toast(m, { error: true }));
   const editorRun = useEditorRun({ test, steps: () => rec.stepsRef.current });
   const [done, setDone] = useState<EditorRunDone | null>(null);
-  const [offerPlay, setOfferPlay] = useState<string | null>(null);
+  // The floating line over the page while steps play for Play this step ("Playing steps 1–9 first…").
+  const [banner, setBanner] = useState<{ text: string; tone?: 'ok' | 'bad'; ms?: number } | null>(null);
+  useEffect(() => {
+    if (!banner?.ms) return;
+    const t = setTimeout(() => setBanner(null), banner.ms);
+    return () => clearTimeout(t);
+  }, [banner]);
 
   // Load the current version once per test; later updates (our own saves) don't overwrite edits.
   const loadedFor = useRef<string | null>(null);
@@ -83,7 +89,8 @@ export default function RecorderScreen() {
   /** Run (every step) or Play to here, in this browser. Never saves; the page stays where it ends. */
   async function play(mode: 'run' | 'play' | 'step', upTo?: string): Promise<EditorRunDone | null> {
     if (rec.busy || editorRun.running) return null;
-    rec.cancelAi(); rec.cancelRerecord(); setDone(null); setOfferPlay(null); setOfferStep(null);
+    if (rec.hand) await rec.setHand(false);
+    rec.cancelAi(); rec.cancelRerecord(); setDone(null);
     rec.runStarted();
     try {
       const d = await editorRun.start(mode, { upTo, keepRun: mode === 'run' && !rec.dirty });
@@ -95,47 +102,44 @@ export default function RecorderScreen() {
       if (d.result === 'fail') {
         // Stopped at the failed step: the marker goes after it, where fixing it goes on from.
         const at = d.stoppedAt && findStep(rec.stepsRef.current, d.stoppedAt) ? d.stoppedAt : null;
-        rec.played({ full: false, at: null, insertAfter: at && at !== last ? at : null, passed });
+        rec.played({ full: false, at: null, insertAfter: at && at !== last ? at : null, passed, fresh: mode !== 'step', step: mode === 'step' ? upTo : undefined });
         if (at) rec.setSelectedId(at);
-      } else if (mode === 'run') rec.played({ full: true, at: last, insertAfter: null, passed });
-      else rec.played({ full: false, at: upTo ?? null, insertAfter: upTo && upTo !== last ? upTo : null, passed });
+      } else if (mode === 'run') rec.played({ full: true, at: last, insertAfter: null, passed, fresh: true });
+      else rec.played({ full: false, at: upTo ?? null, insertAfter: upTo && upTo !== last ? upTo : null, passed, fresh: mode !== 'step', step: mode === 'step' ? upTo : undefined });
       return d;
     } catch (e) {
       toast(e instanceof Error ? e.message : "Couldn't start the run.", { error: true });
       return null;
     }
   }
-  /** Play this step: from the page as it is, which should be just after the step before it. */
-  const [offerStep, setOfferStep] = useState<string | null>(null);
-  const playStep = (id: string) => {
-    const rows = flatRows(rec.stepsRef.current).map(r => r.step.id);
-    const prev = rows[rows.indexOf(id) - 1] ?? null;
-    if (prev && rec.atStepId !== prev) { setOfferPlay(null); setOfferStep(id); return; }
-    void play('step', id);
+  /**
+   * Play this step (and Try it): the page should be just after the step before it. If it isn't,
+   * the steps up to that one play first, with no question; the floating bar says so. After the
+   * page was used by hand, or with "Play on the page as it is", the step plays on the page as it is.
+   */
+  const playStep = async (id: string, asIs = false) => {
+    const prev = playUpToFirst(flatRows(rec.stepsRef.current).map(r => r.step.id), id, rec.atStepId, rec.manual, asIs);
+    if (prev) {
+      setBanner({ text: `Playing steps 1–${n(prev)} first…` });
+      const d = await play('play', prev);
+      if (d?.result !== 'pass') { setBanner(null); return; }
+    }
+    setBanner({ text: `Playing step ${n(id)}…` });
+    const d = await play('step', id);
+    setBanner(d ? { text: d.result === 'pass' ? `Step ${n(id)} passed.` : `Step ${n(id)} didn't pass.`, tone: d.result === 'pass' ? 'ok' : 'bad', ms: 4000 } : null);
   };
+  /** "Add a step here": plays up to that step first when the page isn't there. */
   const addAfter = (id: string) => {
-    if (rec.atStepId === id) { rec.setInsertAfter(id); setOfferPlay(null); return; }
-    setOfferPlay(id);
+    if (rec.atStepId === id || rec.manual) { rec.setInsertAfter(id); return; }
+    setBanner({ text: `Playing steps 1–${n(id)} first…` });
+    void play('play', id).then(() => setBanner(null));
   };
-  const { statuses, notes } = editorStatuses(editorRun.view, rec.steps, editorRun.mode);
+  const { statuses, notes: runNotes } = editorStatuses(editorRun.view, rec.steps, editorRun.mode);
+  const notes = { ...runNotes };
+  for (const id of rec.handPlayed) if (!notes[id]) notes[id] = 'Played on a page set up by hand';
   const n = (id: string) => numberOf(rec.steps, id);
   let footer = null;
-  const prevOf = (id: string) => { const rows = flatRows(rec.steps).map(r => r.step.id); return rows[rows.indexOf(id) - 1]; };
-  if (offerStep && findStep(rec.steps, offerStep) && prevOf(offerStep)) footer = (
-    <div className="rec-runfoot" role="status">
-      <span className="grow">The page isn't just after step {n(prevOf(offerStep)!)}. Play up to step {n(prevOf(offerStep)!)} first?</span>
-      <Button size="sm" kind="primary" onClick={() => { const id = offerStep; void (async () => { const d = await play('play', prevOf(id)!); if (d?.result === 'pass') await play('step', id); })(); }}>Play up to step {n(prevOf(offerStep)!)} first</Button>
-      <button type="button" className="rec-hint-link" onClick={() => { const id = offerStep; setOfferStep(null); void play('step', id); }}>Play it anyway</button>
-    </div>
-  );
-  else if (offerPlay && findStep(rec.steps, offerPlay)) footer = (
-    <div className="rec-runfoot" role="status">
-      <span className="grow">The page isn't at step {n(offerPlay)} yet. Play the steps up to it first?</span>
-      <Button size="sm" kind="primary" onClick={() => void play('play', offerPlay)}>Play to here</Button>
-      <button type="button" className="rec-hint-link" onClick={() => { rec.setInsertAfter(offerPlay); setOfferPlay(null); }}>Just add it</button>
-    </div>
-  );
-  else if (editorRun.running) footer = <div className="rec-runfoot" role="status"><span className="grow">{editorRun.mode === 'play' ? 'Playing the steps in this browser…' : 'Running the test in this browser…'}</span></div>;
+  if (editorRun.running) footer = <div className="rec-runfoot" role="status"><span className="grow">{editorRun.mode === 'play' ? 'Playing the steps in this browser…' : 'Running the test in this browser…'}</span></div>;
   else if (done) footer = (
     <div className={'rec-runfoot ' + (done.result === 'pass' ? 'ok' : 'bad')} role="status">
       <span className="grow">{done.result === 'fail' ? (done.stoppedAt && findStep(rec.steps, done.stoppedAt) ? `Stopped at step ${n(done.stoppedAt)}. Fix it here, then run again.` : 'The run stopped.')
@@ -144,7 +148,8 @@ export default function RecorderScreen() {
       {done.runId && <Link className="rec-hint-link" to={`/apps/${appId}/runs/${done.runId}`}>See report</Link>}
     </div>
   );
-  const runProps = { running: editorRun.running, statuses, notes, footer, onPlayTo: (id: string) => void play('play', id), onAddAfter: addAfter, onPlayStep: playStep };
+  const runProps = { running: editorRun.running, statuses, notes, footer, banner, onPlayTo: (id: string) => void play('play', id), onAddAfter: addAfter,
+    onPlayStep: (id: string) => void playStep(id), onPlayAsIs: (id: string) => void playStep(id, true) };
   const publish = async () => {
     if (!test) return;
     try { await backend.setTestStatus(appId, test.id, 'published'); toast('Added to the team suite'); }

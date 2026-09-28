@@ -7,9 +7,9 @@
 // viewport pixels at DPR 1, and markers are given in viewport pixels too.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { Box, Point, Viewport } from '../../data/types';
-import { demoEngine, getEngine, type Frame } from '../../engine';
+import { demoEngine, getEngine, type Frame, type HandInput } from '../../engine';
 import { Icon } from '../ui';
-import { distance, fitScale, inside, nextZoom, normBox, PAGE_PAD, toViewport } from './geometry';
+import { distance, fitScale, inside, keyName, nextZoom, normBox, PAGE_PAD, toViewport } from './geometry';
 import { SampleApp } from './sample/SampleApp';
 import type { SampleState } from './sample/sampleModel';
 import './live.css';
@@ -52,6 +52,12 @@ export interface LiveViewProps {
    * nothing, and a press shows this text over the page for a moment.
    */
   blocked?: string | null;
+  /**
+   * "Use the page": the user's mouse, wheel and keys go straight to the page through `onInput`
+   * (nothing is recorded), and the page gets a coloured border.
+   */
+  passThrough?: boolean;
+  onInput?: (i: HandInput) => void;
   markers?: LiveMarker[];
   /** The AI assistant's candidate box while it asks "Is this …?". */
   candidate?: Box | null;
@@ -120,7 +126,7 @@ export function LiveView(props: LiveViewProps) {
   const loading = props.loading || (source === 'frames' && !props.image && !frame);
 
   return (
-    <div className={'live' + (className ? ' ' + className : '')}>
+    <div className={'live' + (props.passThrough ? ' hand' : '') + (className ? ' ' + className : '')}>
       {!hideBar && (
         <div className="live-bar">
           <div className="live-address" title={props.address}><Icon name="lock" size={16} /><span className="ellipsis">{props.address}</span></div>
@@ -155,7 +161,8 @@ export function LiveView(props: LiveViewProps) {
             {loading && <div className="live-loading"><Icon name="progress_activity" className="spin" />Opening the browser…</div>}
           </div>
           {blockedNote && props.blocked && <div className="live-blocked" role="status"><Icon name="hourglass_top" size={16} />{blockedNote}</div>}
-          {tool !== 'none' && (
+          {props.passThrough && props.onInput && <PassThrough scale={scale} vp={vp} frameRef={frameRef} onInput={props.onInput} />}
+          {tool !== 'none' && !props.passThrough && (
             <div className={'live-hit tool-' + tool + (pointer.hover ? ' on-target' : '') + (props.blocked ? ' blocked' : '')} aria-label="Live page. Click anything on the page to add a step."
               onPointerDown={pointer.down} onPointerMove={pointer.move} onPointerUp={pointer.up} onPointerLeave={pointer.leave}
               onWheel={pointer.wheel} />
@@ -183,6 +190,43 @@ function Candidate({ box }: { box: Box }) {
     <div className="live-candidate" style={boxStyle(box)}>
       <span className="dot tl" /><span className="dot br" />
     </div>
+  );
+}
+
+// ---------- "Use the page": input straight to the page ----------
+
+const BUTTONS = ['left', 'middle', 'right'] as const;
+
+function PassThrough({ scale, vp, frameRef, onInput }: {
+  scale: number; vp: Pick<Viewport, 'width' | 'height'>; frameRef: React.RefObject<HTMLDivElement | null>; onInput: (i: HandInput) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const moving = useRef<Point | null>(null);
+  useEffect(() => { ref.current?.focus(); }, []);
+  const at = (e: { clientX: number; clientY: number }): Point => {
+    const r = frameRef.current!.getBoundingClientRect();
+    return toViewport({ x: e.clientX - r.left, y: e.clientY - r.top }, scale, vp);
+  };
+  const button = (e: ReactPointerEvent) => BUTTONS[e.button] ?? 'left';
+  return (
+    <div ref={ref} className="live-hit tool-hand" tabIndex={0} aria-label="The page. You're using it directly: nothing is recorded."
+      onPointerDown={e => { e.preventDefault(); ref.current?.focus(); (e.target as HTMLElement).setPointerCapture?.(e.pointerId); onInput({ kind: 'down', at: at(e), button: button(e) }); }}
+      onPointerUp={e => onInput({ kind: 'up', at: at(e), button: button(e) })}
+      onPointerMove={e => {
+        const p = at(e);
+        if (moving.current) { moving.current = p; return; }
+        moving.current = p;
+        requestAnimationFrame(() => { const q = moving.current; moving.current = null; if (q) onInput({ kind: 'move', at: q }); });
+      }}
+      onContextMenu={e => e.preventDefault()}
+      onWheel={e => onInput({ kind: 'wheel', at: at(e), dx: Math.round(e.deltaX), dy: Math.round(e.deltaY) })}
+      onKeyDown={e => {
+        if (e.metaKey && e.key.toLowerCase() === 'e') return;           // Cmd+E leaves Use the page
+        const name = keyName(e);
+        e.preventDefault(); e.stopPropagation();
+        if (name === null) onInput({ kind: 'text', text: e.key });
+        else if (name) onInput({ kind: 'key', key: name });
+      }} />
   );
 }
 

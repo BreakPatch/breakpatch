@@ -50,3 +50,12 @@ export function lockBox(step: Step, targetBox?: (p: Point) => Box | undefined): 
   if (step.pre?.region) return step.pre.region;
   return at ? around(at, 24) : null;
 }
+
+/** Playwright's name for a key press ("Enter", "Shift+Tab", "Meta+a"), or null for plain text. */
+export function keyName(e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }): string | null {
+  const mods = [e.ctrlKey && 'Control', e.altKey && 'Alt', e.metaKey && 'Meta'].filter(Boolean) as string[];
+  if (e.key.length === 1 && !mods.length) return null;                 // typed text
+  if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(e.key)) return '';
+  const key = e.key === ' ' ? 'Space' : e.key;
+  return [...mods, ...(e.shiftKey && key.length > 1 ? ['Shift'] : []), key].join('+');
+}
