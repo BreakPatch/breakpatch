@@ -6,6 +6,7 @@ import { ToastProvider } from './components/ui';
 import { ErrorDialog } from './components/shell/ErrorDialog';
 import { UsageNotice } from './components/shell/UsageNotice';
 import { EngineStarting } from './components/shell/EngineStarting';
+import { NotificationReturn } from './components/shell/NotificationReturn';
 import { getEngine } from './engine';
 import { SecretSitesPrompt } from './components/shell/SecretSitesPrompt';
 import { useSession } from './state/session';
@@ -75,6 +76,7 @@ export default function App() {
           <SecretSitesPrompt />
           <UsageNotice />
           <EngineStarting />
+          <NotificationReturn />
         </HashRouter>
       </Provider>
     </ToastProvider>

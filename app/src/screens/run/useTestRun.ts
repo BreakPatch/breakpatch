@@ -12,6 +12,8 @@ import { hasFeature } from '../../edition';
 import { ensureSecretSites } from '../../lib/secretSites';
 import { first } from '../settings/secretUsage';
 import { filesDir } from '../../lib/testFiles';
+import { notifyFinished } from '../../lib/notify';
+import { findStep, numberOf } from '../../components/steps';
 import type { App } from '../../data/types';
 import { backendGroupLoader, callSecretNames, preorder, resolveSteps, secretNames } from './resolve';
 import { INITIAL_RUN, runReducer } from './runState';
@@ -85,6 +87,17 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
 
 export const newRunIdForEditor = () => newRunId();
 
+/** A local notification for a finished test run, when the settings and the window say so. */
+export function notifyTestRun(t: Pick<Test, 'name'>, ended: RunEnded, steps: Step[], path: string) {
+  const failed = ended.steps.filter(r => r.result === 'failed' && r.reason !== 'stopped')
+    .map(r => r.stepId).filter(id => { const s = findStep(steps, id); return s && !(s.steps && (s.action === 'loop' || s.action === 'group')); }).pop();
+  const step = failed ? findStep(steps, failed) : undefined;
+  return notifyFinished({
+    kind: 'test', name: t.name, result: ended.result, path,
+    ...(step ? { failedAt: { number: numberOf(steps, step.id), label: step.label } } : {}),
+  }, useSession.getState().prefs);
+}
+
 export class NoStepsError extends Error { constructor() { super('This test has no steps yet. Record some first.'); } }
 
 export function useTestRun() {
@@ -108,7 +121,8 @@ export function useTestRun() {
     };
   }, []);
 
-  const start = useCallback(async (t: Test): Promise<Finished | null> => {
+  /** `notify: false` inside a suite: the suite says how it went as a whole. */
+  const start = useCallback(async (t: Test, opts: { notify?: boolean } = {}): Promise<Finished | null> => {
     if (active.current) return null;
     dispatch({ type: 'prepare' });
     setTest(t); setRun(null); setSaveError(null);
@@ -159,6 +173,7 @@ export function useTestRun() {
         setSaveError(e instanceof Error ? e.message : String(e));
       }
       setRun(saved);
+      if (opts.notify !== false && saved) void notifyTestRun(t, ended, resolved, `/apps/${t.appId}/runs/${saved.id}`);
       return { ended, run: saved, steps: resolved };
     } catch (e) {
       if (active.current === handle) active.current = null;

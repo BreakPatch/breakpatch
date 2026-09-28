@@ -319,6 +319,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        // Local notifications when a run finishes in the background (Settings, Notifications).
+        .plugin(tauri_plugin_notification::init())
         .manage(engine)
         .manage(KeepAwake::default())
         .manage(WorkspaceInbox::default())
@@ -423,6 +425,13 @@ mod config_tests {
     fn the_asset_protocol_only_reaches_the_screenshots_folder() {
         let scope = &conf()["app"]["security"]["assetProtocol"]["scope"];
         assert_eq!(scope, &serde_json::json!(["$DATA/Breakpatch/screenshots/**"]));
+    }
+
+    /// The UI may show local notifications when a run finishes (lib/notify.ts).
+    #[test]
+    fn the_ui_may_notify() {
+        let caps: Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert!(caps["permissions"].as_array().unwrap().iter().any(|p| p == "notification:default"));
     }
 
     /// The local backend checks a test file's size before reading it (localBackend.ts).

@@ -11,7 +11,7 @@ import { useSession } from '../../state/session';
 import { backendGroupLoader, preorder, resolveSteps } from '../run/resolve';
 import { INITIAL_RUN, rowStatus, runReducer, type RunView } from '../run/runState';
 import { passNote, reasonText, slowNote } from '../run/reasons';
-import { engineRun, machineName, newRunIdForEditor } from '../run/useTestRun';
+import { engineRun, machineName, newRunIdForEditor, notifyTestRun } from '../run/useTestRun';
 
 /** run: every step. play: steps 1 to N. step: just one step, on the page as it is. */
 export type EditorRunMode = 'run' | 'play' | 'step';
@@ -120,6 +120,7 @@ export function useEditorRun({ test, steps }: { test: Test | null | undefined; s
             steps: ended.steps.map(s => (shots[s.stepId] && !s.screenshotPath ? { ...s, screenshotPath: shots[s.stepId] } : s)),
           });
           done.runId = run.id;
+          void notifyTestRun(test, ended, resolved, `/apps/${test.appId}/runs/${run.id}`);
         } catch { /* the run still shows in the editor; only the report link is missing */ }
       }
       return done;

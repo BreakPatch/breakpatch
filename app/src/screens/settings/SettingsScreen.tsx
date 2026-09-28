@@ -13,6 +13,7 @@ import { AboutSection } from './sections/AboutSection';
 import { PrivacySection } from './sections/PrivacySection';
 import { FolderSection } from './sections/FolderSection';
 import { ScreenChecksSection } from './sections/ScreenChecksSection';
+import { NotificationsSection } from './sections/NotificationsSection';
 import { useSession } from '../../state/session';
 import { useFeatureStore } from '../../edition/features';
 import './settings.css';
@@ -22,6 +23,7 @@ const OPEN: SettingsSection[] = [
   { key: 'ai', icon: 'auto_awesome', label: 'AI assistant', order: 40, element: AiSection },
   { key: 'checks', icon: 'devices', label: 'Screen checks', order: 55, element: ScreenChecksSection },
   { key: 'secrets', icon: 'key', label: 'Saved secrets', order: 60, element: SecretsSection },
+  { key: 'notifications', icon: 'message', label: 'Notifications', order: 70, element: NotificationsSection },
   { key: 'appearance', icon: 'contrast', label: 'Appearance', order: 80, element: AppearanceSection },
   { key: 'privacy', icon: 'shield', label: 'Privacy', order: 85, element: PrivacySection },
   { key: 'about', icon: 'info', label: 'About', order: 90, element: AboutSection },

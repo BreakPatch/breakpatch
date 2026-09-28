@@ -9,6 +9,7 @@ import { AppFrame } from '../../components/shell/AppFrame';
 import { Button, EmptyState, Icon, useToast } from '../../components/ui';
 import { clock, formatDuration, plural } from '../../components/common/format';
 import { useSession } from '../../state/session';
+import { notifyFinished } from '../../lib/notify';
 import { hasFeature } from '../../edition';
 import { RunPage } from '../run/RunStage';
 import { runInfo, runStrip, type Strip } from '../run/strip';
@@ -68,7 +69,7 @@ export default function SuiteRunScreen() {
       act({ type: 'testStart', index: i });
       if (!test) { act({ type: 'testEnd', index: i, state: 'missing', note: "Couldn't run: it was deleted" }); continue; }
       try {
-        const out = await start(test);
+        const out = await start(test, { notify: false });
         if (!out || !alive.current) return;                       // left the screen
         if (out.run) runIds.push(out.run.id);
         const stopped = out.ended.steps.some(s => s.reason === 'stopped');
@@ -90,6 +91,8 @@ export default function SuiteRunScreen() {
     const done = state.current;
     const counts = suiteCounts(done.items);
     const user = useSession.getState().user ?? backend.currentUser();
+    void notifyFinished({ kind: 'suite', name: suite.name, tests: counts.total, failed: counts.failed + counts.notRun,
+      durationMs: (done.finishedAt ?? Date.now()) - (done.startedAt ?? Date.now()), path: `/suites/${suite.id}` }, useSession.getState().prefs);
     try {
       await backend.addSuiteRun({
         suiteId: suite.id, suiteName: suite.name, result: suiteResult(counts), counts, testRunIds: runIds,

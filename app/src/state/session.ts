@@ -23,6 +23,9 @@ export interface Prefs {
   runnerName: string;
   /** Apps (by id) whose passwords typed as plain text shouldn't prompt "Save it as a saved secret?". */
   noSecretAsk?: string[];
+  /** Settings → Notifications: a run that fails, and every finished run (lib/notify.ts). */
+  notifyFailures?: boolean;
+  notifyAll?: boolean;
 }
 
 /** A tests folder on this Mac (Community). */
