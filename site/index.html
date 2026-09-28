@@ -268,7 +268,7 @@ suites/smoke.json</pre>
             <li>Schedules like <em>Mon–Fri, 06:00</em></li>
             <li>Run requests from Codemagic, GitHub Actions, Bitrise or Jenkins</li>
             <li>Result messages to Teams, Slack or email, through any web address</li>
-            <li><code>breakpatch-ci</code>: a command line that exits 0 on a pass and 1 on a fail</li>
+            <li>A failing test can stop a release before it ships, with <code>breakpatch-ci</code></li>
           </ul>
           <a class="more" href="/manual/#the-local-runner">About the local runner</a>
         </div>
@@ -409,7 +409,7 @@ suites/smoke.json</pre>
         </details>
         <details>
           <summary>Can I use it in CI?</summary>
-          <div class="a"><p>Yes, with Team, in two ways. Your pipeline can add a run request, and the local runner runs the suite and sends the result to any web address. Or run <code>breakpatch-ci run --test</code> on the CI machine: it exits 0 when the test passes and 1 when it fails. Both work with Codemagic, GitHub Actions, Bitrise and Jenkins. See <a href="/manual/#run-requests">Run requests</a>.</p></div>
+          <div class="a"><p>Yes, with Team, in two ways. Your pipeline can add a run request, and the local runner runs the suite and sends the result to any web address. Or run <code>breakpatch-ci run --test</code> on the CI machine: it tells your pipeline whether the test passed, so a failing test stops the build. Both work with Codemagic, GitHub Actions, Bitrise and Jenkins. See <a href="/manual/#run-requests">Run requests</a>.</p></div>
         </details>
       </div>
     </div>
