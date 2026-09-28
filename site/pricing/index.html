@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- data-prelaunch shows the pre-launch notes. Remove it on launch day (site/README.md, "Launch day"). -->
+<html lang="en" data-prelaunch>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -19,7 +20,7 @@
   </section>
 
   <aside class="founding" id="founding" aria-labelledby="founding-title" hidden>
-    <p class="founding-title" id="founding-title">Founding teams: $12/person/month for 24 months — 25 places</p>
+    <p class="founding-title" id="founding-title">Founding teams: $12/person/month for 24 months · 25 places</p>
     <p class="founding-sub">Team, billed yearly, instead of $16, for the first 25 teams of up to 20 people. The price is locked for 24 months from purchase, then the Team yearly price at that time, with 60 days’ notice. Extra machine licences are at list price.</p>
   </aside>
 
@@ -31,7 +32,7 @@
         <li>Record by clicking, or describe a step and let the AI assistant find it</li>
         <li>Run tests and suites by hand, with a clear report when something breaks</li>
         <li>Tests saved as files in a folder you pick</li>
-        <li>Help through GitHub issues</li>
+        <li>Help through GitHub issues<span class="prelaunch-text">, or email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a> until the public release</span></li>
       </ul>
       <a class="btn ghost plan-cta" href="../#install">Install Breakpatch</a>
     </article>
@@ -50,10 +51,10 @@
       </label>
       <p class="hint" id="founding-cap" hidden>The founding price is for teams of up to 20 people</p>
       <ul>
-        <li>A shared workspace on your own Firebase, joined with an invite link</li>
+        <li>A shared workspace in your company's own Google Firebase project (<a href="../manual/#create-a-workspace">how it's set up</a>), joined with an invite link</li>
         <li>Version history for every test, and the full run history</li>
         <li>Fixed automatically: the AI assistant finds buttons that moved</li>
-        <li>Schedules on any Mac, and 1 machine licence: one test run at a time, on a local runner or a CI machine</li>
+        <li>Schedules on your local runner Mac, and 1 machine licence: one test run at a time, on a local runner or a CI machine</li>
         <li>Email support, answered within 2 business days</li>
       </ul>
 
@@ -78,7 +79,7 @@
             <span class="hint" id="machine-price">$384 a year each</span>
           </div>
         </div>
-        <div class="fields">
+        <div class="fields buyer" id="buyer" hidden>
           <div class="field">
             <label for="email">Work email</label>
             <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@company.com" maxlength="254">
@@ -90,7 +91,7 @@
             <span class="hint">The name on your licence</span>
           </div>
         </div>
-        <div class="total"><span id="total">$960 a year</span><span class="hint" id="total-sub">5 people, 1 machine licence (1 included). Tax is added at checkout.</span></div>
+        <div class="total"><span id="total">$960 a year</span><span class="hint" id="total-sub">5 people, 1 machine licence (1 included).</span></div>
         <button class="btn plan-cta" id="buy" type="submit">Buy Team</button>
         <p class="hint" id="buy-note" hidden>Breakpatch Team is in a free private beta while we get ready to sell. Email <a href="mailto:support@breakpatch.dev?subject=Breakpatch%20Team%20beta">support@breakpatch.dev</a> to join, or to buy for your team now.</p>
         <p class="buy-error" id="buy-error" role="alert" hidden></p>
@@ -116,17 +117,36 @@
     <h2 id="faq-title">Questions</h2>
     <dl>
       <dt>What's a machine licence?</dt>
-      <dd>People take seats; a local runner Mac or a CI machine running <code>breakpatch-ci</code> takes a machine licence. A machine licence covers one test run at a time on any machine; a pipeline running N jobs in parallel needs N licences. Team includes one. Extra ones are $40 a month, or $384 a year, always at list price.</dd>
+      <dd>People take seats. A Mac that runs tests for the whole team (the local runner) or a build server that runs your tests takes a machine licence. Each machine licence runs one test at a time, so running two at once needs two. Team includes one. Extra ones are $40 a month, or $384 a year, always at list price.<br><span class="dev-note"><b>For developers:</b> A machine licence covers one test run at a time on any machine; a pipeline running N jobs in parallel needs N licences. A CI machine takes one when it runs <code>breakpatch-ci</code>.</span></dd>
       <dt>How do I get my licence key?</dt>
-      <dd>After checkout, sign in at <a href="https://account.breakpatch.dev">account.breakpatch.dev</a> with the email you bought with. Your key is shown there once. A workspace admin enters it in Breakpatch, in Settings → Licence.</dd>
+      <dd>After checkout, sign in at <a href="https://account.breakpatch.dev">account.breakpatch.dev</a> with the email you bought with. Your key is shown there once. A workspace admin enters it once in Breakpatch, in Settings → Licence. Then invite your team: the invite link sets up each person's licence, so they don't enter a key. The local runner and CI machines use a machine licence.</dd>
       <dt>Can I change the number of people later?</dt>
-      <dd>Yes, from your account page. The difference is charged or credited for the rest of the billing period. Cancel any time from Manage billing: the licence keeps working until the end of the period you paid for.</dd>
+      <dd>Yes, from your account page. Adding or removing seats or machine licences is charged or credited straight away, pro rata for the rest of the billing period; credits go against your next payments. Cancel any time from Manage billing: the licence keeps working until the end of the period you paid for.</dd>
       <dt>Who handles the payment?</dt>
-      <dd>Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders, and handles payments, invoices, tax and refunds. See our <a href="../refunds/">refund policy</a>.</dd>
+      <dd>Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders, and handles payments, invoices, tax and refunds. For help with Breakpatch itself, email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a>. You can ask either of us for a refund: see our <a href="../refunds/">refund policy</a>.</dd>
     </dl>
   </section>
 </main>
-<footer class="site-foot legal-foot"><span>Here to find what breaks.</span><a href="../manual/">Manual</a><a href="../terms/">Terms</a><a href="../privacy/">Privacy</a><a href="../refunds/">Refunds</a><a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></footer>
+<footer class="site-foot rich">
+  <div class="wrap">
+    <div class="foot-brand">
+      <a class="brand" href="/"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a>
+      <p>Here to find what breaks.</p>
+      <p><a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></p>
+    </div>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="/manual/">Manual</a>
+      <a href="/pricing/">Pricing</a>
+      <a href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a>
+      <a href="https://github.com/BreakPatch/breakpatch/releases" data-gh="/releases">Releases</a>
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/refunds">Refunds</a>
+      <a href="mailto:support@breakpatch.dev">Support</a>
+    </nav>
+    <p class="foot-small">© 2026 Breakpatch. The Community edition is open source under Apache 2.0.</p>
+  </div>
+</footer>
 <script src="../assets/site.js"></script>
 <script src="../assets/paddle-config.js"></script>
 <script src="../assets/pricing.js"></script>

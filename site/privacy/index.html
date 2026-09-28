@@ -28,13 +28,13 @@
   </ul>
 
   <h2>What we keep, at a glance</h2>
-  <div class="table-wrap"><table class="plain">
+  <div class="table-wrap"><table class="plain stack">
     <thead><tr><th scope="col">If you use</th><th scope="col">We keep</th><th scope="col">We never get</th></tr></thead>
     <tbody>
-      <tr><td>Breakpatch, free</td><td>Anonymous totals of tests and runs for everyone together. You can turn it off.</td><td>Your name, email, tests, websites, screenshots, passwords</td></tr>
-      <tr><td>Breakpatch Team</td><td>Your company's licence, who holds each seat (work email), which Mac uses it, simple usage totals</td><td>Your tests, websites, screenshots, passwords</td></tr>
-      <tr><td>Buying</td><td>Your name, email, company and what you bought, from Paddle</td><td>Your card details</td></tr>
-      <tr><td>This website</td><td>Nothing</td><td>Cookies, tracking</td></tr>
+      <tr><th scope="row">Breakpatch, free</th><td data-label="We keep">Anonymous totals of tests and runs for everyone together. You can turn it off.</td><td data-label="We never get">Your name, email, tests, websites, screenshots, passwords</td></tr>
+      <tr><th scope="row">Breakpatch Team</th><td data-label="We keep">Your company's licence, who holds each seat (work email), which Mac uses it, simple usage totals</td><td data-label="We never get">Your tests, websites, screenshots, passwords</td></tr>
+      <tr><th scope="row">Buying</th><td data-label="We keep">Your name, email, company and what you bought, from Paddle</td><td data-label="We never get">Your card details</td></tr>
+      <tr><th scope="row">This website</th><td data-label="We keep">Nothing</td><td data-label="We never get">Cookies, tracking</td></tr>
     </tbody>
   </table></div>
 
@@ -113,7 +113,26 @@
   <h2>Contact</h2>
   <p>Oscar Ivan Tigreros Bolanos, trading as Breakpatch, 17 The Cloisters, Ramsgate, CT11 9PL, United Kingdom. <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></p>
 </main>
-<footer class="site-foot legal-foot"><span>Here to find what breaks.</span><a href="../pricing/">Pricing</a><a href="../terms/">Terms</a><a href="../privacy/">Privacy</a><a href="../refunds/">Refunds</a><a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></footer>
+<footer class="site-foot rich">
+  <div class="wrap">
+    <div class="foot-brand">
+      <a class="brand" href="/"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a>
+      <p>Here to find what breaks.</p>
+      <p><a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></p>
+    </div>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="/manual/">Manual</a>
+      <a href="/pricing/">Pricing</a>
+      <a href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a>
+      <a href="https://github.com/BreakPatch/breakpatch/releases" data-gh="/releases">Releases</a>
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/refunds">Refunds</a>
+      <a href="mailto:support@breakpatch.dev">Support</a>
+    </nav>
+    <p class="foot-small">© 2026 Breakpatch. The Community edition is open source under Apache 2.0.</p>
+  </div>
+</footer>
 <script src="../assets/site.js" defer></script>
 </body>
 </html>

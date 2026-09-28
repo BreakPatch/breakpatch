@@ -2,7 +2,8 @@
 .pricing-head{text-align:center;padding:64px 0 32px;animation:in .3s ease-out both}
 .pricing-head h1{font-size:3rem;line-height:1.05;letter-spacing:-.025em;margin:0 0 12px}
 .pricing-head p{margin:0 auto;max-width:560px;color:var(--muted);font-size:1.125rem;text-wrap:pretty}
-.plans{display:grid;grid-template-columns:1fr 1.25fr 1fr;gap:20px;align-items:start;padding-bottom:56px}
+.home.pricing{max-width:1200px}
+.plans{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:20px;align-items:start;padding-bottom:56px}
 .plans .edition h2{margin:0;font-size:1.5rem;letter-spacing:-.01em}
 .plan-team{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent)}
 .plan-cta{justify-content:center;margin-top:14px;width:100%}
@@ -30,6 +31,8 @@
 .buy{display:flex;flex-direction:column;gap:14px;margin-top:10px;padding-top:18px;border-top:1px solid var(--line)}
 .fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .field{display:flex;flex-direction:column;gap:5px;min-width:0}
+/* Work email and Company each get the card's full width, so nothing is cut short. */
+.fields.buyer{display:flex;flex-direction:column;gap:12px}
 /* Line the fields up row by row (label, control, hint) even when one label wraps. */
 @supports (grid-template-rows:subgrid){.fields{grid-template-rows:auto auto auto;row-gap:5px}.field{display:grid;grid-row:span 3;grid-template-rows:subgrid;align-content:start;gap:5px}.field label{align-self:end}}
 .field label{font-size:0.8125rem;font-weight:600;color:var(--text2);letter-spacing:.01em}
@@ -53,7 +56,6 @@
 .pricing-faq h2{font-size:1.75rem;letter-spacing:-.015em;margin:0 0 16px}
 .pricing-faq dt{font-weight:700;font-size:1.0625rem;margin-top:20px}
 .pricing-faq dd{margin:6px 0 0;color:var(--text2);font-size:1rem}
-.legal-foot{flex-wrap:wrap}
 /* Links inside running text are underlined, so they don't rely on colour alone. */
 .pricing-faq dd a,.hint a,.page-narrow p a,.page-narrow li a{text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent);text-underline-offset:3px}
 .pricing-faq dd a:hover,.hint a:hover,.page-narrow p a:hover,.page-narrow li a:hover{text-decoration-color:currentColor}
@@ -73,7 +75,7 @@
 @media (prefers-color-scheme: light){.buy-error{color:#B3261E}}
 @media (max-width:1000px){.plans{grid-template-columns:1fr 1fr}.plan-team{grid-column:1 / -1;order:-1}}
 @media (max-width:720px){.plans{grid-template-columns:1fr}.pricing-head{padding:40px 0 24px}.pricing-head h1{font-size:2.25rem}.page-narrow{padding:32px 16px 60px}.page-narrow h1{font-size:2rem}}
-@media (max-width:420px){.fields{grid-template-columns:1fr;grid-template-rows:none;row-gap:12px}.fields .field{display:flex;grid-row:auto}}
+@media (max-width:420px){.fields{grid-template-columns:1fr;grid-template-rows:none;row-gap:12px}.fields .field{display:flex;grid-row:auto}.fields .field label{align-self:auto}}
 .page-narrow code,.pricing-faq code{overflow-wrap:anywhere}
 .plans .price{white-space:nowrap}
 .plans .edition:last-child .price{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
@@ -82,7 +84,7 @@
 table.plain{border-collapse:collapse;width:100%;min-width:520px;font-size:.9375rem}
 table.plain th,table.plain td{padding:11px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;color:var(--text2)}
 table.plain thead th{font-size:.7812rem;font-weight:600;letter-spacing:.02em;color:var(--faint);background:var(--surface)}
-table.plain tbody td:first-child{font-weight:600;color:var(--text)}
+table.plain tbody th{font-weight:600;color:var(--text)}
 table.plain tr:last-child>*{border-bottom:0}
 .page-narrow .faq{display:grid;gap:10px;margin-top:12px}
 .page-narrow .faq .a{padding:0 22px 16px}
