@@ -12,6 +12,10 @@
 .step-card.fresh { animation: bpIn 220ms ease-out both; }
 .step-card:hover:not(.sel):not(.failed) { background: var(--raised); }
 .step-card.sel { background: var(--accent-tint); border-color: var(--accent); }
+/* The open card sits above the cards after it. Its parts fade in with a transform, which makes
+   them a stacking context of their own: without this, a menu or the Edit panel opening from
+   it was drawn under the next cards, so they showed through it. */
+.step-card.sel { z-index: 30; }
 .step-card.failed { background: var(--failed-tint); border-color: var(--failed); }
 .step-card.nested { border-left: 3px solid var(--accent); }
 .step-card.loop:not(.sel) { background: var(--selected); border-color: var(--line-strong); }

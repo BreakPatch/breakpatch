@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Storage</title></head>
+<body style="margin:0;font:16px sans-serif">
+  <!-- Shows what the page remembers: a cookie and localStorage, as a dismissed dialog or a login would. -->
+  <div id="seen" style="position:absolute;left:20px;top:20px"></div>
+  <script>
+    document.getElementById('seen').textContent = 'cookie=' + (document.cookie || '-') + ' local=' + (localStorage.getItem('dismissed') || '-')
+      + ' session=' + (sessionStorage.getItem('s') || '-');
+  </script>
+</body></html>
