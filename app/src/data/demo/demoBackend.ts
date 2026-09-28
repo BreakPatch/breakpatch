@@ -2,7 +2,7 @@
 // Behaves like the Firebase backend: live subscriptions, immutable versions, audit fields.
 import { AuthError, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type Unsubscribe } from '../backend';
 import type {
-  App, Member, Person, QueueItem, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
+  App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
 } from '../types';
 import { people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
 
@@ -104,10 +104,11 @@ export class DemoBackend implements Backend {
   }
   versions(appId: string, testId: string, l: Listener<Version[]>) { return this.watch(() => [...(this.st.versions[`${appId}/${testId}`] ?? [])].reverse(), l); }
   async version(appId: string, testId: string, n: number) { return this.wait(this.st.versions[`${appId}/${testId}`]?.find(v => v.number === n) ?? null); }
-  async saveTest(appId: string, testId: string, steps: Step[], note?: string) {
+  async saveTest(appId: string, testId: string, steps: Step[], note?: string, recordedOn?: RecordedOn) {
     const me = this.me(); const key = `${appId}/${testId}`;
     const list = this.st.versions[key] ?? [];
-    const v: Version = { number: list.length + 1, steps: steps.map(x => ({ ...x, rerecorded: undefined })), savedBy: me, savedAt: Date.now(), note: note || undefined };
+    const v: Version = { number: list.length + 1, steps: steps.map(x => ({ ...x, rerecorded: undefined })), savedBy: me, savedAt: Date.now(), note: note || undefined,
+      recordedOn: recordedOn ?? list.at(-1)?.recordedOn };
     this.mutate(s => {
       s.versions[key] = [...list, v];
       s.tests = s.tests.map(t => t.appId === appId && t.id === testId ? { ...t, currentVersion: v.number, stepCount: steps.length, updatedBy: me, updatedAt: v.savedAt } : t);
@@ -125,7 +126,7 @@ export class DemoBackend implements Backend {
     if (!src) throw new Error('Test not found');
     const copy = await this.createTest({ appId, name: src.name + ' (copy)', description: src.description, startUrl: src.startUrl, viewport: src.viewport, setUp: src.setUp, cleanUp: src.cleanUp });
     const last = this.st.versions[`${appId}/${testId}`]?.at(-1);
-    if (last) await this.saveTest(appId, copy.id, last.steps, `Copied from ${src.name}`);
+    if (last) await this.saveTest(appId, copy.id, last.steps, `Copied from ${src.name}`, last.recordedOn);
     return copy;
   }
   async deleteTest(appId: string, testId: string) { this.mutate(s => { s.tests = s.tests.filter(t => !(t.appId === appId && t.id === testId)); }); }

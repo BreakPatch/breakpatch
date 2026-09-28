@@ -10,7 +10,7 @@ from typing import Mapping, Sequence
 
 from . import imaging
 from .browser import BrowserSession
-from .config import Timings
+from .config import Timings, check_tolerance
 from .sites import origin_of, site_name
 
 SAMPLES_DIR = Path(__file__).parent / "samples"
@@ -86,6 +86,7 @@ class Context:
     i: int = 1                                  # 1-based repeat number of the innermost loop
     stop: asyncio.Event | None = None
     download_mark: int = 0                      # downloads before this index are already accounted for
+    relaxed: bool = False                       # screen checks allow for another system (systems.py)
 
     def __post_init__(self):
         # Bare values (in-process callers) become Secrets allowed nowhere: typing them fails plainly.
@@ -233,12 +234,12 @@ async def wait_until(b: BrowserSession, step: dict, ctx: Context) -> None:
     region, want = step.get("region"), step.get("hash")
     if not region or not want:
         raise ActionFailed("unexpectedScreen", "This wait has no area to watch.")
-    tol = int(step.get("tolerance") if step.get("tolerance") is not None else 8)
+    tol = check_tolerance(step.get("tolerance") if step.get("tolerance") is not None else 8, ctx.relaxed)
     end = time.monotonic() + (step.get("timeoutMs") or 10000) / 1000
     ignore = step.get("ignore") or []
     while True:
         arr = await b.shoot()
-        if imaging.distance(imaging.region_hash(arr, region, ignore), want) <= tol:
+        if imaging.region_distance(arr, region, want, ignore, ctx.relaxed) <= tol:
             return
         if time.monotonic() >= end:
             raise ActionFailed("timeout", "The area didn't appear in time.")

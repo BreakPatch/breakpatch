@@ -7,6 +7,7 @@ site/
   index.html            landing page
   404.html              page not found (Firebase serves it for any missing path)
   install               the install command's script (served as text/plain, see firebase.json)
+  install-ci            breakpatch-ci's install command (Team, for CI machines; text/plain too)
   manual/index.html     the full manual (built from docs/manual.md)
   connect/index.html    Team invite link page
   pricing/index.html    pricing and the Team checkout (Paddle.js overlay)
@@ -37,6 +38,8 @@ The pricing, thanks and legal pages (`pricing/`, `thanks/`, `terms/`, `privacy/`
 ```
 curl -fsSL https://breakpatch.dev/install | BREAKPATCH_GITHUB_TOKEN=<token> BREAKPATCH_CHANNEL=beta sh
 ```
+
+`install-ci` takes the same `BREAKPATCH_GITHUB_TOKEN` and `BREAKPATCH_CHANNEL`. It's tested like `install`, by `scripts/test-install-ci.sh`.
 
 The token is a fine-grained personal access token for `BreakPatch/breakpatch` only, Contents read-only, expiring in 7 days. The script sends it to `https://api.github.com` only, never prints it or puts it on a command line, and downloads through the API's asset addresses. `BREAKPATCH_CHANNEL=beta` picks the newest release, prereleases included (GitHub's `releases/latest` skips them). The main README's "Private beta" section has the details. Once the repository is public the token isn't needed: the plain command works, and the token mode can go.
 

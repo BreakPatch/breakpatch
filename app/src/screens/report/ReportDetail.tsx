@@ -12,7 +12,7 @@ import { isTauri } from '../../platform';
 import { edition } from '../../edition';
 import { demoSeen, isDemo, targetBox } from '../run/demo';
 import { reasonAdvice } from '../run/reasons';
-import { copyDetails, detailKind, detailText, expectLabel, fixBoxes, showsScreens } from './reportData';
+import { copyDetails, detailKind, detailText, expectLabel, fixBoxes, showsScreens, systemNote } from './reportData';
 
 const { reportFixActions: FixActions } = edition.slots;
 
@@ -104,8 +104,10 @@ export function ReportDetail({ run, test, steps, step, stepRun, number, groupId,
     content = shotView(expectMarkers, before, 'rp-shot-wide');
   }
 
+  const otherSystem = kind === 'failed' ? systemNote(run, stepRun) : null;
   const failedActions = kind === 'failed' && (
     <>
+      {otherSystem && <div className="rp-try" role="note"><div className="rp-try-title">Recorded on another system</div><div className="rp-try-text">{otherSystem}</div></div>}
       <div className="rp-try"><div className="rp-try-title">What to try</div><div className="rp-try-text">{reasonAdvice(stepRun?.reason)}</div></div>
       <div className="rp-actions">
         {stepRun?.reason === 'secretMissing'

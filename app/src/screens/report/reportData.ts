@@ -30,6 +30,19 @@ export function detailText(kind: DetailKind, step: Step, r: StepRun | undefined,
   }
 }
 
+/** Reasons a screen check gave: they can come from a test recorded on another kind of system. */
+const SCREEN_CHECKS = new Set(['targetNotFound', 'unexpectedScreen', 'healFailed', 'timeout']);
+
+/**
+ * The plain explanation for a failed screen check on a run on another kind of system than the
+ * test was recorded on (engine run.ended `systemMismatch`), else null.
+ */
+export function systemNote(run: Pick<Run, 'systemMismatch'>, r: StepRun | undefined): string | null {
+  const m = run.systemMismatch;
+  if (!m?.message || !r || r.result !== 'failed' || !SCREEN_CHECKS.has(r.reason ?? '')) return null;
+  return m.message;
+}
+
 /** Screenshots are worth showing for these: the page is part of the reason. */
 export function showsScreens(r: StepRun | undefined): boolean {
   return !!r && r.result === 'failed' && !['secretMissing', 'setUpFailed', 'stopped', 'healingUnavailable'].includes(r.reason ?? '');
@@ -76,6 +89,8 @@ export function copyDetails(run: Run, step: Step | undefined, number: string, r:
     if (r.preDistance !== undefined) lines.push(`Before-step match distance: ${r.preDistance}`);
     if (r.postDistance !== undefined) lines.push(`After-step match distance: ${r.postDistance}`);
     if (r.screenshotPath) lines.push(`Screenshot: ${r.screenshotPath}`);
+    const note = systemNote(run, r);
+    if (note) lines.push(note);
   }
   return lines.join('\n');
 }

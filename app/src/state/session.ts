@@ -18,6 +18,7 @@ export interface Prefs {
   theme: Theme;
   autoFix: boolean;              // "Fix moved buttons automatically"
   failOnFix: boolean;            // "Fail the test if anything needed fixing"
+  allowSystemDifferences: boolean; // "Allow for small differences between systems" (Settings → Screen checks)
   runnerMode: boolean;           // "Use this Mac as the local runner"
   runnerName: string;
 }
@@ -52,7 +53,7 @@ interface SessionState {
 
 const KEY = 'breakpatch.session.v1';
 interface Saved { workspace: Workspace | null; local?: LocalFolder | null; setupDone: boolean; prefs: Prefs }
-const DEFAULT_PREFS: Prefs = { theme: 'dark', autoFix: true, failOnFix: false, runnerMode: false, runnerName: 'QA Mac mini' };
+const DEFAULT_PREFS: Prefs = { theme: 'dark', autoFix: true, failOnFix: false, allowSystemDifferences: true, runnerMode: false, runnerName: 'QA Mac mini' };
 
 function load(): Saved {
   try {

@@ -15,7 +15,7 @@ from typing import Awaitable, Callable, Iterator, Protocol
 
 import numpy as np
 
-from . import calls, checks, config, imaging
+from . import calls, checks, config, imaging, systems
 from .actions import ActionFailed, Context, Secret, parse_secrets, perform, secret_refs
 from .sites import origin_of
 from .browser import BrowserSession
@@ -87,6 +87,9 @@ class Runner:
         self.keep_open = False
         self.up_to: str | None = None
         self._steps: list[dict] = []
+        self.relaxed = False                  # screen checks allow for another system (systems.py)
+        self.ran_on: dict | None = None
+        self.mismatch: dict | None = None
 
     async def run(self, req: dict, stop: asyncio.Event) -> dict:
         run_id = str(req.get("runId") or "run")
@@ -94,6 +97,9 @@ class Runner:
         settings = req.get("settings") or {}
         auto_fix = bool(settings.get("autoFix"))
         fail_on_fix = bool(settings.get("failOnFix"))
+        # "Allow for small differences between systems": on unless the client turns it off.
+        self.allow_differences = settings.get("allowSystemDifferences") is not False
+        self.relaxed, self.ran_on, self.mismatch = False, None, None
         # Older clients send bare values: those count as allowed on the start page's site only.
         secrets = parse_secrets(req.get("secrets"), origin_of(req.get("startUrl")))
         self.secrets = secrets
@@ -169,12 +175,23 @@ class Runner:
             else:
                 self.message = msg
             return False
+        self._compare_systems(req.get("recordedOn"))
         # Let the start page settle, ignoring what the first step knows changes by itself (clocks...).
         first = next((s for s in order if s.get("action") not in ("loop", "group")), {})
         await checks.settle(self.b.shoot, first.get("ignore"), self.t.settle_interval, self.t.settle_frames,
                             self.t.settle_timeout)
-        ctx = Context(self.t, secrets=secrets, stop=stop)
+        ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed)
         return await self._run_list(steps, ctx, stop, iteration=None)
+
+    def _compare_systems(self, recorded_on) -> None:
+        """Where the test was recorded against where it runs (systems.py). A mismatch relaxes the
+        screen checks when the client allows for small differences, and goes in run.ended."""
+        self.ran_on = systems.current(self.b.chromium_version)
+        self.mismatch = systems.mismatch(recorded_on, self.ran_on, relaxed=self.allow_differences)
+        self.relaxed = self.mismatch is not None and self.allow_differences
+        if self.mismatch:
+            log.info("recorded on %s, running on %s (%s): screen checks %s", self.mismatch["recordedOn"], self.ran_on,
+                     ", ".join(self.mismatch["differences"]), "relaxed" if self.relaxed else "strict")
 
     # ------------------------------------------------------------------
 
@@ -185,6 +202,10 @@ class Runner:
                "steps": self.results}
         if self.clean_up_failed:
             out["cleanUpFailed"] = True
+        if self.ran_on:
+            out["ranOn"] = self.ran_on
+        if self.mismatch:
+            out["systemMismatch"] = self.mismatch
         if result == "fail":
             out["message"] = self.message or ("A step was fixed by the AI assistant and this run fails on fixes."
                                               if ok else "The test failed.")
@@ -319,9 +340,10 @@ class Runner:
         rec: dict = {"stepId": step.get("id"), "result": "passed"}
 
         if kind == "checkpoint":
-            dist = await self._wait_region(step["region"], step["hash"], int(step.get("tolerance", 8)), ignore)
+            tol = config.check_tolerance(step.get("tolerance", config.CHECKPOINT_TOLERANCE), self.relaxed)
+            dist = await self._wait_region(step["region"], step["hash"], tol, ignore)
             rec["postDistance"] = dist
-            if dist > int(step.get("tolerance", 8)):
+            if dist > tol:
                 raise StepFailed("unexpectedScreen", "What this check looks for isn't visible.", postDistance=dist)
             return rec
 
@@ -329,7 +351,7 @@ class Runner:
         frm = step.get("from")
         pre = step.get("pre")
         if pre:
-            tol = int(pre.get("tolerance", config.PRE_TOLERANCE))
+            tol = config.check_tolerance(pre.get("tolerance", config.PRE_TOLERANCE), self.relaxed)
             dist = await self._wait_region(pre["region"], pre["hash"], tol, ignore)
             rec["preDistance"] = dist
             if dist > tol:
@@ -366,17 +388,17 @@ class Runner:
         best = 64
         while True:
             arr = await self.b.shoot()
-            best = min(best, imaging.distance(imaging.region_hash(arr, region, ignore), want))
+            best = min(best, imaging.region_distance(arr, region, want, ignore, self.relaxed))
             if best <= tol or time.monotonic() >= end:
                 return best
             await asyncio.sleep(self.t.pre_interval)
 
     async def _post_check(self, post: dict, before: np.ndarray, after: np.ndarray, ignore) -> tuple[str | None, int]:
         region = post["region"]
-        tol = int(post.get("tolerance", config.POST_TOLERANCE))
+        tol = config.check_tolerance(post.get("tolerance", config.POST_TOLERANCE), self.relaxed)
         end = time.monotonic() + self.t.settle_timeout
         while True:
-            dist = imaging.distance(imaging.region_hash(after, region, ignore), post["hash"])
+            dist = imaging.region_distance(after, region, post["hash"], ignore, self.relaxed)
             changed = imaging.region_changed(before, after, region, ignore)
             if changed and post.get("expectChange") and isinstance(post.get("change"), (int, float)):
                 # A perceptual hash of a big area barely notices new words on a screen laid out like

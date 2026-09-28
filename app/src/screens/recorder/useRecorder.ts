@@ -97,6 +97,8 @@ export function useRecorder({ viewport, onError, appUrl }: {
   const [ai, setAi] = useState<AiState>({ state: 'idle' });
   const aiToken = useRef(0);
   const busyRef = useRef(false);
+  /** A step was recorded or re-recorded with the engine since the last load: the save says where. */
+  const recordedRef = useRef(false);
   const onErrorRef = useRef(onError); onErrorRef.current = onError;
 
   const setSteps = useCallback((fn: (s: Step[]) => Step[]) => {
@@ -116,6 +118,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
   const load = useCallback((next: Step[]) => {
     setSteps(() => next); setDirty(false); setRerecordId(null); setOpenLoopId(null);
     setInsertAfter(insertRef.current && findStep(next, insertRef.current) ? insertRef.current : null);
+    recordedRef.current = false;
   }, [setSteps, setInsertAfter]);
 
   /** Puts a new step at the insertion point (moving it on), else at the end or in the open loop. */
@@ -174,6 +177,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
       const next = setSteps(s => (rr ? replaceStep(s, rr, step) : updateStep(s, tempId, () => step)));
       const id = rr ?? step.id;
       if (!rr && insertRef.current === tempId) setInsertAfter(step.id);
+      recordedRef.current = true;
       setSelectedId(id); setDirty(true); setRerecordId(null); setAddedId(id); setAtStepId(id);
       setSavedPill(`Step ${numberOf(next, id)} saved`);
       afterAdd(params.action);
@@ -288,7 +292,7 @@ export function useRecorder({ viewport, onError, appUrl }: {
     steps, dirty, selectedId, openLoopId, rerecordId, action, text, options, ai, busyId, checking, savedPill, sample, addedId,
     /** "Clicking…", "Waiting for the page…": what the step being recorded is doing now. */
     phaseText: busyId !== null ? phaseText(phase, busyAction) : null,
-    stepsRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
+    stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi,
     insertAfterId, setInsertAfter, unplayed, atStepId, played,
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),

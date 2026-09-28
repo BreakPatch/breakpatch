@@ -36,10 +36,11 @@ Breakpatch comes in two editions. **Community** is free and open source: one per
 22. [Schedules](#schedules)
 23. [The local runner](#the-local-runner)
 24. [Run requests](#run-requests)
-25. [Result messages](#result-messages)
-26. [Security rules](#security-rules)
-27. [Licences and seats](#licences-and-seats)
-28. [The back office](#the-back-office)
+25. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
+26. [Result messages](#result-messages)
+27. [Security rules](#security-rules)
+28. [Licences and seats](#licences-and-seats)
+29. [The back office](#the-back-office)
 
 ---
 
@@ -139,6 +140,12 @@ A test file looks like this (shortened):
     "height": 900,
     "dpr": 1
   },
+  "recordedOn": {
+    "os": "macOS",
+    "osVersion": "15.3",
+    "arch": "arm64",
+    "chromium": "140.0.7339.16"
+  },
   "updatedAt": "2026-09-25T14:32:05.000Z",
   "steps": [
     {
@@ -151,6 +158,8 @@ A test file looks like this (shortened):
   ]
 }
 ```
+
+`recordedOn` says where the steps were recorded: the system and the version of the test browser. Breakpatch writes it when you record or re-record steps, and keeps it when you only edit them. Tests saved before it existed don't have it, and work as before.
 
 The same test always gives the same file: two-space indents, keys in a fixed order, short lists of numbers on one line, times as dates and a newline at the end. So a change in the app shows up as a small, readable diff.
 
@@ -202,6 +211,12 @@ Common reasons:
 - **STAGING_PASSWORD isn't allowed on login.example.com.** The page wasn't one of the secret's sites, so nothing was typed. If that site is right, add it to the secret in Settings → Saved secrets.
 
 Every error has **Copy details**, to paste into an issue or send to a developer.
+
+### Recorded on another system
+
+Screen checks compare the page with how it looked when the step was recorded. Another system, or another version of the test browser, can draw the same text a pixel off or a little smoother, so record and run a test on the same kind of machine when you can.
+
+When a test was recorded on another system (another operating system, or another main version of the test browser, which comes with Breakpatch), **Settings → Screen checks → Allow for small differences between systems** makes its screen checks allow for that. It's on unless you turn it off. The checks still fail when something really changed, like a missing button or other words. If a check fails anyway, the report says why, for example: "This test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks. Re-record it on this system, or run it on a Mac."
 
 ## Shared steps
 
@@ -413,6 +428,8 @@ It then stays awake while it's plugged in, opens at login and starts in runner m
 
 It uses the Standard AI assistant, like every Mac. With 32 GB of memory or more you can download the Larger one in the same place, but it's rarely needed.
 
+**Record and run on the same kind of machine.** Tests pass most reliably on the runner when they're recorded on a Mac like it, with the same version of Breakpatch. A test recorded with another version of the test browser runs with **Allow for small differences between systems** (Settings → Screen checks, on unless you turn it off) on the runner Mac, and its report says so when a check fails. See [Recorded on another system](#recorded-on-another-system).
+
 Anyone can press **Run on runner** on a suite. If the runner is offline, the request waits until it's back.
 
 **Queue rules**
@@ -484,6 +501,132 @@ await addDoc(collection(getFirestore(app, 'breakpatch'), 'runRequests'), {
 ### From an automation tool
 
 n8n, Zapier or Make can add a Firestore document on any event: a deploy, a merged pull request, a button in a chat. Use the same path and fields, with `createdAt` set to the server's time.
+
+## From CI with breakpatch-ci
+
+`breakpatch-ci` runs a test on the CI machine itself and tells your pipeline whether it passed, so a failing test stops the build. It's the same engine as the app, with no window. To run a whole suite from CI instead, add a [run request](#run-requests) and let the local runner run it.
+
+**What you need**
+
+- A Breakpatch Team licence with a free **machine licence** for the CI machine. Machine licences count separately from people's seats.
+- A Mac with Apple Silicon and macOS 14 or later, for example GitHub's `macos-15` runners or a Codemagic Mac. Linux x86_64 works as a preview: it runs tests, but record them on a Mac.
+- Python 3.11 on that machine.
+- One run at a time per machine licence. To run tests in parallel, give each parallel job its own machine licence and its own `BREAKPATCH_MACHINE_ID`.
+- Your tests, as JSON files: a [tests folder](#the-tests-folder) in your repo, or a test copied out of the workspace.
+
+**Install**
+
+```sh
+curl -fsSL https://breakpatch.dev/install-ci | sh
+```
+
+It installs `breakpatch-ci` and the test browser in `~/.breakpatch-ci` and links the command into `~/.local/bin`. It checks every download against the release's checksums, and needs no administrator password. In GitHub Actions the next steps can run `breakpatch-ci` straight away; elsewhere, add `~/.local/bin` to `PATH` or use the full path. Running it again updates to the latest version, `BREAKPATCH_VERSION=1.2.3` installs a given one, and `sh -s -- --uninstall` removes it. You can [read the script](https://breakpatch.dev/install-ci) first.
+
+**Run a test**
+
+```sh
+breakpatch-ci run --test breakpatch-tests/apps/web-app/tests/log-in.json
+```
+
+It prints the result as JSON and ends with one of four exit codes:
+
+| Exit code | What it means |
+|---|---|
+| `0` | The test passed. |
+| `1` | A step failed: a check didn't match, or something wasn't there. The JSON says which step and why. |
+| `2` | The test file, or the shared steps it uses, couldn't be read. Keep the tests folder as it is: shared steps are read from `apps/<app>/shared/` next to `tests/`. |
+| `3` | There's no usable licence. The JSON and the log say why. |
+
+**The machine licence.** Set these in the CI job's environment:
+
+- `BREAKPATCH_LICENCE_KEY`: your licence key, stored as a CI secret. It's used to take a machine licence and is never saved or typed into a page.
+- `BREAKPATCH_WORKSPACE`: your workspace's Firebase project ID, for example `acme-breakpatch`. Or pass `--workspace team.bpworkspace`.
+- `BREAKPATCH_MACHINE_ID`: a fixed name for this pipeline, for example `github-acme-web`. CI machines are often new for every job; with a fixed name every job reuses the same machine licence instead of taking a new one.
+- `BREAKPATCH_LICENCE_FILE`: where the licence is kept between runs. Keep this file between jobs, with your CI's cache: then most runs don't need to check online, and the usage counts it collects get sent with the next check (see [Licences and seats](#licences-and-seats)).
+
+`breakpatch-ci licence status` shows the licence (and takes a machine licence if needed). `breakpatch-ci licence release` gives the machine licence back, for example before you stop using a pipeline. An admin can also free it in the [back office](#the-back-office).
+
+**Saved secrets.** A test that writes a saved secret, for example `STAGING_PASSWORD`, takes it from the environment variable `BP_SECRET_STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), and from no other variable. Store the value as a CI secret. `--secret STAGING_PASSWORD` (you can give it more than once) limits which secrets a run may use. They're typed only on the test's start site.
+
+**Options**
+
+- `--screenshots DIR` keeps a screenshot of the step that failed, to upload as a build artifact.
+- `--auto-fix` lets the AI assistant find a button that moved, as [Fixed automatically](#fixed-automatically) does in the app. It only works on a self-hosted Mac where Breakpatch is installed and its AI assistant is downloaded (Settings → AI assistant), with a licence that includes Fixed automatically. Anywhere else the run carries on without fixing and says so.
+- `--fail-on-fix` fails the run when a step needed fixing.
+- `--strict-systems` turns off **Allow for small differences between systems** for this run (see below).
+
+**Record and run on the same kind of machine.** Screen checks compare the page with how it looked when the step was recorded, and another system can draw text a little differently. Tests recorded on a Mac pass most reliably on a Mac with the same Breakpatch version. When a test was recorded on another system, `breakpatch-ci` says so in one line when the run starts, allows for small differences as the app's **Allow for small differences between systems** does (`--strict-systems` turns that off), and adds `systemMismatch` to the JSON, with the explanation when a check fails. See [Recorded on another system](#recorded-on-another-system).
+
+**GitHub Actions**
+
+```yaml
+jobs:
+  ui-tests:
+    runs-on: macos-15
+    concurrency: breakpatch-ci          # one run at a time per machine licence
+    env:
+      BREAKPATCH_LICENCE_KEY: ${{ secrets.BREAKPATCH_LICENCE_KEY }}
+      BREAKPATCH_WORKSPACE: acme-breakpatch
+      BREAKPATCH_MACHINE_ID: github-acme-web
+      BREAKPATCH_LICENCE_FILE: ${{ github.workspace }}/.breakpatch/licence.json
+      BP_SECRET_STAGING_PASSWORD: ${{ secrets.STAGING_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: .breakpatch
+          key: breakpatch-licence-${{ github.run_id }}
+          restore-keys: breakpatch-licence-
+      - run: curl -fsSL https://breakpatch.dev/install-ci | sh
+      - run: breakpatch-ci run --test breakpatch-tests/apps/web-app/tests/log-in.json --secret STAGING_PASSWORD --screenshots shots
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: breakpatch-screenshots
+          path: shots
+```
+
+**Codemagic** (`codemagic.yaml`)
+
+```yaml
+workflows:
+  ui-tests:
+    name: UI tests
+    instance_type: mac_mini_m2
+    environment:
+      groups:
+        - breakpatch                    # BREAKPATCH_LICENCE_KEY and BP_SECRET_STAGING_PASSWORD
+      vars:
+        BREAKPATCH_WORKSPACE: acme-breakpatch
+        BREAKPATCH_MACHINE_ID: codemagic-acme-web
+        BREAKPATCH_LICENCE_FILE: $HOME/.breakpatch/licence.json
+    cache:
+      cache_paths:
+        - $HOME/.breakpatch
+    scripts:
+      - name: Install breakpatch-ci
+        script: |
+          command -v python3.11 || brew install python@3.11
+          curl -fsSL https://breakpatch.dev/install-ci | sh
+      - name: Run the UI tests
+        script: $HOME/.local/bin/breakpatch-ci run --test breakpatch-tests/apps/web-app/tests/log-in.json --secret STAGING_PASSWORD --screenshots shots
+    artifacts:
+      - shots/**
+```
+
+**Troubleshooting**
+
+- **"breakpatch-ci needs Python 3.11"**: install it (on a Mac, `brew install python@3.11`; in GitHub Actions, `actions/setup-python`), or point `BREAKPATCH_PYTHON` at it, and install again.
+- **"command not found: breakpatch-ci"**: add `~/.local/bin` to `PATH`, or run `~/.local/bin/breakpatch-ci`.
+- **Exit code 3 with "no machine licences left"**: each pipeline that runs at the same time needs its own machine licence. Set a fixed `BREAKPATCH_MACHINE_ID` so jobs reuse one, free old ones in the back office, or ask your admin to add one.
+- **Exit code 3 after the clock changed or a long time offline**: the machine checks its licence online at least once a week. Make sure it can reach `https://account.breakpatch.dev`.
+- **"The saved secret STAGING_PASSWORD isn't on this Mac"**: set `BP_SECRET_STAGING_PASSWORD` in the job, and add the name to `--secret` if you use it.
+- **"The browser isn't installed yet"**: run the install command again. If `BP_BROWSERS_PATH` or `PLAYWRIGHT_BROWSERS_PATH` is set in the job, `breakpatch-ci` looks there instead: unset it.
+- **Linux: the browser doesn't start**: install the libraries it needs with `sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium`.
+- **Checks fail in CI but pass in the app**: look for the line "this test was recorded on…" at the start of the log. Re-record the test on a machine like the CI machine, or run it on a Mac.
 
 ## Result messages
 

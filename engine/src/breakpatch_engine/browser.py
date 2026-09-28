@@ -104,6 +104,14 @@ class BrowserSession:
     def is_open(self) -> bool:
         return self.page is not None
 
+    @property
+    def chromium_version(self) -> str | None:
+        """The running Chromium's version ("140.0.7339.16"), or None before it's started."""
+        try:
+            return self._browser.version if self._browser is not None else None
+        except Exception:  # noqa: BLE001
+            return None
+
     async def open(self, url: str, viewport: dict) -> None:
         from playwright.async_api import async_playwright
 

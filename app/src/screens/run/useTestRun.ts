@@ -2,7 +2,7 @@
 // follows its events and writes the run. Shared by the Run view and the suite run view.
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 import type { Backend } from '../../data/backend';
-import type { Person, Run, Step, Test } from '../../data/types';
+import type { Person, RecordedOn, Run, Step, Test } from '../../data/types';
 import { useBackend } from '../../data/hooks';
 import { demoEngine, getEngine, type RunEnded, type RunStepEvent } from '../../engine';
 import { sampleApp } from '../../components/live';
@@ -18,10 +18,10 @@ import { demoFailIds, demoSeen } from './demo';
 
 export interface Finished { ended: RunEnded; run: Run | null; steps: Step[] }
 
-/** The test's current version with its shared steps filled in. */
-export async function prepareTest(backend: Backend, test: Test): Promise<Step[]> {
+/** The test's current version with its shared steps filled in, and where it was recorded. */
+export async function prepareTest(backend: Backend, test: Test): Promise<{ steps: Step[]; recordedOn?: RecordedOn }> {
   const v = await backend.version(test.appId, test.id, test.currentVersion);
-  return resolveSteps(v?.steps ?? [], backendGroupLoader(backend, test.appId));
+  return { steps: await resolveSteps(v?.steps ?? [], backendGroupLoader(backend, test.appId)), recordedOn: v?.recordedOn };
 }
 
 /** Where a run from this Mac says it ran. The demo matches the sample runs ("Maria's MacBook Pro"). */
@@ -46,6 +46,8 @@ async function appUrlOf(backend: Backend, test: Test): Promise<string> {
  */
 export async function engineRun(backend: Backend, t: Test, steps: Step[], runId: string, opts: {
   keepOpen?: boolean; upToStepId?: string; abandoned?: () => boolean;
+  /** Where the test was recorded (its version's `recordedOn`), to compare with this system. */
+  recordedOn?: RecordedOn;
   /** Just before the engine starts, when the secrets are read. */
   onStart?: (at: number) => void;
   onStep?: (ev: RunStepEvent) => void;
@@ -70,7 +72,8 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
     const offEnd = engine.on('run.ended', ev => { if (ev.runId !== runId) return; offStep(); offEnd(); resolve(ev); });
     engine.startRun({
       runId, startUrl: t.startUrl, appUrl, viewport: t.viewport, steps, setUp: t.setUp, cleanUp: t.cleanUp,
-      settings: { autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix }, secrets: values,
+      settings: { autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix, allowSystemDifferences: prefs.allowSystemDifferences },
+      secrets: values, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}),
       ...(opts.keepOpen ? { keepOpen: true } : {}), ...(opts.upToStepId ? { upToStepId: opts.upToStepId } : {}),
     }).catch(err => { offStep(); offEnd(); reject(err); });
   });
@@ -109,7 +112,7 @@ export function useTestRun() {
     const handle = { runId: newRunId(), abandoned: false };
     active.current = handle;
     try {
-      const resolved = await prepareTest(backend, t);
+      const { steps: resolved, recordedOn } = await prepareTest(backend, t);
       setSteps(resolved);
       if (!resolved.length) throw new NoStepsError();
       const byId = new Map(preorder(resolved).map(s => [s.id, s]));
@@ -123,7 +126,7 @@ export function useTestRun() {
       }
       const { user } = useSession.getState();
       const got = await engineRun(backend, t, resolved, handle.runId, {
-        abandoned: () => handle.abandoned,
+        abandoned: () => handle.abandoned, recordedOn,
         onStart: at => dispatch({ type: 'start', runId: handle.runId, ids: [...byId.keys()], at }),
         onStep: ev => {
           // The sample page follows the run. A run that will fail at the moved Done button
@@ -146,6 +149,7 @@ export function useTestRun() {
           machine: machineName(user ?? backend.currentUser()), source: 'desktop', startedAt, durationMs: ended.durationMs,
           result: ended.result, healedCount,
           steps: ended.steps.map(s => (shots[s.stepId] && !s.screenshotPath ? { ...s, screenshotPath: shots[s.stepId] } : s)),
+          ...(ended.systemMismatch ? { systemMismatch: ended.systemMismatch } : {}),
         });
         if (demo && ended.result === 'fail') demoSeen.set(saved.id, sampleApp.get());
       } catch (e) {

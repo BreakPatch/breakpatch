@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Run, Step } from '../../data/types';
-import { copyDetails, detailKind, detailText, fixBoxes, movedStep, showsScreens, tookText } from './reportData';
+import { copyDetails, detailKind, detailText, fixBoxes, movedStep, showsScreens, systemNote, tookText } from './reportData';
 
 const done: Step = { id: 's6', action: 'click', label: 'Click Done', target: 'Done button, bottom right', at: [100, 100], pre: { region: [80, 80, 120, 120], hash: 'abc', tolerance: 6 } };
 
@@ -37,5 +37,14 @@ describe('report data', () => {
     expect(text).toContain('Step 6: Click Done');
     expect(text).toContain("Couldn't find the Done button (targetNotFound)");
     expect(text).toContain("Maria Lopez · This Mac · Maria's Mac");
+  });
+  it('explains a failed screen check on another system, and nothing else', () => {
+    const message = 'This test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks. Re-record it on this system, or run it on a Mac.';
+    const run = { systemMismatch: { recordedOn: { os: 'macOS' }, ranOn: { os: 'Linux' }, differences: ['os' as const], relaxed: true, message } };
+    expect(systemNote(run, { stepId: 'a', result: 'failed', reason: 'unexpectedScreen' })).toBe(message);
+    expect(systemNote(run, { stepId: 'a', result: 'failed', reason: 'targetNotFound' })).toBe(message);
+    expect(systemNote(run, { stepId: 'a', result: 'failed', reason: 'secretMissing' })).toBeNull();
+    expect(systemNote(run, { stepId: 'a', result: 'passed' })).toBeNull();
+    expect(systemNote({}, { stepId: 'a', result: 'failed', reason: 'unexpectedScreen' })).toBeNull();
   });
 });

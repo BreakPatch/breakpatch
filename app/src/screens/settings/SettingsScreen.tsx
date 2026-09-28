@@ -1,6 +1,6 @@
 // Settings: sidebar of sections, content max 780 px (README "5 · Settings and system").
-// Community has Tests folder (while one is open), AI assistant, Saved secrets, Appearance,
-// Privacy and About; the edition adds its own (Team: Account, Workspace, Members, Automatic fixing, Local
+// Community has Tests folder (while one is open), AI assistant, Screen checks, Saved secrets,
+// Appearance, Privacy and About; the edition adds its own (Team: Account, Workspace, Members, Automatic fixing, Local
 // runner) through edition.settings. It opens on the first section there is.
 import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AppFrame } from '../../components/shell/AppFrame';
@@ -12,6 +12,7 @@ import { AppearanceSection } from './sections/AppearanceSection';
 import { AboutSection } from './sections/AboutSection';
 import { PrivacySection } from './sections/PrivacySection';
 import { FolderSection } from './sections/FolderSection';
+import { ScreenChecksSection } from './sections/ScreenChecksSection';
 import { useSession } from '../../state/session';
 import { useFeatureStore } from '../../edition/features';
 import './settings.css';
@@ -19,6 +20,7 @@ import './settings.css';
 const OPEN: SettingsSection[] = [
   { key: 'folder', icon: 'folder', label: 'Tests folder', order: 10, element: FolderSection },
   { key: 'ai', icon: 'auto_awesome', label: 'AI assistant', order: 40, element: AiSection },
+  { key: 'checks', icon: 'devices', label: 'Screen checks', order: 55, element: ScreenChecksSection },
   { key: 'secrets', icon: 'key', label: 'Saved secrets', order: 60, element: SecretsSection },
   { key: 'appearance', icon: 'contrast', label: 'Appearance', order: 80, element: AppearanceSection },
   { key: 'privacy', icon: 'shield', label: 'Privacy', order: 85, element: PrivacySection },

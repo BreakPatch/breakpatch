@@ -115,11 +115,20 @@ export interface Step {
   rerecorded?: boolean;
 }
 
+/**
+ * Where a test's steps were recorded (engine/PROTOCOL.md "Where a test was recorded"). Screen
+ * checks are compared with how the page looked on that system: another OS family or Chromium
+ * major draws text a little differently. Tests recorded before this existed have none.
+ */
+export interface RecordedOn { os: string; osVersion?: string; arch?: string; chromium?: string }
+
 export interface Version {
   number: number;
   steps: Step[];
   savedBy: Person; savedAt: Millis;
   note?: string;
+  /** Set when steps were recorded or re-recorded for this version; kept from the one before otherwise. */
+  recordedOn?: RecordedOn;
 }
 
 export interface StepGroup {
@@ -152,6 +161,17 @@ export interface StepRun {
   screenshotPath?: string;       // local only
 }
 
+/** A run on another kind of system than the test was recorded on (engine run.ended `systemMismatch`). */
+export interface SystemMismatch {
+  recordedOn: RecordedOn;
+  ranOn: RecordedOn;
+  differences: ('os' | 'chromium')[];
+  /** "Allow for small differences between systems" was on, so screen checks were more tolerant. */
+  relaxed: boolean;
+  /** The plain explanation the report shows when a check failed. */
+  message: string;
+}
+
 export interface Run {
   id: string;
   appId: string;
@@ -166,6 +186,7 @@ export interface Run {
   result: 'pass' | 'fail';
   healedCount: number;
   steps: StepRun[];
+  systemMismatch?: SystemMismatch;
 }
 
 export interface RunSummary { result: 'pass' | 'fail' | 'healed'; at: Millis; by: string }

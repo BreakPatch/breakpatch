@@ -38,7 +38,7 @@ Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`,
 ### System and setup
 | Method | Params | Result |
 |---|---|---|
-| `system.info` | – | `{ memoryGb, chip, os, engineVersion, edition, licence: Licence, browser: {installed, version}, model: {installed, repo?, revision?, sizeBytes?, path?} }` |
+| `system.info` | – | `{ memoryGb, chip, os, engineVersion, edition, licence: Licence, browser: {installed, version}, model: {installed, repo?, revision?, sizeBytes?, path?}, system: RecordedOn }` |
 | `licence.set` | `{ token: string \| null }` | `Licence` — sent by the shell only (see Licence below) |
 | `setup.installBrowser` | – | `{ version }` — emits `setup.progress` with `task: "browser"` |
 | `setup.downloadModel` | `{ repo, revision }` | `{ path, sizeBytes }` — resumable; emits `setup.progress` with `task: "model"`. Only a model in the engine's table (below), at its revision; anything else is `bad_request` before anything is fetched |
@@ -190,7 +190,7 @@ Recording answers `busy` while a previous `record.point` is still checking, or d
 ### Replay
 | Method | Params | Result |
 |---|---|---|
-| `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix }, secrets: {NAME: Secret}, runner? }` | `{}` — returns at once, then events |
+| `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix, allowSystemDifferences? }, secrets: {NAME: Secret}, runner?, recordedOn?: RecordedOn }` | `{}` — returns at once, then events |
 | `run.stop` | `{ runId }` | `{}` — stops after the current step |
 | `call.try` | `{ call: Call, appUrl, secrets? }` | `{ ok, status?, ms?, error?, message? }` — "Try it": one request under the same rules as a run |
 
@@ -213,7 +213,8 @@ A `waitFor`/`waitUntil` in progress is cut short by `run.stop`.
 Events: `run.step` `{ runId, index, stepId, state: "running"|"looking"|"passed"|"healed"|"failed", reason?, preDistance?, postDistance?, oldAt?, newAt?, screenshot?, iteration?, message?, details? }`
 (`looking` = AI assistant is finding a moved target; `screenshot` is a local file path, only on failure or heal;
 `iteration` is the 1-based repeat number inside a loop; `message` is a plain sentence on failure)
-and `run.ended` `{ runId, result: "pass"|"fail", durationMs, steps: StepRun[], message?, details?, cleanUpFailed? }`.
+and `run.ended` `{ runId, result: "pass"|"fail", durationMs, steps: StepRun[], message?, details?, cleanUpFailed?, ranOn?, systemMismatch? }`
+(`ranOn` and `systemMismatch`: see Where a test was recorded).
 
 `index` is the step's position in a **pre-order walk** of the nested steps (a loop or group comes
 before its children; children count once, not once per repeat). `run.ended.steps` is in the same
@@ -250,6 +251,43 @@ Loops and shared steps are nested, as stored (spec §12.1): a `loop` step carrie
 `count` and child `steps`; a `group` step carries `groupId`, `groupVersion` and the child
 `steps` the UI resolved from that version before starting. The engine runs children in order.
 `{i}` in `text` (and `url`) is the 1-based repeat number; `{time}` is HH:MM and `{date}` is YYYY-MM-DD at run time.
+
+### Where a test was recorded
+
+Screen checks compare an area with how it looked when the step was recorded. Another operating
+system draws the same page's text a little differently (other fonts, other antialiasing), and so
+can another Chromium, so a test recorded on a Mac can fail its checks on Linux with nothing
+changed. `RecordedOn` says where a test's steps were recorded
+(engine/src/breakpatch_engine/systems.py):
+
+```jsonc
+{ "os": "macOS", "osVersion": "15.3", "arch": "arm64", "chromium": "140.0.7339.16" }
+```
+
+- **Recording.** `system.info` answers this system as `system` (the Chromium is the one this
+  engine's Playwright runs). The app writes it into the test when a save has steps recorded or
+  re-recorded: a version's `recordedOn` (the local tests folder keeps it next to `steps` in the
+  test file, the Team workspace in the version document). Edits without recording keep the one
+  before's. It's optional: tests recorded before it existed have none and are never a mismatch.
+- **Run time.** `run.start` passes the test's `recordedOn`. Once the browser is open the engine
+  compares it with this system (`ranOn`, with the running Chromium's version): **a different OS
+  family** (macOS, Linux, Windows) **or a different Chromium major version** is a mismatch.
+  Another macOS version or another architecture isn't.
+- **Allow for small differences between systems.** `settings.allowSystemDifferences` (the app's
+  setting of that name, on by default; the engine treats a missing value as on). On a mismatch it
+  relaxes every screen check of the run: the pre-check, the post-check, checkpoints, `waitUntil`
+  and the pre-check a heal repeats. A relaxed check takes the smallest distance of the area as it
+  is and moved by up to 1 px each way, sharp and lightly blurred (`imaging.region_distance`), and
+  allows 2 more bits on top of the step's tolerance (`config.RELAXED_SHIFT`, `RELAXED_EXTRA`).
+  Only the current screen varies, so a missing button or other words still fail. Pixel
+  comparisons within the run (settling, `expectChange`) compare this system with itself and are
+  never relaxed.
+- **The result.** `run.ended` has `ranOn`, and on a mismatch `systemMismatch`:
+  `{ recordedOn, ranOn, differences: ("os"|"chromium")[], relaxed, message }`. `message` is the
+  plain explanation to show with a failed screen check, for example "This test was recorded on
+  macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail
+  screen checks. Re-record it on this system, or run it on a Mac." `breakpatch-ci` does the same,
+  with `--strict-systems` to turn the relaxing off (see CLI (CI)).
 
 ### Saved secrets
 
@@ -322,6 +360,16 @@ read or its shared steps can't be found, 3 = no usable licence. Like the app, it
 `group` step's children before the run (the pinned version or the latest, nested groups too), from
 `apps/<appId>/shared/` next to the test's `tests/` folder. This engine's own command line is `serve` (the sidecar) and `info`;
 `breakpatch-engine run` exits 2 and points at `breakpatch-ci`.
+
+**Another system.** A test file's `recordedOn` is compared with the CI machine as in Where a
+test was recorded. On a mismatch `breakpatch-ci` prints one line on stderr before the run
+("breakpatch-ci: this test was recorded on macOS 15 (Chromium 140), running on Linux
+(Chromium 140): screen checks allow for small differences…"), relaxes the screen checks unless
+`--strict-systems` is given, and the JSON result carries `ranOn` and `systemMismatch`.
+
+**Chromium.** `breakpatch-ci` uses the Chromium the install command put in its own folder
+(`<install folder>/browsers`, next to its Python environment) when neither `BP_BROWSERS_PATH`
+nor `PLAYWRIGHT_BROWSERS_PATH` is set, so nothing needs setting after an install.
 
 **Saved secrets in CI.** A step's `secretRef: NAME` (and a set-up or clean-up call header's) takes
 its value from the environment variable `BP_SECRET_NAME` (a `-` or `.` in the name is written `_`),

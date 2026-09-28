@@ -9,7 +9,7 @@ import imagehash
 import numpy as np
 from PIL import Image
 
-from .config import BOX_PAD, DIFF_THRESHOLD
+from .config import BOX_PAD, DIFF_THRESHOLD, RELAXED_SHIFT
 
 Box = list[int]  # [x1, y1, x2, y2], x2/y2 exclusive, viewport px at DPR 1
 BLANK = 128      # ignore zones are painted this grey before hashing or diffing
@@ -66,6 +66,35 @@ def region_hash(arr: np.ndarray, box: Sequence[float], ignore: Iterable[Sequence
 def distance(a: str, b: str) -> int:
     """Hamming distance between two hex hashes."""
     return int(imagehash.hex_to_hash(a) - imagehash.hex_to_hash(b))
+
+
+def region_distance(arr: np.ndarray, box: Sequence[float], want: str,
+                    ignore: Iterable[Sequence[float]] | None = None, relaxed: bool = False) -> int:
+    """How far the region looks from its stored hash (Hamming distance, 0 to 64).
+
+    Relaxed (a test recorded on another kind of system, systems.py): the smallest distance of the
+    region moved by up to RELAXED_SHIFT px each way, as it is and lightly blurred. Another OS or
+    Chromium draws the same text a pixel off, a little wider or with other antialiasing; that
+    moves bits of the perceptual hash, but the closest of these views is back within tolerance.
+    Only the current screen varies, the stored hash stays what was recorded, so a real change (a
+    button gone, other words) is as far away from every view and still fails.
+    """
+    exact = distance(region_hash(arr, box, ignore), want)
+    if not relaxed or exact == 0:
+        return exact
+    best = exact
+    soft = cv2.GaussianBlur(blank(arr, ignore), (3, 3), 0)
+    r = RELAXED_SHIFT
+    for src, zones in ((arr, ignore), (soft, None)):
+        for dy in range(-r, r + 1):
+            for dx in range(-r, r + 1):
+                if src is arr and dx == 0 and dy == 0:
+                    continue
+                moved = [box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy]
+                best = min(best, distance(region_hash(src, moved, zones), want))
+                if best == 0:
+                    return 0
+    return best
 
 
 def change_mask(a: np.ndarray, b: np.ndarray, ignore: Iterable[Sequence[float]] | None = None,

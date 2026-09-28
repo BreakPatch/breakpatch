@@ -4,7 +4,7 @@
 // Firestore database). Reads are live subscriptions; writes return promises.
 
 import type {
-  App, HttpCall, Member, Person, QueueItem, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
+  App, HttpCall, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
   Suite, SuiteRun, Test, TestStatus, Version, Viewport, Workspace,
 } from './types';
 
@@ -59,8 +59,12 @@ export interface Backend {
   createTest(t: NewTest): Promise<Test>;
   versions(appId: string, testId: string, l: Listener<Version[]>): Unsubscribe;
   version(appId: string, testId: string, n: number): Promise<Version | null>;
-  /** Writes a new immutable version and bumps currentVersion. */
-  saveTest(appId: string, testId: string, steps: Step[], note?: string): Promise<Version>;
+  /**
+   * Writes a new immutable version and bumps currentVersion. `recordedOn`: where its steps were
+   * recorded, when this save has steps recorded or re-recorded; without it the version keeps the
+   * one before's.
+   */
+  saveTest(appId: string, testId: string, steps: Step[], note?: string, recordedOn?: RecordedOn): Promise<Version>;
   setTestStatus(appId: string, testId: string, status: TestStatus): Promise<void>;
   renameTest(appId: string, testId: string, name: string): Promise<void>;
   duplicateTest(appId: string, testId: string): Promise<Test>;

@@ -181,3 +181,80 @@ def test_a_change_at_the_click_is_seen_through_jpeg_noise():
     rect(c, [600, 20, 700, 40], (0, 0, 0))               # a change far away doesn't count
     assert not imaging.looks_different(_jpeg(a), c, box)
     assert imaging.looks_different(_jpeg(a), canvas(400, 300), box)   # another size: not the same page
+
+
+# ---------------------------------------------------------------- another system (systems.py)
+#
+# Synthetic pages drawn with OpenCV's built-in Hershey font (no system fonts, so the same pixels
+# everywhere). "Another system" is the same page with its text a pixel off, drawn without
+# antialiasing or a touch wider; "a real change" is a missing button or other words.
+
+import cv2  # noqa: E402
+
+from breakpatch_engine import config  # noqa: E402
+
+PRE = [128, 64, 192, 128]        # the 64 x 64 pre-check box around the button (at 160, 96)
+CHECK = [90, 130, 300, 160]      # a checkpoint on the line of text under it
+
+
+def page(label="Save changes", note="Project saved", dx=0, dy=0, aa=True, scale=0.5, button=True):
+    a = canvas(400, 200, (250, 250, 250))
+    rect(a, [0, 0, 400, 30], (40, 40, 60))
+    line = cv2.LINE_AA if aa else cv2.LINE_8
+    if button:
+        cv2.rectangle(a, (100 + dx, 80 + dy), (220 + dx, 112 + dy), (60, 90, 220), -1)
+        cv2.putText(a, label, (108 + dx, 101 + dy), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), 1, line)
+    cv2.putText(a, note, (100 + dx, 150 + dy), cv2.FONT_HERSHEY_SIMPLEX, scale + 0.1, (30, 30, 30), 1, line)
+    return a
+
+
+RECORDED = page()
+
+
+def dist(now, box, relaxed):
+    return imaging.region_distance(now, box, imaging.region_hash(RECORDED, box), relaxed=relaxed)
+
+
+def passes(now, box, tolerance, relaxed):
+    return dist(now, box, relaxed) <= config.check_tolerance(tolerance, relaxed)
+
+
+def test_relaxed_checks_allow_text_a_pixel_off():
+    for moved in (page(dx=1), page(dy=1), page(dx=1, dy=1), page(dx=-1, dy=1)):
+        assert passes(moved, PRE, config.PRE_TOLERANCE, relaxed=True)
+        assert passes(moved, CHECK, config.CHECKPOINT_TOLERANCE, relaxed=True)
+    # Strict, the pre-check fails when the button is a pixel to the right.
+    assert not passes(page(dx=1), PRE, config.PRE_TOLERANCE, relaxed=False)
+
+
+def test_relaxed_checks_allow_other_antialiasing_and_slightly_wider_text():
+    for other in (page(aa=False), page(aa=False, dx=1), page(scale=0.52)):
+        assert passes(other, PRE, config.PRE_TOLERANCE, relaxed=True)
+        assert passes(other, CHECK, config.CHECKPOINT_TOLERANCE, relaxed=True)
+        assert passes(other, PRE, config.POST_TOLERANCE, relaxed=True)
+
+
+def test_relaxed_checks_still_catch_real_changes():
+    assert not passes(page(button=False), PRE, config.PRE_TOLERANCE, relaxed=True)         # the button is gone
+    assert not passes(page(label="Error"), PRE, config.PRE_TOLERANCE, relaxed=True)         # other words on it
+    assert not passes(page(label="Delete all"), PRE, config.POST_TOLERANCE, relaxed=True)
+    assert not passes(page(note="Save failed"), CHECK, config.CHECKPOINT_TOLERANCE, relaxed=True)
+    assert not passes(page(note="Project not saved"), CHECK, config.CHECKPOINT_TOLERANCE, relaxed=True)
+    # A real move of a few pixels is still a move.
+    assert not passes(page(dx=3, dy=3), PRE, config.PRE_TOLERANCE, relaxed=True)
+
+
+def test_relaxed_distance_is_never_more_than_the_exact_one():
+    for now in (page(), page(dx=1), page(button=False), page(note="Save failed")):
+        for box in (PRE, CHECK):
+            assert dist(now, box, True) <= dist(now, box, False)
+    assert dist(page(), PRE, True) == 0
+    assert config.check_tolerance(6, False) == 6 and config.check_tolerance(6, True) == 6 + config.RELAXED_EXTRA
+
+
+def test_relaxed_distance_keeps_ignore_zones_in_place():
+    a, b = RECORDED.copy(), page(dx=1)
+    rect(b, [102, 82, 130, 110], (255, 0, 0))                # a clock drawn over the button
+    zone = [[100, 80, 132, 112]]
+    want = imaging.region_hash(a, PRE, zone)
+    assert imaging.region_distance(b, PRE, want, zone, relaxed=True) <= config.check_tolerance(config.PRE_TOLERANCE, True)

@@ -1,5 +1,5 @@
 // UI-side view of the Python engine (see engine/PROTOCOL.md).
-import type { Box, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
+import type { Box, HttpCall, Point, RecordedOn, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
 
 export interface SystemInfo {
   memoryGb: number; chip: string; os: string; engineVersion: string;
@@ -7,6 +7,8 @@ export interface SystemInfo {
   edition: 'community' | 'team';
   browser: { installed: boolean; version?: string };
   model: { installed: boolean; repo?: string; revision?: string; sizeBytes?: number; path?: string };
+  /** This system, as a recording saves it in `recordedOn`. Missing from an older engine. */
+  system?: RecordedOn;
 }
 
 export type SetupTaskName = 'browser' | 'model';
@@ -35,7 +37,11 @@ export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' 
 /** `frame`: the live view frame the box was found on (pass it on when recording the step). */
 export interface LocateResult { box: Box; at: Point; target: string; frame?: number }
 
-export interface RunSettings { autoFix: boolean; failOnFix: boolean }
+export interface RunSettings {
+  autoFix: boolean; failOnFix: boolean;
+  /** "Allow for small differences between systems": the engine treats a missing value as on. */
+  allowSystemDifferences?: boolean;
+}
 export interface RunStart {
   runId: string; startUrl: string; viewport: Viewport; steps: Step[];
   /** The app's base address: set-up and clean-up calls may only go to its hosts. Defaults to `startUrl`. */
@@ -52,6 +58,8 @@ export interface RunStart {
   keepOpen?: boolean;
   /** Play to here: stop after this step passes. */
   upToStepId?: string;
+  /** Where the test was recorded (its version's `recordedOn`), to compare with this system. */
+  recordedOn?: RecordedOn;
 }
 
 /** The answer to "Try it" for a set-up or clean-up call (engine `call.try`). */
@@ -66,7 +74,13 @@ export interface RunStepEvent {
   state: 'running' | 'looking' | 'passed' | 'healed' | 'failed';
   reason?: StepRun['reason']; oldAt?: Point; newAt?: Point; screenshot?: string;
 }
-export interface RunEnded { runId: string; result: 'pass' | 'fail'; durationMs: number; steps: StepRun[] }
+export interface RunEnded {
+  runId: string; result: 'pass' | 'fail'; durationMs: number; steps: StepRun[];
+  /** This system, once the browser opened. */
+  ranOn?: RecordedOn;
+  /** The test was recorded on another kind of system. */
+  systemMismatch?: SystemMismatch;
+}
 
 export interface EngineEvents {
   'frame': Frame;

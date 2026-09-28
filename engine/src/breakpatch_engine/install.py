@@ -349,10 +349,10 @@ def installed_model() -> dict:
 
 
 def system_info() -> dict:
-    from . import plugins
+    from . import plugins, systems
     return {"memoryGb": memory_gb(), "chip": chip(), "os": os_name(), "engineVersion": __version__,
             "edition": plugins.edition(), "licence": plugins.licence_status(), "browser": browser_status(),
-            "model": installed_model()}
+            "model": installed_model(), "system": systems.current()}
 
 
 # ---------------------------------------------------------------- download child process
