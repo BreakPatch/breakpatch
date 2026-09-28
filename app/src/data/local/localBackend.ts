@@ -17,7 +17,7 @@ import type {
   App, Member, Person, QueueItem, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Viewport,
 } from '../types';
 import { FORMAT, SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
-import { baseName, FileTooBig, join, type FolderStorage } from './storage';
+import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
 
 /** Stands for a file over 5 MB in the texts read from the folder: it's skipped, never parsed. */
 const TOO_BIG = '\u0000breakpatch: file too big\u0000';
@@ -329,7 +329,7 @@ export class LocalBackend implements Backend {
     const path = this.abs(rel);
     const dir = path.slice(0, path.lastIndexOf('/'));
     if (!(await this.st.exists(dir))) await this.st.mkdir(dir);
-    const tmp = join(dir, `.${baseName(path)}.${Math.random().toString(36).slice(2, 8)}.tmp`);
+    const tmp = join(dir, tempName(baseName(path)));
     await this.st.write(tmp, text);
     try { await this.st.rename(tmp, path); }
     catch (e) { await this.st.remove(tmp).catch(() => {}); throw e; }

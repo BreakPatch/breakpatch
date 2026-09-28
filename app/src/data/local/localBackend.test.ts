@@ -4,7 +4,7 @@ import type { Person, Run, Step, Test } from '../types';
 import { fromFileText, slugify, toFileText, uniqueSlug } from './format';
 import { checkWritable, firstNameOf, initFolder, inspectFolder } from './folder';
 import { FolderError, LocalBackend, NEWER_MESSAGE } from './localBackend';
-import { MemoryStorage } from './storage';
+import { baseName, isTempName, MemoryStorage } from './storage';
 
 const ROOT = '/Users/ana/web-app/tests';
 const ana: Person = { uid: 'local', name: 'Ana Ruiz', email: '' };
@@ -89,6 +89,30 @@ describe('choosing a folder', () => {
     await expect(checkWritable(st, '/fine')).resolves.toBeUndefined();
     expect(await st.list('/fine')).toEqual([]);
   });
+  it('never writes a name that starts with a dot', async () => {
+    // Tauri's fs scope refuses dot files inside a picked folder on macOS (requireLiteralLeadingDot),
+    // so a hidden temp file made "Couldn't open this folder" appear for every empty folder.
+    const st = new MemoryStorage();
+    const names: string[] = [];
+    for (const m of ['write', 'rename', 'mkdir', 'remove'] as const) {
+      const orig = st[m].bind(st) as (...a: string[]) => Promise<unknown>;
+      vi.spyOn(st, m).mockImplementation(((...a: string[]) => { names.push(...a.map(baseName)); return orig(...a); }) as never);
+    }
+    await st.mkdir('/t'); names.length = 0;
+    await checkWritable(st, '/t');
+    await initFolder(st, '/t');
+    const b = await LocalBackend.open({ storage: st, path: '/t', person: ana, live: false });
+    await b.addApp({ name: 'Admin', baseUrl: 'https://admin.example.com', defaultViewport: VP });
+    expect(names.length).toBeGreaterThan(4);
+    expect(names.filter(n => n.startsWith('.'))).toEqual([]);
+  });
+  it('treats our leftover temp files as nothing', async () => {
+    const st = new MemoryStorage();
+    st.poke('/left/breakpatch.json.bp-abc123.tmp', 'half written');
+    expect(isTempName('breakpatch.json.bp-abc123.tmp')).toBe(true);
+    expect(isTempName('notes.tmp')).toBe(false);
+    expect(await inspectFolder(st, '/left')).toBe('empty');
+  });
 });
 
 describe('LocalBackend', () => {
@@ -168,7 +192,7 @@ describe('LocalBackend', () => {
     const write = vi.spyOn(st, 'write'), rename = vi.spyOn(st, 'rename');
     await b.addApp({ name: 'Admin', baseUrl: 'https://admin.example.com', defaultViewport: VP });
     const tmp = write.mock.calls[0][0];
-    expect(tmp).toMatch(/\/apps\/admin\/\.app\.json\.\w+\.tmp$/);
+    expect(tmp).toMatch(/\/apps\/admin\/app\.json\.bp-\w+\.tmp$/);
     expect(rename).toHaveBeenCalledWith(tmp, `${ROOT}/apps/admin/app.json`);
     expect(await st.exists(tmp)).toBe(false);
   });
@@ -270,7 +294,7 @@ describe('LocalBackend', () => {
     st.poke(`${ROOT}/apps/web-app/tests/sign-up.json`, toFileText({ name: 'Sign up', startUrl: 'https://app.example.com/signup', steps: [] }));
     st.poke(`${ROOT}/apps/web-app/tests/broken.json`, '{ "name": ');
     st.poke(`${ROOT}/apps/web-app/tests/notes.md`, 'not ours');
-    st.poke(`${ROOT}/apps/web-app/tests/.log-in.json.abc.tmp`, 'half written');
+    st.poke(`${ROOT}/apps/web-app/tests/log-in.json.bp-abc123.tmp`, 'half written');
     st.poke(`${ROOT}/apps/stray/readme.txt`, 'no app.json here');
     st.poke(`${ROOT}/suites/odd.json`, '[1, 2]');
     await b.reload();

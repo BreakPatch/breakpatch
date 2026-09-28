@@ -2,11 +2,11 @@
 import type { Person } from '../types';
 import { FORMAT, SCHEMA_VERSION, toFileText } from './format';
 import { FolderError, LocalBackend, parseMeta, readMeta, type FolderSnapshot } from './localBackend';
-import { baseName, join, MemoryStorage, type FolderStorage } from './storage';
+import { baseName, isTempName, join, MemoryStorage, tempName, type FolderStorage } from './storage';
 
 /**
  * - `breakpatch`: has a breakpatch.json this app can open.
- * - `empty`: nothing in it (hidden files like .DS_Store don't count); set it up without asking.
+ * - `empty`: nothing in it (hidden files like .DS_Store and our leftover temp files don't count); set it up without asking.
  * - `other`: has other files but no breakpatch.json; ask before adding ours.
  */
 export type FolderKind = 'breakpatch' | 'empty' | 'other';
@@ -16,7 +16,7 @@ export async function inspectFolder(st: FolderStorage, path: string): Promise<Fo
   if (!(await st.exists(path))) throw new FolderError('missing', "This folder isn't there any more. It may have been moved or deleted.");
   const meta = await readMeta(st, path);
   if (meta !== null) { parseMeta(meta); return 'breakpatch'; }
-  const entries = (await st.list(path)).filter(e => !e.name.startsWith('.'));
+  const entries = (await st.list(path)).filter(e => !e.name.startsWith('.') && !isTempName(e.name));
   return entries.length ? 'other' : 'empty';
 }
 
@@ -25,7 +25,7 @@ export async function initFolder(st: FolderStorage, path: string): Promise<void>
   const file = join(path, 'breakpatch.json');
   try {
     await st.mkdir(join(path, 'apps'));
-    const tmp = join(path, `.breakpatch.json.${Math.random().toString(36).slice(2, 8)}.tmp`);
+    const tmp = join(path, tempName('breakpatch.json'));
     await st.write(tmp, toFileText({ format: FORMAT, schemaVersion: SCHEMA_VERSION, name: baseName(path) }));
     await st.rename(tmp, file);
   } catch {
@@ -35,7 +35,7 @@ export async function initFolder(st: FolderStorage, path: string): Promise<void>
 
 /** Checks the folder can be written before opening it (a read-only mount, missing permissions). */
 export async function checkWritable(st: FolderStorage, path: string): Promise<void> {
-  const probe = join(path, `.breakpatch-write-check-${Math.random().toString(36).slice(2, 8)}`);
+  const probe = join(path, tempName('breakpatch-write-check'));
   try { await st.write(probe, ''); await st.remove(probe); }
   catch { throw new FolderError('notWritable', "Breakpatch can't save files in this folder. Choose a folder you can write to."); }
 }

@@ -39,6 +39,18 @@ export function join(...parts: string[]): string {
   return parts.filter(Boolean).join('/').replace(/\/{2,}/g, '/');
 }
 
+/**
+ * A temporary file's name next to `name`, for writing then renaming into place. It never starts
+ * with a dot: Tauri's fs scope (requireLiteralLeadingDot, on by default on macOS) refuses dot
+ * files even inside a picked folder, so a hidden temp file made every save fail there.
+ */
+export function tempName(name: string): string {
+  return `${name}.bp-${Math.random().toString(36).slice(2, 8)}.tmp`;
+}
+
+/** A name tempName made. Such files are ours, half written, and never listed as content. */
+export function isTempName(name: string): boolean { return /\.bp-[a-z0-9]+\.tmp$/.test(name); }
+
 export function baseName(path: string): string {
   const p = path.replace(/[\\/]+$/, '');
   return p.slice(Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')) + 1) || p;
