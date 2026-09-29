@@ -45,7 +45,14 @@ The token is a fine-grained personal access token for `BreakPatch/breakpatch` on
 
 ## Screenshots
 
-The pictures in `assets/shots/` are the real app's browser preview (`cd app && npm run dev`, then `?demo&ready&theme=dark` or `theme=light`), taken with Playwright at 1280 × 800 and 2x, cropped, and saved as WebP at 1x and 2x. Each `<picture>` swaps to the light version when the Mac is in light mode. Keep `width` and `height` on every `<img>` matching the file.
+The pictures in `assets/shots/` are the real app's browser preview, regenerated with one command:
+
+```sh
+scripts/link-team.sh                                   # the shots show Team features
+/path/to/engine/.venv/bin/python scripts/site-shots.py # all of them; or name some: ... site-shots.py names tests
+```
+
+It starts `npm run dev` in `app/` if the preview isn't running, opens `?demo&ready&signedin` with the clock fixed, and saves each shot dark and light, at 1x and 2x, as WebP. `recorder-phone` is the home hero on a phone (the steps panel). The crops are listed in `SHOTS` at the top of the script. Each `<picture>` swaps to the light version when the Mac is in light mode. Keep `width` and `height` on every `<img>` matching the file.
 
 ## Hosting
 
