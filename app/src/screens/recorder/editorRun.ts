@@ -28,12 +28,11 @@ export interface EditorRunDone {
 }
 
 /**
- * Play this step: the step to play up to first, when the page isn't just after the step before it,
- * else null. Never after the page was used by hand, nor for "Play on the page as it is".
+ * "Add a step here" never plays anything: when the page isn't at that step (and wasn't set up by
+ * hand), the floating bar says how to get it there.
  */
-export function playUpToFirst(rows: string[], id: string, atStepId: string | null, manual: boolean, asIs = false): string | null {
-  const prev = rows[rows.indexOf(id) - 1] ?? null;
-  return !asIs && !manual && prev && atStepId !== prev ? prev : null;
+export function addStepHint(atStepId: string | null, id: string, manual: boolean, number: number | string): string | null {
+  return atStepId === id || manual ? null : `The page isn't at step ${number}. Use Play to here, or Use the page, to get it there.`;
 }
 
 /** Row statuses and notes for the steps list, from a run's live state. */

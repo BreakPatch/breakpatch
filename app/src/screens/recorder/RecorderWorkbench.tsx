@@ -24,9 +24,9 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
   /** The recorder's own Run and Play to here (tests only). */
   run?: {
     running: boolean; statuses: Record<string, RowStatus>; notes: Record<string, string>; footer?: ReactNode;
-    onPlayTo: (id: string) => void; onAddAfter: (id: string) => void; onPlayStep: (id: string) => void; onPlayAsIs?: (id: string) => void;
-    /** A line floating over the page while steps play for Play this step. */
-    banner?: { text: string; tone?: 'ok' | 'bad' } | null;
+    onPlayTo: (id: string) => void; onAddAfter: (id: string) => void; onPlayStep: (id: string) => void;
+    /** A line floating over the page: Play this step's progress, or a hint with a button. */
+    banner?: { text: string; tone?: 'ok' | 'bad'; icon?: string; action?: { label: string; onClick: () => void } } | null;
   };
 }) {
   useSampleState();                                      // markers follow what the sample page shows
@@ -72,7 +72,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
         <FileChooserDialog ask={rec.handAsk} dir={rec.filesDir} onChoose={rec.handChooseFile} />
         <AddStepBar rec={rec} appId={appId} allowGroups={allowGroups} onInsertGroup={insertGroup} frozen={run?.running ? 'The test is playing in this browser. Stop it, or wait for it to finish, to add steps.'
           : rec.hand ? "Recording is paused while you use the page." : null}
-          banner={rec.hand ? { text: "You're using the page directly. Nothing is recorded.", action: { label: 'Done', onClick: () => void rec.setHand(false) } } : run?.banner ?? null} />
+          banner={rec.hand ? { text: "You're using the page directly. Nothing is recorded.", icon: 'back_hand', action: { label: 'Done', onClick: () => void rec.setHand(false) } } : run?.banner ?? null} />
       </div>
       {loading ? (
         <aside className="steps-panel" aria-label="Steps" aria-busy>
@@ -84,7 +84,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
           onChange={rec.change} onRerecord={rec.startRerecord} rerecordingId={rec.rerecordId} checkingId={rec.busyId} statuses={statuses} statusTexts={statusTexts}
           openLoopId={rec.openLoopId} onCloseLoop={() => rec.setOpenLoopId(null)} groupSteps={groupSteps} onEditGroup={onEditGroup}
           makeId={() => localId('s')} notes={run?.notes} insertAfterId={rec.insertAfterId} unplayedIds={rec.unplayed}
-          onPlayTo={run?.onPlayTo} onAddAfter={run?.onAddAfter} onPlayStep={run?.onPlayStep} onPlayAsIs={run?.onPlayAsIs} onEdited={rec.edited} secretNames={secretNames} locked={run?.running} footer={run?.footer} />
+          onPlayTo={run?.onPlayTo} onAddAfter={run?.onAddAfter} onPlayStep={run?.onPlayStep} onEdited={rec.edited} secretNames={secretNames} locked={run?.running} footer={run?.footer} />
       )}
     </div>
   );

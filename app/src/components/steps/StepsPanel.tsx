@@ -44,10 +44,8 @@ export interface StepsPanelProps {
   /** Edit mode: "Play to here" and "Add a step after this one" on a step. */
   onPlayTo?: (id: string) => void;
   onAddAfter?: (id: string) => void;
-  /** Edit mode: "Play this step" (the steps before it play first when the page isn't there). */
+  /** Edit mode: "Play this step" (only this step, on the page as it is now). */
   onPlayStep?: (id: string) => void;
-  /** Edit mode: ⋯ "Play on the page as it is" (just this step, whatever the page shows). */
-  onPlayAsIs?: (id: string) => void;
   /** Edit mode: a step was edited; `affectsPage` when what it does to the page changed (its text, address…). */
   onEdited?: (id: string, affectsPage: boolean) => void;
   /** Saved secret names, for editing a Write step. */
@@ -179,7 +177,6 @@ export function StepsPanel(p: StepsPanelProps) {
             onRerecord={s.action !== 'loop' && s.action !== 'group' && p.onRerecord ? () => p.onRerecord!(s.id) : undefined}
             onPlayTo={p.onPlayTo ? () => p.onPlayTo!(s.id) : undefined}
             onPlayStep={p.onPlayStep && s.action !== 'loop' && s.action !== 'group' ? () => p.onPlayStep!(s.id) : undefined}
-            onPlayAsIs={p.onPlayAsIs && s.action !== 'loop' && s.action !== 'group' ? () => p.onPlayAsIs!(s.id) : undefined}
             onAddAfter={p.onAddAfter ? () => p.onAddAfter!(s.id) : undefined}
             onDuplicate={() => { const d = duplicateStep(steps, s.id, p.makeId ?? defaultId); change(d.steps); if (d.copyId) p.onSelect?.(d.copyId); }}
             onDelete={() => { change(removeStep(steps, s.id)); p.onSelect?.(null); }} />
@@ -251,10 +248,10 @@ const EXPECT_CHOICES: { value: Expect | ''; label: string }[] = [
   { value: 'noChange', label: 'Nothing visible changes' },
 ];
 
-function StepEditor({ step, number, secretNames, onChange, onEdit, onRerecord, onPlayTo, onPlayStep, onPlayAsIs, onAddAfter, onDuplicate, onDelete }: {
+function StepEditor({ step, number, secretNames, onChange, onEdit, onRerecord, onPlayTo, onPlayStep, onAddAfter, onDuplicate, onDelete }: {
   step: Step; number: number | string; secretNames: string[];
   onChange: (patch: Partial<Step>) => void; onEdit: (patch: Partial<Step>, affectsPage: boolean) => void;
-  onRerecord?: () => void; onPlayTo?: () => void; onPlayStep?: () => void; onPlayAsIs?: () => void; onAddAfter?: () => void;
+  onRerecord?: () => void; onPlayTo?: () => void; onPlayStep?: () => void; onAddAfter?: () => void;
   onDuplicate: () => void; onDelete: () => void;
 }) {
   const isLoop = step.action === 'loop';
@@ -265,7 +262,6 @@ function StepEditor({ step, number, secretNames, onChange, onEdit, onRerecord, o
   const [noteOpen, setNoteOpen] = useState(!!step.expectNote);
   const items = [
     { label: 'Edit', icon: 'edit', onSelect: () => setEditing(true) },
-    ...(onPlayAsIs ? [{ label: 'Play on the page as it is', icon: 'play_arrow', onSelect: onPlayAsIs }] : []),
     { label: 'Duplicate', icon: 'content_copy', onSelect: onDuplicate },
     ...(onAddAfter ? [{ label: 'Add a step after', icon: 'add', onSelect: onAddAfter }] : []),
     'sep' as const,

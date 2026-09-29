@@ -6,7 +6,8 @@ import { getEngine } from '../../engine';
 import { LiveView } from '../../components/live/LiveView';
 import { keyName } from '../../components/live/geometry';
 import { StepsPanel } from '../../components/steps';
-import { playUpToFirst } from './editorRun';
+import { addStepHint } from './editorRun';
+import screenSource from './RecorderScreen.tsx?raw';
 import { useRecorder } from './useRecorder';
 
 Element.prototype.scrollIntoView ??= () => undefined;
@@ -14,24 +15,25 @@ globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const vp = { width: 800, height: 600 };
 
-describe('Play this step, when the page is elsewhere', () => {
-  const rows = ['a', 'b', 'c', 'd'];
-  it('plays up to the step before it first, with no question', () => {
-    expect(playUpToFirst(rows, 'd', 'a', false)).toBe('c');
-    expect(playUpToFirst(rows, 'd', 'c', false)).toBeNull();             // already there
-    expect(playUpToFirst(rows, 'a', null, false)).toBeNull();            // the first step
+describe('Play this step and Add a step here never play other steps', () => {
+  it('Play this step runs only that step, on the page as it is', () => {
+    const body = screenSource.slice(screenSource.indexOf('const playStep = async'), screenSource.indexOf('const addAfter'));
+    expect(body).toContain("play('step', id)");
+    expect(body).not.toContain("play('play'");
+    const add = screenSource.slice(screenSource.indexOf('const addAfter'), screenSource.indexOf('const { statuses'));
+    expect(add).not.toMatch(/void play\('play', id\)\.then|await play/);      // only from the hint's button
   });
-  it('not after the page was used by hand, nor for "Play on the page as it is"', () => {
-    expect(playUpToFirst(rows, 'd', null, true)).toBeNull();
-    expect(playUpToFirst(rows, 'd', 'a', false, true)).toBeNull();
+  it('Add a step here only hints when the page is elsewhere, with Play to here', () => {
+    expect(addStepHint('b', 'd', false, 4)).toBe("The page isn't at step 4. Use Play to here, or Use the page, to get it there.");
+    expect(addStepHint('d', 'd', false, 4)).toBeNull();                   // the page is there
+    expect(addStepHint(null, 'd', true, 4)).toBeNull();                   // set up by hand: the user knows
+    expect(screenSource).toContain("action: { label: 'Play to here'");
   });
-  it('offers "Play on the page as it is" in the ⋯ menu', () => {
+  it('has no "Play on the page as it is" any more: Play this step is that', () => {
     const steps: Step[] = [{ id: 'a', action: 'click', label: 'Click A', at: [1, 1] }];
-    const onPlayAsIs = vi.fn();
-    const r = render(<StepsPanel steps={steps} mode="edit" selectedId="a" onPlayAsIs={onPlayAsIs} onPlayStep={() => undefined} onChange={() => undefined} onSelect={() => undefined} />);
+    const r = render(<StepsPanel steps={steps} mode="edit" selectedId="a" onPlayStep={() => undefined} onChange={() => undefined} onSelect={() => undefined} />);
     fireEvent.click(r.getByLabelText('More for this step'));
-    fireEvent.click(r.getByRole('menuitem', { name: /Play on the page as it is/ }));
-    expect(onPlayAsIs).toHaveBeenCalledWith('a');
+    expect(r.queryByRole('menuitem', { name: /as it is/ })).toBeNull();
   });
 });
 
