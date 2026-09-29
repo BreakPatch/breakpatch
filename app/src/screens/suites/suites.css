@@ -25,6 +25,9 @@
 
 /* ---------- Editor ---------- */
 .se-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--suite-side-w); }
+.se-body.solo { grid-template-columns: minmax(0, 1fr); }
+.se-body.solo .se-left { border-right: 0; max-width: 880px; width: 100%; margin: 0 auto; }
+.se-lead { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; }
 .se-left { padding: 24px 28px; display: flex; flex-direction: column; gap: 14px; border-right: 1px solid var(--line); overflow: auto; animation: bpIn 300ms ease-out both; }
 .se-right { padding: 24px; display: flex; flex-direction: column; gap: 22px; overflow: auto; animation: bpIn 300ms ease-out both; }
 .se-h { font-size: 18px; font-weight: 600; }

@@ -55,6 +55,13 @@ export default function RunScreen() {
   }
 
   const stopped = view.reasons[view.failedId ?? ''] === 'stopped';
+  // A failed run offers the fix right in the strip (Run design "Failed"): re-record a top-level
+  // step in place, or open the test on the failed row. Steps inside shared steps are fixed there.
+  // Open in editor is then the one primary button; See report steps back to secondary (DES-08).
+  const failedRow = view.failedId && info ? info.refs.get(view.failedId)?.rowId : undefined;
+  const failedReason = view.reasons[view.failedId ?? ''];
+  const record = `/apps/${appId}/tests/${testId}/record`;
+  const offersFix = view.phase === 'ended' && view.result !== 'pass' && !stopped && !!failedRow;
   const word = view.phase === 'ended' ? (view.result === 'pass' ? 'passed' : stopped ? 'stopped' : 'failed') : view.phase === 'error' ? 'not started' : 'running';
   const actions = (
     <>
@@ -62,17 +69,12 @@ export default function RunScreen() {
       {running && <Button kind="primary" icon="stop" onClick={r.stop} disabled={view.phase !== 'running'}>Stop</Button>}
       {ended && test && <Button icon="replay" onClick={() => go(test)}>Run again</Button>}
       {view.phase === 'ended' && (
-        <Button kind="primary" disabled={!r.run} onClick={() => r.run && navigate(`/apps/${appId}/runs/${r.run.id}`)}>See report</Button>
+        <Button kind={offersFix ? 'secondary' : 'primary'} disabled={!r.run} onClick={() => r.run && navigate(`/apps/${appId}/runs/${r.run.id}`)}>See report</Button>
       )}
     </>
   );
 
-  // A failed run offers the fix right in the strip (Run design "Failed"): re-record a top-level
-  // step in place, or open the test on the failed row. Steps inside shared steps are fixed there.
-  const failedRow = view.failedId && info ? info.refs.get(view.failedId)?.rowId : undefined;
-  const failedReason = view.reasons[view.failedId ?? ''];
-  const record = `/apps/${appId}/tests/${testId}/record`;
-  const stripExtra = view.phase === 'ended' && view.result !== 'pass' && !stopped && failedRow ? (
+  const stripExtra = offersFix && failedRow ? (
     <div className="run-strip-actions">
       {failedRow === view.failedId && failedReason !== 'secretMissing' && (
         <Button icon="replay" onClick={() => navigate(`${record}?rerecord=${encodeURIComponent(failedRow)}`)}>Re-record this step</Button>

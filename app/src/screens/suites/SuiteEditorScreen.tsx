@@ -115,8 +115,15 @@ export default function SuiteEditorScreen() {
         {!isNew && Action && <Action suite={suite} prepare={prepare} disabled={saving} />}
         <Button kind="primary" onClick={() => void save()} busy={saving}>Save</Button>
       </>}>
-      <div className="se-body">
+      {/* Community has nothing for a side column: its one line and Delete suite head the main column (DES-16). */}
+      <div className={'se-body' + (Panel ? '' : ' solo')}>
         <div className="se-left">
+          {!Panel && (
+            <div className="se-lead">
+              <span className="se-next">Pick the tests and the order they run in.</span>
+              {!isNew && <Button kind="dangerText" icon="delete" size="sm" onClick={() => setConfirmDelete(true)}>Delete suite</Button>}
+            </div>
+          )}
           <TextInput label="Name" className="se-name" value={name} placeholder="e.g. Smoke" onChange={e => edit(setName)(e.target.value)}
             error={tried ? problems.name : undefined} autoFocus={isNew} />
           <div className="se-hrow">
@@ -175,21 +182,18 @@ export default function SuiteEditorScreen() {
           )}
         </div>
 
-        <div className="se-right">
-          {Panel ? (
+        {Panel && (
+          <div className="se-right">
             <Panel suite={suite} suiteId={suiteId ?? null} name={name.trim() || 'New suite'} testCount={present.length} tried={tried}
               value={extras} onChange={(v, problem) => { setExtras(v); setExtrasProblem(problem); setDirty(true); }} />
-          ) : (
-            <div className="se-sec"><div className="se-next">Pick the tests and the order they run in.</div></div>
-          )}
-
-          {!isNew && <Button kind="dangerText" icon="delete" className="se-danger" onClick={() => setConfirmDelete(true)}>Delete suite</Button>}
-        </div>
+            {!isNew && <Button kind="dangerText" icon="delete" className="se-danger" onClick={() => setConfirmDelete(true)}>Delete suite</Button>}
+          </div>
+        )}
       </div>
 
       <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete ${name || 'this suite'}?`}
         sub="The suite and its schedule are removed. Its past runs stay in the history."
-        actions={<><Button onClick={() => setConfirmDelete(false)}>Cancel</Button><Button kind="danger" icon="delete" onClick={remove}>Delete suite</Button></>} />
+        actions={<><Button onClick={() => setConfirmDelete(false)} data-autofocus>Cancel</Button><Button kind="danger" icon="delete" onClick={remove}>Delete suite</Button></>} />
     </AppFrame>
   );
 }

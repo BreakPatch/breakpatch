@@ -38,7 +38,7 @@ export function useLeaveGuard(dirty: boolean, saveFirst?: () => Promise<boolean>
     <Dialog open={!!pending} onClose={close} icon="warning" iconColor="var(--fixed)" title="Leave without saving?"
       sub={hasFeature('versions') ? "Your changes aren't saved yet. Save them as a new version, or leave and lose them." : "Your changes aren't saved yet. Save them, or leave and lose them."}
       actions={<>
-        <Button kind="ghost" onClick={close}>Keep editing</Button>
+        <Button kind="ghost" onClick={close} data-autofocus>Keep editing</Button>
         <Button kind="danger" onClick={() => { const go = pending; setPending(null); go?.(); }}>Leave without saving</Button>
         {saveFirst && (
           <Button kind="primary" busy={saving} onClick={async () => {

@@ -23,7 +23,7 @@ export function Confirm({ open, onClose, title, text, confirm, onConfirm, icon =
   return (
     <Dialog open={open} onClose={onClose} title={title} icon={icon} iconColor="var(--failed)"
       actions={<>
-        <Button kind="ghost" onClick={onClose}>Cancel</Button>
+        <Button kind="ghost" onClick={onClose} data-autofocus>Cancel</Button>
         <Button kind="danger" busy={busy} onClick={async () => { setBusy(true); try { await onConfirm(); onClose(); } finally { setBusy(false); } }}>{confirm}</Button>
       </>}>
       <p className="set-dlg-text">{text}</p>

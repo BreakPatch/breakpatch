@@ -22,7 +22,7 @@ describe('the one-time usage notice (Community)', () => {
     expect(await screen.findByText(NOTICE_TEXT)).toBeInTheDocument();
     expect(NOTICE_TEXT).toBe('Breakpatch counts tests created and runs, as anonymous totals for all users. No names, addresses, screenshots or IDs are sent.');
     fireEvent.click(screen.getByRole('button', { name: 'OK' }));
-    expect(screen.queryByText(NOTICE_TEXT)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(NOTICE_TEXT)).not.toBeInTheDocument());   // after its way out
     await waitFor(async () => expect((await usage.settings()).noticeSeen).toBe(true));
     expect((await usage.settings()).enabled).toBe(true);
 
@@ -52,10 +52,11 @@ describe('the one-time usage notice (Community)', () => {
     expect(screen.queryByText(NOTICE_TEXT)).not.toBeInTheDocument();
   });
 
-  it('closing it counts as seen', async () => {
+  it('blocks nothing and takes no focus, and counts as seen once shown (DES-10)', async () => {
     at('/');
     await screen.findByText(NOTICE_TEXT);
-    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(document.body);
     await waitFor(async () => expect((await usage.settings()).noticeSeen).toBe(true));
     expect((await usage.settings()).enabled).toBe(true);
   });

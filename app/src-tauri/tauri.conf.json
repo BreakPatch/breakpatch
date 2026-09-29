@@ -133,6 +133,9 @@
         ]
       }
     },
+    "shell": {
+      "open": "(?:(?:(?:mailto:\\w+)|(?:tel:\\w+)|(?:https?://\\w+)).+|x-apple\\.systempreferences:com\\.apple\\.preference\\.notifications)"
+    },
     "updater": {
       "_comment": "Replace pubkey with the contents of the .pub file from `npx tauri signer generate -w ~/.tauri/breakpatch.key` (see src-tauri/README.md). The private key and its password go in the TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD CI secrets.",
       "endpoints": [

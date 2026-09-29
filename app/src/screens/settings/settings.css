@@ -68,6 +68,10 @@
 .set-toggle.center .set-toggle-t, .set-toggle.center .set-toggle-d { line-height: normal; }
 .set-toggle-t { font-size: 15px; font-weight: 600; }
 .set-toggle-d { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+/* Notifications turned off in macOS (DES-09): the banner says how to fix it; the switches dim. */
+.set-banner { border: 0; border-radius: var(--r-card); padding: 12px 16px; }
+.set-toggle.blocked .switch { opacity: .5; }
+.set-blocked-note { font-size: 12px; font-weight: 600; color: var(--fixed); }
 
 /* Secrets */
 .set-list { border: 1px solid var(--line); border-radius: var(--r-card); display: flex; flex-direction: column; overflow: hidden; background: var(--surface); }

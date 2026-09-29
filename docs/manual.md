@@ -197,7 +197,7 @@ Screen checks are worked out automatically after every step. There's nothing to 
 
 Select a step to open it. **What to look for** is the plain description of what the step acts on, for example "Done button, bottom right of the Create project dialog". Edit it if it's wrong. **What should happen** says how a run judges the step: a new page opens, something closes or disappears, something appears, text or a value changes, or nothing visible changes. Breakpatch picks one when you record; change it with one click. **+ note** adds a few words, like "closes the What's new dialog": the AI assistant reads them only when the step's check fails, to judge whether the failure is real and to say why.
 
-Under that: **Play to here** starts a new browser and plays the test from the start up to and including this step. **Play this step** does only this step, on the page as it is now, and never plays the steps before it: if the page isn't where the step expects, the step fails with its usual reason. **Re-record** does it again. The **⋯** menu has **Edit** (the step's text, secret, address, seconds, sample file, repeat count or name), **Duplicate**, **Add a step after** and **Delete**. Hover between two steps, or tab to it, for **+** to add a step there: the next step you record goes there. If the page isn't at that step, a line over the page says so, with **Play to here** to get it there (or use **Use the page**); nothing plays by itself. **Run** plays the whole test in the recorder's browser and leaves the page where it stopped.
+Under that: **Play to here** starts a new browser and plays the test from the start up to and including this step. **Play this step** does only this step, on the page as it is now, and never plays the steps before it: if the page isn't where the step expects, the step fails with its usual reason. The **⋯** menu has **Edit** (the step's text, secret, address, seconds, sample file, repeat count or name), **Re-record** (do the step again on the page; not for a wait of some seconds), **Duplicate**, **Add a step after** and **Delete**. Hover between two steps, or tab to it, for **+** to add a step there: the next step you record goes there. If the page isn't at that step, a line over the page says so, with **Play to here** to get it there (or use **Use the page**); nothing plays by itself. **Run** plays the whole test in the recorder's browser and leaves the page where it stopped.
 
 **Use the page** (✋ above the page, or ⌘E) lets you work the page yourself, for example to close a banner or sign in by hand before you record the next step. Your clicks, scrolling and typing go straight to the page and nothing is recorded; a coloured ring and a line over the page remind you. Press **Done** or ⌘E to go back to recording (Esc goes to the page). A typical use: a step fails, you put the page right by hand, then press **Play this step**; its result says it played on a page set up by hand. **Run** and **Play to here** always start in a new browser, so nothing you did by hand is carried into them. What you type in this mode is never saved or logged.
 
@@ -275,11 +275,11 @@ Settings → About also shows your version and edition.
 
 ## Privacy
 
-Breakpatch counts **tests created and runs**, as anonymous totals for all users, so we can see that it's used and what to work on. The first time you open Breakpatch it says so:
+Breakpatch counts **tests created and runs**, as anonymous totals for all users, so we can see that it's used and what to work on. The first time you open Breakpatch, a notice in the corner says so:
 
 > Breakpatch counts tests created and runs, as anonymous totals for all users. No names, addresses, screenshots or IDs are sent.
 
-Press **OK**, or **Turn off**. You can turn it off or on again at any time in **Settings → Privacy**, which also shows exactly what's waiting to be sent. To turn it off for good on a Mac, set the environment variable `BREAKPATCH_NO_USAGE=1` (for example with `launchctl setenv BREAKPATCH_NO_USAGE 1`).
+Press **OK** to put it away, or **Turn off**. You can turn it off or on again at any time in **Settings → Privacy**, which also shows exactly what's waiting to be sent. To turn it off for good on a Mac, set the environment variable `BREAKPATCH_NO_USAGE=1` (for example with `launchctl setenv BREAKPATCH_NO_USAGE 1`).
 
 **What's sent.** Nothing before you've seen that message. Then, on each day you use Breakpatch, one message to `https://account.breakpatch.dev/api/usage`, even when there's nothing to count, holding exactly:
 

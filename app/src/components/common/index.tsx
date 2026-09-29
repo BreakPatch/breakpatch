@@ -110,7 +110,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, children, confi
   const go = async () => { setBusy(true); try { await onConfirm(); onClose(); } finally { setBusy(false); } };
   return (
     <Dialog open={open} onClose={onClose} title={title} width={480} icon={icon ?? (danger ? 'delete' : undefined)} iconColor={danger ? 'var(--failed)' : undefined}
-      actions={<><Button onClick={onClose}>Cancel</Button><Button kind={danger ? 'danger' : 'primary'} busy={busy} onClick={go}>{confirmLabel}</Button></>}>
+      actions={<><Button onClick={onClose} data-autofocus={danger || undefined}>Cancel</Button><Button kind={danger ? 'danger' : 'primary'} busy={busy} onClick={go}>{confirmLabel}</Button></>}>
       {children && <div className="cm-confirm-text">{children}</div>}
     </Dialog>
   );
