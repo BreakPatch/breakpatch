@@ -37,7 +37,7 @@ DESCRIBE = 'Describe the next step, for example: click the Done button'
 
 def rest(pg):
     """Moves the pointer out of the way, so nothing shows a hover, and waits for the page to settle."""
-    pg.mouse.move(1279, 799)
+    pg.mouse.move(2, 2)   # top left, clear of the steps list (its + between steps shows on hover)
     pg.evaluate('document.activeElement && document.activeElement.blur && document.activeElement.blur()')
     pg.wait_for_timeout(700)
 
