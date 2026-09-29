@@ -57,13 +57,51 @@ a:hover { color: var(--text); }
 .anim-pulse { animation: bpPulse 1.4s ease-in-out infinite; }
 .anim-spin { animation: bpSpin 1s linear infinite; }
 
+/* ---------- Ways out ---------- */
+/* A panel that popped in leaves the same way, backwards and a little quicker (DES-01): usePresence
+   keeps it on screen with .closing for EXIT_MS. The entrances fill backwards only, so once they've
+   played these transitions own opacity and transform, and reopening while it leaves turns back
+   from wherever it had got to. */
+:is(.menu, .dialog, .scrim, .rec-ai, .step-editpanel) {
+  transition: opacity 150ms cubic-bezier(.2,.7,.3,1), transform 150ms cubic-bezier(.2,.7,.3,1);
+}
+:is(.menu, .dialog, .scrim, .rec-ai, .step-editpanel).closing {
+  opacity: 0; transform: scale(.96); pointer-events: none;
+  transition: opacity 130ms cubic-bezier(.4,0,1,1), transform 130ms cubic-bezier(.4,0,1,1);
+}
+/* Dimming layers only fade; bars that rose 8 px sink back down. */
+.scrim.closing { transform: none; }
+.rec-ai.closing { transform: translateY(8px); }
+
+/* ---------- Reduce motion ---------- */
+/* Nothing moves, but things still fade in and out (150 ms), and a spinner still says it's
+   working: it pulses instead of turning (DES-03). */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
+  @keyframes bpIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes bpPop { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes bpOut { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes bpRing { from { box-shadow: none; } to { box-shadow: none; } }
+  @keyframes bpGrow { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes bpShimmer { from { background-position: 0 0; } to { background-position: 0 0; } }
+  @keyframes bpSweep { from { opacity: .6; } to { opacity: .6; } }
+  .anim-in, .anim-pop, .menu, .dialog, .scrim, .rec-ai, .step-editpanel, .banner, .usage-notice, .live-blocked { animation-duration: 150ms; }
+  .spin, .anim-spin { animation: bpPulse 1.4s ease-in-out infinite !important; }
+  *, *::before, *::after {
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+    transition-duration: 150ms !important;
+    scroll-behavior: auto !important;
+  }
+  .closing { transform: none !important; }
 }
 
 /* "Starting Breakpatch…" floats bottom centre until the engine answers (EngineStarting.tsx). */
 .engine-starting {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 200; display: flex; align-items: center; gap: 8px;
-  background: var(--raised); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--r-pill);
-  padding: 8px 16px; font-size: 13px; box-shadow: var(--shadow-pop); pointer-events: none; white-space: nowrap;
+  background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--r-pill);
+  -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+  padding: 8px 16px; font-size: 13px; box-shadow: inset 0 1px 0 var(--glass-hi), var(--shadow-pop); pointer-events: none; white-space: nowrap;
+}
+/* Frosted chrome goes solid when macOS is set to reduce transparency (DES-13). */
+@media (prefers-reduced-transparency: reduce) {
+  .engine-starting { background: var(--raised); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }

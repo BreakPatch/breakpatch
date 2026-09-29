@@ -5,6 +5,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { copyText } from '../../platform';
+import { usePresence } from './presence';
 import './ui.css';
 
 const cx = (...c: unknown[]) => c.filter(x => typeof x === 'string' && x).join(' ');
@@ -140,16 +141,21 @@ export function Tabs<T extends string>({ items, value, onChange, label }: { item
 }
 
 // ---------- Dialog ----------
+/**
+ * Modal dialog. Focus starts on the first field, or on `[data-autofocus]` when there is one: a
+ * confirmation that deletes something marks its Cancel button so Enter never deletes by accident.
+ */
 export function Dialog({ open, onClose, title, sub, children, actions, width = 520, contained, icon, iconColor, labelledBy }: {
   open: boolean; onClose: () => void; title?: ReactNode; sub?: ReactNode; children?: ReactNode; actions?: ReactNode; width?: number; contained?: boolean; icon?: string; iconColor?: string; labelledBy?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const tid = useId();
+  const { mounted, closing } = usePresence(open);
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
     const el = ref.current;
-    const first = el?.querySelector<HTMLElement>('input, textarea, select, button:not([data-close])');
+    const first = el?.querySelector<HTMLElement>('[data-autofocus]') ?? el?.querySelector<HTMLElement>('input, textarea, select, button:not([data-close])');
     (first ?? el)?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
@@ -164,10 +170,11 @@ export function Dialog({ open, onClose, title, sub, children, actions, width = 5
     document.addEventListener('keydown', onKey, true);
     return () => { document.removeEventListener('keydown', onKey, true); prev?.focus?.(); };
   }, [open, onClose]);
-  if (!open) return null;
+  if (!mounted) return null;
   const body = (
-    <div className={cx('scrim', contained && 'contained')} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={ref} className="dialog" role="dialog" aria-modal="true" aria-labelledby={labelledBy ?? (title ? tid : undefined)} style={{ width }} tabIndex={-1}>
+    <div className={cx('scrim', contained && 'contained', closing && 'closing')} aria-hidden={closing || undefined} inert={closing || undefined}
+      onMouseDown={e => { if (open && e.target === e.currentTarget) onClose(); }}>
+      <div ref={ref} className={cx('dialog', closing && 'closing')} role="dialog" aria-modal="true" aria-labelledby={labelledBy ?? (title ? tid : undefined)} style={{ width }} tabIndex={-1}>
         {title && (
           <div className="dialog-head">
             <div className="row" style={{ gap: 12, alignItems: 'flex-start' }}>
@@ -186,20 +193,22 @@ export function Dialog({ open, onClose, title, sub, children, actions, width = 5
 }
 
 // ---------- Menu ----------
-export interface MenuItem { label: string; icon?: string; onSelect: () => void; danger?: boolean; disabled?: boolean }
+/** `checked` makes it one of a set of choices (menuitemradio), ticked when true. */
+export interface MenuItem { label: string; icon?: string; onSelect: () => void; danger?: boolean; disabled?: boolean; checked?: boolean }
 export type MenuEntry = MenuItem | { group: string } | 'sep';
 /** Pop-up menu with keyboard navigation. Place inside a `position: relative` wrapper. */
 export function Menu({ open, onClose, items, style, width = 240, label }: { open: boolean; onClose: () => void; items: MenuEntry[]; style?: CSSProperties; width?: number; label: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { mounted, closing } = usePresence(open);
   useEffect(() => {
     if (!open) return;
     const el = ref.current;
     const prev = document.activeElement as HTMLElement | null;
-    el?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    (el?.querySelector<HTMLElement>('[aria-checked="true"]') ?? el?.querySelector<HTMLElement>('[role^="menuitem"]'))?.focus();
     const onDown = (e: MouseEvent) => { if (el && !el.contains(e.target as Node)) onClose(); };
     const onKey = (e: KeyboardEvent) => {
       if (!el) return;
-      const list = [...el.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])')];
+      const list = [...el.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([disabled])')];
       const i = list.indexOf(document.activeElement as HTMLElement);
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
       else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length]?.focus(); }
@@ -220,13 +229,47 @@ export function Menu({ open, onClose, items, style, width = 240, label }: { open
       if (!a || a === document.body || el?.contains(a)) prev?.focus?.();
     };
   }, [open, onClose]);
-  if (!open) return null;
+  if (!mounted) return null;
   return (
-    <div ref={ref} className="menu" role="menu" aria-label={label} style={{ width, transformOrigin: originFor(style), ...style }}>
+    <div ref={ref} className={cx('menu', closing && 'closing')} role="menu" aria-label={label} aria-hidden={closing || undefined} inert={closing || undefined}
+      style={{ width, transformOrigin: originFor(style), ...style }}>
       {items.map((it, k) => it === 'sep' ? <div key={k} className="menu-sep" role="separator" />
         : 'group' in it ? <div key={k} className="menu-group">{it.group}</div>
-        : <button key={k} role="menuitem" className={cx('menu-item', it.danger && 'danger')} disabled={it.disabled} onClick={() => { onClose(); it.onSelect(); }}>{it.icon && <Icon name={it.icon} />}{it.label}</button>)}
+        : <button key={k} type="button" role={it.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={it.checked} className={cx('menu-item', it.danger && 'danger')} disabled={it.disabled}
+            onClick={() => { if (!open) return; onClose(); it.onSelect(); }}>
+            {it.icon && <Icon name={it.icon} />}{it.checked === undefined ? it.label : <span className="grow">{it.label}</span>}
+            {it.checked && <Icon name="check" className="menu-check" />}
+          </button>)}
     </div>
+  );
+}
+
+/**
+ * A choice shown as a chip (or a field) that opens the app's own menu of choices, anchored to it
+ * and growing from its corner (DES-14). Keyboard: Enter, Space or Down opens it; the arrows move;
+ * Enter picks; Esc closes and focus goes back to the chip.
+ */
+export function ChipSelect<T extends string>({ id, value, options, onChange, label, className, up, width = 260, disabled, field }: {
+  id?: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void;
+  /** What it chooses, for screen readers when no <label> points at it. */
+  label?: string; className?: string;
+  /** Opens upward (a chip near the bottom of the window). */
+  up?: boolean; width?: number; disabled?: boolean;
+  /** Drawn as a full-width form field instead of a chip. */
+  field?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const cur = options.find(o => o.value === value);
+  return (
+    <span className={cx('chip-select', field && 'field-like')}>
+      <button id={id} type="button" className={cx('chip-select-btn', field && 'input', className)} aria-haspopup="menu" aria-expanded={open} aria-label={label ? `${label}: ${cur?.label ?? ''}` : undefined}
+        disabled={disabled} onClick={() => setOpen(o => !o)} onKeyDown={e => { if (e.key === 'ArrowDown' && !open) { e.preventDefault(); setOpen(true); } }}>
+        <span className="chip-select-text">{cur?.label ?? ''}</span><Icon name="expand_more" size={16} />
+      </button>
+      <Menu open={open} onClose={() => setOpen(false)} label={label ?? 'Choices'} width={width}
+        style={up ? { left: 0, bottom: 'calc(100% + 4px)' } : { left: 0, top: 'calc(100% + 4px)' }}
+        items={options.map(o => ({ label: o.label, checked: o.value === value, onSelect: () => onChange(o.value) }))} />
+    </span>
   );
 }
 

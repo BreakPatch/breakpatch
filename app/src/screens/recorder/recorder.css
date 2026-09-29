@@ -15,12 +15,15 @@
 
 /* Transient bars float over the bottom edge of the page view (above the add step bar). */
 .rec-float { position: absolute; left: 14px; right: 14px; bottom: calc(100% + 8px); display: flex; flex-direction: column; gap: 8px; z-index: 5; pointer-events: none; }
-.rec-float > * { pointer-events: auto; box-shadow: var(--shadow-pop); }
-.rec-ai { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; animation: bpIn 200ms ease-out both; font-size: 14px; }
-.rec-ai-result { background: color-mix(in srgb, var(--running) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--running) 40%, transparent); }
+.rec-float > * { pointer-events: auto; box-shadow: inset 0 1px 0 var(--glass-hi), var(--shadow-pop); }
+/* Chrome floating over the page is frosted, so the page shows through softly (DES-13); solid
+   when macOS is set to reduce transparency. */
+.rec-extra, .rec-float > * { -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); }
+.rec-ai { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; animation: bpIn 200ms ease-out backwards; font-size: 14px; }
+.rec-ai-result { background: color-mix(in srgb, color-mix(in srgb, var(--running) 14%, var(--surface)) 80%, transparent); border: 1px solid color-mix(in srgb, var(--running) 40%, transparent); }
 .rec-ai-result .rec-ai-icon { color: var(--running); }
 .rec-ai-result .rec-ai-text { font-weight: 600; }
-.rec-ai-notfound { background: color-mix(in srgb, var(--fixed) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--fixed) 35%, transparent); }
+.rec-ai-notfound { background: color-mix(in srgb, color-mix(in srgb, var(--fixed) 14%, var(--surface)) 80%, transparent); border: 1px solid color-mix(in srgb, var(--fixed) 35%, transparent); }
 .rec-ai-notfound .rec-ai-icon { color: var(--fixed); }
 .rec-ai-keys { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
 .rec-ai-link { font-size: 14px; color: var(--text-muted); padding: 6px; border-radius: 6px; }
@@ -40,11 +43,7 @@
 .rec-input:focus-visible { outline: none; }
 .rec-input::placeholder { color: var(--text-faint); }
 .rec-input.mono { font-family: var(--mono); font-size: 13px; }
-.rec-field-select {
-  flex: 1; min-width: 0; background: transparent; border: 0; color: var(--text); font-family: var(--font); font-size: 14px; padding: 4px 0; cursor: pointer;
-}
-.rec-field-select:focus-visible { outline: none; }
-.rec-field-select option { background: var(--surface); color: var(--text); }
+.rec-field-chip { flex: 1; min-width: 0; display: flex; align-items: center; }
 .rec-inline { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text); }
 .rec-inline.faint { color: var(--text-faint); }
 .rec-inline.small { flex: none; font-size: 12px; color: var(--text-muted); }
@@ -73,7 +72,7 @@
 .rec-send:disabled { opacity: .45; cursor: default; }
 
 .rec-extra { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; color: var(--text-faint); animation: bpIn 160ms ease-out both;
-  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; padding: 8px 12px; align-self: flex-start; max-width: 100%; }
+  background: color-mix(in srgb, var(--surface) 80%, transparent); border: 1px solid var(--line-strong); border-radius: 12px; padding: 8px 12px; align-self: flex-start; max-width: 100%; }
 .rec-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .rec-chip {
   display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line-strong); border-radius: var(--r-pill);
@@ -160,7 +159,13 @@
 .fc-error { font-size: 13px; color: var(--failed); padding: 8px; }
 .rec-secret-name { display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }
 .rec-secret-err { color: var(--failed); font-size: 12px; }
-.rec-banner { background: var(--surface); border: 1px solid var(--line-strong); }
+.rec-banner { background: color-mix(in srgb, var(--surface) 80%, transparent); border: 1px solid var(--line-strong); }
+@media (prefers-reduced-transparency: reduce) {
+  .rec-float > *, .rec-extra { -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .rec-extra, .rec-banner { background: var(--surface); }
+  .rec-ai-result { background: color-mix(in srgb, var(--running) 14%, var(--surface)); }
+  .rec-ai-notfound { background: color-mix(in srgb, var(--fixed) 14%, var(--surface)); }
+}
 .rec-banner .rec-ai-icon { color: var(--accent); }
 .rec-banner.ok .rec-ai-icon { color: var(--passed); }
 .rec-banner.bad .rec-ai-icon { color: var(--failed); }

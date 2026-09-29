@@ -4,9 +4,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Direction, Generated, SampleFile, StepGroup } from '../../data/types';
 import { secrets } from '../../platform';
-import { actionInfo, SAMPLES } from '../../engine/labels';
+import { actionInfo, GENERATED_CHOICES, SAMPLES } from '../../engine/labels';
 import { countRows, findStep, TOKENS, numberOf } from '../../components/steps';
-import { Button, Icon } from '../../components/ui';
+import { Button, ChipSelect, Icon } from '../../components/ui';
+import { useLatched, usePresence } from '../../components/ui/presence';
 import { ActionMenu } from './ActionMenu';
 import { SharedStepsPicker } from './SharedStepsPicker';
 import { composerInput, INSTANT, placeholderFor, shortName, toolHint, type MenuAction } from './actions';
@@ -14,14 +15,17 @@ import type { Recorder } from './useRecorder';
 
 const CLICK_FAMILY = new Set(['click', 'doubleClick', 'longClick', 'rightClick', 'hover']);
 const FILE_TYPES = [['', 'Any type'], ['pdf', 'PDF'], ['csv', 'CSV'], ['xlsx', 'Excel sheet'], ['docx', 'Word document'], ['jpeg', 'JPEG image'], ['mp4', 'MP4 video']];
-const GEN: [Generated, string][] = [['uniqueName', 'A unique name'], ['timeNow', 'The time now'], ['today', "Today's date"], ['repeatNumber', 'The repeat number']];
 
-export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, banner }: {
+type FloatBanner = { text: string; tone?: 'ok' | 'bad'; icon?: string; action?: { label: string; onClick: () => void } };
+const sameBanner = (a: FloatBanner, b: FloatBanner) => a.text === b.text && a.tone === b.tone && a.icon === b.icon && a.action?.label === b.action?.label;
+const leaving = (closing: boolean) => closing ? { 'aria-hidden': true, inert: true } : {};
+
+export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, banner: bannerNow }: {
   rec: Recorder; appId: string; allowGroups: boolean; onInsertGroup: (g: StepGroup, version: number | 'latest') => void;
   /** Adding steps waits (the test is playing in this browser): says why. */
   frozen?: string | null;
   /** A line floating over the page ("Playing steps 1–9 first…", "You're using the page directly…"). */
-  banner?: { text: string; tone?: 'ok' | 'bad'; icon?: string; action?: { label: string; onClick: () => void } } | null;
+  banner?: FloatBanner | null;
 }) {
   const [menu, setMenu] = useState<'closed' | 'menu' | 'picker'>('closed');
   const [secretNames, setSecretNames] = useState<string[]>([]);
@@ -33,6 +37,10 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
 
   // The bar that asks "Click Next button?": Enter confirms, Esc cancels (not while typing in a field).
   const asking = rec.ai.state === 'result' || rec.ai.state === 'proposal';
+  // The floating bars stay a moment after they're answered, so they can leave the way they came.
+  const bannerP = usePresence(!!bannerNow), banner = useLatched(bannerNow, sameBanner);
+  const askP = usePresence(asking), askAi = useLatched(asking ? rec.ai : null), askText = useLatched(asking ? rec.ask : null);
+  const lostP = usePresence(rec.ai.state === 'notfound'), lostText = useLatched(rec.ai.state === 'notfound' ? rec.notFound : null);
   useEffect(() => {
     if (!asking) return;
     const onKey = (e: KeyboardEvent) => {
@@ -83,18 +91,16 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   let field: ReactNode;
   if (action === 'write' && o.writeSource === 'secret') {
     field = (
-      <select className="rec-field-select" aria-label="Saved secret" value={o.secretRef} onChange={e => rec.setOptions({ secretRef: e.target.value })}
-        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); rec.send(); } }}>
-        {secretNames.length === 0 && <option value="">No saved secrets on this Mac</option>}
-        {secretNames.map(n => <option key={n} value={n}>{n}</option>)}
-      </select>
+      <span className="rec-field-chip">
+        <ChipSelect label="Saved secret" up value={o.secretRef} onChange={v => rec.setOptions({ secretRef: v })}
+          options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: 'No saved secrets on this Mac' }]} />
+      </span>
     );
   } else if (action === 'write' && o.writeSource === 'generated') {
     field = (
-      <select className="rec-field-select" aria-label="Generated value" value={o.generated} onChange={e => rec.setOptions({ generated: e.target.value as Generated })}
-        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); rec.send(); } }}>
-        {GEN.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-      </select>
+      <span className="rec-field-chip">
+        <ChipSelect<Generated> label="Generated value" up value={o.generated} onChange={v => rec.setOptions({ generated: v })} options={GENERATED_CHOICES} />
+      </span>
     );
   } else if (input !== 'none') {
     field = (
@@ -176,27 +182,27 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
       {/* Everything that comes and goes (AI bars, the chosen action's options) floats over the bottom of the
           page, never in the layout: the add step bar keeps one height and the page view never moves. */}
       <div className="rec-float">
-      {banner && (
-        <div className={'rec-ai rec-banner' + (banner.tone ? ' ' + banner.tone : '')} role="status">
+      {bannerP.mounted && banner && (
+        <div className={'rec-ai rec-banner' + (banner.tone ? ' ' + banner.tone : '') + (bannerP.closing ? ' closing' : '')} role="status" {...leaving(bannerP.closing)}>
           <Icon name={banner.icon ?? (banner.tone === 'bad' ? 'cancel' : banner.tone === 'ok' ? 'check_circle' : 'play_arrow')} size={20} className="rec-ai-icon" />
           <div className="grow">{banner.text}</div>
           {banner.action && <Button kind="primary" onClick={banner.action.onClick}>{banner.action.label}</Button>}
         </div>
       )}
-      {(rec.ai.state === 'result' || rec.ai.state === 'proposal') && (
-        <div className="rec-ai rec-ai-result" role="status">
-          <Icon name={rec.ai.state === 'proposal' ? actionInfo(rec.ai.params.action).icon : 'auto_awesome'} size={20} className="rec-ai-icon" />
-          <div className="grow rec-ai-text">{rec.ask}</div>
+      {askP.mounted && askAi && (
+        <div className={'rec-ai rec-ai-result' + (askP.closing ? ' closing' : '')} role="status" {...leaving(askP.closing)}>
+          <Icon name={askAi.state === 'proposal' ? actionInfo(askAi.params.action).icon : 'auto_awesome'} size={20} className="rec-ai-icon" />
+          <div className="grow rec-ai-text">{askText}</div>
           <Button kind="primary" onClick={rec.confirmAi} autoFocus>Confirm</Button>
           <Button onClick={rec.retryAi}>Try again</Button>
           <span className="rec-ai-keys">Enter confirms · Esc cancels</span>
           <button type="button" className="rec-ai-link" onClick={rec.cancelAi}>Cancel</button>
         </div>
       )}
-      {rec.ai.state === 'notfound' && (
-        <div className="rec-ai rec-ai-notfound" role="alert">
+      {lostP.mounted && (
+        <div className={'rec-ai rec-ai-notfound' + (lostP.closing ? ' closing' : '')} role="alert" {...leaving(lostP.closing)}>
           <Icon name="search_off" size={20} className="rec-ai-icon" />
-          <div className="grow">{rec.notFound}</div>
+          <div className="grow">{lostText}</div>
           <button type="button" className="rec-ai-link" onClick={() => { rec.cancelAi(); inputRef.current?.focus(); }}>OK</button>
         </div>
       )}

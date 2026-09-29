@@ -122,12 +122,12 @@ select.input { appearance: none; padding-right: 32px; background-image: none; cu
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-card); }
 
 /* ---------- Dialog ---------- */
-.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 100; display: flex; align-items: center; justify-content: center; animation: bpFade 150ms ease-out both; padding: 24px; }
+.scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 100; display: flex; align-items: center; justify-content: center; animation: bpFade 150ms ease-out backwards; padding: 24px; }
 .scrim.contained { position: absolute; }
 .dialog {
   width: 520px; max-width: 100%; max-height: calc(100% - 32px); overflow: auto; background: var(--surface); border: 1px solid var(--line-strong);
   border-radius: var(--r-dialog); box-shadow: var(--shadow-pop); padding: 24px; display: flex; flex-direction: column; gap: 18px;
-  animation: bpPop 170ms ease-out both;
+  animation: bpPop 170ms ease-out backwards;
 }
 .dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .dialog-title { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
@@ -141,7 +141,7 @@ select.input { appearance: none; padding-right: 32px; background-image: none; cu
 /* Menus grow out of their trigger: Menu sets transform-origin from where it's placed. */
 .menu {
   position: absolute; z-index: 90; transform-origin: top left; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px;
-  box-shadow: var(--shadow-pop); padding: 6px; min-width: 200px; display: flex; flex-direction: column; animation: bpPop 150ms ease-out both;
+  box-shadow: var(--shadow-pop); padding: 6px; min-width: 200px; display: flex; flex-direction: column; animation: bpPop 150ms ease-out backwards;
 }
 .menu-group { font-size: 11px; font-weight: 600; color: var(--text-faint); letter-spacing: .06em; text-transform: uppercase; padding: 8px 10px 4px; }
 .menu-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--r-row); font-size: 14px; color: var(--text); text-align: left; width: 100%; }
@@ -153,6 +153,23 @@ select.input { appearance: none; padding-right: 32px; background-image: none; cu
 .menu-item.danger { color: var(--failed); }
 .menu-item.danger .icon { color: var(--failed); }
 .menu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
+.menu-item .menu-check { color: var(--accent); margin-left: auto; }
+.menu-item[aria-checked="true"] { font-weight: 600; }
+
+/* ---------- Chip select (the app's own menu, not the system pop-up) ---------- */
+.chip-select { position: relative; display: inline-flex; min-width: 0; max-width: 100%; }
+.chip-select-btn {
+  display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--text); background: var(--raised); border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill); padding: 3px 8px 3px 10px; transition: border-color var(--t-fast) ease-out, transform 120ms ease-out;
+}
+.chip-select-btn:hover:not(:disabled), .chip-select-btn[aria-expanded="true"] { border-color: var(--accent); }
+.chip-select-btn:active:not(:disabled) { transform: scale(.98); }
+.chip-select-btn .icon { color: var(--text-faint); flex: none; }
+.chip-select-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* As a form field (the Edit panel): the input's size and shape. */
+.chip-select.field-like, .chip-select.field-like .chip-select-btn { width: 100%; }
+.chip-select-btn.input { justify-content: space-between; border-radius: var(--r-input); border-width: 1.5px; background: var(--bg); font-size: 14px; padding: 6px 8px; }
 
 /* ---------- Banner ---------- */
 .banner { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--line); flex: none; animation: bpIn 220ms ease-out both; }

@@ -32,6 +32,8 @@
 
   --scrim: rgba(16, 13, 11, .72);
   --shadow-pop: 0 8px 24px rgba(0, 0, 0, .35);
+  /* The 1 px light along the top edge of frosted floating chrome. */
+  --glass-hi: rgba(255, 255, 255, .07);
 }
 
 :root[data-theme="light"] {
@@ -65,6 +67,7 @@
 
   --scrim: rgba(34, 26, 21, .45);
   --shadow-pop: 0 8px 24px rgba(60, 40, 20, .14);
+  --glass-hi: rgba(255, 255, 255, .75);
 }
 
 /*

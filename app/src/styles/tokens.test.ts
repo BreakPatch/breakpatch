@@ -31,13 +31,22 @@ describe('design tokens', () => {
 
   it('gives the floating panels a solid surface, a border and a shadow', () => {
     const rule = (css: string, sel: string) => css.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{([^}]*)\\}'))?.[1] ?? '';
-    for (const [file, sel] of [['ui.css', '.menu'], ['steps.css', '.step-editpanel'], ['recorder.css', '.rec-extra']] as const) {
+    for (const [file, sel] of [['ui.css', '.menu'], ['steps.css', '.step-editpanel']] as const) {
       const r = rule(text(file), sel);
       expect(r, sel).toMatch(/background: var\(--surface\)/);
       expect(r, sel).toMatch(/border: 1px solid var\(--line-strong\)/);
     }
     expect(rule(text('steps.css'), '.step-editpanel')).toMatch(/box-shadow: var\(--shadow-pop\)/);
-    expect(text('recorder.css')).toMatch(/\.rec-float > \* \{[^}]*box-shadow: var\(--shadow-pop\)/);
+    expect(text('recorder.css')).toMatch(/\.rec-float > \* \{[^}]*box-shadow: [^;}]*var\(--shadow-pop\)/);
+    // Chrome over the page is frosted (DES-13): mostly surface, blurred, and solid when macOS
+    // reduces transparency.
+    for (const [file, sel] of [['recorder.css', '.rec-extra'], ['recorder.css', '.rec-banner'], ['global.css', '.engine-starting'], ['live.css', '.live-blocked']] as const) {
+      const css = text(file);
+      expect(rule(css, sel), sel).toMatch(/background: color-mix\(in srgb, var\(--surface\) 80%, transparent\)/);
+      expect(css, sel).toMatch(/blur\(20px\) saturate\(160%\)/);
+      expect(css.slice(css.indexOf('@media (prefers-reduced-transparency: reduce)')), sel).toMatch(new RegExp(sel.replace('.', '\\.') + '[^{]*\\{[^}]*background: var\\(--(surface|raised)\\)'));
+    }
+    expect(rule(text('recorder.css'), '.rec-extra')).toMatch(/border: 1px solid var\(--line-strong\)/);
     // Both themes define the surface the panels use.
     expect((text('tokens.css').match(/--surface:/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });

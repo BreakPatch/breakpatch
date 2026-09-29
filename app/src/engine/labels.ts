@@ -47,3 +47,6 @@ export function labelFor(kind: ActionKind, p: Partial<Step> = {}): { verb: strin
 }
 
 export const GENERATED = { uniqueName: 'a unique name', timeNow: 'the time now', today: "today's date", repeatNumber: 'the repeat number' } as const;
+/** The same values as choices in a menu, in sentence case like every menu: "A unique name". */
+export const GENERATED_CHOICES = (Object.keys(GENERATED) as (keyof typeof GENERATED)[])
+  .map(value => ({ value, label: GENERATED[value][0].toUpperCase() + GENERATED[value].slice(1) }));

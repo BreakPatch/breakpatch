@@ -34,9 +34,14 @@
 .live-hit.blocked { cursor: progress; }
 /* Over the frame, not inside the scaled page, so it reads the same at every zoom. */
 .live-blocked {
-  position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px;
-  background: var(--raised); color: var(--text); border-radius: var(--r-pill); padding: 6px 14px; font-size: 13px; white-space: nowrap;
-  box-shadow: var(--shadow-pop); pointer-events: none; animation: bpIn 160ms ease-out both; z-index: 2;
+  /* Centred with margins, not a transform, so its rise-in (bpIn) doesn't undo the centring. */
+  position: absolute; left: 0; right: 0; margin: 0 auto; width: max-content; top: 12px; display: flex; align-items: center; gap: 6px;
+  background: color-mix(in srgb, var(--surface) 80%, transparent); color: var(--text); border-radius: var(--r-pill); padding: 6px 14px; font-size: 13px; white-space: nowrap;
+  -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: inset 0 1px 0 var(--glass-hi), var(--shadow-pop); pointer-events: none; animation: bpIn 160ms ease-out both; z-index: 2;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .live-blocked { background: var(--raised); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 .live-blocked .icon { color: var(--accent); }
 
@@ -92,6 +97,8 @@
 .live-dragline circle.end { fill: var(--on-accent); stroke: var(--accent); stroke-width: calc(3px / var(--s)); }
 
 /* "Use the page": a coloured ring round the page (a shadow, so nothing moves) and a normal cursor. */
+/* Use the page: the amber ring eases in and out (DES-17); under Reduce motion it's a 150 ms fade. */
+.live-frame { transition: box-shadow 180ms ease-out; }
 .live.hand .live-frame { box-shadow: 0 0 0 3px var(--fixed); }
 .live-hit.tool-hand { cursor: default; outline: none; }
 .live-hand-btn { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); border-radius: 8px; padding: 4px 8px; flex: none; white-space: nowrap; }

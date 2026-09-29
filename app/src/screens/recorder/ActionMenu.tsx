@@ -2,12 +2,14 @@
 import { useEffect, useRef } from 'react';
 import type { ActionKind } from '../../data/types';
 import { Icon } from '../../components/ui';
+import { usePresence } from '../../components/ui/presence';
 import { menuGroups, type MenuAction } from './actions';
 
 export function ActionMenu({ open, current, allowGroups, onPick, onClose }: {
   open: boolean; current: ActionKind; allowGroups: boolean; onPick: (a: MenuAction) => void; onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { mounted, closing } = usePresence(open);
   useEffect(() => {
     if (!open) return;
     const el = ref.current;
@@ -29,9 +31,9 @@ export function ActionMenu({ open, current, allowGroups, onPick, onClose }: {
     document.addEventListener('keydown', onKey, true);
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey, true); };
   }, [open, onClose]);
-  if (!open) return null;
+  if (!mounted) return null;
   return (
-    <div ref={ref} className="menu rec-menu" role="menu" aria-label="Actions">
+    <div ref={ref} className={'menu rec-menu' + (closing ? ' closing' : '')} role="menu" aria-label="Actions" aria-hidden={closing || undefined} inert={closing || undefined}>
       <div className="rec-menu-scroll">
         {menuGroups({ allowGroups }).map(g => (
           <div key={g.title} role="group" aria-label={g.title}>
@@ -39,7 +41,7 @@ export function ActionMenu({ open, current, allowGroups, onPick, onClose }: {
             {g.items.map(a => {
               const on = !a.nav && a.kind === current;
               return (
-                <button key={a.id} type="button" role="menuitemradio" aria-checked={on} className={'menu-item' + (on ? ' on' : '')} onClick={() => onPick(a)}>
+                <button key={a.id} type="button" role="menuitemradio" aria-checked={on} className={'menu-item' + (on ? ' on' : '')} onClick={() => { if (open) onPick(a); }}>
                   <Icon name={a.icon} size={18} /><span className="grow">{a.name}</span>
                   {on && <Icon name="check" size={18} className="rec-menu-check" />}
                   {a.kind === 'group' && <Icon name="chevron_right" size={18} />}
