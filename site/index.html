@@ -31,7 +31,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/assets/site.css">
-<link rel="preload" as="image" href="/assets/shots/recorder-dark.webp" imagesrcset="/assets/shots/recorder-dark.webp 1280w, /assets/shots/recorder-dark@2x.webp 2560w" imagesizes="(min-width: 1184px) 1120px, calc(100vw - 32px)" media="(prefers-color-scheme: dark)">
+<link rel="preload" as="image" href="/assets/shots/recorder-dark.webp" imagesrcset="/assets/shots/recorder-dark.webp 1280w, /assets/shots/recorder-dark@2x.webp 2560w" imagesizes="(min-width: 1184px) 1120px, calc(100vw - 32px)" media="(prefers-color-scheme: dark) and (min-width: 561px)">
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Breakpatch","url":"https://breakpatch.dev/","applicationCategory":"DeveloperApplication","operatingSystem":"macOS 14 or later (Apple Silicon)","description":"AI UI testing for web apps that runs on your Mac: record by clicking or by describing a step to an on-device vision model (Qwen3-VL through MLX), replay with screen checks, and see what broke. No cloud and no per-run fees.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Community edition, free and open source"}}
 </script>
@@ -70,6 +70,8 @@
       <figure class="hero-shot">
         <div class="window">
           <picture>
+            <source media="(max-width: 560px) and (prefers-color-scheme: light)" srcset="/assets/shots/recorder-phone-light.webp 380w, /assets/shots/recorder-phone-light@2x.webp 760w" sizes="calc(100vw - 32px)" width="380" height="748">
+            <source media="(max-width: 560px)" srcset="/assets/shots/recorder-phone-dark.webp 380w, /assets/shots/recorder-phone-dark@2x.webp 760w" sizes="calc(100vw - 32px)" width="380" height="748">
             <source media="(prefers-color-scheme: light)" srcset="/assets/shots/recorder-light.webp 1280w, /assets/shots/recorder-light@2x.webp 2560w" sizes="(min-width: 1184px) 1120px, calc(100vw - 32px)">
             <img src="/assets/shots/recorder-dark.webp" srcset="/assets/shots/recorder-dark.webp 1280w, /assets/shots/recorder-dark@2x.webp 2560w" sizes="(min-width: 1184px) 1120px, calc(100vw - 32px)" width="1280" height="800" fetchpriority="high" decoding="async" alt="The Breakpatch recorder. The web app being tested is on the left, the recorded steps are on the right, and the AI assistant asks “Is this the New project button?” with Confirm and Try again.">
           </picture>
@@ -91,8 +93,8 @@
         <article class="ai-card wide">
           <div class="ai-media pos-right">
             <picture>
-              <source media="(prefers-color-scheme: light)" srcset="/assets/shots/fixed-detail-light.webp 1080w, /assets/shots/fixed-detail-light@2x.webp 2160w" sizes="(min-width: 1000px) 640px, calc(100vw - 32px)">
-              <img src="/assets/shots/fixed-detail-dark.webp" srcset="/assets/shots/fixed-detail-dark.webp 1080w, /assets/shots/fixed-detail-dark@2x.webp 2160w" sizes="(min-width: 1000px) 640px, calc(100vw - 32px)" width="1080" height="618" loading="lazy" decoding="async" alt="A run report marked Passed with fixes. Step 6, Click Done, is Fixed automatically: “The Done button had moved. The AI assistant found it.” The old and new positions are marked on the screen.">
+              <source media="(prefers-color-scheme: light)" srcset="/assets/shots/fixed-detail-light.webp 1280w, /assets/shots/fixed-detail-light@2x.webp 2560w" sizes="(min-width: 1000px) 640px, calc(100vw - 32px)">
+              <img src="/assets/shots/fixed-detail-dark.webp" srcset="/assets/shots/fixed-detail-dark.webp 1280w, /assets/shots/fixed-detail-dark@2x.webp 2560w" sizes="(min-width: 1000px) 640px, calc(100vw - 32px)" width="1280" height="686" loading="lazy" decoding="async" alt="A run report marked Passed with fixes. Step 6, Click Done, is Fixed automatically: “The Done button had moved. The AI assistant found it.” The old and new positions are marked on the screen, with Accept new position and Dismiss below.">
             </picture>
           </div>
           <div class="ai-text">
@@ -127,7 +129,7 @@
           <div class="ai-media pos-left">
             <picture>
               <source media="(prefers-color-scheme: light)" srcset="/assets/shots/names-light.webp 810w, /assets/shots/names-light@2x.webp 1620w" sizes="(min-width: 1000px) 540px, calc(100vw - 32px)">
-              <img src="/assets/shots/names-dark.webp" srcset="/assets/shots/names-dark.webp 810w, /assets/shots/names-dark@2x.webp 1620w" sizes="(min-width: 1000px) 540px, calc(100vw - 32px)" width="810" height="506" loading="lazy" decoding="async" alt="The steps of a test, named by the AI: Click New project, Click Project name, Click Done. Click Done is open, and What to look for reads “Done button, bottom right of the Create project dialog”.">
+              <img src="/assets/shots/names-dark.webp" srcset="/assets/shots/names-dark.webp 810w, /assets/shots/names-dark@2x.webp 1620w" sizes="(min-width: 1000px) 540px, calc(100vw - 32px)" width="810" height="506" loading="lazy" decoding="async" alt="The steps of a test, named by the AI: Click New project, Click Project name, Click Done. Click Done is open: What to look for reads “Done button, bottom right of the Create project dialog”, with What should happen, Play this step, Play to here, Re-record and a menu for more.">
             </picture>
           </div>
           <div class="ai-text">
@@ -245,7 +247,7 @@
           <div class="window">
             <picture>
               <source media="(prefers-color-scheme: light)" srcset="/assets/shots/tests-light.webp 1280w, /assets/shots/tests-light@2x.webp 2560w" sizes="(min-width: 1000px) 640px, calc(100vw - 32px)">
-              <img src="/assets/shots/tests-dark.webp" srcset="/assets/shots/tests-dark.webp 1280w, /assets/shots/tests-dark@2x.webp 2560w" sizes="(min-width: 1000px) 640px, calc(100vw - 32px)" width="1280" height="538" loading="lazy" decoding="async" alt="The tests list for a web app: tests such as Create a project, Log in and out and Upload a drawing, each with its last run: Passed, Failed or Fixed automatically.">
+              <img src="/assets/shots/tests-dark.webp" srcset="/assets/shots/tests-dark.webp 1280w, /assets/shots/tests-dark@2x.webp 2560w" sizes="(min-width: 1000px) 640px, calc(100vw - 32px)" width="1280" height="538" loading="lazy" decoding="async" alt="The tests list for a web app: tests such as Create a project, Log in and out and Upload a file (PDF), each with its last run: Passed, Failed or Fixed automatically.">
             </picture>
           </div>
           <div class="term" aria-label="A tests folder">
@@ -278,7 +280,7 @@ suites/smoke.json</pre>
           <div class="window">
             <picture>
               <source media="(prefers-color-scheme: light)" srcset="/assets/shots/suites-light.webp 1280w, /assets/shots/suites-light@2x.webp 2560w" sizes="(min-width: 1000px) 640px, calc(100vw - 32px)">
-              <img src="/assets/shots/suites-dark.webp" srcset="/assets/shots/suites-dark.webp 1280w, /assets/shots/suites-dark@2x.webp 2560w" sizes="(min-width: 1000px) 640px, calc(100vw - 32px)" width="1280" height="400" loading="lazy" decoding="async" alt="The suites list: Smoke passed, started from Codemagic; Nightly passed with fixes on its schedule; Release check failed.">
+              <img src="/assets/shots/suites-dark.webp" srcset="/assets/shots/suites-dark.webp 1280w, /assets/shots/suites-dark@2x.webp 2560w" sizes="(min-width: 1000px) 640px, calc(100vw - 32px)" width="1280" height="400" loading="lazy" decoding="async" alt="The suites list, each with its schedule and where results go: Smoke passed, started from Codemagic; Nightly is running on the local runner; Release check failed.">
             </picture>
           </div>
           <div class="term" aria-label="Running a test from CI">

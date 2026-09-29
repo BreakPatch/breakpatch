@@ -418,7 +418,7 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
   .ai-badge{font-size:0.8438rem}
   .matrix.vs{font-size:0.875rem}
   .matrix.vs th,.matrix.vs td{padding:10px 10px}
-  .code pre{padding:40px 16px 14px}
+  .code:not(.install-cmd) pre{padding:40px 16px 14px}
   .code pre code[data-lang="sh"]{white-space:pre-wrap;overflow-wrap:anywhere}
   .matrix.vs tbody th{width:34%}
   .matrix.vs td{width:33%}
