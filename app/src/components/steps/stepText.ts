@@ -29,6 +29,16 @@ export function stepIcon(s: Pick<Step, 'action' | 'nav' | 'secretRef'>): string 
 /** A step whose check covered nothing (it compares nothing): shown on the step, in amber. */
 export const UNCHECKED_NOTE = "This step's check covers nothing. Re-record it.";
 
+/**
+ * What a closed row shows of a long note, so it fits on one line (DES-04): "Slow: 5.2 s waiting
+ * for the page", "Check covers nothing". The whole note is its tooltip and shows when the card opens.
+ */
+export function shortNote(note: string): string {
+  if (note === UNCHECKED_NOTE) return 'Check covers nothing';
+  const slow = /^Took [\d.]+ s: ([\d.]+ s) (waiting for the page|doing the step)/.exec(note);
+  return slow ? `Slow: ${slow[1]} ${slow[2]}` : note;
+}
+
 /** A typed value written into a masked field reads as dots in the list (an eye shows it). */
 export const MASKED_LABEL = 'Write "••••••••"';
 

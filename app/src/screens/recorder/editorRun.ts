@@ -36,13 +36,17 @@ export function addStepHint(atStepId: string | null, id: string, manual: boolean
 }
 
 /** Row statuses and notes for the steps list, from a run's live state. */
-export function editorStatuses(view: RunView, steps: Step[], mode: EditorRunMode | null): { statuses: Record<string, RowStatus>; notes: Record<string, string> } {
+export function editorStatuses(view: RunView, steps: Step[], mode: EditorRunMode | null, upTo?: string | null): { statuses: Record<string, RowStatus>; notes: Record<string, string> } {
   const statuses: Record<string, RowStatus> = {};
   const notes: Record<string, string> = {};
   if (view.phase !== 'running' && view.phase !== 'ended') return { statuses, notes };
   const byId = new Map(preorder(steps).map(s => [s.id, s]));
+  // Play to here: the steps after the one played to aren't part of it, so they say nothing, not "Waiting" (DES-12).
+  const order0 = preorder(steps).map(s => s.id);
+  const stop = mode === 'play' && upTo ? order0.indexOf(upTo) : -1;
+  const after = (id: string) => stop >= 0 && order0.indexOf(id) > stop;
   for (const [id, state] of Object.entries(view.states)) {
-    if (!byId.has(id)) continue;
+    if (!byId.has(id) || after(id)) continue;
     // Play to here: the steps after it simply didn't run; no "Not run" on each.
     if (mode !== 'run' && (state === 'notRun' || (view.phase === 'ended' && state === 'waiting'))) continue;
     if (mode === 'step' && state === 'waiting') continue;
@@ -68,6 +72,7 @@ export function useEditorRun({ test, steps }: { test: Test | null | undefined; s
   const backend = useBackend();
   const [view, dispatch] = useReducer(runReducer, INITIAL_RUN);
   const [mode, setMode] = useState<EditorRunMode | null>(null);
+  const [upTo, setUpTo] = useState<string | null>(null);
   const active = useRef<{ runId: string; abandoned: boolean } | null>(null);
 
   useEffect(() => () => {
@@ -82,6 +87,7 @@ export function useEditorRun({ test, steps }: { test: Test | null | undefined; s
     const handle = { runId: newRunIdForEditor(), abandoned: false };
     active.current = handle;
     setMode(m);
+    setUpTo(opts.upTo ?? null);
     dispatch({ type: 'prepare' });
     try {
       // As edited, unsaved changes included; shared steps filled in, as in any run.
@@ -136,7 +142,7 @@ export function useEditorRun({ test, steps }: { test: Test | null | undefined; s
     if (cur) void getEngine().stopRun(cur.runId).catch(() => {});
   }, []);
 
-  return { view, mode, start, stop, running: view.phase === 'starting' || view.phase === 'running' };
+  return { view, mode, upTo, start, stop, running: view.phase === 'starting' || view.phase === 'running' };
 }
 
 export type EditorRun = ReturnType<typeof useEditorRun>;

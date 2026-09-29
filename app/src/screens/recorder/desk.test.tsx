@@ -30,8 +30,10 @@ describe('DESK-01: a check that covers nothing is said, never passed silently', 
   });
   it('shows it on the step, in amber', () => {
     render(<StepsPanel steps={saved} mode="edit" notes={{ w: UNCHECKED_NOTE }} onChange={() => undefined} onSelect={() => undefined} />);
-    const note = screen.getByText(UNCHECKED_NOTE);
+    // Closed, it's a short line with the whole sentence on hover (DES-04).
+    const note = screen.getByText('Check covers nothing');
     expect(note.className).toContain('tone-fixed');
+    expect(note).toHaveAttribute('title', UNCHECKED_NOTE);
   });
   it('keeps what a run said was unchecked', () => {
     let v = runReducer(runReducer(INITIAL_RUN, { type: 'prepare' }), { type: 'start', runId: 'r', ids: ['w'], at: 0 });

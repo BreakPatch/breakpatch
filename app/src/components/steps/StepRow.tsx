@@ -4,7 +4,7 @@
 import type { HTMLAttributes, KeyboardEvent, ReactNode } from 'react';
 import type { Step } from '../../data/types';
 import { Icon } from '../ui';
-import { stepIcon } from './stepText';
+import { shortNote, stepIcon } from './stepText';
 
 /** Run statuses a row can show (ui-requirements §7). */
 export type RowStatus = 'passed' | 'running' | 'looking' | 'waiting' | 'failed' | 'notRun' | 'fixed' | 'added';
@@ -52,6 +52,8 @@ export interface StepRowProps {
   fresh?: boolean;
   /** Show the whole note, wrapped (the report's reasons). */
   noteWrap?: boolean;
+  /** A small dot by the number: not played since the change (the list says so once, above). */
+  dot?: boolean;
 }
 
 export function StepRow(p: StepRowProps) {
@@ -60,6 +62,8 @@ export function StepRow(p: StepRowProps) {
   const isLoop = step.action === 'loop';
   const st = status ? STATUS[status] : null;
   const faintLabel = status === 'waiting' || status === 'notRun';
+  const open = !!p.children;
+  const tone = p.noteTone ?? 'muted';
   const cls = ['step-card', selected && 'sel', failed && 'failed', isLoop && 'loop', depth > 0 && 'nested', p.fresh && 'fresh', p.dropEdge && 'drop-' + p.dropEdge]
     .filter(Boolean).join(' ');
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -72,12 +76,13 @@ export function StepRow(p: StepRowProps) {
       <div className="step-head" role="button" tabIndex={0} aria-pressed={p.onSelect ? !!selected : undefined} aria-expanded={p.children ? true : undefined}
         aria-label={label} aria-keyshortcuts={p.onMove ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
         onClick={p.onSelect} onKeyDown={onKey} {...p.headProps}>
-        <div className="step-n">{p.number}</div>
+        <div className="step-n">{p.dot && <span className="step-dot" title="Not played since the change" />}{p.number}</div>
         <div className={'step-disc' + (p.checking ? ' checking' : '')}><Icon name={stepIcon(step)} size={17} /></div>
         <div className="step-main">
           <div className={'step-label' + (faintLabel ? ' faint' : '')}>{step.label}</div>
-          {/* Open (the card expanded): the whole note, wrapped. Closed: one line, the rest on hover. */}
-          {p.note && <div className={'step-note tone-' + (p.noteTone ?? 'muted') + (p.children || p.noteWrap ? ' full' : '')} title={typeof p.note === 'string' ? p.note : undefined}>{p.note}</div>}
+          {/* Closed: one short line, the whole note on hover. */}
+          {p.note && !open && <div className={'step-note tone-' + tone + (p.noteWrap ? ' full' : '')} title={typeof p.note === 'string' ? p.note : undefined}>
+            {typeof p.note === 'string' && !p.noteWrap ? shortNote(p.note) : p.note}</div>}
         </div>
         {p.trailing}
         {st && (
@@ -87,6 +92,8 @@ export function StepRow(p: StepRowProps) {
           </div>
         )}
       </div>
+      {/* Open: the whole note on a row of its own, under the head, not squeezed by the disc (DES-04). */}
+      {p.note && open && <div className={'step-note step-note-row full tone-' + tone}>{p.note}</div>}
       {p.children}
     </div>
   );

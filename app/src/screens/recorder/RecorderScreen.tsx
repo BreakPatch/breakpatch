@@ -133,7 +133,7 @@ export default function RecorderScreen() {
     setBanner({ text: hint, icon: 'info',
       action: { label: 'Play to here', onClick: () => { setBanner(null); void play('play', id); } } });
   };
-  const { statuses, notes: runNotes } = editorStatuses(editorRun.view, rec.steps, editorRun.mode);
+  const { statuses, notes: runNotes } = editorStatuses(editorRun.view, rec.steps, editorRun.mode, editorRun.upTo);
   const notes = { ...runNotes };
   for (const id of rec.handPlayed) if (!notes[id]) notes[id] = 'Played on a page set up by hand';
   // Steps saved with a check that covers nothing (a whole-screen ignore zone): say so, to re-record.

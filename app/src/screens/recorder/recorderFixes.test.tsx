@@ -82,10 +82,14 @@ describe('step card states', () => {
   it('shows "Added" when it is saved, and says What to look for is optional and what it is for', () => {
     render(<StepsPanel steps={steps} mode="edit" selectedId="p" statuses={{ p: 'added' }} onChange={() => undefined} onSelect={() => undefined} onRerecord={() => undefined} />);
     expect(screen.getByText('Added')).toBeInTheDocument();
-    expect(screen.queryByText(/The dashed box on the page/)).toBeNull();          // the helper shows only while editing
+    // One short line, there before focus, so focusing adds no row and "+ note" stays put (DES-02).
+    const help = screen.getByText('Optional. Helps find it if the page changes.');
+    expect(help).toHaveAttribute('title', 'The dashed box on the page shows where this step acts.');
+    const before = document.querySelectorAll('.step-edit *').length;
     fireEvent.focus(screen.getByLabelText(/What to look for/));
-    expect(screen.getByText(/Optional\. Helps find it again.*The dashed box on the page shows where this step acts/)).toBeInTheDocument();
-    expect(screen.getByText('Re-record')).toBeInTheDocument();
+    expect(document.querySelectorAll('.step-edit *').length).toBe(before);
+    fireEvent.click(screen.getByLabelText('More for this step'));
+    expect(screen.getByRole('menuitem', { name: /Re-record/ })).toBeInTheDocument();
   });
 });
 

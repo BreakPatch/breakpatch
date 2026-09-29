@@ -32,22 +32,26 @@ describe('the open step card', () => {
     const p = panel();
     const row = p.container.querySelector('.step-actions')!;
     expect([...row.querySelectorAll('button')].map(b => b.textContent || b.getAttribute('aria-label')))
-      .toEqual(['play_arrowPlay this step', 'play_arrowPlay to here', 'replayRe-record', 'more_vert']);
+      .toEqual(['play_arrowPlay this step', 'play_arrowPlay to here', 'more_vert']);     // Re-record is in ⋯ (DES-07)
     expect(screen.getByLabelText('More for this step')).toHaveAttribute('aria-haspopup', 'menu');
     fireEvent.click(screen.getByText('Play this step'));
     expect(p.onPlayStep).toHaveBeenCalledWith('a');
     fireEvent.click(screen.getByLabelText('More for this step'));
-    expect(screen.getAllByRole('menuitem').map(i => i.textContent)).toEqual(['editEdit', 'content_copyDuplicate', 'addAdd a step after', 'deleteDelete']);
+    expect(screen.getAllByRole('menuitem').map(i => i.textContent)).toEqual(['editEdit', 'replayRe-record', 'content_copyDuplicate', 'addAdd a step after', 'deleteDelete']);
     fireEvent.click(screen.getByRole('menuitem', { name: /Delete/ }));
     expect(p.onChange).not.toHaveBeenCalled();
     expect(screen.getByText('Delete step 1?')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();          // Enter never deletes (DES-10)
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(p.onChange.mock.calls[0][0].map((s: Step) => s.id)).toEqual(['w', 'n', 't']);
   });
 
   it('sets What should happen with a chip and an optional note', () => {
     const p = panel();
-    fireEvent.change(screen.getByLabelText(/What should happen/), { target: { value: 'closes' } });
+    // The app's own menu, not the system pop-up (DES-14).
+    fireEvent.click(screen.getByLabelText(/What should happen/));
+    expect(screen.getByRole('menuitemradio', { name: 'As recorded' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Something closes or disappears' }));
     expect(p.onChange.mock.calls.at(-1)![0][0]).toMatchObject({ id: 'a', expect: 'closes' });
     fireEvent.click(screen.getByText('+ note'));
     const note = screen.getByPlaceholderText(/closes the What's new dialog/);

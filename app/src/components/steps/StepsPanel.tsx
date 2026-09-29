@@ -1,13 +1,14 @@
 // The steps panel (380 px, right side). Edit mode (Recorder, Shared steps editor): the
 // selected step expands in place with What to look for, What should happen, one row of actions
-// (Play this step, Play to here, Re-record) and a ⋯ menu (Edit, Duplicate, Add a step after, Delete);
+// (Play this step, Play to here) and a ⋯ menu (Edit, Re-record, Duplicate, Add a step after, Delete);
 // a "+" between steps adds one there;
 // drag or Alt + arrow keys reorder; loops indent their steps and, while open, end with a
 // "Done repeating" chip. Run mode (Run view, Report): read-only rows with run statuses.
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import type { Expect, Generated, SampleFile, Step } from '../../data/types';
-import { GENERATED, SAMPLES } from '../../engine/labels';
-import { Button, Icon, Menu } from '../ui';
+import { GENERATED_CHOICES, SAMPLES } from '../../engine/labels';
+import { Button, ChipSelect, Icon, Menu } from '../ui';
+import { EXIT_MS, usePresence } from '../ui/presence';
 import { StepRow, type RowStatus } from './StepRow';
 import { defaultLabel, stepIcon, stepNote, UNCHECKED_NOTE } from './stepText';
 import { countRows, duplicateStep, flatRows, moveAfter, moveBefore, moveBy, removeStep, updateStep, type RowInfo } from './stepTree';
@@ -90,6 +91,17 @@ export function StepsPanel(p: StepsPanelProps) {
     listRef.current?.querySelector(`[data-step-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
   }, [p.selectedId, p.checkingId, p.followSelection]);
 
+  // The card that was open closes the way it opened (DES-01): it stays a moment, folding shut.
+  const sel = edit ? p.selectedId ?? null : null;
+  const [prevSel, setPrevSel] = useState(sel);
+  const [leavingId, setLeavingId] = useState<string | null>(null);
+  if (sel !== prevSel) { setPrevSel(sel); setLeavingId(prevSel); }
+  useEffect(() => {
+    if (!leavingId) return;
+    const t = setTimeout(() => setLeavingId(null), EXIT_MS);
+    return () => clearTimeout(t);
+  }, [leavingId]);
+
   const change = (next: Step[]) => p.onChange?.(next);
   const toggleGroup = (id: string) => setOpenGroups(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
@@ -114,9 +126,18 @@ export function StepsPanel(p: StepsPanelProps) {
   const insertAt = edit && p.insertAfterId ? rows.find(r => r.step.id === p.insertAfterId) : undefined;
   // While a test plays, where the next step goes isn't known yet: no marker, no "+".
   const marker = edit && !p.locked;
+  // "Not played since the change" is said once, above the first of them; each has a dot (DES-04).
+  const unplayed = (s: Step) => edit && !!p.unplayedIds?.has(s.id) && !p.notes?.[s.id] && p.statuses?.[s.id] !== 'passed' && p.statuses?.[s.id] !== 'fixed';
+  const firstUnplayed = rows.find(r => unplayed(r.step));
   rows.forEach(r => {
+    if (r === firstUnplayed) items.push(
+      <div key="unplayed" className="steps-unplayed" style={r.depth ? { marginLeft: 22 * r.depth } : undefined}>
+        <span className="step-dot" aria-hidden />Not played since the change. Run the test to check them.
+      </div>,
+    );
     items.push(renderRow(r));
-    if (marker && insertAt && insertAt.step.id === r.step.id) items.push(<NextSlot key="next-here" depth={r.depth} />);
+    // While a Repeat is open, new steps go inside it: its slot is the only one (DES-11).
+    if (marker && insertAt && !openLoop && insertAt.step.id === r.step.id) items.push(<NextSlot key="next-here" depth={r.depth} />);
     else if (marker && p.onAddAfter) items.push(
       <button key={'add-' + r.step.id} type="button" className="step-add-here" style={r.depth ? { marginLeft: 22 * r.depth } : undefined}
         aria-label={`Add a step here, after step ${r.number}`} title="Add a step here" onClick={() => p.onAddAfter!(r.step.id)}>
@@ -136,6 +157,7 @@ export function StepsPanel(p: StepsPanelProps) {
   function renderRow(r: RowInfo) {
     const s = r.step;
     const selected = p.selectedId === s.id;
+    const leaving = edit && !selected && leavingId === s.id;
     const isGroup = s.action === 'group';
     const children = isGroup ? p.groupSteps?.(s) : undefined;
     const groupOpen = isGroup && (openGroups.has(s.id) || (edit && selected));
@@ -144,8 +166,6 @@ export function StepsPanel(p: StepsPanelProps) {
     const editable = !(edit && p.checkingId === s.id) && !p.locked;
     let note: ReactNode = p.notes?.[s.id] ?? stepNote(s, { range: r.range });
     let tone: 'muted' | 'failed' | 'passed' | 'accent' | 'fixed' = status === 'failed' ? 'failed' : note === UNCHECKED_NOTE ? 'fixed' : 'muted';
-    // A step that shows as passed has been played since the change.
-    if (edit && p.unplayedIds?.has(s.id) && !p.notes?.[s.id] && status !== 'passed' && status !== 'fixed') note = 'Not played since the change. Run the test to check them.';
     if (edit && p.rerecordingId === s.id) { note = 'Re-recording: do this step again on the page'; tone = 'accent'; }
     else if (edit && s.rerecorded) { note = 'Re-recorded'; tone = 'passed'; }
 
@@ -170,11 +190,11 @@ export function StepsPanel(p: StepsPanelProps) {
     const expanded = (
       <>
         {groupOpen && <GroupChildren number={r.number} steps={children} onEdit={p.onEditGroup && s.groupId ? () => p.onEditGroup!(s.groupId!) : undefined} />}
-        {edit && selected && editable && (
-          <StepEditor step={s} number={r.number} secretNames={p.secretNames ?? []}
+        {edit && (selected || leaving) && editable && (
+          <StepEditor step={s} number={r.number} secretNames={p.secretNames ?? []} closing={leaving}
             onChange={patch => change(updateStep(steps, s.id, patch))}
             onEdit={(patch, affectsPage) => { change(updateStep(steps, s.id, patch)); p.onEdited?.(s.id, affectsPage); }}
-            onRerecord={s.action !== 'loop' && s.action !== 'group' && p.onRerecord ? () => p.onRerecord!(s.id) : undefined}
+            onRerecord={s.action !== 'loop' && s.action !== 'group' && s.action !== 'waitFor' && p.onRerecord ? () => p.onRerecord!(s.id) : undefined}
             onPlayTo={p.onPlayTo ? () => p.onPlayTo!(s.id) : undefined}
             onPlayStep={p.onPlayStep && s.action !== 'loop' && s.action !== 'group' ? () => p.onPlayStep!(s.id) : undefined}
             onAddAfter={p.onAddAfter ? () => p.onAddAfter!(s.id) : undefined}
@@ -186,12 +206,12 @@ export function StepsPanel(p: StepsPanelProps) {
 
     return (
       <StepRow key={s.id} step={shown ? { ...s, label: `Write "${s.text}"` } : s} number={r.number} depth={r.depth} selected={selected} status={status}
-        note={note} noteTone={tone} checking={p.checkingId === s.id} trailing={trailing} fresh={fresh.has(s.id)} statusText={p.statusTexts?.[s.id]}
+        note={note} noteTone={tone} checking={p.checkingId === s.id} trailing={trailing} fresh={fresh.has(s.id)} statusText={p.statusTexts?.[s.id]} dot={unplayed(s)}
         onSelect={p.onSelect ? () => p.onSelect!(selected && edit ? null : s.id) : undefined}
         onMove={edit ? d => change(moveBy(steps, s.id, d)) : undefined}
         dropEdge={drag && drag.over === s.id && drag.id !== s.id ? drag.edge : null}
         headProps={edit ? { draggable: true, onDragStart: onDragStart(s.id), onDragOver: onDragOver(s.id), onDrop, onDragEnd: () => setDrag(null) } : undefined}>
-        {groupOpen || (edit && selected && editable) ? expanded : null}
+        {groupOpen || (edit && (selected || leaving) && editable) ? expanded : null}
       </StepRow>
     );
   }
@@ -248,8 +268,10 @@ const EXPECT_CHOICES: { value: Expect | ''; label: string }[] = [
   { value: 'noChange', label: 'Nothing visible changes' },
 ];
 
-function StepEditor({ step, number, secretNames, onChange, onEdit, onRerecord, onPlayTo, onPlayStep, onAddAfter, onDuplicate, onDelete }: {
+function StepEditor({ step, number, secretNames, closing, onChange, onEdit, onRerecord, onPlayTo, onPlayStep, onAddAfter, onDuplicate, onDelete }: {
   step: Step; number: number | string; secretNames: string[];
+  /** Folding shut after another step was picked (DES-01). */
+  closing?: boolean;
   onChange: (patch: Partial<Step>) => void; onEdit: (patch: Partial<Step>, affectsPage: boolean) => void;
   onRerecord?: () => void; onPlayTo?: () => void; onPlayStep?: () => void; onAddAfter?: () => void;
   onDuplicate: () => void; onDelete: () => void;
@@ -260,48 +282,60 @@ function StepEditor({ step, number, secretNames, onChange, onEdit, onRerecord, o
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [noteOpen, setNoteOpen] = useState(!!step.expectNote);
+  // Clipped only while it folds open or shut, so the ⋯ menu can overhang it the rest of the time.
+  const [opening, setOpening] = useState(true);
+  const [wasClosing, setWasClosing] = useState(closing);
+  if (!!closing !== !!wasClosing) { setWasClosing(closing); if (!closing) setOpening(true); }
+  useEffect(() => {
+    if (!opening) return;
+    const t = setTimeout(() => setOpening(false), 220);
+    return () => clearTimeout(t);
+  }, [opening]);
+  // Re-record lives in ⋯ so Play this step, Play to here and ⋯ fit on one line (DES-07).
   const items = [
     { label: 'Edit', icon: 'edit', onSelect: () => setEditing(true) },
+    ...(onRerecord ? [{ label: 'Re-record', icon: 'replay', onSelect: onRerecord }] : []),
     { label: 'Duplicate', icon: 'content_copy', onSelect: onDuplicate },
     ...(onAddAfter ? [{ label: 'Add a step after', icon: 'add', onSelect: onAddAfter }] : []),
     'sep' as const,
     { label: 'Delete', icon: 'delete', danger: true, onSelect: () => setConfirmDelete(true) },
   ];
   return (
-    <div className="step-edit" onClick={e => e.stopPropagation()}>
+    <div className={'step-edit-wrap' + (closing ? ' closing' : opening ? ' opening' : '')} onClick={e => e.stopPropagation()}
+      aria-hidden={closing || undefined} inert={closing || undefined}>
+    <div className="step-edit">
       {!isLoop && !isGroup && (TARGETED.has(step.action) || step.target) && (
         <div className="step-field">
           <label className="look-label" htmlFor={'look-' + step.id}><Icon name="auto_awesome" size={15} />What to look for</label>
           <LookFor id={'look-' + step.id} value={step.target ?? ''} onCommit={v => onChange({ target: v || undefined })}
-            help="Optional. Helps find it again if the page changes. The dashed box on the page shows where this step acts." />
+            help="Optional. Helps find it if the page changes." more="The dashed box on the page shows where this step acts." />
         </div>
       )}
       {!isLoop && !isGroup && JUDGED.has(step.action) && (
         <div className="step-field">
           <label className="look-label" htmlFor={'expect-' + step.id}><Icon name="check_circle" size={15} />What should happen</label>
           <div className="expect-row">
-            <select id={'expect-' + step.id} className="expect-chip" value={step.expect ?? ''} onChange={e => onChange({ expect: (e.target.value || undefined) as Expect | undefined })}>
-              {EXPECT_CHOICES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
+            <ChipSelect<Expect | ''> id={'expect-' + step.id} className="expect-chip" value={step.expect ?? ''} options={EXPECT_CHOICES} width={280}
+              onChange={v => onChange({ expect: v || undefined })} />
             {!noteOpen && <button type="button" className="expect-add-note" onClick={() => setNoteOpen(true)}>+ note</button>}
           </div>
           {noteOpen && <LookFor id={'note-' + step.id} value={step.expectNote ?? ''} onCommit={v => { onChange({ expectNote: v || undefined }); if (!v) setNoteOpen(false); }}
             placeholder="For example: closes the What's new dialog" autoFocus={!step.expectNote}
-            help="Optional. Read by the AI assistant only if this step's check fails, to judge it." />}
+            help="Optional. Used only if this step's check fails." more="Read by the AI assistant only if this step's check fails, to judge it." />}
         </div>
       )}
-      {editing && <StepEditPanel step={step} secretNames={secretNames} onCancel={() => setEditing(false)} onSave={(patch, affects) => { setEditing(false); onEdit(patch, affects); }} />}
+      <StepEditPanel open={editing && !closing} step={step} secretNames={secretNames} canRerecord={!!onRerecord} onCancel={() => setEditing(false)} onSave={(patch, affects) => { setEditing(false); onEdit(patch, affects); }} />
       {confirmDelete ? (
         <div className="step-actions step-confirm" role="alert">
           <span className="grow">Delete step {number}?</span>
-          <button type="button" className="step-btn danger" onClick={onDelete} autoFocus>Delete</button>
-          <button type="button" className="step-btn" onClick={() => setConfirmDelete(false)}>Cancel</button>
+          <button type="button" className="step-btn danger" onClick={onDelete}>Delete</button>
+          {/* Focus starts on Cancel, so Enter never deletes by accident (DES-10). */}
+          <button type="button" className="step-btn" onClick={() => setConfirmDelete(false)} autoFocus>Cancel</button>
         </div>
       ) : (
         <div className="step-actions">
           {onPlayStep && <button type="button" className="step-btn" onClick={onPlayStep}><Icon name="play_arrow" size={17} />Play this step</button>}
           {onPlayTo && <button type="button" className="step-btn" onClick={onPlayTo}><Icon name="play_arrow" size={17} />Play to here</button>}
-          {onRerecord && <button type="button" className="step-btn" onClick={onRerecord}><Icon name="replay" size={17} />Re-record</button>}
           <div className="step-more">
             <button type="button" className="step-btn icon-only" aria-label="More for this step" title="More" aria-haspopup="menu" aria-expanded={menu}
               onClick={() => setMenu(m => !m)}><Icon name="more_vert" size={17} /></button>
@@ -310,6 +344,7 @@ function StepEditor({ step, number, secretNames, onChange, onEdit, onRerecord, o
         </div>
       )}
     </div>
+    </div>
   );
 }
 
@@ -317,9 +352,14 @@ function StepEditor({ step, number, secretNames, onChange, onEdit, onRerecord, o
  * Edit: the step's own options, like when it was added (floats over the list, never moving the
  * page). Save applies, Esc cancels. Where it acts on the page stays Re-record.
  */
-function StepEditPanel({ step, secretNames, onSave, onCancel }: {
-  step: Step; secretNames: string[]; onSave: (patch: Partial<Step>, affectsPage: boolean) => void; onCancel: () => void;
-}) {
+function StepEditPanel({ open, ...rest }: { open: boolean } & EditPanelProps) {
+  const { mounted, closing } = usePresence(open);
+  return mounted ? <StepEditPanelBody {...rest} closing={closing} /> : null;
+}
+interface EditPanelProps {
+  step: Step; secretNames: string[]; canRerecord: boolean; onSave: (patch: Partial<Step>, affectsPage: boolean) => void; onCancel: () => void;
+}
+function StepEditPanelBody({ step, secretNames, canRerecord, closing, onSave, onCancel }: EditPanelProps & { closing: boolean }) {
   const [label, setLabel] = useState(step.label);
   const [source, setSource] = useState<'typed' | 'secret' | 'generated'>(step.secretRef ? 'secret' : step.generated ? 'generated' : 'typed');
   const [text, setText] = useState(step.text ?? '');
@@ -365,7 +405,7 @@ function StepEditPanel({ step, secretNames, onSave, onCancel }: {
     if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') { e.preventDefault(); save(); }
   };
   return (
-    <div className="step-editpanel" role="dialog" aria-label="Edit step" onKeyDown={onKey}>
+    <div className={'step-editpanel' + (closing ? ' closing' : '')} role="dialog" aria-label="Edit step" onKeyDown={onKey} aria-hidden={closing || undefined} inert={closing || undefined}>
       {/* A seconds wait only waits: its seconds are all there is to it (its name follows them). */}
       {a !== 'waitFor' && <label className="ep-row">Name<input className="input" value={label} autoFocus onChange={e => setLabel(e.target.value)} /></label>}
       {a === 'write' && <>
@@ -375,11 +415,11 @@ function StepEditPanel({ step, secretNames, onSave, onCancel }: {
           ))}
         </div>
         {source === 'typed' && <label className="ep-row">Text<input className="input" value={text} onChange={e => setText(e.target.value)} type={step.masked ? 'password' : 'text'} /></label>}
-        {source === 'secret' && <label className="ep-row">Saved secret<select className="input" value={secretRef} onChange={e => setSecretRef(e.target.value)}>
-          {secretNames.length === 0 && <option value="">No saved secrets on this Mac</option>}
-          {secretNames.map(n => <option key={n} value={n}>{n}</option>)}</select></label>}
-        {source === 'generated' && <label className="ep-row">Value<select className="input" value={generated} onChange={e => setGenerated(e.target.value as Generated)}>
-          {(Object.keys(GENERATED) as Generated[]).map(g => <option key={g} value={g}>{GENERATED[g]}</option>)}</select></label>}
+        {source === 'secret' && <div className="ep-row"><label htmlFor={'ep-secret-' + step.id}>Saved secret</label>
+          <ChipSelect field id={'ep-secret-' + step.id} value={secretRef} onChange={setSecretRef}
+            options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: 'No saved secrets on this Mac' }]} /></div>}
+        {source === 'generated' && <div className="ep-row"><label htmlFor={'ep-gen-' + step.id}>Value</label>
+          <ChipSelect<Generated> field id={'ep-gen-' + step.id} value={generated} onChange={setGenerated} options={GENERATED_CHOICES} /></div>}
       </>}
       {a === 'waitFor' && <label className="ep-row">Seconds<input className="input" type="number" min={1} max={600} value={seconds} autoFocus onChange={e => setSeconds(Number(e.target.value) || 1)} /></label>}
       {a === 'waitUntil' && <>
@@ -396,7 +436,8 @@ function StepEditPanel({ step, secretNames, onSave, onCancel }: {
       ))}
       {a === 'loop' && <label className="ep-row">Repeat, times<input className="input" type="number" min={1} max={100} value={count} onChange={e => setCount(Number(e.target.value) || 1)} /></label>}
       <div className="ep-actions">
-        <span className="faint grow">Where it acts on the page: Re-record.</span>
+        {/* A seconds wait doesn't act anywhere on the page (DES-07). */}
+        <span className="faint grow">{canRerecord ? 'Where it acts on the page: Re-record.' : ''}</span>
         <Button onClick={onCancel}>Cancel</Button>
         <Button kind="primary" onClick={save}>Save</Button>
       </div>
@@ -405,25 +446,26 @@ function StepEditPanel({ step, secretNames, onSave, onCancel }: {
 }
 
 /** Editable "What to look for": grows with its text, saves on blur or Enter. */
-function LookFor({ id, value, onCommit, help, placeholder, autoFocus }: {
-  id: string; value: string; onCommit: (v: string) => void; help?: string; placeholder?: string; autoFocus?: boolean;
+function LookFor({ id, value, onCommit, help, more, placeholder, autoFocus }: {
+  id: string; value: string; onCommit: (v: string) => void; help?: string; more?: string; placeholder?: string; autoFocus?: boolean;
 }) {
   const [v, setV] = useState(value);
-  const [focused, setFocused] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => setV(value), [value]);
   useEffect(() => { const el = ref.current; if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }, [v]);
-  // One line; the helper text shows only while editing.
+  // The help is one short line, always there: focusing the field never adds a row under it and
+  // moves what's below (DES-02). The longer explanation is its tooltip.
   return (<>
     <textarea id={id} ref={ref} className="look-text" rows={1} value={v} autoFocus={autoFocus}
       placeholder={placeholder ?? 'Describe it in plain words, for example: Done button in the dialog'}
-      onChange={e => setV(e.target.value)} onFocus={() => setFocused(true)}
-      onBlur={() => { setFocused(false); if (v.trim() !== value) onCommit(v.trim()); }}
+      aria-describedby={help ? id + '-help' : undefined} title={more}
+      onChange={e => setV(e.target.value)}
+      onBlur={() => { if (v.trim() !== value) onCommit(v.trim()); }}
       onKeyDown={e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); (e.target as HTMLTextAreaElement).blur(); }
         if (e.key === 'Escape') { setV(value); e.stopPropagation(); }
       }} />
-    {help && focused && <div className="look-help">{help}</div>}
+    {help && <div className="look-help" id={id + '-help'} title={more}>{help}</div>}
   </>);
 }
 
