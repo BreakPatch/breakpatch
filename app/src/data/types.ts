@@ -14,7 +14,13 @@ export interface Workspace {
   logo?: string;                 // data URL or https URL
   config: FirebaseWebConfig;
   database: string;              // named Firestore database, default "breakpatch"
-  domain: string;                // allowed email domain, e.g. "example.com"
+  domain: string;                // allowed email domain, e.g. "example.com"; '' for a hosted workspace
+  /**
+   * Hosted by Breakpatch (Breakpatch Cloud): the workspace's tenant id. Its documents are under
+   * workspaces/<tenant>/ in the shared project, and its connection id is `hosted:<tenant>`.
+   * Unset for a workspace in the team's own Firebase.
+   */
+  tenant?: string;
 }
 
 export interface FirebaseWebConfig {

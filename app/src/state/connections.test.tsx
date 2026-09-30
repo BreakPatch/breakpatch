@@ -7,7 +7,7 @@ import { ToastProvider } from '../components/ui';
 import { WorkspaceSwitcher } from '../components/shell/WorkspaceSwitcher';
 import { initFolder, previewStorage } from '../data/local';
 import type { Workspace } from '../data/types';
-import { CONNECTIONS_KEY, connections, folderConnection, folderConnectionId, loadConnections, useConnections, workspaceConnection, workspaceConnectionId } from './connections';
+import { CONNECTIONS_KEY, canOpenKind, connections, folderConnection, folderConnectionId, loadConnections, useConnections, workspaceConnection, workspaceConnectionId } from './connections';
 import { useSession } from './session';
 import { edition } from '../edition';
 
@@ -62,6 +62,20 @@ describe('the connection list', () => {
     connections.reloadForTests();
     connections.opened(folderConnection('/Users/ana/web/tests'));
     expect(JSON.parse(localStorage.getItem(CONNECTIONS_KEY)!).list.map((c: { id: string }) => c.id)).toContain('hosted:ws_7f3a');
+  });
+
+  it('makes a hosted workspace a hosted connection, keyed by its workspace, never its project', () => {
+    const hosted: Workspace = { name: 'Acme', domain: '', database: '(default)', tenant: 'k3v9x2m8q1w7e4r6t0y5u2i8o3p1', config: { apiKey: 'k', authDomain: 'a', projectId: 'breakpatch-cloud', appId: '1' } };
+    const c = workspaceConnection(hosted);
+    expect(c).toMatchObject({ id: 'hosted:k3v9x2m8q1w7e4r6t0y5u2i8o3p1', kind: 'hosted', name: 'Acme', team: { workspace: hosted }, hosted: { workspaceId: 'k3v9x2m8q1w7e4r6t0y5u2i8o3p1' } });
+    expect(canOpenKind(c)).toBe(true);
+    // Another workspace in the same project is another connection.
+    expect(workspaceConnection({ ...hosted, tenant: 'a'.repeat(28) }).id).toBe(`hosted:${'a'.repeat(28)}`);
+    connections.opened(c);
+    connections.reloadForTests();
+    expect(useConnections.getState().list).toEqual([expect.objectContaining({ id: c.id, kind: 'hosted', team: { workspace: hosted } })]);
+    // Without its workspace (a newer version's entry): kept, never opened.
+    expect(canOpenKind({ id: 'hosted:x', kind: 'hosted', name: 'X', lastOpenedAt: 1 })).toBe(false);
   });
 
   it('ignores a broken list', () => {

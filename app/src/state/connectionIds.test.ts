@@ -3,7 +3,7 @@
 // checks the same characters in licence.rs `valid_ws_key`.
 import { describe, expect, it } from 'vitest';
 import type { Workspace } from '../data/types';
-import { folderConnectionId, workspaceConnectionId } from './connectionIds';
+import { folderConnectionId, hostedConnectionId, workspaceConnectionId } from './connectionIds';
 
 const ws = (projectId: string, database: string, apiKey = 'k'): Workspace => ({ name: 'Acme', domain: 'acme.com', database, config: { apiKey, authDomain: 'a', projectId, appId: '1' } });
 /** licence.rs `valid_ws_key`, as it is. */
@@ -18,10 +18,13 @@ describe('connection ids', () => {
     expect(workspaceConnectionId(ws('demo-breakpatch', 'breakpatch', 'demo'))).toBe('demo');
     expect(folderConnectionId('/Users/ana/web/tests')).toBe('local:4d937c00b1d4760a');
     expect(folderConnectionId('/Users/ana/web/tests/')).toBe('local:4d937c00b1d4760a');
+    // Breakpatch Cloud: the workspace, never the project (many workspaces share it).
+    expect(hostedConnectionId('k3v9x2m8q1w7e4r6t0y5u2i8o3p1')).toBe('hosted:k3v9x2m8q1w7e4r6t0y5u2i8o3p1');
+    expect(workspaceConnectionId({ ...ws('breakpatch-cloud', '(default)'), domain: '', tenant: 'k3v9x2m8q1w7e4r6t0y5u2i8o3p1' })).toBe('hosted:k3v9x2m8q1w7e4r6t0y5u2i8o3p1');
   });
 
   it('makes only keys the shell accepts', () => {
-    for (const id of [workspaceConnectionId(ws('acme-qa', 'breakpatch')), workspaceConnectionId(ws('acme-qa', '(default)')), folderConnectionId('/Users/ana/Tests with spaces/é'), 'demo']) {
+    for (const id of [workspaceConnectionId(ws('acme-qa', 'breakpatch')), workspaceConnectionId(ws('acme-qa', '(default)')), folderConnectionId('/Users/ana/Tests with spaces/é'), 'demo', hostedConnectionId('k3v9x2m8q1w7e4r6t0y5u2i8o3p1')]) {
       expect(validWsKey(id), id).toBe(true);
     }
   });

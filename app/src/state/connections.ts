@@ -13,9 +13,10 @@
 //   team:<projectId>/<database>   a Team workspace
 //   local:<hash of the path>      a tests folder (it may hold a licence too: the Solo plan)
 //   demo                          the demo workspace
-//   hosted:<workspaceId>          reserved: a workspace in Breakpatch Cloud (breakpatch-team #28),
-//                                 many in one project, so its key names the workspace, never the
-//                                 project. Not built yet: kept in the list, never opened here.
+//   hosted:<workspaceId>          a workspace in Breakpatch Cloud (Hosted by Breakpatch): many in
+//                                 one project, so its key names the workspace, never the project.
+//                                 Opened like a Team workspace (`team.workspace`, with its tenant),
+//                                 by the Team edition; versions before it keep it and never open it.
 // Nothing keyed by a connection (licence, usage, the move's journal) assumes one workspace per
 // Firebase project: they all use this id.
 import { create } from 'zustand';
@@ -24,7 +25,7 @@ import { folderConnectionId, isDemoConnection as isDemo, workspaceConnectionId }
 
 export { folderConnectionId, workspaceConnectionId };
 
-/** `hosted` is reserved for Breakpatch Cloud; this version keeps such entries but can't open them. */
+/** `hosted`: a workspace in Breakpatch Cloud (Workspace.tenant set). */
 export type ConnectionKind = 'local' | 'team' | 'demo' | 'hosted';
 
 export interface Connection {
@@ -35,7 +36,10 @@ export interface Connection {
   /** The personal space: a tests folder on this Mac. */
   personal?: boolean;
   local?: { path: string };
+  /** A Team workspace, the demo, or a hosted workspace (then with its `tenant`). */
   team?: { workspace: Workspace };
+  /** Hosted by Breakpatch: the workspace's tenant id, and the address its person signed in with. */
+  hosted?: { workspaceId: string; email?: string };
   lastOpenedAt: number;
 }
 
@@ -45,6 +49,9 @@ export const CONNECTIONS_KEY = 'breakpatch.connections.v1';
 const SESSION_KEY = 'breakpatch.session.v1';
 
 export function workspaceConnection(ws: Workspace, now = Date.now()): Connection {
+  if (ws.tenant && !isDemo(ws)) {
+    return { id: workspaceConnectionId(ws), kind: 'hosted', name: ws.name, team: { workspace: ws }, hosted: { workspaceId: ws.tenant }, lastOpenedAt: now };
+  }
   return { id: workspaceConnectionId(ws), kind: isDemo(ws) ? 'demo' : 'team', name: ws.name, team: { workspace: ws }, lastOpenedAt: now };
 }
 export function folderConnection(path: string, name?: string, now = Date.now()): Connection {
@@ -57,8 +64,8 @@ function valid(c: unknown): c is Connection {
   if (!v || typeof v !== 'object' || typeof v.id !== 'string' || typeof v.name !== 'string') return false;
   if (v.kind === 'local') return typeof v.local?.path === 'string';
   if (v.kind === 'team' || v.kind === 'demo') return !!v.team?.workspace?.config;
-  // A kind a newer version made (hosted, or one not thought of yet): kept, so going back and
-  // forth between versions never loses it, and never opened here.
+  // A kind a newer version made (or a hosted one without its workspace): kept, so going back and
+  // forth between versions never loses it, and never opened here (canOpenKind).
   return typeof v.kind === 'string';
 }
 
@@ -134,8 +141,9 @@ export function activeConnection(): Connection | null {
   return list.find(c => c.id === activeId) ?? null;
 }
 
-/** Whether this version can open it (a tests folder, a Team workspace, the demo). */
+/** Whether this version can open it (a tests folder, a Team workspace, a hosted one, the demo). */
 export function canOpenKind(c: Connection): boolean {
+  if (c.kind === 'hosted') return !!c.team?.workspace?.config && !!c.team.workspace.tenant;
   return (c.kind === 'local' && !!c.local) || ((c.kind === 'team' || c.kind === 'demo') && !!c.team);
 }
 
