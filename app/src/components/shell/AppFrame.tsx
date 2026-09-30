@@ -9,6 +9,7 @@ import { edition } from '../../edition';
 import { useFeatureStore } from '../../edition/features';
 import type { NavItem } from '../../edition/types';
 import { SystemBanners } from './SystemBanners';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import './shell.css';
 
 /** "apps", "suites", or an edition's nav item (Team: "runner"). */
@@ -60,6 +61,7 @@ export function AppFrame({ nav, back, crumb, title, actions, progress, banners, 
       <header className="titlebar" data-tauri-drag-region>
         <TrafficLights />
         <Wordmark size={17} />
+        {nav && <WorkspaceSwitcher />}
         {nav && (
           <Segmented<TopNavKey> label="Main" value={nav} onChange={v => navigate(NAV.find(n => n.value === v)?.path ?? '/')} items={items} />
         )}

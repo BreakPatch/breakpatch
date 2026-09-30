@@ -59,6 +59,12 @@ export interface FolderSnapshot {
   suites: Suite[];
   /** Plain lines about files that couldn't be read and were left out (as onWarnings gives them). */
   skipped: string[];
+  /**
+   * The text of every file the snapshot was read from, by path in the folder
+   * ("apps/web-app/tests/log-in.json"), so a copy can tell later whether the folder changed.
+   * A file over 5 MB is there with the text "" (it was never read).
+   */
+  files: Record<string, string>;
 }
 
 export interface LocalOptions {
@@ -417,7 +423,8 @@ export class LocalBackend implements Backend {
     })).sort((x, y) => byName(x.app, y.app));
     // Suite results live only for the session, so they aren't part of the folder.
     const suites = [...this.model.suites.values()].map(s => clone({ ...s, lastRun: undefined })).sort(byName);
-    return { path: this.root, name: this.name, schemaVersion, newer: this.readOnly, apps, suites, skipped: [...this.warnings] };
+    const files = Object.fromEntries([...this.texts].filter(([, t]) => t !== '').map(([k, t]) => [k, t === TOO_BIG ? '' : t]));
+    return { path: this.root, name: this.name, schemaVersion, newer: this.readOnly, apps, suites, skipped: [...this.warnings], files };
   }
 
   // ---- the person (no sign-in) ----

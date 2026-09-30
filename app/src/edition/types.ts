@@ -116,7 +116,17 @@ export interface Slots {
   reportFixActions?: ComponentType<ReportFixProps>;
   /** Under the title bar, after the system banners, e.g. "Breakpatch Team needs a licence." */
   banner?: ComponentType;
+  /**
+   * The workspace switcher (title bar): a hook giving why switching is off right now, in plain
+   * words, or null (Team: on the local runner's Mac, which serves one workspace).
+   */
+  useSwitchLock?: () => string | null;
+  /** The workspace switcher: extra entries at the end, e.g. "Connect a workspace". Called while rendering. */
+  switcherActions?: (o: { close(): void }) => MenuItemEntry[];
 }
+
+/** An entry the edition adds to a menu (components/ui Menu). */
+export interface MenuItemEntry { label: string; icon?: string; onSelect: () => void; disabled?: boolean }
 
 export interface Edition {
   name: 'community' | 'team';

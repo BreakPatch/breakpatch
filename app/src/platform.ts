@@ -143,3 +143,38 @@ export async function fullUserName(): Promise<string | null> {
   if (!isTauri()) return null;
   return tauriInvoke<string | null>('system_full_name');
 }
+
+// ---- Upgrade to Team: moving the copied tests folder to the Trash (src-tauri migration.rs) ----
+
+export interface TrashResult { moved: string[]; missing: string[] }
+
+/**
+ * Moves items to the Trash (Finder's Put Back undoes it). The shell only accepts breakpatch.json,
+ * apps and suites directly under a tests folder with a valid breakpatch.json, or run folders
+ * directly under the screenshots folder; anything else is refused before anything moves.
+ * Browser preview: removes them from the in-memory folder instead.
+ */
+export async function trashItems(place: 'folder' | 'screenshots', folder: string | null, names: string[]): Promise<TrashResult> {
+  if (isTauri()) return tauriInvoke<TrashResult>('trash_items', { place, folder, names });
+  if (place === 'screenshots') return { moved: [], missing: names };
+  const { previewStorage } = await import('./data/local/folder');
+  const st = previewStorage();
+  const out: TrashResult = { moved: [], missing: [] };
+  for (const n of ['apps', 'suites', 'breakpatch.json'].filter(x => names.includes(x))) {
+    const p = `${folder}/${n}`;
+    if (await st.exists(p)) { await st.remove(p); out.moved.push(n); } else out.missing.push(n);
+  }
+  return out;
+}
+
+/** The Git repository holding this folder, or null. The shell only looks for `.git`; it never runs git. */
+export async function gitRepoOf(path: string): Promise<string | null> {
+  if (!isTauri()) return null;
+  return tauriInvoke<string | null>('git_repo_of', { path });
+}
+
+/** Keeps a report in the app's data folder and returns where (null in a browser preview). */
+export async function saveMigrationReport(text: string): Promise<string | null> {
+  if (!isTauri()) return null;
+  return tauriInvoke<string>('migration_report_save', { text });
+}
