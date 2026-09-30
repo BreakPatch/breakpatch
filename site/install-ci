@@ -7,9 +7,13 @@
 #   curl -fsSL https://breakpatch.dev/install-ci | sh -s -- --uninstall         remove it
 #
 # What it does:
-#   1. Checks this is a Mac with Apple Silicon and macOS 14 or later, or Linux on x86_64 (a
-#      preview: it runs tests; record them on a Mac), and finds Python 3.11 (BREAKPATCH_PYTHON,
-#      python3.11 or python3). It doesn't install Python: without 3.11 it says how to get it.
+#   1. Checks this is a Mac with Apple Silicon and macOS 14 or later, or 64-bit Linux on x86_64 or
+#      arm64 (a Raspberry Pi 4 or 5, for example; a preview: it runs tests; record them on a Mac),
+#      and finds Python 3.11 (BREAKPATCH_PYTHON, python3.11 or python3). When the machine has no
+#      Python 3.11 (Raspberry Pi OS and Ubuntu 24.04 come with 3.12 or 3.13), it downloads a
+#      pinned build of it from python-build-standalone (github.com/astral-sh/python-build-standalone),
+#      checks it against the SHA-256 written in this script, and keeps it in ~/.breakpatch-ci/python.
+#      On Windows, use install-ci.ps1 instead.
 #   2. Asks GitHub for the latest release of BreakPatch/breakpatch (or BREAKPATCH_VERSION, or with
 #      BREAKPATCH_CHANNEL=beta the newest release, betas included).
 #   3. Downloads the release's breakpatch-ci-requirements-<platform>.txt and the two wheels it
@@ -41,11 +45,15 @@
 #                        (never after a redirect to another host), never shown, and never put on a
 #                        command line: curl reads the header from a file only this account can
 #                        read, deleted as soon as the downloads are done.
-#   BREAKPATCH_PYTHON    the Python 3.11 to use (default python3.11, else python3 if it's 3.11)
+#   BREAKPATCH_PYTHON    the Python 3.11 to use (default python3.11, else python3 if it's 3.11,
+#                        else the pinned download)
+#   BREAKPATCH_PYTHON_DOWNLOAD  0: never download Python; without a 3.11, say how to get one
 #   BREAKPATCH_CI_HOME   the folder to install into (default ~/.breakpatch-ci)
 #   BREAKPATCH_CI_BIN    the folder for the breakpatch-ci link (default ~/.local/bin)
 #   BREAKPATCH_API       the GitHub API address of the repository (for tests and mirrors)
 #   BREAKPATCH_DOWNLOADS where the release files must come from (for tests and mirrors; https only)
+#   BREAKPATCH_PYTHON_DOWNLOADS, BREAKPATCH_PYTHON_SHA256  where the Python download comes from
+#                        and its SHA-256, together (for tests and mirrors; https only)
 
 set -eu
 
@@ -55,6 +63,19 @@ RELEASES=https://github.com/BreakPatch/breakpatch/releases
 DOWNLOADS=${BREAKPATCH_DOWNLOADS:-$RELEASES/download/}
 MANUAL=https://breakpatch.dev/manual/#from-ci-with-breakpatch-ci
 MARKER=breakpatch-ci.json
+
+# Python 3.11 from python-build-standalone, for machines without one: the release, the version,
+# and each build's SHA-256 (from that release's SHA256SUMS, checked against the files).
+PBS_RELEASE=20260924
+PBS_VERSION=3.11.16
+PBS_DOWNLOADS=https://github.com/astral-sh/python-build-standalone/releases/download/
+pbs_sha256() {
+  case "$1" in
+    x86_64-unknown-linux-gnu) echo 68c6739376b65258dee5058ccf6777232fe38d31a578965ae8bda327ec7da3a8 ;;
+    aarch64-unknown-linux-gnu) echo 763dae20c6abe982de86ceb7829cc050c5bda79a9824846d106cc1c86d57701b ;;
+    aarch64-apple-darwin) echo e1d745b07b6acc0641dbb3237d3c5953deeeed182141bab2242684076fd86547 ;;
+  esac
+}
 
 say() { printf '%s\n' "$*"; }
 fail() { printf '%s\n' "$*" >&2; exit 1; }
@@ -72,8 +93,10 @@ Options:
   --uninstall  remove breakpatch-ci and the browser it uses
   --help       show this
 
-It needs a Mac with Apple Silicon, or Linux x86_64 (a preview), and Python 3.11.
+It needs a Mac with Apple Silicon, or 64-bit Linux on x86_64 or arm64 (a preview).
+It uses Python 3.11 if there is one, and otherwise downloads it (checked) into ~/.breakpatch-ci.
 It installs to ~/.breakpatch-ci and links breakpatch-ci into ~/.local/bin.
+On Windows, use PowerShell: irm https://breakpatch.dev/install-ci.ps1 | iex
 EOF
 }
 
@@ -89,9 +112,9 @@ pretty() {
 
 # ---------------------------------------------------------------- checks
 
-# platform: macos-arm64 or linux-x86_64, the name in the release's files.
+# platform: macos-arm64, linux-x86_64 or linux-arm64, the name in the release's files.
 check_platform() {
-  need="breakpatch-ci runs on a Mac with Apple Silicon (M1 or later) and macOS 14 or later, or on Linux x86_64 as a preview."
+  need="breakpatch-ci runs on a Mac with Apple Silicon (M1 or later) and macOS 14 or later, or on 64-bit Linux (x86_64 or arm64) as a preview."
   os=$(uname -s)
   arch=$(uname -m)
   case "$os-$arch" in
@@ -102,6 +125,12 @@ check_platform() {
         || fail "$need This Mac has an Intel processor."
       platform="macos-arm64" ;;
     Linux-x86_64 | Linux-amd64) platform="linux-x86_64" ;;
+    Linux-aarch64 | Linux-arm64)
+      # A 64-bit kernel says aarch64 under a 32-bit system too (older Raspberry Pi OS images).
+      [ "$(getconf LONG_BIT 2>/dev/null || echo 64)" = 64 ] \
+        || fail "$need This Raspberry Pi or arm computer runs a 32-bit system. Install a 64-bit one (Raspberry Pi OS 64-bit, or Ubuntu for arm64)."
+      platform="linux-arm64" ;;
+    MINGW* | MSYS* | CYGWIN*) fail "On Windows, install breakpatch-ci from PowerShell: irm https://breakpatch.dev/install-ci.ps1 | iex" ;;
     Darwin-*) fail "$need This Mac is $arch." ;;
     Linux-*) fail "$need This machine is Linux on $arch." ;;
     *) fail "$need This machine is $os on $arch." ;;
@@ -130,31 +159,110 @@ sha256_of() {
   if [ "$sha_tool" = shasum ]; then shasum -a 256 "$1"; else sha256sum "$1"; fi | awk '{ print $1 }' | tr 'A-F' 'a-f'
 }
 
-# python: Python 3.11, with venv. The engine is built and tested for 3.11 only.
+# python: Python 3.11, with venv. The engine is built and tested for 3.11 only. BREAKPATCH_PYTHON
+# must be one; otherwise python3.11 or python3 when it's a usable 3.11, else pbs=1: the pinned
+# download (fetch_python, once the temporary folder is there), unless BREAKPATCH_PYTHON_DOWNLOAD=0.
 find_python() {
   how="Install Python 3.11 (on a Mac: brew install python@3.11; in GitHub Actions: actions/setup-python with python-version 3.11; on Ubuntu: apt-get install python3.11 python3.11-venv), then run this again. If it's installed somewhere else, set BREAKPATCH_PYTHON to it."
-  python=""
+  python="" pbs=0
   if [ -n "${BREAKPATCH_PYTHON:-}" ]; then
     command -v "$BREAKPATCH_PYTHON" >/dev/null 2>&1 || fail "BREAKPATCH_PYTHON is $BREAKPATCH_PYTHON, which isn't there."
     python=$BREAKPATCH_PYTHON
-  elif command -v python3.11 >/dev/null 2>&1; then
-    python=python3.11
-  elif command -v python3 >/dev/null 2>&1; then
-    python=python3
-  else
-    fail "breakpatch-ci needs Python 3.11, and this machine has no python3. $how"
+    usable_python strict
+    return 0
   fi
+  first=""
+  for candidate in python3.11 python3; do
+    command -v "$candidate" >/dev/null 2>&1 || continue
+    python=$candidate
+    first=${first:-$candidate}
+    if usable_python; then return 0; fi
+  done
+  if [ "${BREAKPATCH_PYTHON_DOWNLOAD:-1}" = 0 ]; then
+    # As before there was a download: the first one found, and why it won't do.
+    if [ -z "$first" ]; then fail "breakpatch-ci needs Python 3.11, and this machine has no python3. $how"; fi
+    python=$first
+    usable_python strict
+    return 0
+  fi
+  python="" pbs=1
+}
+
+# usable_python [strict]: $python is a Python 3.11 for this machine that can make environments.
+# strict: say why not and stop; otherwise just answer.
+usable_python() {
   pyver=$("$python" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)
-  [ -n "$pyver" ] || fail "Couldn't run $python. $how"
-  [ "$pyver" = 3.11 ] || fail "breakpatch-ci needs Python 3.11, and $python is Python $pyver. $how"
+  if [ -z "$pyver" ]; then [ -n "${1:-}" ] || return 1; fail "Couldn't run $python. $how"; fi
+  if [ "$pyver" != 3.11 ]; then [ -n "${1:-}" ] || return 1; fail "breakpatch-ci needs Python 3.11, and $python is Python $pyver. $how"; fi
   pyarch=$("$python" -c 'import platform; print(platform.machine())' 2>/dev/null || true)
   case "$platform-$pyarch" in
-    macos-arm64-arm64 | linux-x86_64-x86_64 | linux-x86_64-amd64) ;;
-    macos-arm64-*) fail "$python is a Python for Intel Macs ($pyarch). breakpatch-ci needs a Python 3.11 for Apple Silicon (arm64). $how" ;;
-    *) fail "$python is for $pyarch, not this machine. $how" ;;
+    macos-arm64-arm64 | linux-x86_64-x86_64 | linux-x86_64-amd64 | linux-arm64-aarch64 | linux-arm64-arm64) ;;
+    *)
+      [ -n "${1:-}" ] || return 1
+      case "$platform" in
+        macos-arm64) fail "$python is a Python for Intel Macs ($pyarch). breakpatch-ci needs a Python 3.11 for Apple Silicon (arm64). $how" ;;
+        *) fail "$python is for $pyarch, not this machine. $how" ;;
+      esac ;;
   esac
-  "$python" -c 'import venv, ensurepip' >/dev/null 2>&1 \
-    || fail "$python can't make Python environments (its venv module is missing). On Ubuntu: apt-get install python3.11-venv. Then run this again."
+  if ! "$python" -c 'import venv, ensurepip' >/dev/null 2>&1; then
+    [ -n "${1:-}" ] || return 1
+    fail "$python can't make Python environments (its venv module is missing). On Ubuntu: apt-get install python3.11-venv. Then run this again."
+  fi
+  return 0
+}
+
+# The pinned python-build-standalone build for this machine, into $home/python/<version>, checked
+# against its SHA-256 before it's unpacked. Kept for the next update; --uninstall removes it.
+fetch_python() {
+  case "$platform" in
+    linux-x86_64) triple=x86_64-unknown-linux-gnu ;;
+    linux-arm64) triple=aarch64-unknown-linux-gnu ;;
+    macos-arm64) triple=aarch64-apple-darwin ;;
+  esac
+  pbs_dir="$home/python/cpython-$PBS_VERSION+$PBS_RELEASE"
+  python="$pbs_dir/bin/python3.11"
+  if [ -x "$python" ] && usable_python; then
+    say "Using Python $PBS_VERSION from $(pretty "$pbs_dir")."
+    return 0
+  fi
+  base=$PBS_DOWNLOADS expected=$(pbs_sha256 "$triple")
+  if [ -n "${BREAKPATCH_PYTHON_DOWNLOADS:-}" ]; then
+    case "$BREAKPATCH_PYTHON_DOWNLOADS" in https://*/) ;; *) fail "BREAKPATCH_PYTHON_DOWNLOADS must start with https:// and end with /." ;; esac
+    base=$BREAKPATCH_PYTHON_DOWNLOADS expected=${BREAKPATCH_PYTHON_SHA256:-}
+  fi
+  case "$expected" in
+    *[!0-9a-f]* | '') fail "There's no checksum for the Python download for this machine, so nothing was installed." ;;
+  esac
+  [ ${#expected} -eq 64 ] || fail "There's no checksum for the Python download for this machine, so nothing was installed."
+  file="cpython-$PBS_VERSION+$PBS_RELEASE-$triple-install_only_stripped.tar.gz"
+  say "This machine has no Python 3.11 that breakpatch-ci can use: downloading Python $PBS_VERSION (python-build-standalone $PBS_RELEASE)…"
+  # The + is written %2B in the address, as GitHub names the file.
+  curl -fsSL --proto =https --proto-redir =https -o "$tmp/$file" "$base$PBS_RELEASE/cpython-$PBS_VERSION%2B$PBS_RELEASE-$triple-install_only_stripped.tar.gz" 2>/dev/null \
+    || fail "Couldn't download Python 3.11. Check your connection and run this again, or install Python 3.11 and set BREAKPATCH_PYTHON."
+  [ "$(sha256_of "$tmp/$file")" = "$expected" ] \
+    || fail "The download of Python 3.11 doesn't match its checksum, so nothing was installed. Run this again. If it keeps happening, tell us: https://github.com/BreakPatch/breakpatch/issues"
+  mkdir -p "$home/python" || fail "Couldn't make the folder $(pretty "$home/python")."
+  rm -rf "$pbs_dir.partial"
+  mkdir "$pbs_dir.partial" || fail "Couldn't write to $(pretty "$home/python")."
+  tar -xzf "$tmp/$file" -C "$pbs_dir.partial" 2>"$tmp/tar.log" || { rm -rf "$pbs_dir.partial"; fail "Couldn't unpack the Python download."; }
+  [ -x "$pbs_dir.partial/python/bin/python3.11" ] || { rm -rf "$pbs_dir.partial"; fail "The Python download isn't what the installer expected, so nothing was installed."; }
+  rm -rf "$pbs_dir"
+  mv "$pbs_dir.partial/python" "$pbs_dir" || fail "Couldn't write to $(pretty "$home/python")."
+  rm -rf "$pbs_dir.partial"
+  usable_python strict
+  say "Python $PBS_VERSION is in $(pretty "$pbs_dir")."
+}
+
+# After a switch: downloaded Pythons that no environment uses any more go.
+prune_pythons() {
+  [ -d "$home/python" ] || return 0
+  keep=""
+  if [ "$pbs" -eq 1 ]; then keep=$(basename "$pbs_dir"); fi
+  for d in "$home/python"/cpython-*; do
+    [ -e "$d" ] || continue
+    [ "$(basename "$d")" = "$keep" ] || rm -rf "$d"
+  done
+  rmdir "$home/python" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------- the token (private beta)
@@ -388,7 +496,11 @@ find_release() {
 }
 
 platform_name() {
-  if [ "$platform" = macos-arm64 ]; then printf 'Apple Silicon Macs'; else printf 'Linux x86_64'; fi
+  case "$platform" in
+    macos-arm64) printf 'Apple Silicon Macs' ;;
+    linux-arm64) printf 'Linux arm64' ;;
+    *) printf 'Linux x86_64' ;;
+  esac
 }
 
 # A downloaded file must be in SHA256SUMS, with the same SHA-256.
@@ -513,22 +625,24 @@ do_install() {
   else
     say "Updating breakpatch-ci to $version…"
   fi
-  if [ "$platform" = linux-x86_64 ]; then
-    say "Linux is a preview: breakpatch-ci runs tests there, and they're recorded on a Mac."
-  fi
+  case "$platform" in linux-*)
+    say "Linux is a preview: breakpatch-ci runs tests there, and they're recorded on a Mac." ;;
+  esac
 
   download_files
   drop_token
+  if [ "$pbs" -eq 1 ]; then fetch_python; fi
   make_env
   install_browser
   got=$("$staged/bin/breakpatch-ci" --version 2>/dev/null || true)
   [ "$got" = "$version" ] || fail "The new breakpatch-ci doesn't start (it says '$got'), so the one before is still in use. Write to support@breakpatch.dev."
   switch_to
+  prune_pythons
 
   say "breakpatch-ci $version is in $(pretty "$home")."
-  if [ "$platform" = linux-x86_64 ]; then
-    say "If Chromium can't start, install the libraries it needs: sudo $(pretty "$home")/current/bin/python -m playwright install-deps chromium"
-  fi
+  case "$platform" in linux-*)
+    say "If Chromium can't start, install the libraries it needs: sudo $(pretty "$home")/current/bin/python -m playwright install-deps chromium" ;;
+  esac
   if on_path "$bin"; then
     say "Run it with: breakpatch-ci run --test path/to/test.json"
   elif [ -n "${GITHUB_PATH:-}" ] && printf '%s\n' "$bin" >>"$GITHUB_PATH" 2>/dev/null; then
