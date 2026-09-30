@@ -9,6 +9,7 @@ import { useBackend } from '../../data/hooks';
 import type { App, Test } from '../../data/types';
 import { useFeature } from '../../edition';
 import { distinct, filterTests, type LastRunFilter, type SharedFilter } from './filters';
+import { TestDetailsDialog } from './TestDetailsDialog';
 
 // Community is one person with the latest version only: no Shared column, no people, no history.
 // They follow the licence while the app runs (edition/features.ts).
@@ -21,6 +22,7 @@ export function TestsTab({ app, tests }: { app: App; tests: Test[] }) {
   const [lastRun, setLastRun] = useState<LastRunFilter>('all');
   const [createdBy, setCreatedBy] = useState('all');
   const [deleting, setDeleting] = useState<Test | null>(null);
+  const [editing, setEditing] = useState<Test | null>(null);
   const backend = useBackend();
 
   const creators = useMemo(() => distinct(tests.map(t => t.createdBy), p => p.uid), [tests]);
@@ -46,7 +48,7 @@ export function TestsTab({ app, tests }: { app: App; tests: Test[] }) {
           <div role="columnheader">Name</div>{TEAM && <div role="columnheader">Shared</div>}<div role="columnheader">Last run</div>
           <div role="columnheader">Created</div><div role="columnheader">Last updated</div><div role="columnheader"><span className="sr-only">Actions</span></div>
         </div>
-        {shown.map((t, i) => <TestRow key={t.id} app={app} test={t} index={i} onDelete={() => setDeleting(t)} />)}
+        {shown.map((t, i) => <TestRow key={t.id} app={app} test={t} index={i} onDelete={() => setDeleting(t)} onDetails={() => setEditing(t)} />)}
         {!shown.length && filtered && (
           <div className="app-nomatch">No tests match. <Button kind="link" size="sm" onClick={clear}>Clear filters</Button></div>
         )}
@@ -55,11 +57,12 @@ export function TestsTab({ app, tests }: { app: App; tests: Test[] }) {
         onConfirm={async () => { if (deleting) await backend.deleteTest(app.id, deleting.id); }}>
         {TEAM ? "It's removed for everyone, with its version history." : "It's removed from this Mac."} Past runs stay in the Runs tab.
       </ConfirmDialog>
+      {editing && <TestDetailsDialog open test={tests.find(t => t.id === editing.id) ?? editing} onClose={() => setEditing(null)} />}
     </>
   );
 }
 
-function TestRow({ app, test: t, index, onDelete }: { app: App; test: Test; index: number; onDelete: () => void }) {
+function TestRow({ app, test: t, index, onDelete, onDetails }: { app: App; test: Test; index: number; onDelete: () => void; onDetails: () => void }) {
   const { TEAM, HISTORY, COLS } = useCols();
   const navigate = useNavigate();
   const backend = useBackend();
@@ -103,7 +106,8 @@ function TestRow({ app, test: t, index, onDelete }: { app: App; test: Test; inde
           <IconButton icon="more_vert" label={`More for ${t.name}`} size={19} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(m => !m)} />
           <Menu open={menu} onClose={() => setMenu(false)} label={`${t.name} actions`} width={200} style={{ top: 'calc(100% + 4px)', right: 0 }}
             items={[
-              { label: 'Edit', icon: 'edit', onSelect: open },
+              { label: 'Edit steps', icon: 'edit', onSelect: open },
+              { label: 'Test details', icon: 'description', onSelect: onDetails },
               { label: 'Duplicate', icon: 'content_copy', onSelect: duplicate },
               ...(HISTORY ? [{ label: 'View history', icon: 'history', onSelect: () => navigate(`${base}/history`) }] : []),
               'sep',

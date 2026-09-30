@@ -12,7 +12,7 @@
 // The text of every file as last read or written is the source of truth; the model is parsed
 // from it. Saving the same thing writes nothing; outside edits (a `git pull`) are picked up on
 // window focus, through the storage's watcher, or by a light poll.
-import type { Backend, Listener, NewApp, NewSuite, NewTest, Unsubscribe } from '../backend';
+import { cleanDetails, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
 import type {
   App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Viewport,
 } from '../types';
@@ -516,6 +516,20 @@ export class LocalBackend implements Backend {
   }
   setTestStatus(appId: string, testId: string, status: TestStatus) { return this.patchTest(appId, testId, { status }); }
   renameTest(appId: string, testId: string, name: string) { return this.patchTest(appId, testId, { name }); }
+  /** Only the latest version is kept, so a new start address moves the version number on (like a save). */
+  updateTestDetails(appId: string, testId: string, details: TestDetails) {
+    return this.write(async (): Promise<Version | null> => {
+      const r = this.testRec(appId, testId);
+      const d = cleanDetails(details);
+      const moved = d.startUrl !== r.test.startUrl;
+      if (!moved && d.name === r.test.name && d.description === (r.test.description || undefined)) return null;
+      const bump = moved && r.test.currentVersion > 0;
+      const next: TestRec = { ...r, test: { ...r.test, name: d.name, description: d.description, startUrl: d.startUrl,
+        currentVersion: r.test.currentVersion + (bump ? 1 : 0), updatedBy: this.me, updatedAt: Date.now() } };
+      await this.put(`apps/${appId}/tests/${testId}.json`, this.testFile(next));
+      return bump ? this.current(next) : null;
+    });
+  }
   duplicateTest(appId: string, testId: string) {
     return this.write(async () => {
       const app = this.appRec(appId), src = this.testRec(appId, testId);

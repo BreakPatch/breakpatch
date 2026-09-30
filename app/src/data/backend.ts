@@ -16,7 +16,18 @@ export interface NewTest {
   appId: string; name: string; description?: string; startUrl: string; viewport: Viewport;
   setUp?: HttpCall; cleanUp?: HttpCall & { alsoOnFailure?: boolean };
 }
+/** A test's details as the Test details dialog edits them. */
+export interface TestDetails { name: string; description?: string; startUrl: string }
 export interface NewSuite { name: string; tests: Suite['tests']; schedule: Suite['schedule']; resultUrl?: string }
+
+/** The note on the version a new start address makes (Backend.updateTestDetails). */
+export const startUrlNote = (url: string) => `Start address changed to ${url}`;
+
+/** Details with their optional parts left out when empty, trimmed. */
+export function cleanDetails(d: TestDetails): TestDetails {
+  const description = d.description?.trim();
+  return { name: d.name.trim(), ...(description ? { description } : {}), startUrl: d.startUrl.trim() };
+}
 
 export class AuthError extends Error {
   code: 'wrongPassword' | 'wrongDomain' | 'network' | 'unknown';
@@ -67,6 +78,13 @@ export interface Backend {
   saveTest(appId: string, testId: string, steps: Step[], note?: string, recordedOn?: RecordedOn): Promise<Version>;
   setTestStatus(appId: string, testId: string, status: TestStatus): Promise<void>;
   renameTest(appId: string, testId: string, name: string): Promise<void>;
+  /**
+   * Changes a test's name, description and start address. The start address is part of what a
+   * version replays, so a new one on a test with saved steps is saved as a new version (the same
+   * steps, with `startUrl` on the version and a note saying so). Name and description aren't
+   * versioned. Returns the new version when one was made. Nothing changed: writes nothing.
+   */
+  updateTestDetails(appId: string, testId: string, d: TestDetails): Promise<Version | null>;
   /** Marks a saved version as the one CI runs with `--version released` (null clears it). Team workspaces only. */
   setReleasedVersion?(appId: string, testId: string, version: number | null): Promise<void>;
   duplicateTest(appId: string, testId: string): Promise<Test>;

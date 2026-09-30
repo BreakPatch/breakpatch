@@ -218,6 +218,30 @@ describe('LocalBackend', () => {
     expect(await read(st, 'apps/web-app/tests/log-in.json')).toBe(before);
   });
 
+  it('edits the test details: a new start address moves the version on, a name or description does not', async () => {
+    const { st, b } = await setup();
+    const { app, test } = await appWithTest(b);
+    // No steps yet: nothing to version.
+    expect(await b.updateTestDetails(app.id, test.id, { name: 'Log in', startUrl: 'https://app.example.com/signin' })).toBeNull();
+    await b.saveTest(app.id, test.id, steps);
+    expect(await b.updateTestDetails(app.id, test.id, { name: '  Log in  ', description: '  Signs in  ', startUrl: 'https://app.example.com/signin' })).toBeNull();
+    let t = await first<Test | null>(l => b.test(app.id, test.id, l));
+    expect(t).toMatchObject({ name: 'Log in', description: 'Signs in', startUrl: 'https://app.example.com/signin', currentVersion: 1 });
+    const v = await b.updateTestDetails(app.id, test.id, { name: 'Log in', description: 'Signs in', startUrl: 'https://app.example.com/login?next=home' });
+    expect(v).toMatchObject({ number: 2 });
+    expect(v?.steps.map(s => s.id)).toEqual(['s1', 's2']);
+    t = await first<Test | null>(l => b.test(app.id, test.id, l));
+    expect(t).toMatchObject({ startUrl: 'https://app.example.com/login?next=home', currentVersion: 2, stepCount: 2 });
+    const file = fromFileText<{ version: number; startUrl: string; description?: string }>((await read(st, 'apps/web-app/tests/log-in.json'))!);
+    expect(file).toMatchObject({ version: 2, startUrl: 'https://app.example.com/login?next=home', description: 'Signs in' });
+    // An empty description is taken out; nothing changed writes nothing.
+    await b.updateTestDetails(app.id, test.id, { name: 'Log in', description: ' ', startUrl: 'https://app.example.com/login?next=home' });
+    expect(fromFileText<object>((await read(st, 'apps/web-app/tests/log-in.json'))!)).not.toHaveProperty('description');
+    const write = vi.spyOn(st, 'write');
+    expect(await b.updateTestDetails(app.id, test.id, { name: 'Log in', startUrl: 'https://app.example.com/login?next=home' })).toBeNull();
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it('writes a temp file and renames it into place', async () => {
     const { st, b } = await setup();
     const write = vi.spyOn(st, 'write'), rename = vi.spyOn(st, 'rename');

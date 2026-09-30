@@ -139,6 +139,11 @@ export interface Version {
   note?: string;
   /** Set when steps were recorded or re-recorded for this version; kept from the one before otherwise. */
   recordedOn?: RecordedOn;
+  /**
+   * Tests only: the start address this version starts at. Versions saved before it existed have
+   * none; they start at the test's.
+   */
+  startUrl?: string;
 }
 
 export interface StepGroup {
