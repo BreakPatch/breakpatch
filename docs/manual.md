@@ -356,7 +356,7 @@ Solo is for one person who wants the automation for themselves: $19 a month, or 
 - **Your tests stay where they are.** Solo works on your [tests folder](#the-tests-folder), or a folder you keep in [Git](#git-tips). There's nothing to set up in the cloud.
 - **A workspace is optional.** For [run requests](#run-requests), the [local runner](#the-local-runner) and [version history](#version-history), connect a workspace of your own ([Create a workspace](#create-a-workspace)). It stays yours alone: Solo has no members or invites.
 - **The licence.** Enter the key in **Settings → Licence**. It works on one Mac at a time. To use it on another Mac, free it on your licence page at [account.breakpatch.dev](#the-back-office), then enter the key on the new Mac.
-- **One machine licence**, for [breakpatch-ci](#from-ci-with-breakpatch-ci) or a runner. Solo runs one test at a time, on your Mac or on the machine licence, and has no extra machine licences.
+- **One machine licence**, for [breakpatch-ci](#from-ci-with-breakpatch-ci) or a runner. Your Mac and the machine licence each run one test at a time. Solo has no extra machine licences.
 - **One Solo per company.** If someone at your company email domain already has Solo, the pricing page offers Team instead. A personal address (such as Gmail or iCloud) counts on its own.
 - **Moving to Team** keeps your tests. Email [support@breakpatch.dev](mailto:support@breakpatch.dev) to switch your plan, then follow [Upgrading to Team](#upgrading-to-team).
 

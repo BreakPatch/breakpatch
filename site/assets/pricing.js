@@ -12,8 +12,27 @@
 
   // ---------- Paddle.js, shared by both cards ----------
 
+  /**
+   * GET a JSON answer from the back office: the body, or null when it can't be had (offline, a
+   * non-2xx answer, 5 s without one). Never sends cookies.
+   */
+  function getJson(url) {
+    if (!url || typeof window.fetch !== 'function') return Promise.resolve(null);
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = ctl ? setTimeout(function () { ctl.abort(); }, 5000) : null;
+    return window.fetch(url, { credentials: 'omit', signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .finally(function () { if (timer) clearTimeout(timer); });
+  }
+
   var loading = null;
-  var onCheckoutError = function () {};  // the card that opened the checkout says what went wrong
+  // The card that opened the checkout says what went wrong. Until one has (a Paddle payment link,
+  // ?_ptxn=…), the message shows on the Team card.
+  var onCheckoutError = function () {
+    var e = $('buy-error');
+    if (e) { e.textContent = 'The checkout couldn’t continue. Try again, or email support@breakpatch.dev.'; e.hidden = false; }
+  };
   function paddle() {
     if (loading) return loading;
     loading = new Promise(function (resolve, reject) {
@@ -84,17 +103,20 @@
      * sent, never the address) → { taken }. Null when it can't say; then checkout goes ahead and the
      * back office checks again.
      */
+    // Asked once per domain: when the email field loses focus (so Buy doesn't wait for it), and
+    // again on Buy only if the email changed.
+    var asked = {};
     function domainTaken(domain) {
       var url = typeof cfgAll.soloDomainUrl === 'string' ? cfgAll.soloDomainUrl : '';
-      if (!url || !domain || typeof window.fetch !== 'function') return Promise.resolve(null);
-      var ctl = typeof AbortController === 'function' ? new AbortController() : null;
-      var timer = ctl ? setTimeout(function () { ctl.abort(); }, 5000) : null;
-      return window.fetch(url + '?domain=' + encodeURIComponent(domain), { credentials: 'omit', signal: ctl ? ctl.signal : undefined })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (b) { return b && typeof b.taken === 'boolean' ? b.taken : null; })
-        .catch(function () { return null; })
-        .finally(function () { if (timer) clearTimeout(timer); });
+      if (!url || !/^[^\s@]+\.[^\s@]+$/.test(domain)) return Promise.resolve(null);
+      if (!asked[domain]) {
+        asked[domain] = getJson(url + '?domain=' + encodeURIComponent(domain)).then(function (b) { return b && typeof b.taken === 'boolean' ? b.taken : null; });
+        // A failed check is asked again next time.
+        asked[domain].then(function (t) { if (t === null) delete asked[domain]; });
+      }
+      return asked[domain];
     }
+    function domainOf(value) { var who = value.trim().toLowerCase(); return who.slice(who.lastIndexOf('@') + 1); }
     function betaMail() {
       var body = 'Hello,\n\nI would like to join the Breakpatch Solo beta.\n\n'
         + 'Billing: ' + (state.period === 'year' ? 'yearly' : 'monthly') + '\n';
@@ -105,6 +127,7 @@
       b.addEventListener('click', function () { state.period = b.dataset.soloPeriod; render(); });
     });
     email.addEventListener('input', function () { taken.hidden = true; });
+    email.addEventListener('blur', function () { if (ready()) domainTaken(domainOf(email.value)); });
 
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
@@ -113,7 +136,7 @@
       if (!ready()) { location.href = betaMail(); return; }
       if (!form.reportValidity()) return;
       var who = email.value.trim().toLowerCase();
-      var domain = who.slice(who.lastIndexOf('@') + 1);
+      var domain = domainOf(who);
       var id = priceId();
       buy.setAttribute('aria-busy', 'true');
       domainTaken(domain).then(function (isTaken) {
@@ -175,18 +198,10 @@
     });
     /** { total, taken } from the back office, or null when it can't say (then the offer shows without a number). */
     function placesLeft() {
-      var url = typeof cfgAll.foundingPlacesUrl === 'string' ? cfgAll.foundingPlacesUrl : '';
-      if (!url || typeof window.fetch !== 'function') return Promise.resolve(null);
-      var ctl = typeof AbortController === 'function' ? new AbortController() : null;
-      var timer = ctl ? setTimeout(function () { ctl.abort(); }, 5000) : null;
-      return window.fetch(url, { credentials: 'omit', signal: ctl ? ctl.signal : undefined })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (b) {
-          var ok = b && Number.isInteger(b.total) && Number.isInteger(b.taken) && b.total > 0 && b.taken >= 0;
-          return ok ? { total: b.total, taken: b.taken } : null;
-        })
-        .catch(function () { return null; })
-        .finally(function () { if (timer) clearTimeout(timer); });
+      return getJson(typeof cfgAll.foundingPlacesUrl === 'string' ? cfgAll.foundingPlacesUrl : '').then(function (b) {
+        var ok = b && Number.isInteger(b.total) && Number.isInteger(b.taken) && b.total > 0 && b.taken >= 0;
+        return ok ? { total: b.total, taken: b.taken } : null;
+      });
     }
     /** Whether the founding option is offered: offer shown, Team yearly, and 20 people or fewer. */
     function foundingOffered() { return !!founding && state.period === 'year' && clamp(seats.value, MIN_SEATS, MAX_SEATS) <= FOUNDING_MAX_SEATS; }

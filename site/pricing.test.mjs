@@ -50,7 +50,7 @@ const plain = v => JSON.parse(JSON.stringify(v)); // out of the page's realm, fo
  * what GET /api/solo-domain answers: a body, a status number, or 'offline'. Returns the elements,
  * Paddle's checkout calls and the fetches.
  */
-async function load(config, places = { total: 25, taken: 0 }, domains = { taken: false }) {
+async function load(config, places = { total: 25, taken: 0 }, domains = { taken: false }, search = '') {
   const { byId, all } = parse(HTML);
   const opened = [], fetched = [];
   const answer = a => {
@@ -79,14 +79,14 @@ async function load(config, places = { total: 25, taken: 0 }, domains = { taken:
         assert.equal(s.src, 'https://cdn.paddle.com/paddle/v2/paddle.js');
         window.Paddle = {
           Environment: { set() {} },
-          Initialize() {},
+          Initialize(opts) { window.paddleInit = opts; },
           Checkout: { open: opts => opened.push(plain(opts)) },
         };
         s.onload();
       },
     },
   };
-  const location = { href: 'https://breakpatch.dev/pricing/', search: '' };
+  const location = { href: 'https://breakpatch.dev/pricing/', search };
   const ctx = vm.createContext({ window, document, location, URL, setTimeout, clearTimeout, AbortController });
   vm.runInContext(JS, ctx);
   await new Promise(r => setImmediate(r)); // the places answer
@@ -101,7 +101,7 @@ async function load(config, places = { total: 25, taken: 0 }, domains = { taken:
     for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0));
     return opened.length > before ? opened.at(-1) : undefined;
   };
-  return { $, buy, period, soloPeriod, buySolo, opened, fetched, location };
+  return { $, buy, period, soloPeriod, buySolo, opened, fetched, location, window };
 }
 
 const prices = { soloMonthly: 'pri_sm', soloYearly: 'pri_sy', teamMonthly: 'pri_tm', teamYearly: 'pri_ty', machineMonthly: 'pri_mm', machineYearly: 'pri_my' };
@@ -392,4 +392,62 @@ test('Solo in the page description, the FAQ, the terms, the refunds and the manu
   assert.ok(HOME.includes('<th scope="col">Solo</th>'), 'home comparison table');
   // The same prices everywhere.
   for (const [name, text] of [['home', HOME], ['manual', MANUAL]]) assert.match(text, /\$19/, name);
+});
+
+test('a personal email is still sent only as its domain, and gets a checkout (the service never looks those up)', async () => {
+  const p = await load(cfg(), undefined, { domain: 'gmail.com', taken: false, personal: true });
+  p.$('solo-email').value = 'sam.smith@gmail.com';
+  const opts = await p.buySolo();
+  assert.deepEqual(plain(p.fetched), [{ url: SOLO_URL + '?domain=gmail.com', credentials: 'omit' }]);
+  assert.deepEqual(opts.customer, { email: 'sam.smith@gmail.com' });
+});
+
+test('the domain is asked when the email field loses focus, so Buy doesn’t wait, and only once', async () => {
+  const p = await load(cfg());
+  p.$('solo-email').value = 'sam@initech.com';
+  p.$('solo-email').fire('blur');
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(p.fetched.length, 1);
+  assert.ok(await p.buySolo());
+  assert.equal(p.fetched.length, 1); // Buy reused the answer
+  // Another email: asked again. Not an email yet: nothing asked.
+  p.$('solo-email').value = 'sam@hooli.com'; p.$('solo-email').fire('blur');
+  p.$('solo-email').value = 'sam'; p.$('solo-email').fire('blur');
+  await new Promise(r => setTimeout(r, 0));
+  assert.deepEqual(p.fetched.map(f => f.url), [SOLO_URL + '?domain=initech.com', SOLO_URL + '?domain=hooli.com']);
+  // With the checkout off, focus alone asks nothing.
+  const off = await load({ ...cfg(), sandbox: { clientToken: '', prices } });
+  off.$('solo-email').value = 'sam@initech.com'; off.$('solo-email').fire('blur');
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(off.fetched.length, 0);
+});
+
+test('a check that failed is asked again on Buy', async () => {
+  const p = await load(cfg(), undefined, 503);
+  p.$('solo-email').value = 'sam@initech.com';
+  p.$('solo-email').fire('blur');
+  for (let i = 0; i < 3; i++) await new Promise(r => setTimeout(r, 0));
+  assert.ok(await p.buySolo());
+  assert.equal(p.fetched.length, 2);
+});
+
+test('a Paddle payment link (?_ptxn=) that fails shows the error on the Team card', async () => {
+  const p = await load(cfg(), undefined, undefined, '?_ptxn=txn_01test');
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(p.window.paddleInit, 'Paddle.js was initialized for the payment link');
+  assert.equal(p.$('buy-error').hidden, true);
+  p.window.paddleInit.eventCallback({ name: 'checkout.error' });
+  assert.equal(p.$('buy-error').hidden, false);
+  assert.equal(p.$('buy-error').textContent, 'The checkout couldn’t continue. Try again, or email support@breakpatch.dev.');
+});
+
+test('one test run at a time is per Mac or machine licence: nothing promises it across a Solo licence', () => {
+  const MANUAL = readFileSync(new URL('../docs/manual.md', import.meta.url), 'utf8');
+  const TERMS = readFileSync(new URL('./terms/index.html', import.meta.url), 'utf8');
+  for (const [name, text] of [['pricing', HTML], ['manual', MANUAL], ['terms', TERMS]]) {
+    assert.doesNotMatch(text, /across the licence|one test at a time, on your Mac or on the machine licence/i, name);
+  }
+  assert.ok(MANUAL.includes('Your Mac and the machine licence each run one test at a time.'));
+  const PRIVACY = readFileSync(new URL('./privacy/index.html', import.meta.url), 'utf8');
+  assert.ok(PRIVACY.includes('The answer is only whether that company domain already has a Solo'), 'privacy: what the check answers');
 });
