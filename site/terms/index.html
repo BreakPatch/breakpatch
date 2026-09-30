@@ -13,9 +13,9 @@
 <header class="top"><a class="brand" href="/" aria-label="Breakpatch home"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a><nav aria-label="Main"><a href="/#ai">AI</a><a class="wide" href="/#how">How it works</a><a class="wide" href="/#features">Features</a><a href="/pricing/">Pricing</a><a href="/manual/">Manual</a><a class="wide" href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a></nav><a class="btn" href="/#install">Install</a></header>
 <main class="page-narrow">
   <h1>Terms of service</h1>
-  <p class="updated">Last updated 28 September 2026.</p>
+  <p class="updated">Last updated 30 September 2026.</p>
 
-  <p>These terms are between you and Oscar Ivan Tigreros Bolanos, trading as Breakpatch (“Breakpatch”, “we”), and cover Breakpatch Team and Business licences bought on breakpatch.dev. Breakpatch Community is free and open source under the Apache License 2.0; that licence, not these terms, covers it.</p>
+  <p>These terms are between you and Oscar Ivan Tigreros Bolanos, trading as Breakpatch (“Breakpatch”, “we”), and cover Breakpatch Solo, Team and Business licences bought on breakpatch.dev. Breakpatch Community is free and open source under the Apache License 2.0; that licence, not these terms, covers it.</p>
 
   <h2>Who sells it</h2>
   <p>Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders. Paddle provides all customer service inquiries and handles returns: payments, invoices, tax and refunds. For help using Breakpatch itself, email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a>. You can send a refund request to Paddle or to us: see the <a href="../refunds/">refund policy</a>. Paddle's <a href="https://www.paddle.com/legal/checkout-buyer-terms">buyer terms</a> apply to the purchase itself.</p>
@@ -23,25 +23,26 @@
   <h2>The licence</h2>
   <ul>
     <li>A licence has a number of <b>seats</b> for people and <b>machine licences</b> for local runner Macs and CI machines. Team includes 1 machine licence and Business 5; you can buy more.</li>
+    <li><b>Solo</b> is for one person, used on one Mac at a time, with 1 machine licence and no extra ones. It's one Solo per company: everyone with an email address at the same company domain shares that one place, so a second person there needs Team. A Solo bought with a personal email address (such as Gmail or iCloud) counts for that address only. If a second Solo is bought for a company that already has one, we refund it or move it to Team.</li>
     <li>A machine licence covers one test run at a time on any machine; a pipeline running N jobs in parallel needs N licences.</li>
     <li>One seat is for one person. The same person on another Mac keeps the same seat. Don't share a seat between people.</li>
     <li>Keep the licence key private to your organisation. If it leaks, email us and we replace it.</li>
     <li>A subscription renews at the end of each billing period (monthly or yearly) until you cancel. Cancel before the renewal date to avoid the next charge; renewal payments aren't refunded, and a cancelled licence ends at the end of the period already paid. Adding or removing seats or machine licences is charged or credited straight away, pro rata for the rest of the billing period; credits go against your next payments.</li>
-    <li>When you cancel, the licence keeps working until the end of the period you paid for. After that, Breakpatch keeps working as Community and Team features are off. Your tests stay in your own Firebase project.</li>
+    <li>When you cancel, the licence keeps working until the end of the period you paid for. After that, Breakpatch keeps working as Community and the paid features are off. Your tests stay where you keep them: in your tests folder, or in your own Firebase project.</li>
     <li>If a payment fails, Paddle tries again. The licence keeps working for 7 days past the end of the paid period while it does.</li>
   </ul>
 
   <h2>Founding price</h2>
-  <p>The first 25 teams to buy Team billed yearly at the founding price pay $12 per person per month ($144 per person per year) instead of $16. It is for teams of up to 20 people. It covers Team seats billed yearly only: not Business or monthly billing, and extra machine licences are always at list price. The price is locked for 24 months from purchase (two yearly billing periods). After that, the subscription renews at the Team yearly price at that time, with 60 days' notice: we email the licence's admins at least 60 days before the first renewal at that price. The offer ends when the 25 places are taken. When the founding offer is open, the pricing page shows how many places are left.</p>
+  <p>The first 25 teams to buy Team billed yearly at the founding price pay $12 per person per month ($144 per person per year) instead of $16. It is for teams of up to 20 people. It covers Team seats billed yearly only: not Solo, Business or monthly billing, and extra machine licences are always at list price. The price is locked for 24 months from purchase (two yearly billing periods). After that, the subscription renews at the Team yearly price at that time, with 60 days' notice: we email the licence's admins at least 60 days before the first renewal at that price. The offer ends when the 25 places are taken. When the founding offer is open, the pricing page shows how many places are left.</p>
 
   <h2>The licence check and usage counts</h2>
-  <p>Breakpatch Team checks the licence with our licence service when it opens and about once a day. Usage counts are part of that check: every check from the app and from <code>breakpatch-ci</code> sends, per seat or machine, how many tests were created and runs made (by hand, from schedules, on the local runner and in CI, passed and failed) and on how many days Breakpatch was used. Your admins and Breakpatch see them in the back office. Nothing from inside a test is sent: no test names, addresses, steps or screenshots. There is no switch for them in Team. See the <a href="../privacy/">privacy policy</a>.</p>
+  <p>Breakpatch Solo and Team check the licence with our licence service when they open and about once a day. Usage counts are part of that check: every check from the app and from <code>breakpatch-ci</code> sends, per seat or machine, how many tests were created and runs made (by hand, from schedules, on the local runner and in CI, passed and failed) and on how many days Breakpatch was used. Your admins and Breakpatch see them in the back office. Nothing from inside a test is sent: no test names, addresses, steps or screenshots. There is no switch for them in Solo or Team. See the <a href="../privacy/">privacy policy</a>.</p>
 
   <h2>Your data</h2>
-  <p>Your tests, runs and workspace live in the Firebase project you connect, which you own and control. We don't host them and can't read them.</p>
+  <p>Your tests, runs and workspace live in the Firebase project you connect, which you own and control, or, on Solo without a workspace, in a folder on your Mac. We don't host them and can't read them.</p>
 
   <h2>Support</h2>
-  <p>Team: email support, answered within 2 business days. Business: support answered within 4 business hours. Email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a>.</p>
+  <p>Solo and Team: email support, answered within 2 business days. Business: support answered within 4 business hours. Email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a>.</p>
 
   <h2>Warranty and liability</h2>
   <p>Breakpatch is provided "as is". We work to keep it reliable and fix problems quickly, but we can't promise it will be free of errors or catch every problem in the software you test. You remain responsible for your own releases.</p>

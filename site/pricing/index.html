@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pricing · Breakpatch</title>
-<meta name="description" content="Breakpatch pricing. Community is free. Team is $16 per person per month billed yearly, or $20 month to month, with one machine licence included. Business for 20 people or more.">
+<meta name="description" content="Breakpatch pricing. Community is free. Solo is $16 a month billed yearly, or $19 month to month, for one person. Team is $16 per person per month billed yearly, or $20 month to month, with one machine licence included. Business for 20 people or more.">
 <link rel="icon" href="../assets/favicon.svg">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="../assets/site.css">
@@ -16,7 +16,7 @@
 <main class="home pricing">
   <section class="pricing-head">
     <h1>Pricing</h1>
-    <p>Free on your own Mac. Pay per person when your team tests together, and per machine for runners and CI.</p>
+    <p>Free on your own Mac. Solo when you want the automation for yourself. Pay per person when your team tests together, and per machine for runners and CI.</p>
   </section>
 
   <aside class="founding" id="founding" aria-labelledby="founding-title" hidden>
@@ -35,6 +35,38 @@
         <li>Help through GitHub issues<span class="prelaunch-text">, or email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a> until the public release</span></li>
       </ul>
       <a class="btn ghost plan-cta" href="../#install">Install Breakpatch</a>
+    </article>
+
+    <article class="edition plan-solo" aria-labelledby="solo-title">
+      <div class="edition-head"><h2 id="solo-title">Solo</h2><span class="price">1 person</span></div>
+      <div class="period" role="group" aria-label="Solo billing period">
+        <button type="button" data-solo-period="year" aria-pressed="true">Yearly</button>
+        <button type="button" data-solo-period="month" aria-pressed="false">Monthly</button>
+      </div>
+      <p class="amount"><span id="solo-price">$16</span> <span class="per" id="solo-per">per month, billed yearly</span></p>
+      <p class="alt" id="solo-alt">$19 month to month. Save $36 a year.</p>
+      <ul>
+        <li>Everything in Community, plus:</li>
+        <li>Fixed automatically: the AI assistant finds buttons that moved</li>
+        <li>Schedules on your Mac, with notifications and result messages</li>
+        <li>The CI command line, with 1 machine licence: one test run at a time</li>
+        <li>Your tests stay in your folder or in Git. Connecting your own workspace is optional</li>
+        <li>For one person, and one Solo per company. For more people, choose Team</li>
+      </ul>
+      <form id="solo-form" class="buy" novalidate>
+        <div class="fields buyer" id="solo-buyer" hidden>
+          <div class="field">
+            <label for="solo-email">Email</label>
+            <input id="solo-email" name="email" type="email" autocomplete="email" required placeholder="you@company.com" maxlength="254">
+            <span class="hint">Your licence key is waiting for this email at account.breakpatch.dev</span>
+          </div>
+        </div>
+        <div class="total"><span id="solo-total">$192 a year</span><span class="hint" id="solo-total-sub">1 person, 1 machine licence.</span></div>
+        <button class="btn plan-cta" id="solo-buy" type="submit">Buy Solo</button>
+        <p class="hint" id="solo-buy-note" hidden>Breakpatch Solo is in a free private beta while we get ready to sell. Email <a href="mailto:support@breakpatch.dev?subject=Breakpatch%20Solo%20beta">support@breakpatch.dev</a> to join.</p>
+        <p class="solo-taken" id="solo-taken" role="status" hidden>Someone at <span id="solo-taken-domain"></span> already has Breakpatch Solo. Solo is one per company, so <a href="#team-title">Team</a> is the plan for more people there.</p>
+        <p class="buy-error" id="solo-buy-error" role="alert" hidden></p>
+      </form>
     </article>
 
     <article class="edition team plan-team" aria-labelledby="team-title">
@@ -118,8 +150,10 @@
     <dl>
       <dt>What's a machine licence?</dt>
       <dd>People take seats. A Mac that runs tests for the whole team (the local runner) or a build server that runs your tests takes a machine licence. Each machine licence runs one test at a time, so running two at once needs two. Team includes one. Extra ones are $40 a month, or $384 a year, always at list price.<br><span class="dev-note"><b>For developers:</b> A machine licence covers one test run at a time on any machine; a pipeline running N jobs in parallel needs N licences. A CI machine takes one when it runs <code>breakpatch-ci</code>.</span></dd>
+      <dt>Who is Solo for?</dt>
+      <dd>One person who wants the automation for themselves: fixed automatically, schedules on your Mac, notifications, result messages and the CI command line. It works on your tests folder or Git, with nothing to set up in the cloud. You can connect your own workspace if you want run requests, the local runner and version history, still for just you. Solo is one per company: if someone at your company email domain already has it, choose Team. Moving to Team later keeps your tests.</dd>
       <dt>How do I get my licence key?</dt>
-      <dd>After checkout, sign in at <a href="https://account.breakpatch.dev">account.breakpatch.dev</a> with the email you bought with. Your key is shown there once. A workspace admin enters it once in Breakpatch, in Settings → Licence. Then invite your team: the invite link sets up each person's licence, so they don't enter a key. The local runner and CI machines use a machine licence.</dd>
+      <dd>After checkout, sign in at <a href="https://account.breakpatch.dev">account.breakpatch.dev</a> with the email you bought with. Your key is shown there once. On Solo, enter it in Breakpatch, in Settings → Licence. On Team, a workspace admin enters it once in Settings → Licence. Then invite your team: the invite link sets up each person's licence, so they don't enter a key. The local runner and CI machines use a machine licence.</dd>
       <dt>Can I change the number of people later?</dt>
       <dd>Yes, from your account page. Adding or removing seats or machine licences is charged or credited straight away, pro rata for the rest of the billing period; credits go against your next payments. Cancel any time from Manage billing: the licence keeps working until the end of the period you paid for.</dd>
       <dt>Who handles the payment?</dt>
