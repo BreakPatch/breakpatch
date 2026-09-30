@@ -263,20 +263,25 @@ then uses the AI assistant when that isn't enough (`engine/src/breakpatch_engine
   accessibility tree, through open and closed shadow roots and same- and cross-origin iframes;
   no page script runs). Only accessible names, roles, labels and text are used, never CSS or
   XPath selectors, and the answer is a point on the screen like any other.
-- Each page is routed once, the first time something is looked for on it, and again after it
-  navigates or a step changes most of the screen. **Visual** when it has a Flutter host
+- Each page is routed the first time something is looked for on it, and again after it
+  navigates or a step changes most of the screen (a verdict of "too few controls" is only kept
+  for that call: a page that is still loading looks the same). **Visual** when it has a Flutter host
   (`flt-glass-pane`, `flutter-view`, `flt-scene-host`), a `<canvas>` over a quarter of the
   viewport or more, or fewer than 3 controls listed; **Fast** otherwise.
 - Fast pages: S0 scores the controls listed for this call against the description (text, role
   and position words, English and Spanish) and answers when its best score is at least 0.65: the
-  element's own box, `at` its centre. No model is loaded for that. When S0 is unsure, the AI
+  element's own box (its part inside the viewport), `at` its centre; controls clipped out of
+  view by a scrolling or overflow box, or covered by something drawn over them (a modal's
+  backdrop), aren't listed. Candidates with the same score go to the first in reading order. No
+  model is loaded for that. When S0 is unsure, the AI
   assistant looks at the screenshot as before.
 - Visual pages: the AI assistant only.
-- `absence: true` says "not found" is the expected answer (a check that something is *not* on the
-  page). On a Fast page only S0's answer counts, and the AI assistant is never asked after it: it
-  always boxes something, so it would report things that aren't there. On a Visual page the AI
-  assistant is all there is. No step type sends it yet; it's there for absence checks to come.
-- The result says which way it was found in `path`: `"fast"` (S0), `"fast→visual"` (S0 was
+- `absence: true` is **reserved for absence checks** (a step checking that something is *not* on
+  the page); no step type sends it yet. It says "not found" is the expected answer: on a Fast page
+  only S0's answer counts, and the AI assistant is never asked after it, because it always boxes
+  something and would report things that aren't there. On a Visual page the AI assistant is all
+  there is.
+- The result says which way it was found in `path`: `"fast"` (S0), `"fast-visual"` (S0 was
   unsure, the AI assistant answered) or `"visual"`, and S0's best score in `s0Score` whenever S0
   ran. The app may ignore both. A `null` result has neither; the engine logs every call's path, S0
   score, number of controls and timings (`breakpatch.locate`).

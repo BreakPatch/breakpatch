@@ -1,6 +1,7 @@
-"""The fast locator's control list (dom/extract.py) on the experiment's fixture pages, in the
-engine's own browser at 1440 x 900. Ported from the harness's tests/test_extract.py (11 tests),
-plus a check that the lists are the harness's own, name for name."""
+"""The fast locator's control list (dom/extract.py) on the fixture pages, in the engine's own
+browser at 1440 x 900. Ported from the System 1 experiment's harness tests (11 tests), plus
+clipped and covered controls, overlapping reads, and a check against the reference lists (for the
+experiment's own states, the harness's lists name for name)."""
 import asyncio
 import json
 import statistics
@@ -12,6 +13,7 @@ from conftest import needs_browser
 from breakpatch_engine.browser import BrowserSession
 from breakpatch_engine.config import Timings
 from breakpatch_engine.dom.extract import ID_REF_ATTRS, Extractor, list_hash
+from domtrack import TrackingExtractor, tracked
 
 pytestmark = needs_browser
 MODES = ("auto", "full", "partial")
@@ -29,7 +31,7 @@ def lists():
             for sid, state in domsite.states().items():
                 await domsite.load_state(b.page, base, state)
                 for mode in MODES:
-                    ex = await Extractor(b.page, (1440, 900), track="data-gt-id", ax_mode=mode).open()
+                    ex = await TrackingExtractor(b.page, (1440, 900), ax_mode=mode).open()
                     try:
                         out[(sid, mode)] = await ex.extract()
                         if sid == "fx05-s0" and mode == "auto":
@@ -52,7 +54,7 @@ def by_name(ex, name):
 
 
 def idx(ex, gt):
-    return ex.tracked[gt]["index"]
+    return tracked(ex)[gt]["index"]
 
 
 def test_schema_and_no_tracking_attribute_in_the_list(lists):
@@ -66,9 +68,10 @@ def test_schema_and_no_tracking_attribute_in_the_list(lists):
     assert ex.list_hash == list_hash((1440, 900), ex.candidates)
 
 
-def test_lists_are_the_harness_lists(lists):
-    """Name for name, role for role, in the same order as the experiment's extractor gave on its
-    Mac (boxes differ with the fonts, so they're left out)."""
+def test_lists_are_the_reference_lists(lists):
+    """Name for name, role for role, in order (boxes differ with the fonts, so they're left out).
+    tests/make_reference_lists.py writes the file; for fx01 to fx05 it holds the experiment's
+    harness lists."""
     with open(domsite.DOM / "reference_lists.json") as f:
         ref = json.load(f)["lists"]
     for sid in domsite.states():
@@ -102,8 +105,8 @@ def test_disabled_hidden_and_off_screen(lists):
     names = {c["name"] for c in ex.candidates}
     assert "Ghost" not in names and "Hidden" not in names  # opacity 0, visibility hidden
     assert "Load more" not in names                       # below the fold
-    assert ex.tracked["load-more"]["index"] is None
-    assert ex.tracked["load-more"]["box"] is not None     # measured all the same
+    assert tracked(ex)["load-more"]["index"] is None
+    assert tracked(ex)["load-more"]["box"] is not None     # measured all the same
 
 
 def test_scrolled_state(lists):
@@ -128,7 +131,7 @@ def test_open_and_closed_shadow_dom(lists):
     assert len(by_name(ex, "Add to cart")) == 2
     assert len(by_name(ex, "Details")) == 2                # nested open shadow roots
     for g in ("buy-closed", "gift-switch", "search-closed"):   # a closed shadow root
-        assert ex.tracked[g]["index"] is not None, g
+        assert tracked(ex)[g]["index"] is not None, g
     sw = ex.candidates[idx(ex, "gift-switch")]
     assert (sw["role"], sw["name"]) == ("switch", "Gift wrap")
     assert ex.candidates[idx(ex, "search-closed")]["text"] == ""
@@ -145,7 +148,7 @@ def test_same_and_cross_origin_iframes(lists):
     assert pay["landmark"] == "form: Card"
     sub = ex.candidates[idx(ex, "subscribe")]
     assert sub["box"][0] > 20 + 60 + 5 + 7 + 13
-    assert ex.tracked["below-iframe-fold"]["index"] is None     # clipped by the iframe's own viewport
+    assert tracked(ex)["below-iframe-fold"]["index"] is None     # clipped by the iframe's own viewport
     names = [c["name"] for c in ex.candidates]
     assert names.index("Back") + 1 == names.index("Newsletter email")
     assert names[-1] == "Done"
@@ -154,10 +157,10 @@ def test_same_and_cross_origin_iframes(lists):
 
 def test_hover_only_and_opened_controls(lists):
     base, hover = get(lists, "fx04-s0"), get(lists, "fx04-s1")
-    assert base.tracked["mi-logout"]["index"] is None
+    assert tracked(base)["mi-logout"]["index"] is None
     assert hover.candidates[idx(hover, "mi-logout")]["role"] == "menuitem"
     card = get(lists, "fx04-s2")
-    assert base.tracked["quick-view"]["index"] is None and idx(card, "quick-view") is not None
+    assert tracked(base)["quick-view"]["index"] is None and idx(card, "quick-view") is not None
     opened = get(lists, "fx04-s3")
     assert opened.candidates[idx(opened, "opt-archive")]["role"] == "option"
     soup = base.candidates[idx(base, "soup-a")]              # div soup, found by cursor:pointer
@@ -176,8 +179,8 @@ def test_dense_page_count_and_speed(lists):
     p50 = statistics.median(lists[1])
     print(f"\n[fx05 dense, 400 candidates] extract p50 = {p50:.1f} ms")
     # Through Playwright's driver this is slower than the harness's direct DevTools port (40 ms on
-    # an M-series Mac); a loose bound for slow CI machines.
-    assert p50 < 3000
+    # an M-series Mac): 400 to 700 ms on a 4-core Linux CI machine. Twice that fails.
+    assert p50 < 1400
 
 
 def test_volatile_id_references_dont_change_a_list_s_identity():
@@ -188,3 +191,43 @@ def test_volatile_id_references_dont_change_a_list_s_identity():
     assert list_hash((1440, 900), a) == list_hash((1440, 900), b)
     c = [{**a[0], "attrs": {"aria-controls": ":r1:", "aria-expanded": "true"}}]
     assert list_hash((1440, 900), a) != list_hash((1440, 900), c)
+
+
+def test_controls_clipped_out_of_view_are_left_out(lists):
+    ex = get(lists, "fx06-s0")
+    t = tracked(ex)
+    assert idx(ex, "slide-1") is not None                          # the carousel's slide on show
+    assert t["slide-2"]["index"] is None and t["slide-3"]["index"] is None   # the others, clipped
+    assert len(by_name(ex, "Shop now")) == 1
+    assert idx(ex, "row-1") is not None and t["row-8"]["index"] is None      # an inner list's scroll
+    assert [c["name"] for c in ex.candidates if c["name"].startswith("Row")] == ["Row 1", "Row 2", "Row 3", "Row 4"]
+    assert idx(ex, "escaped") is not None      # positioned outside a clipping box that isn't its containing block
+    assert idx(ex, "inbox") is not None        # a small badge over it, a click-through layer over everything
+
+
+def test_controls_under_a_modal_are_left_out(lists):
+    ex = get(lists, "fx07-s0")
+    t = tracked(ex)
+    for gt in ("menu", "email", "form-save"):               # under the backdrop, header included
+        assert t[gt]["index"] is None, gt
+    assert [c["name"] for c in ex.candidates] == ["Unsaved changes", "Save", "Discard"]
+    assert ex.candidates[idx(ex, "dlg-save")]["landmark"] == "dialog: Unsaved changes"
+
+
+async def test_overlapping_reads_on_one_extractor_don_t_mix():
+    """Each extract() keeps its own state: two at once on the same sessions give the same list."""
+    base, stop = domsite.serve()
+    b = BrowserSession(Timings.fast())
+    try:
+        await b.open(base + "fx01_plain/index.html", domsite.VIEWPORT)
+        ex = await Extractor(b.page, (1440, 900)).open()
+        try:
+            alone = (await ex.extract()).list_hash
+            both = await asyncio.gather(ex.extract(), ex.extract(), ex.extract())
+            assert [e.list_hash for e in both] == [alone] * 3
+            assert [e.count for e in both] == [24] * 3
+        finally:
+            await ex.close()
+    finally:
+        await b.close()
+        stop()

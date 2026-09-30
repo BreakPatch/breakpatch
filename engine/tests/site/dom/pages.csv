@@ -4,3 +4,5 @@ fx02_shadow,synthetic,,CC0,,fx02_shadow/index.html,wc_closed_shadow,good,ecommer
 fx03_iframe,synthetic,,CC0,,fx03_iframe/index.html,iframe_cross_origin,medium,login_form,lt20,en,light,0,fixture
 fx04_hover,synthetic,,CC0,,fx04_hover/index.html,server_html,poor,nav_menu,lt20,en,light,0,fixture
 fx05_dense,synthetic,,CC0,,fx05_dense/index.html,server_html,good,data_grid,100_400,en,light,0,fixture
+fx06_clip,synthetic,,CC0,,fx06_clip/index.html,server_html,good,carousel,lt20,en,light,0,fixture
+fx07_modal,synthetic,,CC0,,fx07_modal/index.html,server_html,good,dialog,lt20,en,light,0,fixture

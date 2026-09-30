@@ -12,7 +12,7 @@ from pathlib import Path
 from . import checks, config, imaging, labels
 from .actions import FILE_REF, POINTER_ACTIONS, ActionFailed, Context, parse_secrets, perform, sample_path
 from .browser import BrowserSession
-from .dom.flow import PATH_FAST, LocateFlow
+from .dom.flow import LocateFlow
 from .locator import Locator
 from .protocol import NULL, EngineError
 
@@ -524,15 +524,7 @@ class Recorder:
         found = await self.finder.locate(description.strip(), absence=absence)
         if found.box is None:
             return NULL
-        box = imaging.clamp_box(found.box, self.b.width, self.b.height)
-        # A box over most of the page isn't an answer: the model boxes the whole screen when what
-        # was described isn't there (DESK-04). Not found, so nothing is clicked. (An element the
-        # page itself lists is an answer, however big.)
-        if found.path != PATH_FAST and imaging.box_area(box) > config.LOCATE_MAX_SHARE * self.b.width * self.b.height:
-            return NULL
-        # The click point is the centre of the box found (S0: of the element's own box).
-        at = found.at if found.path == PATH_FAST else [round((box[0] + box[2]) / 2, 1), round((box[1] + box[3]) / 2, 1)]
-        out = {"box": box, "at": at, "target": description.strip(), "frame": seq, "path": found.path}
+        out = {"box": found.box, "at": found.at, "target": description.strip(), "frame": seq, "path": found.path}
         if found.s0_score is not None:
             out["s0Score"] = found.s0_score
         return out

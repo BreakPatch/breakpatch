@@ -377,7 +377,7 @@ async def test_locate_maps_box_and_handles_not_found(site):
         got = await hx.call("record.locate", {"description": "the blue thing a bit left of the middle"})
         got.pop("frame"), got.pop("s0Score")
         assert got == {"box": MOVED_BOX, "at": [490.0, 222.0], "target": "the blue thing a bit left of the middle",
-                       "path": "fast→visual"}
+                       "path": "fast-visual"}
         hx.locator.box = None
         from breakpatch_engine.protocol import NULL
         assert await hx.call("record.locate", {"description": "a unicorn"}) is NULL

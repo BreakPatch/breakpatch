@@ -26,7 +26,7 @@ def pick(description, cands=FORM):
 
 
 def test_the_thresholds_are_the_frozen_ones():
-    # results/S0_tuned_thresholds.json of the System 1 experiment: T = 0.65, M = 0.00
+    # frozen by the System 1 experiment after its grid search on the development pages: T 0.65, M 0.00
     assert (s0.ACCEPT_SCORE, s0.ACCEPT_LEAD) == (0.65, 0.0)
     assert (s0.W_TEXT, s0.W_ROLE, s0.W_POS) == (0.6, 0.2, 0.2)
     assert s0.accepts(0.65, 0.65)           # a tie at the top still answers (lead 0 >= M)
@@ -110,3 +110,27 @@ def test_testid_and_label_count_as_text():
                                          ([-40, 880, 60, 940], [0.0, 880, 60, 900.0])])
 def test_the_click_point_is_the_centre_of_the_box_on_screen(box, visible):
     assert s0.visible_box(box, (1440, 900)) == visible
+
+
+def test_ties_go_to_the_first_in_reading_order_and_are_counted():
+    # Document order starts at the bottom row: a tie must not pick it.
+    rows = [cand(0, "button", "Delete", [400, 300, 460, 320]), cand(1, "button", "Delete", [400, 100, 460, 120]),
+            cand(2, "button", "Delete", [400, 200, 460, 220]), cand(3, "button", "Archive", [500, 100, 560, 120])]
+    ans = s0.locate("Delete", rows)
+    assert ans.choice == 1 and ans.ties == 3 and ans.lead == 0.0     # accepted (lead 0 >= M), flagged
+    assert s0.locate("Archive", rows).ties == 1
+
+
+def test_nth_takes_its_number_as_the_ordinal():
+    edits = [cand(i, "button", "Edit", [400, 100 + 50 * i, 440, 120 + 50 * i]) for i in range(4)]
+    assert s0.parse("the nth 3 Edit button")["q"] == "edit"
+    assert pick("the nth 3 Edit button", edits) == 2
+
+
+def test_a_region_and_a_position_phrase_together():
+    for d in ("the Save button in the Edit profile dialog on the right",
+              "the Save button on the right in the Edit profile dialog"):
+        p = s0.parse(d)
+        assert p["region"] == "edit profile dialog" and ("x", 1) in p["pos"], (d, p)
+        assert pick(d) == 6
+    assert s0.parse("Save in the top bar")["region"] == "top bar"     # a single phrase is as before

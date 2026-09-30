@@ -1,5 +1,5 @@
 {
-"note": "The harness extractor's lists for these states (scripts/harness/fixtures/render/*/candidates.json, Chromium 153 on macOS), boxes left out: they depend on the fonts.",
+"note": "The fixture states' control lists (tests/make_reference_lists.py writes this file), boxes left out. fx01 to fx05 are the System 1 experiment's harness lists, name for name.",
 "lists": {
 "fx01-s0": [
 {
@@ -5360,6 +5360,110 @@
 "label": "",
 "text": "R25C16",
 "landmark": "main: Grid",
+"disabled": false,
+"attrs": {}
+}
+],
+"fx06-s0": [
+{
+"index": 0,
+"role": "button",
+"name": "Shop now",
+"label": "",
+"text": "Shop now",
+"landmark": "region: Offers",
+"disabled": false,
+"attrs": {}
+},
+{
+"index": 1,
+"role": "button",
+"name": "Row 1",
+"label": "",
+"text": "Row 1",
+"landmark": "main",
+"disabled": false,
+"attrs": {}
+},
+{
+"index": 2,
+"role": "button",
+"name": "Row 2",
+"label": "",
+"text": "Row 2",
+"landmark": "main",
+"disabled": false,
+"attrs": {}
+},
+{
+"index": 3,
+"role": "button",
+"name": "Row 3",
+"label": "",
+"text": "Row 3",
+"landmark": "main",
+"disabled": false,
+"attrs": {}
+},
+{
+"index": 4,
+"role": "button",
+"name": "Row 4",
+"label": "",
+"text": "Row 4",
+"landmark": "main",
+"disabled": false,
+"attrs": {}
+},
+{
+"index": 5,
+"role": "button",
+"name": "Sign out",
+"label": "",
+"text": "Sign out",
+"landmark": "main",
+"disabled": false,
+"attrs": {}
+},
+{
+"index": 6,
+"role": "button",
+"name": "Inbox",
+"label": "",
+"text": "Inbox",
+"landmark": "main",
+"disabled": false,
+"attrs": {}
+}
+],
+"fx07-s0": [
+{
+"index": 0,
+"role": "heading",
+"name": "Unsaved changes",
+"label": "",
+"text": "Unsaved changes",
+"landmark": "dialog: Unsaved changes",
+"disabled": false,
+"attrs": {}
+},
+{
+"index": 1,
+"role": "button",
+"name": "Save",
+"label": "",
+"text": "Save",
+"landmark": "dialog: Unsaved changes",
+"disabled": false,
+"attrs": {}
+},
+{
+"index": 2,
+"role": "button",
+"name": "Discard",
+"label": "",
+"text": "Discard",
+"landmark": "dialog: Unsaved changes",
 "disabled": false,
 "attrs": {}
 }

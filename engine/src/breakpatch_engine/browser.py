@@ -127,9 +127,12 @@ class BrowserSession:
         self._frames: OrderedDict[int, str] = OrderedDict()
         self._changed_at: float | None = None    # when the frame stream last saw the page change
         self.start_origin: str | None = None     # the site the browser was opened on
-        # Main-frame navigations so far (same-document ones too): the fast locator routes a page
-        # again after one (dom/flow.py).
+        # Navigations of the current page's main frame so far (same-document ones too): the fast
+        # locator routes a page again after one (dom/flow.py).
         self.navigations = 0
+        # Called (async, no arguments) when the current page changes and before the browser
+        # closes, by what holds on to the page (the fast locator's CDP sessions).
+        self.page_watchers: list = []
 
     # ---------- lifecycle ----------
 
@@ -188,6 +191,7 @@ class BrowserSession:
             await self.goto(url, start=True)
 
     async def close(self) -> None:
+        await self._tell_watchers()
         await self._stop_stream()
         for t in list(self._download_tasks):
             t.cancel()
@@ -246,7 +250,7 @@ class BrowserSession:
         """Belt and braces for what route interception can't see (Chromium serves file:, chrome:
         and about: pages itself): a main frame that ends up on one goes back to about:blank."""
         try:
-            if frame.parent_frame is None:
+            if frame.parent_frame is None and frame.page is self.page:
                 self.navigations += 1
             if frame.parent_frame is not None or is_web_address(frame.url) or frame.url.startswith(_ERROR_PAGE):
                 return
@@ -279,9 +283,18 @@ class BrowserSession:
             if open_pages:
                 await self._switch_to(open_pages[-1])   # e.g. an SSO popup closed itself
 
+    async def _tell_watchers(self) -> None:
+        for watcher in list(self.page_watchers):
+            try:
+                await watcher()
+            except Exception as e:  # noqa: BLE001
+                log.debug("page watcher: %s", e)
+
     async def _switch_to(self, page) -> None:
         if page not in self.pages:
             self._on_new_page(page)
+        if page is not self.page:
+            await self._tell_watchers()
         self.page = page
         try:
             await page.bring_to_front()
