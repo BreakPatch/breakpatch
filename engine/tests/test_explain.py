@@ -108,3 +108,39 @@ async def test_an_explainers_answer_is_checked_and_cached():
     with pytest.raises(EngineError) as err:
         await engine.handlers()["run.explain"](params(p, reason="setUpFailed"))
     assert err.value.code == "bad_request"
+
+
+async def test_a_late_explanation_goes_on_and_a_run_waits_for_it(monkeypatch):
+    """The model call behind an explanation can't be cut short: past TIMEOUT_S the report gets
+    null, the call goes on, and a run started meanwhile waits for it before using the model."""
+    import asyncio
+    from breakpatch_engine import service
+    monkeypatch.setattr(explain, "TIMEOUT_S", 0.05)
+    release = asyncio.Event()
+    order: list[str] = []
+
+    class Slow(Explainer):
+        async def explain(self, failure, locator_fn):
+            await release.wait()
+            order.append("explained")
+            return {"summary": "Late.", "cause": "moved", "suggestion": "rerecord"}
+
+    engine = Engine(lambda *a: None, timings=Timings.fast(), explainer=Slow())
+    assert await engine.handlers()["run.explain"](params(shot())) == {"explanation": None}
+    assert len(engine._explaining) == 1                                   # still working
+
+    async def fake_run(self, p, stop):
+        order.append("run")
+        return {"runId": p["runId"], "result": "pass", "durationMs": 0, "steps": []}
+    monkeypatch.setattr(service.Runner, "run", fake_run)
+    await engine.handlers()["run.start"]({"runId": "r2", "startUrl": "https://x.example", "viewport": {"width": 800, "height": 600},
+                                          "steps": [], "settings": {"autoFix": False, "failOnFix": False}, "secrets": {}})
+    await asyncio.sleep(0.05)
+    assert order == []                                                    # the run waits
+    release.set()
+    for _ in range(50):
+        if "run" in order:
+            break
+        await asyncio.sleep(0.01)
+    assert order == ["explained", "run"]
+    assert not engine._explaining

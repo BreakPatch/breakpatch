@@ -423,7 +423,10 @@ is looking at.
 - The app keeps an answer on the saved run, as the failed `StepRun`'s `explanation` (the same
   object), so the report, result messages and new issues can show it without asking again.
 - `explanation: null`: it couldn't tell, or took longer than 10 s. Asking again tries again. An
-  answer is cached per failure screenshot while the engine runs, so asking again is instant.
+  answer is cached per failure screenshot while the engine runs, so asking again is instant. An
+  answer that took too long isn't cut short (the AI assistant's work can't be): it finishes in the
+  background, and a `run.start` sent meanwhile starts its steps once it has (30 s at most), so
+  the run doesn't wait on the AI assistant mid-run. `run.start` still answers at once.
 - `not_ready`: Community (no explainer registered), no licence with the `explain` feature (see
   Licence), or no AI assistant downloaded. `busy` while a run is going: its own use of the AI
   assistant (healing, a step's note) is never slowed.

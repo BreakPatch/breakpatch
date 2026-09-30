@@ -22,6 +22,9 @@ TRY_TIMEOUT = 15.0        # seconds; the UI says "No reply after 15 s"
 _TEAM_HEALER = object()   # default: whatever plugins.py found (the Team engine's healer, or none)
 _TEAM_EXPLAINER = object()   # the same for the explainer
 EXPLAIN_CACHE = 64        # explanations kept in memory (per failure screenshot)
+# A run asked for while an explanation is still being worked out waits for it this long at most
+# (its model call can't be cut short: it holds the model), so the run's own AI use isn't slowed.
+EXPLAIN_DRAIN_S = 30.0
 
 
 def default_locator_factory() -> Callable[[], Locator]:
@@ -63,6 +66,8 @@ class Engine:
         self.explainer: explain.Explainer | None = (plugins.explainer() if explainer is _TEAM_EXPLAINER
                                                     else explainer)  # type: ignore[assignment]
         self._explained: dict[tuple, asyncio.Future] = {}
+        # Explanations still working, including ones whose answer came too late for the report.
+        self._explaining: set[asyncio.Task] = set()
         self.timings = timings or config.Timings.from_env()
         self.locator_fn = locator_fn or default_locator_factory()
         self.browser = BrowserSession(self.timings, on_frame=lambda d: emit("frame", d), headless=headless)
@@ -339,6 +344,7 @@ class Engine:
 
         async def go():
             try:
+                await self._drain_explanations()
                 ended = await runner.run(p, stop)
             except Exception as e:  # noqa: BLE001
                 log.exception("run crashed")
@@ -361,9 +367,10 @@ class Engine:
     async def run_explain(self, p: dict) -> dict:
         """"Why did this fail?" for one failed step of a finished run (explain.py): `{ explanation:
         {summary, cause, suggestion} | null }`. Asked by the report on demand, never during a run:
-        the run has ended, and a run going now gets `busy` so its own use of the AI assistant is
-        never slowed. Cached per failure screenshot; null (it couldn't tell, or took longer than
-        explain.TIMEOUT_S) isn't cached, so asking again tries again."""
+        the run has ended, and a run going now gets `busy`. An answer that takes longer than
+        explain.TIMEOUT_S comes back null (and isn't cached, so asking again tries again), but its
+        model call can't be cut short and goes on in the background; a run started meanwhile waits
+        for it first (at most EXPLAIN_DRAIN_S), so the run's own use of the model isn't slowed."""
         ex = self.explainer
         if ex is None:
             raise EngineError("not_ready", "Explaining failures is part of Breakpatch Team.")
@@ -408,12 +415,24 @@ class Engine:
             timings=sr.get("timings") if isinstance(sr.get("timings"), dict) else {},
             old_at=sr.get("oldAt") if isinstance(sr.get("oldAt"), list) else None,
             new_at=sr.get("newAt") if isinstance(sr.get("newAt"), list) else None)
-        try:
-            out = await asyncio.wait_for(ex.explain(failure, self.locator_fn), explain.TIMEOUT_S)
-        except asyncio.TimeoutError:
-            log.info("no explanation within %.0f s", explain.TIMEOUT_S)
+        work = asyncio.ensure_future(ex.explain(failure, self.locator_fn))
+        self._explaining.add(work)
+        work.add_done_callback(lambda t: (self._explaining.discard(t), t.cancelled() or t.exception()))   # a late error is logged, not raised
+        # Not wait_for: cancelling the coroutine wouldn't stop the model's thread, only hide it.
+        done, _ = await asyncio.wait({work}, timeout=explain.TIMEOUT_S)
+        if not done:
+            log.info("no explanation within %.0f s (it goes on in the background)", explain.TIMEOUT_S)
             return None
-        return explain.clean(out)
+        return explain.clean(work.result())
+
+    async def _drain_explanations(self) -> None:
+        """Before a run: let any explanation still working finish, so the run doesn't wait on the model."""
+        if not self._explaining:
+            return
+        log.info("a run waits for %d explanation(s) to finish", len(self._explaining))
+        _, late = await asyncio.wait(set(self._explaining), timeout=EXPLAIN_DRAIN_S)
+        if late:
+            log.warning("starting the run with an explanation still working")
 
     # ---------------------------------------------------------------- set-up and clean-up calls
 
