@@ -27,7 +27,53 @@ export interface IssueInput {
   noLocalPaths?: boolean;
 }
 
-export interface IssueContent { title: string; markdown: string }
+/** A run of text with its marks. Plain text: the renderers escape it for their format. */
+export interface Inline { text: string; strong?: boolean; em?: boolean; code?: boolean; href?: string }
+/** One block of the write-up. */
+export type IssueBlock =
+  | { kind: 'paragraph'; inline: Inline[] }
+  | { kind: 'heading'; text: string }
+  | { kind: 'bullets'; items: Inline[][] }
+  /** The steps as they ran: numbers as written ("2.3" inside shared steps), the failed one marked. */
+  | { kind: 'steps'; items: { number: string; label: string; failed: boolean }[] }
+  | { kind: 'image'; url: string; alt: string };
+
+/**
+ * The write-up as a small document: the same content for every format. toMarkdown() is what
+ * Copy as Markdown, GitHub and Linear get; Team renders the blocks to Jira's ADF itself, so no
+ * format depends on another's escaping.
+ */
+export interface IssueDoc { title: string; blocks: IssueBlock[]; toMarkdown(): string }
+
+export interface IssueContent { title: string; markdown: string; doc: IssueDoc }
+
+const mdInline = (i: Inline): string => {
+  if (i.code) return `\`${i.text.replace(/`/g, '')}\``;
+  let t = mdText(i.text);
+  if (i.href) t = `[${t}](${i.href})`;
+  if (i.strong) t = `**${t}**`;
+  if (i.em) t = `_${t}_`;
+  return t;
+};
+const mdLine = (inline: Inline[]) => inline.map(mdInline).join('');
+
+/** The blocks as Markdown, the dialect GitHub, Linear and Copy as Markdown take. */
+export function blocksToMarkdown(blocks: IssueBlock[]): string {
+  const out = blocks.map(b => {
+    switch (b.kind) {
+      case 'paragraph': return mdLine(b.inline);
+      case 'heading': return `### ${mdText(b.text)}`;
+      case 'bullets': return b.items.map(i => `- ${mdLine(i)}`).join('\n');
+      case 'steps': return b.items.map(s => `${s.number}. ${mdText(s.label)}${s.failed ? ' ← failed here' : ''}`).join('\n');
+      case 'image': return `![${mdText(b.alt)}](${b.url})`;
+    }
+  });
+  return out.join('\n\n') + '\n';
+}
+
+export function issueDoc(title: string, blocks: IssueBlock[]): IssueDoc {
+  return { title, blocks, toMarkdown: () => blocksToMarkdown(blocks) };
+}
 
 /** The AI assistant's explanation (#7), on the step's result or the run, when there is one. */
 export function explanationIn(...from: unknown[]): { summary: string; cause?: string; suggestion?: string } | undefined {
@@ -85,37 +131,39 @@ const SOURCE: Record<Run['source'], string> = { desktop: 'a person, on their Mac
 
 export function issueContent(i: IssueInput): IssueContent {
   const { run, test, steps, step, stepRun: r, number, appName } = i;
-  const lines: string[] = [];
+  const blocks: IssueBlock[] = [];
+  const t = (text: string, marks: Omit<Inline, 'text'> = {}): Inline => ({ text, ...marks });
   const why = explanationIn(r, run);
-  lines.push(`**${mdText(reasonTitle(r?.reason, step))}.** ${mdText(reasonText(r?.reason, step))}`, '');
+  blocks.push({ kind: 'paragraph', inline: [t(`${reasonTitle(r?.reason, step)}.`, { strong: true }), t(` ${reasonText(r?.reason, step)}`)] });
   if (why) {
-    lines.push(`**The AI assistant says:** ${mdText(why.summary)}`);
+    blocks.push({ kind: 'paragraph', inline: [t('The AI assistant says:', { strong: true }), t(` ${why.summary}`)] });
     // The explanation's cause and suggestion are codes (data/types.ts Explanation): their plain words, as the report shows them.
     const cause = why.cause ? (CAUSE_TEXT as Record<string, string>)[why.cause] : undefined;
     const next = why.suggestion ? (SUGGESTION_TEXT as Record<string, string>)[why.suggestion] : undefined;
-    if (cause) lines.push(`- Likely cause: ${mdText(cause)}`);
-    if (next) lines.push(`- Suggested: ${mdText(next)}`);
-    lines.push('');
+    const items = [cause && [t(`Likely cause: ${cause}`)], next && [t(`Suggested: ${next}`)]].filter((x): x is Inline[] => !!x);
+    if (items.length) blocks.push({ kind: 'bullets', items });
   }
-  lines.push('### Steps', '');
-  for (const s of stepsUpTo(steps, step.id)) {
-    const failed = s.number === number;
-    lines.push(`${s.number}. ${mdText(s.label)}${failed ? ' ← failed here' : ''}`);
-  }
-  lines.push('', '### Expected', '', mdText(expectedText(step)), '', '### Seen', '', mdText(`${reasonTitle(r?.reason, step)}.`));
+  blocks.push({ kind: 'heading', text: 'Steps' },
+    { kind: 'steps', items: stepsUpTo(steps, step.id).map(s => ({ ...s, failed: s.number === number })) },
+    { kind: 'heading', text: 'Expected' }, { kind: 'paragraph', inline: [t(expectedText(step))] },
+    { kind: 'heading', text: 'Seen' }, { kind: 'paragraph', inline: [t(`${reasonTitle(r?.reason, step)}.`)] });
   const note = systemNote(run, r);
-  if (note) lines.push('', mdText(note));
-  if (i.imageUrl) lines.push('', `![Screenshot of step ${number}](${i.imageUrl})`);
-  else if (r?.screenshotPath && !i.noLocalPaths) lines.push('', `Screenshot: \`${r.screenshotPath.replace(/`/g, '')}\``);
-  lines.push('', '### Where', '',
-    `- App: ${mdText(appName)}`,
-    ...(test?.startUrl ? [`- Start address: ${mdText(test.startUrl)}`] : []),
-    `- Test: ${mdText(run.testName)}, version ${run.testVersion}`,
-    `- Run by: ${mdText(runBy(run))}, ${SOURCE[run.source]} (${WHERE[run.source].label}), on ${mdText(run.machine)}`,
-    `- When: ${formatDateTime(run.startedAt)}`,
-    `- Run ID: ${mdText(run.id)}`);
-  if (step.target) lines.push(`- What to look for: ${mdText(step.target)}`);
-  if (i.reportUrl) lines.push('', `[Open the report in Breakpatch](${i.reportUrl})`);
-  lines.push('', '_Made with Breakpatch._');
-  return { title: issueTitle(run, step, number, r), markdown: lines.join('\n') + '\n' };
+  if (note) blocks.push({ kind: 'paragraph', inline: [t(note)] });
+  if (i.imageUrl) blocks.push({ kind: 'image', url: i.imageUrl, alt: `Screenshot of step ${number}` });
+  else if (r?.screenshotPath && !i.noLocalPaths) blocks.push({ kind: 'paragraph', inline: [t('Screenshot: '), t(r.screenshotPath, { code: true })] });
+  blocks.push({ kind: 'heading', text: 'Where' }, {
+    kind: 'bullets', items: [
+      [t(`App: ${appName}`)],
+      ...(test?.startUrl ? [[t(`Start address: ${test.startUrl}`)]] : []),
+      [t(`Test: ${run.testName}, version ${run.testVersion}`)],
+      [t(`Run by: ${runBy(run)}, ${SOURCE[run.source]} (${WHERE[run.source].label}), on ${run.machine}`)],
+      [t(`When: ${formatDateTime(run.startedAt)}`)],
+      [t(`Run ID: ${run.id}`)],
+      ...(step.target ? [[t(`What to look for: ${step.target}`)]] : []),
+    ],
+  });
+  if (i.reportUrl) blocks.push({ kind: 'paragraph', inline: [t('Open the report in Breakpatch', { href: i.reportUrl })] });
+  blocks.push({ kind: 'paragraph', inline: [t('Made with Breakpatch.', { em: true })] });
+  const doc = issueDoc(issueTitle(run, step, number, r), blocks);
+  return { title: doc.title, markdown: doc.toMarkdown(), doc };
 }

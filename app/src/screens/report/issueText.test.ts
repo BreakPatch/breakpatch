@@ -95,3 +95,19 @@ describe('the issue for a failed step', () => {
     expect(expectedText({ ...done, expectNote: 'The dialog closes and the project is listed' })).toBe('The dialog closes and the project is listed');
   });
 });
+
+describe('the issue as a document (IssueDoc)', () => {
+  it('is blocks with plain text and marks; its Markdown is made from them', () => {
+    const c = content(failed('targetNotFound', { screenshotPath: '/tmp/a_b.png' }), { reportUrl: 'https://breakpatch.dev/report#r=web/rn-1' });
+    expect(c.doc.title).toBe(c.title);
+    expect(c.doc.toMarkdown()).toBe(c.markdown);
+    expect(c.doc.blocks.map(b => b.kind)).toEqual(['paragraph', 'heading', 'steps', 'heading', 'paragraph', 'heading', 'paragraph', 'paragraph', 'heading', 'bullets', 'paragraph', 'paragraph']);
+    const steps = c.doc.blocks.find(b => b.kind === 'steps');
+    expect(steps).toMatchObject({ items: expect.arrayContaining([{ number: '6', label: 'Click Done', failed: true }]) });
+    // The text in the blocks is unescaped; only toMarkdown escapes it.
+    expect(JSON.stringify(c.doc.blocks)).not.toContain('\\\\');
+    expect(c.doc.blocks).toContainEqual({ kind: 'paragraph', inline: [{ text: 'Screenshot: ' }, { text: '/tmp/a_b.png', code: true }] });
+    expect(c.markdown).toContain('Screenshot: `/tmp/a_b.png`');
+    expect(c.doc.blocks).toContainEqual({ kind: 'paragraph', inline: [{ text: 'Open the report in Breakpatch', href: 'https://breakpatch.dev/report#r=web/rn-1' }] });
+  });
+});
