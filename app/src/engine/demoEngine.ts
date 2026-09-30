@@ -1,7 +1,7 @@
 // Simulated engine for the browser preview and tests. Timings follow the prototype:
 // "Checking the screen…" ~1 s, run steps ~750 ms each, AI thinking ~1.5 s.
-import type { Box, FailReason, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import type { CallReply, Engine, EngineEvents, FileChoice, HandInput, LocateResult, Near, EngineIntent, Proposal, RecordParams, RunStart, SetupTaskName, SystemInfo } from './engine';
+import type { Box, Explanation, FailReason, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
+import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
 import { edition } from '../edition';
 import { labelFor } from './labels';
 import { MODELS_DIR } from './paths';
@@ -169,6 +169,25 @@ export class DemoEngine implements Engine {
     await this.sleep(400);
     if (!/^https:\/\/[^/\s]+/i.test(call.url.trim())) return { ok: false, error: 'invalid', message: 'Enter a full address, starting with https://' };
     return { ok: true, status: 200, ms: 400 };
+  }
+
+  /** The preview's "Why did this fail?": a fixed sentence per reason, as the Team engine would put it. */
+  async explain(step: Step, stepRun: StepRun, _viewport: Pick<Viewport, 'width' | 'height'>): Promise<Explanation | null> {
+    if (edition.name !== 'team') throw new EngineError('not_ready', 'Explaining failures is part of Breakpatch Team.');
+    await this.sleep(1200);
+    const name = (step.target ?? '').split(',')[0].trim().replace(/^(the|a|an)\s+/i, '');
+    const the = name ? `The ${name}` : 'What this step acts on';
+    switch (stepRun.reason) {
+      case 'targetNotFound': case 'healFailed':
+        return { summary: `${the} isn't where it was. It's now at the top right of the screen.`, cause: 'moved', suggestion: 'rerecord' };
+      case 'noChange':
+        return { summary: `The step used ${name ? `the ${name}` : 'the page'}, but nothing on the page changed the way it did when it was recorded.`, cause: 'realBug', suggestion: 'reportBug' };
+      case 'timeout':
+        return { summary: 'The page was still loading or changing when the time to wait ran out.', cause: 'slowLoad', suggestion: 'raiseWait' };
+      case 'unexpectedScreen':
+        return { summary: "After this step the screen didn't look the way it did when it was recorded.", cause: 'pageChanged', suggestion: 'acceptChange' };
+      default: return null;
+    }
   }
 }
 

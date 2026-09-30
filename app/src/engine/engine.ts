@@ -1,5 +1,5 @@
 // UI-side view of the Python engine (see engine/PROTOCOL.md).
-import type { Box, HttpCall, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
+import type { Box, Explanation, HttpCall, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
 
 export interface SystemInfo {
   memoryGb: number; chip: string; os: string; engineVersion: string;
@@ -169,6 +169,13 @@ export interface Engine {
 
   /** "Try it": one request under the same rules as a run's set-up and clean-up calls. */
   tryCall(call: HttpCall, appUrl: string, secrets?: Record<string, string>): Promise<CallReply>;
+
+  /**
+   * "Why did this fail?" for one failed step of a finished run (Team; engine `run.explain`).
+   * null when the AI assistant couldn't tell. Throws EngineError `not_ready` in Community, without
+   * the licence feature or without the AI assistant; `not_found` when the screenshot isn't on this Mac.
+   */
+  explain(step: Step, stepRun: StepRun, viewport: Pick<Viewport, 'width' | 'height'>): Promise<Explanation | null>;
 }
 
 /**

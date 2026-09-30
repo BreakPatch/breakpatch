@@ -27,11 +27,13 @@ export interface Features {
   /** Headless command line for CI. */
   ci: boolean;
   modelOverride: boolean;
+  /** "Why did this fail?": the AI assistant explains a failed step in the report (engine run.explain). */
+  explain: boolean;
 }
 
 export const NO_FEATURES: Features = {
   collaboration: false, versions: false, autoFix: false, calibration: false,
-  schedules: false, runner: false, ci: false, modelOverride: false,
+  schedules: false, runner: false, ci: false, modelOverride: false, explain: false,
 };
 
 type Screen = ComponentType | LazyExoticComponent<ComponentType>;

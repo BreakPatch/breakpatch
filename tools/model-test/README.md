@@ -56,3 +56,14 @@ pip install -U mlx-vlm pillow
 python model_test.py            # or: --models 2b 4b
 open results/index.html
 ```
+
+## Explanations ("Why did this fail?")
+
+`explain_test.py` scores the Team engine's explanations of failed steps with the real model (roadmap #7). Put failure screenshots in `screenshots/`, one row each in `explain_cases.csv` (the step's reason, target and old position, and the cause you expect), then, with the Breakpatch Team engine installed and a licence token that includes explanations:
+
+```sh
+BP_LICENCE_TOKEN=… PYTHONPATH=../../engine/src python explain_test.py --model <the model folder>
+open results/explain.html
+```
+
+It passes with at least 80 % right, nothing made up for a target that is visible where it was, and every answer within 10 seconds. Include at least one of each: moved, renamed, removed, covered by a dialog, and the page didn't change.

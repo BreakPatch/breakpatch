@@ -34,14 +34,15 @@ Breakpatch comes in these editions. **Community** is free and open source: one p
 20. [Members and roles](#members-and-roles)
 21. [Version history](#version-history)
 22. [Fixed automatically](#fixed-automatically)
-23. [Schedules](#schedules)
-24. [The local runner](#the-local-runner)
-25. [Run requests](#run-requests)
-26. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
-27. [Result messages](#result-messages)
-28. [Security rules](#security-rules)
-29. [Licences and seats](#licences-and-seats)
-30. [The back office](#the-back-office)
+23. [Why did this fail?](#why-did-this-fail)
+24. [Schedules](#schedules)
+25. [The local runner](#the-local-runner)
+26. [Run requests](#run-requests)
+27. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
+28. [Result messages](#result-messages)
+29. [Security rules](#security-rules)
+30. [Licences and seats](#licences-and-seats)
+31. [The back office](#the-back-office)
 
 ---
 
@@ -227,6 +228,8 @@ Common reasons:
 
 Every error has **Copy details**, to paste into an issue or send to a developer.
 
+In Team, a failed step also has **Why did this fail?**: the AI assistant says in plain words what changed on the screen. See [Why did this fail?](#why-did-this-fail).
+
 ### Recorded on another system
 
 Screen checks compare the page with how it looked when the step was recorded. Another system, or another version of the test browser, can draw the same text a pixel off or a little smoother, so record and run a test on the same kind of machine when you can.
@@ -268,7 +271,7 @@ On sites with good page structure (buttons, links and fields that say what they 
 - **Standard** is downloaded during setup (about 3 GB). It works well for almost every team.
 - **Larger** is optional on Macs with 32 GB of memory or more (about 5 GB). It's slower to load and rarely finds more.
 
-Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it, both when you click and when you describe a step, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)) is Team only.
+Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it, both when you click and when you describe a step, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)) and explaining a failure ([Why did this fail?](#why-did-this-fail)) are Team only.
 
 It's kept in `~/Library/Application Support/Breakpatch/models/`.
 
@@ -334,6 +337,7 @@ Everything in this part needs a paid edition: **Breakpatch Team**, or **Solo** f
 - **Members and roles**: member, admin, a runner account and a CI account.
 - **Version history.** Every save is kept. Runs show which version they tested, and you can restore any version.
 - **Fixed automatically.** When a button has moved, the AI assistant finds it during the run and carries on. You accept the new position in the report.
+- **Why did this fail?** In the report, the AI assistant says in plain words what changed, for example "The Save button now reads “Save changes”", with the likely cause and what to do.
 - **Schedules** for suites, on any days and time.
 - **The local runner**: one Mac that runs suites for the whole team.
 - **Run requests** from CI or any other tool, and **result messages** after every suite run.
@@ -354,6 +358,7 @@ Solo is for one person who wants the automation for themselves: $19 a month, or 
 | Machine licences | None | 1 | 1 included, you can buy more | 5 included, you can buy more |
 | Where tests are kept | A folder | A folder or Git, or your own workspace if you want one | Your company's Firebase project | Your company's Firebase project |
 | Fixed automatically | No | Yes | Yes | Yes |
+| Why did this fail? | No | Yes | Yes | Yes |
 | Schedules, notifications and result messages | No | Yes, on your Mac | Yes | Yes |
 | The CI command line | No | Yes | Yes | Yes |
 | Run requests, the local runner and version history | No | With your own workspace | Yes | Yes |
@@ -488,6 +493,23 @@ Settings → **Automatic fixing**:
 These apply to runs on the Mac where you set them.
 
 The first few runs of a new test also learn which parts of the page change by themselves, like clocks and carousels, so they don't fail the test.
+
+## Why did this fail?
+
+"Couldn't find the Save button" says what failed. **Why did this fail?** says what changed, so you can tell a real bug from a change someone made on purpose.
+
+Open the run report, pick the failed step and press **Why did this fail?** under the reason. After a few seconds the AI assistant answers, marked **From the AI assistant**:
+
+- **What changed**, in a sentence or two. For example: "The Save button now reads “Save changes”", "The Save button isn't where it was. It's now at the top right of the screen", "The Save button is hidden behind the “Cookies” dialog" or "The page shows an error: “Page not found”".
+- **Likely cause**: it moved, its text changed, the page changed, the page was slow to load, the page shows an error, or it looks like a real bug.
+- **Suggested**: re-record this step, accept the change by re-recording it, give the page longer with a wait before the step, or report it as a bug.
+
+It looks at the screenshot of the failure and what the page said was on screen then, and compares them with how the step was recorded. It only says what it found: if the button is still where it was, it never says it moved. When it can't tell, it says so; compare the two screens instead.
+
+- It's worked out when you ask, never during the run, so it never slows a run down. Once it has answered, the answer is kept with the run, and **Copy details** includes it.
+- It needs the AI assistant on this Mac, a licence that includes it, and the failure's screenshot, which stays on the Mac that ran the test. For a run on another Mac (the local runner, or a teammate's), ask on that Mac.
+- It explains steps that couldn't find what they act on, didn't change the page, or left the screen looking different. A missing saved secret, a failed set-up call or a run you stopped already say it all.
+- Everything stays on the Mac: the screenshot and what the page said are kept next to each other in the screenshots folder, like any failure screenshot.
 
 ## Schedules
 

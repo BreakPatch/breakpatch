@@ -3,7 +3,7 @@
 import { edition } from '../../edition';
 import { AuthError, cleanDetails, detailsDiff, startUrlNote, upTo, type Backend, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
 import type {
-  App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
+  App, Explanation, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
 } from '../types';
 import { communityDemo, people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
 
@@ -178,6 +178,12 @@ export class DemoBackend implements Backend {
       s.tests = s.tests.map(t => t.appId === r.appId && t.id === r.testId ? { ...t, lastRun: { result: r.result === 'fail' ? 'fail' : r.healedCount ? 'healed' : 'pass', at: r.startedAt, by } } : t);
     });
     return this.wait(run);
+  }
+  async saveExplanation(appId: string, runId: string, stepId: string, e: Explanation) {
+    this.mutate(s => {
+      s.runs = s.runs.map(r => r.appId === appId && r.id === runId
+        ? { ...r, steps: r.steps.map(sr => sr.stepId === stepId && sr.result === 'failed' ? { ...sr, explanation: e } : sr) } : r);
+    });
   }
 
   // ---- suites and runner ----

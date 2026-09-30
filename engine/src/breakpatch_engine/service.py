@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from . import calls, config, install, plugins
+from . import calls, config, explain, install, plugins
 from .actions import parse_secrets
 from .browser import BrowserSession
 from .locator import Locator, MlxLocator, NoLocator
@@ -20,6 +20,8 @@ Emit = Callable[[str, dict], None]
 
 TRY_TIMEOUT = 15.0        # seconds; the UI says "No reply after 15 s"
 _TEAM_HEALER = object()   # default: whatever plugins.py found (the Team engine's healer, or none)
+_TEAM_EXPLAINER = object()   # the same for the explainer
+EXPLAIN_CACHE = 64        # explanations kept in memory (per failure screenshot)
 
 
 def default_locator_factory() -> Callable[[], Locator]:
@@ -52,10 +54,15 @@ def near_param(v) -> dict | None:
 class Engine:
     def __init__(self, emit: Emit, timings: config.Timings | None = None,
                  locator_fn: Callable[[], Locator] | None = None, headless: bool | None = None,
-                 healer: Healer | None | object = _TEAM_HEALER):
+                 healer: Healer | None | object = _TEAM_HEALER,
+                 explainer: "explain.Explainer | None | object" = _TEAM_EXPLAINER):
         self.emit = emit
         # Fallback healing is Team-only (plugins.py); None runs moved targets as targetNotFound.
         self.healer: Healer | None = plugins.healer() if healer is _TEAM_HEALER else healer  # type: ignore[assignment]
+        # So is "Why did this fail?" (explain.py); None answers run.explain with not_ready.
+        self.explainer: explain.Explainer | None = (plugins.explainer() if explainer is _TEAM_EXPLAINER
+                                                    else explainer)  # type: ignore[assignment]
+        self._explained: dict[tuple, asyncio.Future] = {}
         self.timings = timings or config.Timings.from_env()
         self.locator_fn = locator_fn or default_locator_factory()
         self.browser = BrowserSession(self.timings, on_frame=lambda d: emit("frame", d), headless=headless)
@@ -91,6 +98,7 @@ class Engine:
             "record.chooseFile": lambda p: self._sync(self.recorder.choose_file(p)),
             "run.start": self.run_start,
             "run.stop": self.run_stop,
+            "run.explain": self.run_explain,
             "call.try": self.call_try,
         }
 
@@ -326,7 +334,8 @@ class Engine:
             raise EngineError("not_ready", "The browser isn't open.")
         stop = asyncio.Event()
         self._activity = "run"
-        runner = Runner(self.browser, self.locator_fn, self.timings, self.emit, healer=self.healer)
+        runner = Runner(self.browser, self.locator_fn, self.timings, self.emit, healer=self.healer,
+                        explainer=self.explainer)
 
         async def go():
             try:
@@ -348,6 +357,63 @@ class Engine:
         if self._run and (not p.get("runId") or str(p["runId"]) == self._run[0]):
             self._run[2].set()
         return {}
+
+    async def run_explain(self, p: dict) -> dict:
+        """"Why did this fail?" for one failed step of a finished run (explain.py): `{ explanation:
+        {summary, cause, suggestion} | null }`. Asked by the report on demand, never during a run:
+        the run has ended, and a run going now gets `busy` so its own use of the AI assistant is
+        never slowed. Cached per failure screenshot; null (it couldn't tell, or took longer than
+        explain.TIMEOUT_S) isn't cached, so asking again tries again."""
+        ex = self.explainer
+        if ex is None:
+            raise EngineError("not_ready", "Explaining failures is part of Breakpatch Team.")
+        if self._activity == "run":
+            raise EngineError("busy", "A test is running. Ask again when it has finished.")
+        step, sr = p.get("step"), p.get("stepRun")
+        if not isinstance(step, dict) or not isinstance(sr, dict):
+            raise EngineError("bad_request", "There's no failed step to explain.")
+        reason = sr.get("reason")
+        if sr.get("result", "failed") != "failed" or reason not in explain.EXPLAINED:
+            raise EngineError("bad_request", "This step's failure can't be explained any further.", str(reason)[:40])
+        shot = explain.in_screenshots(sr.get("screenshotPath") or "")
+        if shot is None:
+            raise EngineError("not_found", "The screenshot of this failure isn't on this Mac, so it can't be explained here.")
+        key = (str(shot), str(step.get("id")), reason)
+        got = self._explained.get(key)
+        if got is None or (got.done() and (got.cancelled() or got.exception() or got.result() is None)):
+            got = asyncio.ensure_future(self._explain(ex, step, sr, reason, shot, p.get("viewport")))
+            self._explained[key] = got
+            while len(self._explained) > EXPLAIN_CACHE:
+                self._explained.pop(next(iter(self._explained)))
+        return {"explanation": await asyncio.shield(got)}
+
+    async def _explain(self, ex, step: dict, sr: dict, reason: str, shot: Path, viewport) -> dict | None:
+        def load():
+            from PIL import Image
+            with Image.open(shot) as im:
+                return im.convert("RGB"), explain.read_page(shot)
+
+        image, page = await asyncio.to_thread(load)
+        vw = viewport.get("width") if isinstance(viewport, dict) else None
+        vh = viewport.get("height") if isinstance(viewport, dict) else None
+        size = (int(vw), int(vh)) if isinstance(vw, (int, float)) and isinstance(vh, (int, float)) and vw > 0 and vh > 0 \
+            else image.size
+        if image.size != size:
+            image = image.resize(size)       # a Retina screenshot: boxes are viewport pixels
+        num = lambda v: int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None  # noqa: E731
+        failure = explain.Failure(
+            step=step, reason=reason, viewport=size, image=image, page=page,
+            message=sr.get("message") if isinstance(sr.get("message"), str) else None,
+            pre_distance=num(sr.get("preDistance")), post_distance=num(sr.get("postDistance")),
+            timings=sr.get("timings") if isinstance(sr.get("timings"), dict) else {},
+            old_at=sr.get("oldAt") if isinstance(sr.get("oldAt"), list) else None,
+            new_at=sr.get("newAt") if isinstance(sr.get("newAt"), list) else None)
+        try:
+            out = await asyncio.wait_for(ex.explain(failure, self.locator_fn), explain.TIMEOUT_S)
+        except asyncio.TimeoutError:
+            log.info("no explanation within %.0f s", explain.TIMEOUT_S)
+            return None
+        return explain.clean(out)
 
     # ---------------------------------------------------------------- set-up and clean-up calls
 
