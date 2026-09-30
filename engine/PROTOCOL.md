@@ -476,6 +476,23 @@ read or its shared steps can't be found, 3 = no usable licence. Like the app, it
 `apps/<appId>/shared/` next to the test's `tests/` folder. This engine's own command line is `serve` (the sidecar) and `info`;
 `breakpatch-engine run` exits 2 and points at `breakpatch-ci`.
 
+**From the workspace.** `breakpatch-ci run --workspace FILE.bpworkspace --suite <id|name>` (or
+`--test <testId|appId/testId>`, `--version latest|released|N`, `--label TEXT`) reads the tests
+straight from the Team workspace instead of files, signed in as a Firebase Auth user with the `ci`
+role (`BREAKPATCH_CI_EMAIL`, `BREAKPATCH_CI_PASSWORD`; taken out of the environment once read, and
+refused as a secret's value like the licence key). Each test gets the same run request as a file's,
+plus `appUrl` (the app's base address, for set-up and clean-up calls). A workspace test's start
+page and app address can be changed by any member, so its secrets aren't sent as bare values:
+the pipeline names their sites (`--secret NAME=https://site[,…]`), each goes as
+`{ value, origins }` with those sites, and nothing runs (exit 2) when a test uses a secret that isn't
+listed, or whose sites don't include the test's start page, `appUrl` or a call that sends it. Each run is written to
+`apps/<appId>/runs` as the app writes one, with `source: "ci"` and the local `screenshotPath` left
+out; a suite also writes `suiteRuns`. A suite prints `{ result, suite, suiteId, version, counts,
+tests: [{ name, appId, testId, version, result, failedStep?, note?, runId? }], suiteRunId?, saved }`
+and exits 0 when it passed (with fixes too) and 1 when a test failed; 2 also covers a workspace,
+suite or test that can't be read and a sign-in that fails. The Team repo's
+`engine/src/breakpatch_team_engine/workspace.py` has the details.
+
 **Another system.** A test file's `recordedOn` is compared with the CI machine as in Where a
 test was recorded. On a mismatch `breakpatch-ci` prints one line on stderr before the run
 ("breakpatch-ci: this test was recorded on macOS 15 (Chromium 140), running on Linux
