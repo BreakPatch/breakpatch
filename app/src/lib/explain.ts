@@ -22,7 +22,7 @@ export const SUGGESTION_TEXT: Record<Explanation['suggestion'], string> = {
   rerecord: 'Re-record this step.',
   acceptChange: 'If this change is expected, re-record this step to accept it.',
   raiseWait: 'Give the page longer: add a wait before this step.',
-  reportBug: 'Report it as a bug. Copy details has what the developers need.',
+  reportBug: 'Report it as a bug. Copy has what the developers need.',
 };
 
 /** Whether "Why did this fail?" can be asked for this step's result. `demo`: no screenshot needed. */

@@ -50,7 +50,7 @@ describe('Why did this fail?', () => {
     expect(await screen.findByText('The Save button now reads “Save changes”.')).toBeInTheDocument();
     expect(screen.getByText('From the AI assistant')).toBeInTheDocument();
     expect(screen.getByText('Its text changed')).toBeInTheDocument();
-    expect(screen.getByText('If this change is expected, re-record this step to accept it.')).toBeInTheDocument();
+    expect(screen.queryByText('If this change is expected, re-record this step to accept it.')).toBeNull();   // with the actions instead (DES2-08)
     expect(fake.explain).toHaveBeenCalledWith(SAVE, FAILED, VP);
   });
 
@@ -113,6 +113,16 @@ describe('Why did this fail?', () => {
     cleanup();
     why({ stepId: 's3', result: 'passed' });
     expect(screen.queryByRole('button', { name: 'Why did this fail?' })).toBeNull();
+  });
+
+  it('puts its suggestion in What to try, with the actions, not twice (DES2-08)', async () => {
+    fake.explain.mockResolvedValue(RENAMED);
+    render(<MemoryRouter><ReportDetail run={run} test={undefined} steps={[SAVE]} step={SAVE} stepRun={FAILED} number="3" appName="Web" /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: 'Why did this fail?' }));
+    await screen.findByText(RENAMED.summary);
+    const tip = screen.getByText('If this change is expected, re-record this step to accept it.');
+    expect(tip.closest('.rp-try')).not.toBeNull();
+    expect(screen.getAllByText(/re-record this step to accept it/)).toHaveLength(1);
   });
 
   it('sits under the reason in the report', () => {

@@ -27,7 +27,8 @@ export type AiState =
    * "Click Next button?" and the step is done and recorded only on Confirm (Enter, or the same spot
    * again). `box`: where on the page; none for typing into the focused field or going to an address.
    */
-  | { state: 'proposal'; params: RecordParams; frame?: number; box?: Box; label: string; target?: string; named: boolean; repeat?: number };
+  /** `said`: the sentence it came from, for a described step with no spot on the page (typing, an address, a scroll). */
+  | { state: 'proposal'; params: RecordParams; frame?: number; box?: Box; label: string; target?: string; named: boolean; repeat?: number; said?: string; note?: string };
 
 export interface ActionOptions {
   writeSource: 'typed' | 'secret' | 'generated';
@@ -297,7 +298,10 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     const token = ++aiToken.current;
     const read = readIntent(t);
     let it: Intent;
-    if (read.kind === 'unhandled') { setAi({ state: 'idle' }); setText(t); onErrorRef.current(read.message); return; }
+    setRetryNote(false);
+    // A sentence this can't do: said next to the box (until it's edited), not in a toast that goes.
+    if (read.kind === 'unhandled') { setAi({ state: 'idle' }); setText(t); setUnhandled(read.message); return; }
+    setUnhandled(null);
     if (read.kind === 'intent') it = read.intent;
     else {
       setAi({ state: 'thinking', text: t, what: read.target });
@@ -307,7 +311,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
       if (token !== aiToken.current) return;
       it = got ?? chosenIntent(read.target, action, options);
     }
-    if (!it.target) { act(it, token); return; }
+    if (!it.target) { act(it, token, t); return; }
     const what = it.target;
     setAi({ state: 'thinking', text: t, what });
     let res = null;
@@ -321,13 +325,13 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
    * the focus and going to an address are shown for Confirm ("Write "the password" into the field
    * that has the focus?"), so a misread sentence never reaches the page. A wait is done at once.
    */
-  function act(it: Intent, token: number) {
+  function act(it: Intent, token: number, said: string) {
     if (token !== aiToken.current) return;
     setAi({ state: 'idle' });
     const times = it.repeat > 1 ? `, ${it.repeat} times` : '';
     const ask = (params: RecordParams, label: string, box?: Box) => {
       aiToken.current++;
-      setAi({ state: 'proposal', params, box, label: label + times, named: true, repeat: it.repeat });
+      setAi({ state: 'proposal', params, box, label: label + times, named: true, repeat: it.repeat, said });
     };
     switch (it.action) {
       case 'scroll': case 'swipe': {
@@ -336,7 +340,18 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
         return;
       }
       case 'waitFor': void record({ action: 'waitFor', durationMs: Math.max(1, it.seconds ?? options.seconds) * 1000 }); return;
-      case 'write': if (it.text) { const params: RecordParams = { action: 'write', text: it.text }; ask(params, `${defaultLabel(params)} into the field that has the focus`); } return;
+      case 'write': if (it.text) {
+        const params: RecordParams = { action: 'write', text: it.text };
+        ask(params, `${defaultLabel(params)} into the field that has the focus`);
+        // Where it will type: the focused field outlined and named, or a word that there's none.
+        const asked = aiToken.current;
+        void engine.focused().then(f => {
+          if (asked !== aiToken.current) return;
+          setAi(a => a.state !== 'proposal' ? a : f.box
+            ? { ...a, box: f.box, label: `${defaultLabel(params)} into ${f.name ?? 'the field that has the focus'}${times}` }
+            : { ...a, label: `${defaultLabel(params)}${times}`, note: 'No field is selected: click the field first.' });
+        }).catch(() => undefined);
+      } return;
       case 'navigate': if (it.url) { const params: RecordParams = { action: 'navigate', nav: 'url', url: it.url }; ask(params, defaultLabel(params)); } return;
       default: return;
     }
@@ -365,10 +380,18 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     void recordTimes(a.params, extra, a.repeat ?? 1);
   }
   const retryAi = () => {
+    // Described, with no spot on the page: the sentence goes back in the box to change, not "click the page".
+    if (ai.state === 'proposal' && ai.said !== undefined) { const t = ai.said; cancelAi(); setText(t); setRefocus(n => n + 1); return; }
     if (ai.state === 'proposal') { cancelAi(); setRetryNote(true); return; }     // pick again on the page
     if (ai.state === 'result' || ai.state === 'notfound') void describe(ai.text);
   };
   const [retryNote, setRetryNote] = useState(false);
+  /** Bumped when the describe box should take the focus again (Try again on a described step). */
+  const [refocus, setRefocus] = useState(0);
+  /** What the describe box said it can't do, shown by the box until the sentence changes. */
+  const [unhandled, setUnhandled] = useState<string | null>(null);
+  // "Click the page again" is for the proposal it was about: gone once anything else is asked.
+  useEffect(() => { if (ai.state !== 'idle') setRetryNote(false); }, [ai.state]);
   function confirmAi() {
     if (ai.state === 'proposal') { confirmProposal(); return; }
     if (ai.state !== 'result') return;
@@ -471,7 +494,10 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     steps, dirty, selectedId, openLoopId, rerecordId, action, text, options, ai, busyId, checking, savedPill, sample, addedId,
     /** "Clicking…", "Waiting for the page…": what the step being recorded is doing now. */
     phaseText: busyId !== null ? phaseText(phase, busyAction) : null,
-    stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
+    stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setOptions, setDirty,
+    /** The describe box's text; editing it clears what it said it can't do. */
+    setText: (t: string) => { setText(t); setUnhandled(null); },
+    unhandled, refocus,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi, pageScroll, retryNote,
     insertAfterId, setInsertAfter, unplayed, atStepId, played,
     hand, setHand, manual, handPlayed, handAsk,
@@ -502,7 +528,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     },
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),
     thinking: ai.state === 'thinking' ? thinkingText(ai.what) : null,
-    ask: ai.state === 'result' ? intentAskText(ai.what, ai.intent) : ai.state === 'proposal' ? `${ai.label}?` : null,
+    ask: ai.state === 'result' ? intentAskText(ai.what, ai.intent) : ai.state === 'proposal' ? `${ai.label}?${ai.note ? ` ${ai.note}` : ''}` : null,
     notFound: ai.state === 'notfound' ? notFoundText(ai.what) : null,
     busy: busyId !== null,
   };

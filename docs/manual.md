@@ -229,7 +229,7 @@ Common reasons:
 - **Saved secret is missing on this Mac.** Add it in Settings → Saved secrets, then run again.
 - **STAGING_PASSWORD isn't allowed on login.example.com.** The page wasn't one of the secret's sites, so nothing was typed. If that site is right, add it to the secret in Settings → Saved secrets.
 
-Every error has **Copy details**, to paste into a message or send to a developer, and **Copy as Markdown**: a ready-made bug report with a title, the steps up to the failure, what was expected and what was seen, the reason, and where and when it ran. Paste it into GitHub, Jira, Linear or any tracker that takes Markdown. In Team, **Create issue** makes the issue for you: see [Create an issue](#create-an-issue).
+Every error has **Copy**, with two choices: **Plain text**, to paste into a message or send to a developer, and **Markdown, for an issue**: a ready-made bug report with a title, the steps up to the failure, what was expected and what was seen, the reason, and where and when it ran. Paste it into GitHub, Jira, Linear or any tracker that takes Markdown. In Team, **Create issue** makes the issue for you: see [Create an issue](#create-an-issue).
 
 In Team, a failed step also has **Why did this fail?**: the AI assistant says in plain words what changed on the screen. See [Why did this fail?](#why-did-this-fail).
 
@@ -365,7 +365,7 @@ Solo is for one person who wants the automation for themselves: $19 a month, or 
 | Where tests are kept | A folder | A folder or Git, or your own workspace if you want one | Your company's Firebase project | Your company's Firebase project |
 | Fixed automatically | No | Yes | Yes | Yes |
 | Why did this fail? | No | Yes | Yes | Yes |
-| Copy as Markdown | Yes | Yes | Yes | Yes |
+| Copy a failure as Markdown | Yes | Yes | Yes | Yes |
 | Create issue in GitHub, Linear or Jira | No | No | Yes | Yes |
 | Schedules, notifications and result messages | No | Yes, on your Mac | Yes | Yes |
 | The CI command line | No | Yes | Yes | Yes |
@@ -515,7 +515,7 @@ Open the run report, pick the failed step and press **Why did this fail?** under
 
 It looks at the screenshot of the failure and what the page said was on screen then, and compares them with how the step was recorded. It only says what it found: if the button is still where it was, it never says it moved. When it can't tell, it says so; compare the two screens instead.
 
-- It's worked out when you ask, never during the run, so it never slows a run down. Once it has answered, the answer is kept with the run, and **Copy details** includes it.
+- It's worked out when you ask, never during the run, so it never slows a run down. Once it has answered, the answer is kept with the run, on every Mac in the workspace, and **Copy** includes it.
 - It needs the AI assistant on this Mac, a licence that includes it, and the failure's screenshot, which stays on the Mac that ran the test. For a run on another Mac (the local runner, or a teammate's), ask on that Mac.
 - It explains steps that couldn't find what they act on, didn't change the page, or left the screen looking different. A missing saved secret, a failed set-up call or a run you stopped already say it all.
 - Everything stays on the Mac: the screenshot and what the page said are kept next to each other in the screenshots folder, like any failure screenshot.
@@ -865,7 +865,7 @@ On a failed step in a report, **Create issue** writes it up in **GitHub**, **Lin
 
 If a tracker refuses, Breakpatch says why in plain words, for example "GitHub said the token can't create issues in acme/web".
 
-Create issue comes with a Breakpatch Team licence that includes it; licences get it at their next check. In Community, **Copy as Markdown** gives the same text to paste yourself.
+Create issue comes with a Breakpatch Team licence that includes it; licences get it at their next check. In Community, **Copy** → **Markdown, for an issue** gives the same text to paste yourself.
 
 ## Security rules
 

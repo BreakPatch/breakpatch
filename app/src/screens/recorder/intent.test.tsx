@@ -1,13 +1,15 @@
 // The describe box decides the action from the sentence (intent.ts): what to do, what to do it to
 // and how many times. The chosen action only counts when the sentence names none.
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getEngine } from '../../engine';
 import { AI_ACTIONS, chosenIntent, fromEngine, MAX_REPEAT, readIntent, stepperTarget, type Intent } from './intent';
 import { intentAskText } from './describe';
 import { useRecorder } from './useRecorder';
 
 afterEach(() => { vi.restoreAllMocks(); });
+// A field has the focus, with no name the page gives it (the demo page has none at all).
+beforeEach(() => { vi.spyOn(getEngine(), 'focused').mockResolvedValue({ box: [0, 0, 100, 30], name: null }); });
 
 // The engine lives outside the app root, which Vite won't import from, so read it from disk
 // (as paths.test.ts does; Node modules are untyped in the app's tsconfig).
@@ -267,10 +269,14 @@ describe('the recorder does what the sentence says', () => {
     const rec = vi.spyOn(getEngine(), 'recordPoint');
     const { result } = renderHook(() => useRecorder({ viewport: vp, onError }));
     await act(async () => { await result.current.describe('wait for the spinner to go away'); });
-    expect(onError).toHaveBeenCalledWith(expect.stringMatching(/can't wait for something to go away/));
+    // Said by the box until the sentence changes, not in a toast (DES2-11).
+    expect(result.current.unhandled).toMatch(/can't wait for something to go away/);
+    expect(onError).not.toHaveBeenCalled();
     expect(locate).not.toHaveBeenCalled();
     expect(rec).not.toHaveBeenCalled();
     expect(result.current.text).toBe('wait for the spinner to go away');   // kept, to rephrase
+    act(() => { result.current.setText('wait for the spinner'); });
+    expect(result.current.unhandled).toBeNull();
   });
 
   it('a repeat while re-recording re-records the step once and adds the rest right after it', async () => {

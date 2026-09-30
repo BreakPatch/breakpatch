@@ -4,10 +4,13 @@
 // it failed (Team, with the explain feature: WhyFailed).
 import { useNavigate } from 'react-router-dom';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import type { Run, Step, StepRun, Test } from '../../data/types';
+import type { Explanation, Run, Step, StepRun, Test } from '../../data/types';
+import { suggestionText } from '../../lib/explain';
 import { applyStep, LiveView, replay, type LiveMarker, type SampleState } from '../../components/live';
 import { countRows, stepsBefore } from '../../components/steps';
-import { Button, CopyButton, Icon } from '../../components/ui';
+import { useEffect, useState } from 'react';
+import { Button, Icon, Menu } from '../../components/ui';
+import { copyText } from '../../platform';
 import { clock } from '../../components/common/format';
 import { isTauri } from '../../platform';
 import { edition } from '../../edition';
@@ -43,6 +46,9 @@ export interface ReportDetailProps {
 
 export function ReportDetail({ run, test, steps, step, stepRun, number, groupId, appName }: ReportDetailProps) {
   const navigate = useNavigate();
+  // The AI assistant's answer, for its suggestion in "What to try" (WhyFailed shows the rest).
+  const [why, setWhy] = useState<Explanation | null | undefined>(stepRun?.explanation);
+  useEffect(() => { setWhy(stepRun?.explanation); }, [stepRun]);
   const vp = test?.viewport ?? { width: 1440, height: 900 };
   if (!step) {
     const ok = run.result === 'pass';
@@ -111,15 +117,19 @@ export function ReportDetail({ run, test, steps, step, stepRun, number, groupId,
   const failedActions = kind === 'failed' && (
     <>
       {otherSystem && <div className="rp-try" role="note"><div className="rp-try-title">Recorded on another system</div><div className="rp-try-text">{otherSystem}</div></div>}
-      <div className="rp-try"><div className="rp-try-title">What to try</div><div className="rp-try-text">{reasonAdvice(stepRun?.reason)}</div></div>
+      <div className="rp-try">
+        <div className="rp-try-title">What to try</div>
+        {why && suggestionText(why) && <div className="rp-try-ai"><Icon name="auto_awesome" size={16} /><span><b>The AI assistant suggests:</b> {suggestionText(why)}</span></div>}
+        <div className="rp-try-text">{reasonAdvice(stepRun?.reason)}</div>
+      </div>
       <div className="rp-actions">
         {stepRun?.reason === 'secretMissing'
           ? <Button kind="primary" size="lg" icon="key" onClick={() => navigate('/settings/secrets')}>Open Saved secrets</Button>
           : rerecordHere
             ? <Button kind="primary" size="lg" icon="replay" onClick={() => navigate(`/apps/${run.appId}/tests/${run.testId}/record?rerecord=${encodeURIComponent(step.id)}`)}>Re-record this step</Button>
             : <Button kind="primary" size="lg" icon="edit" onClick={() => navigate(`/apps/${run.appId}/shared/${groupId}/edit`)}>Edit shared steps</Button>}
-        <CopyButton size="lg" label="Copy details" copiedLabel="Copied" text={() => copyDetails(run, step, number, stepRun, appName)} />
-        <CopyButton size="lg" label="Copy as Markdown" copiedLabel="Copied" text={() => { const c = issueContent({ run, test, steps, step, stepRun, number, appName }); return `## ${c.title}\n\n${c.markdown}`; }} />
+        <CopyMenu plain={() => copyDetails(run, step, number, stepRun, appName)}
+          markdown={() => { const c = issueContent({ run, test, steps, step, stepRun, number, appName }); return `## ${c.title}\n\n${c.markdown}`; }} />
         {FailActions && <FailActions run={run} stepRun={stepRun ?? { stepId: step.id, result: 'failed' }} step={step} test={test} steps={steps} number={number} appName={appName} />}
         {rerecordHere && stepRun?.reason !== 'secretMissing' && <div className="rp-hint">Re-record takes you back to this step with the page as it was.</div>}
       </div>
@@ -136,10 +146,28 @@ export function ReportDetail({ run, test, steps, step, stepRun, number, groupId,
           <div className="rp-body">{body}</div>
         </div>
       </div>
-      {kind === 'failed' && <WhyFailed run={run} step={step} stepRun={stepRun} viewport={vp} />}
+      {kind === 'failed' && <WhyFailed run={run} step={step} stepRun={stepRun} viewport={vp} onAnswer={setWhy} />}
       {content}
       {failedActions}
       {kind === 'fixed' && FixActions && stepRun && <FixActions run={run} stepRun={stepRun} step={step} test={test} />}
+    </div>
+  );
+}
+
+/** One "Copy ▾" for the write-up, as plain text or as Markdown (for an issue tracker), instead of two twin buttons. */
+function CopyMenu({ plain, markdown }: { plain: () => string; markdown: () => string }) {
+  const [open, setOpen] = useState(false);
+  const [done, setDone] = useState(false);
+  useEffect(() => { if (!done) return; const t = setTimeout(() => setDone(false), 1600); return () => clearTimeout(t); }, [done]);
+  const copy = async (text: () => string) => { await copyText(text()); setDone(true); };
+  return (
+    <div style={{ position: 'relative' }}>
+      <Button size="lg" icon={done ? 'check' : 'content_copy'} iconAfter={done ? undefined : 'expand_more'} aria-haspopup="menu" aria-expanded={open}
+        onClick={() => setOpen(o => !o)}>{done ? 'Copied' : 'Copy'}</Button>
+      <Menu open={open} onClose={() => setOpen(false)} label="Copy the details" width={240} style={{ bottom: 'calc(100% + 6px)', left: 0 }} items={[
+        { label: 'Plain text', icon: 'notes', onSelect: () => void copy(plain) },
+        { label: 'Markdown, for an issue', icon: 'code', onSelect: () => void copy(markdown) },
+      ]} />
     </div>
   );
 }

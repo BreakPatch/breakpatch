@@ -1,6 +1,6 @@
 // Recorder fixes from testing a real build: clicks carry the frame they were made on, the step's
 // state reads plainly while it records, the AI bars float, and menu names stay on one line.
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EngineError, getEngine, type Frame } from '../../engine';
 import { fitScale, LiveView, toViewport } from '../../components/live';
@@ -17,7 +17,7 @@ const { dirname, join } = (await import(/* @vite-ignore */ pathModule)) as { dir
 const here = dirname(fileURLToPath(import.meta.url));
 const css = (p: string) => fs.readFileSync(join(here, p), 'utf8');
 
-afterEach(() => { vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 Element.prototype.scrollIntoView ??= () => undefined;   // not in jsdom
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 const vp = { width: 1440, height: 900 };
@@ -340,5 +340,60 @@ describe('the Enter that sends a sentence never confirms it too (DES2-01)', () =
     expect(confirm).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: 'Enter' });                              // a deliberate one does
     expect(confirm).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('Try again and what the box can\'t do (DES2-09, DES2-11)', () => {
+  it('Try again on a described step puts the sentence back in the box, and says nothing about clicking the page', () => {
+    const { result } = hook();
+    act(() => { void result.current.describe('type hello 3 times'); });
+    expect(result.current.ai.state).toBe('proposal');
+    act(() => { result.current.retryAi(); });
+    expect(result.current.ai.state).toBe('idle');
+    expect(result.current.text).toBe('type hello 3 times');
+    expect(result.current.retryNote).toBe(false);
+    expect(result.current.refocus).toBeGreaterThan(0);
+  });
+
+  it('"click the page again" goes once anything else is asked', () => {
+    vi.spyOn(getEngine(), 'propose').mockResolvedValue({ at: [1, 1] });
+    const { result } = hook();
+    act(() => { result.current.pagePoint([10, 10], 1); });
+    act(() => { result.current.retryAi(); });
+    expect(result.current.retryNote).toBe(true);
+    act(() => { void result.current.describe('type hello'); });
+    expect(result.current.retryNote).toBe(false);
+  });
+
+  it('shows what the box can\'t do by the box, until the sentence changes', async () => {
+    const { AddStepBar } = await import('./AddStepBar');
+    function Bar() {
+      const rec = useRecorder({ viewport: vp, onError: vi.fn() });
+      return <AddStepBar rec={rec} appId="a" allowGroups onInsertGroup={() => undefined} />;
+    }
+    render(<Bar />);
+    const box = screen.getByLabelText('Describe the next step');
+    fireEvent.change(box, { target: { value: 'wait for the spinner to go away' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(await screen.findByText(/can't wait for something to go away/)).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: 'wait for the spinner' } });
+    expect(screen.queryByText(/can't wait for something to go away/)).toBeNull();
+  });
+});
+
+describe('where a described typing step will type (DES2-10)', () => {
+  it('outlines and names the field that has the focus', async () => {
+    vi.spyOn(getEngine(), 'focused').mockResolvedValue({ box: [10, 20, 210, 50], name: 'Email' });
+    const { result } = hook();
+    act(() => { void result.current.describe('type hello'); });
+    await waitFor(() => expect(result.current.ask).toBe('Write "hello" into Email?'));
+    expect(result.current.ai).toMatchObject({ state: 'proposal', box: [10, 20, 210, 50] });
+  });
+
+  it('says so when no field has the focus', async () => {
+    vi.spyOn(getEngine(), 'focused').mockResolvedValue({ box: null, name: null });
+    const { result } = hook();
+    act(() => { void result.current.describe('type hello 2 times'); });
+    await waitFor(() => expect(result.current.ask).toBe('Write "hello", 2 times? No field is selected: click the field first.'));
   });
 });

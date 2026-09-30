@@ -58,6 +58,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   }, [asking, rec]);
 
   useEffect(() => { void secrets.list().then(setSecretNames).catch(() => setSecretNames([])); }, []);
+  // Try again on a described step: its sentence is back in the box, ready to change.
+  useEffect(() => { if (rec.refocus) inputRef.current?.focus(); }, [rec.refocus]);
   useEffect(() => { if (action === 'write' && o.writeSource === 'secret' && !o.secretRef && secretNames[0]) rec.setOptions({ secretRef: secretNames[0] }); }, [action, o.writeSource, o.secretRef, secretNames, rec]);
 
   const closeMenu = () => { setMenu('closed'); actionBtn.current?.focus(); };
@@ -178,6 +180,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' : action === 'write' && o.writeSource !== 'typed' ? true : !!rec.text.trim());
 
   if (rec.retryNote && !rr) hint = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click the page again to pick another spot.</>;
+  // What the box can't do, by the box, until the sentence is changed (not a toast that goes).
+  if (rec.unhandled && !rr) hint = <><Icon name="info" size={16} className="rec-hint-icon" /><span className="grow rec-hint-unhandled" role="status">{rec.unhandled}</span></>;
   if (frozen) hint = <><Icon name="play_arrow" size={16} className="rec-hint-icon" /><span className="grow">{frozen}</span></>;
   else if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span></>;
 

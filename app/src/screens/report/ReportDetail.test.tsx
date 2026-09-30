@@ -23,10 +23,17 @@ describe('the report of a failed step', () => {
     Object.assign(navigator, { clipboard: { writeText } });
     render(<MemoryRouter><ReportDetail run={run} test={undefined} steps={[{ id: 's1', action: 'navigate', label: 'Open the page' }, step]} step={step}
       stepRun={run.steps[1]} number="2" appName="Web app" /></MemoryRouter>);
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Copy as Markdown' })); });
+    // One Copy menu, not twin buttons (DES2-17).
+    expect(screen.queryByRole('button', { name: 'Copy as Markdown' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Markdown, for an issue' })); });
     const text = (writeText.mock.calls[0] as unknown as [string])[0];
     expect(text.startsWith("## Create a project: step 2 Click Done failed: couldn't find the Done button\n")).toBe(true);
     expect(text).toContain('2. Click Done ← failed here');
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Copied' }));
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'Plain text' })); });
+    expect((writeText.mock.calls[1] as unknown as [string])[0]).not.toContain('## ');
     // Community has no Create issue.
     if (edition.name === 'community') expect(screen.queryByRole('button', { name: /Create issue/ })).toBeNull();
   });

@@ -7,12 +7,16 @@ import { useSession } from '../../state/session';
 import { getEngine } from '../../engine';
 import { useFeature } from '../../edition';
 import { Button, Icon, Spinner } from '../../components/ui';
-import { canExplain, causeText, explainProblem, explainStep, suggestionText } from '../../lib/explain';
+import { canExplain, causeText, explainProblem, explainStep } from '../../lib/explain';
 import { isDemo } from '../run/demo';
 
 type State = { kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; e: Explanation | null } | { kind: 'error'; message: string; retry: boolean };
 
-export function WhyFailed({ run, step, stepRun, viewport }: { run: Run; step: Step; stepRun: StepRun | undefined; viewport: Pick<Viewport, 'width' | 'height'> }) {
+/**
+ * `onAnswer`: the explanation once there is one, so the report puts its suggestion with the actions
+ * ("What to try"), next to the button that acts on it, instead of repeating it here.
+ */
+export function WhyFailed({ run, step, stepRun, viewport, onAnswer }: { run: Run; step: Step; stepRun: StepRun | undefined; viewport: Pick<Viewport, 'width' | 'height'>; onAnswer?: (e: Explanation | null) => void }) {
   const on = useFeature('explain');
   const backend = useSession(s => s.backend);
   const [state, setState] = useState<State>(stepRun?.explanation ? { kind: 'done', e: stepRun.explanation } : { kind: 'idle' });
@@ -21,7 +25,9 @@ export function WhyFailed({ run, step, stepRun, viewport }: { run: Run; step: St
   const ask = async () => {
     setState({ kind: 'busy' });
     try {
-      setState({ kind: 'done', e: await explainStep({ engine: getEngine(), backend, run, step, stepRun, viewport }) });
+      const e = await explainStep({ engine: getEngine(), backend, run, step, stepRun, viewport });
+      setState({ kind: 'done', e });
+      onAnswer?.(e);
     } catch (err) {
       const code = (err as { code?: string }).code;
       setState({ kind: 'error', message: explainProblem(err), retry: code !== 'not_ready' && code !== 'not_found' });
@@ -37,7 +43,7 @@ export function WhyFailed({ run, step, stepRun, viewport }: { run: Run; step: St
     );
   }
   const e = state.kind === 'done' ? state.e : null;
-  const cause = e ? causeText(e) : undefined, next = e ? suggestionText(e) : undefined;
+  const cause = e ? causeText(e) : undefined;
   return (
     <div className="rp-why" role="note" aria-label="Why did this fail?" aria-busy={state.kind === 'busy'}>
       <div className="rp-why-by"><Icon name="auto_awesome" size={16} />From the AI assistant</div>
@@ -45,12 +51,7 @@ export function WhyFailed({ run, step, stepRun, viewport }: { run: Run; step: St
       {state.kind === 'done' && e && (
         <>
           <div className="rp-why-text">{e.summary}</div>
-          {(cause || next) && (
-            <div className="rp-why-facts">
-              {cause && <div><span className="rp-why-k">Likely cause</span>{cause}</div>}
-              {next && <div><span className="rp-why-k">Suggested</span>{next}</div>}
-            </div>
-          )}
+          {cause && <div className="rp-why-facts"><div><span className="rp-why-k">Likely cause</span>{cause}</div></div>}
         </>
       )}
       {state.kind === 'done' && !e && (

@@ -99,6 +99,7 @@ class Engine:
             "record.locate": self.record_locate,
             "record.checkpoint": self.record_checkpoint,
             "record.propose": self.record_propose,
+            "record.focused": self.record_focused,
             "record.intent": self.record_intent,
             "record.chooseFile": lambda p: self._sync(self.recorder.choose_file(p)),
             "run.start": self.run_start,
@@ -302,6 +303,13 @@ class Engine:
         if self._activity == "recording":
             raise EngineError("busy", "The engine is still checking the last step.")
         return await self.recorder.propose(p)
+
+    async def record_focused(self, p: dict):
+        """The field that has the keyboard focus: `{box, name}` (nulls when none). For the confirm
+        bar of a described "type …" step, before anything is typed."""
+        self._not_during_run()
+        self.browser.require()
+        return await self.browser.focused()
 
     async def record_locate(self, p: dict):
         self._not_during_run()

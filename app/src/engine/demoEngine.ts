@@ -113,6 +113,9 @@ export class DemoEngine implements Engine {
     return { at, box: hit.box, name: hit.label.replace(/^Click /, ''), target: hit.target };
   }
 
+  /** The sample page never has the keyboard focus. */
+  async focused(): Promise<{ box: Box | null; name: string | null }> { return { box: null, name: null }; }
+
   async recordCheckpoint(region: Box): Promise<Step> {
     this.emit('record.checking', { phase: 'watching' }); await this.sleep(700);
     return { id: 's' + Date.now().toString(36) + (this.nextId++), action: 'checkpoint', label: 'Check something is visible', target: 'Area you picked', region, hash: fakeHash(), tolerance: 8 };

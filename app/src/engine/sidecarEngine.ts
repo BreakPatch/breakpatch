@@ -53,6 +53,7 @@ export class SidecarEngine implements Engine {
   async input(i: HandInput) { await this.call('browser.input', i); }
   async handChooseFile(choice: FileChoice) { await this.call('browser.chooseFile', choice); }
   propose(at: Point, opts: { name?: boolean } = {}) { return this.call<Proposal>('record.propose', { at, ...(opts.name === false ? { name: false } : {}) }); }
+  focused() { return this.call<{ box: Box | null; name: string | null }>('record.focused'); }
   async recordCheckpoint(region: Box, frame?: number) { return (await this.call<{ step: Step }>('record.checkpoint', { region, frame })).step; }
 
   async startRun(r: RunStart) { await this.call('run.start', r); }

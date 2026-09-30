@@ -155,6 +155,8 @@ export interface Engine {
   intent(sentence: string): Promise<EngineIntent | null>;
   /** The element at a point and its name, without acting. `name: false` skips the AI assistant. */
   propose(at: Point, opts?: { name?: boolean }): Promise<Proposal>;
+  /** The field that has the keyboard focus (`record.focused`): its box and name, nulls when none. */
+  focused(): Promise<{ box: Box | null; name: string | null }>;
   /** The answer to a `record.fileChooser` event. */
   chooseFile(choice: FileChoice): Promise<void>;
   /** "Use the page": the user's own input goes straight to the page; nothing is recorded. */
