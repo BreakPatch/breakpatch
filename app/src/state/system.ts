@@ -1,5 +1,6 @@
 // System-wide states shown as banners or blocking screens (design "System states").
 import { create } from 'zustand';
+import { appVersion } from '../platform';
 
 export interface AppError { title: string; reason: string; details?: string; retry?: () => void }
 
@@ -18,6 +19,11 @@ interface SystemState {
    * packaged engine unpacks itself first, which takes a while on a Mac's first start.
    */
   engineReady: boolean;
+  /**
+   * No engine of this app version has answered on this Mac before: the first start, which takes
+   * longer (a new engine is unpacked and macOS checks it). Worked out once, at launch.
+   */
+  firstEngineStart: boolean;
   markEngineReady(): void;
   /** Plain lines about data the backend skipped (a tests-folder file that isn't valid JSON). */
   warnings: string[];
@@ -30,13 +36,23 @@ interface SystemState {
   showError(e: AppError | null): void;
 }
 
+/** The app version whose engine last answered on this Mac. */
+export const ENGINE_STARTED_KEY = 'breakpatch.engineStarted.v1';
+function startedBefore(): boolean {
+  try { return localStorage.getItem(ENGINE_STARTED_KEY) === appVersion(); } catch { return false; }
+}
+function noteStarted() {
+  try { localStorage.setItem(ENGINE_STARTED_KEY, appVersion()); } catch { /* next start says "first" again */ }
+}
+
 export const useSystem = create<SystemState>(set => ({
   updateReady: null,
   updateDismissed: false,
   readOnly: false,
   error: null,
   engineReady: false,
-  markEngineReady: () => set(s => (s.engineReady ? s : { engineReady: true })),
+  firstEngineStart: !startedBefore(),
+  markEngineReady: () => set(s => { if (s.engineReady) return s; noteStarted(); return { engineReady: true }; }),
   warnings: [],
   warningsDismissed: false,
   setWarnings: warnings => set(s => ({ warnings, warningsDismissed: s.warningsDismissed && warnings.join('\n') === s.warnings.join('\n') })),
