@@ -31,6 +31,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/assets/site.css">
+<!-- In <head>: it sets <html data-solo> while Solo is on sale (soloOnSale), before the page is drawn. -->
+<script src="/assets/paddle-config.js"></script>
 <link rel="preload" as="image" href="/assets/shots/recorder-dark.webp" imagesrcset="/assets/shots/recorder-dark.webp 1280w, /assets/shots/recorder-dark@2x.webp 2560w" imagesizes="(min-width: 1184px) 1120px, calc(100vw - 32px)" media="(prefers-color-scheme: dark) and (min-width: 561px)">
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Breakpatch","url":"https://breakpatch.dev/","applicationCategory":"DeveloperApplication","operatingSystem":"macOS 14 or later (Apple Silicon)","description":"AI UI testing for web apps that runs on your Mac: record by clicking or by describing a step to an on-device vision model (Qwen3-VL through MLX), replay with screen checks, and see what broke. No cloud and no per-run fees.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Community edition, free and open source"}}
@@ -65,6 +67,7 @@
             <a href="/manual/#install">What the command does</a>
           </div>
           <p class="reqs">Free and open source · Apple Silicon · macOS 14 or later · 16 GB memory</p>
+          <p class="runs-count" id="runs-count" hidden><b id="runs-count-n"></b> tests run with Breakpatch</p>
         </div>
       </div>
       <figure class="hero-shot">
@@ -323,7 +326,7 @@ suites/smoke.json</pre>
     <div class="wrap">
       <div class="head">
         <h2 id="editions-title">Start free. Bring the team when you're ready.</h2>
-        <p>Community is free and open source, for one person on one Mac. Solo adds the automation for one person. Team shares everything and runs it for you.</p>
+        <p>Community is free and open source, for one person on one Mac.<span class="solo-only"> Solo adds the automation for one person.</span> Team shares everything and runs it for you.</p>
       </div>
       <div class="compare">
         <article class="plan">
@@ -340,7 +343,8 @@ suites/smoke.json</pre>
           </ul>
           <a class="btn ghost" href="#install">Install Community</a>
         </article>
-        <article class="plan">
+        <!-- Solo shows only while it is on sale (assets/paddle-config.js soloOnSale). -->
+        <article class="plan solo-only">
           <div class="plan-head"><h3>Solo</h3><span class="team-tag">Paid</span></div>
           <div class="plan-price"><b>$16</b><span>per month, billed yearly</span></div>
           <p class="price-note">$19 billed monthly · 1 person · 1 machine included</p>
@@ -373,20 +377,20 @@ suites/smoke.json</pre>
       <p class="biz"><strong>Business:</strong> $30 per person per month, billed yearly, 20 people or more. Everything in Team, plus 5 machine licences, choose another AI model, support within 4 business hours and invoice billing. <a href="mailto:support@breakpatch.dev?subject=Breakpatch%20Business">Contact us</a>.</p>
       <div class="table-wrap">
         <table class="matrix stack">
-          <caption>Community, Solo and Team side by side</caption>
-          <thead><tr><th scope="col">Feature</th><th scope="col">Community</th><th scope="col">Solo</th><th scope="col">Team</th></tr></thead>
+          <caption>Community<span class="solo-only">, Solo</span> and Team side by side</caption>
+          <thead><tr><th scope="col">Feature</th><th scope="col">Community</th><th scope="col" class="solo-only">Solo</th><th scope="col">Team</th></tr></thead>
           <tbody>
-            <tr><th scope="row">Record by clicking</th><td class="yes" data-label="Community">Yes</td><td class="yes" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
-            <tr><th scope="row">Describe a step to the local AI</th><td class="yes" data-label="Community">Yes</td><td class="yes" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
-            <tr><th scope="row">The AI names what you click</th><td class="yes" data-label="Community">Yes</td><td class="yes" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
-            <tr><th scope="row">Screen checks and the report</th><td class="yes" data-label="Community">Yes</td><td class="yes" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
-            <tr><th scope="row">Shared steps and suites</th><td class="yes" data-label="Community">Yes</td><td class="yes" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
-            <tr><th scope="row">Where tests are kept</th><td data-label="Community">A folder</td><td data-label="Solo">A folder or Git, or your own workspace</td><td data-label="Team">Your company's Firebase project</td></tr>
-            <tr><th scope="row">History</th><td data-label="Community">Through Git</td><td data-label="Solo">Through Git, or built in with a workspace</td><td data-label="Team">Built in</td></tr>
-            <tr><th scope="row">People</th><td data-label="Community">1</td><td data-label="Solo">1</td><td data-label="Team">Your team</td></tr>
-            <tr><th scope="row">Self-healing tests (Fixed automatically)</th><td class="no" data-label="Community">No</td><td class="yes" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
-            <tr><th scope="row">Local runner and schedules</th><td class="no" data-label="Community">No</td><td data-label="Solo">Schedules on your Mac; the local runner with a workspace</td><td class="yes" data-label="Team">Yes</td></tr>
-            <tr><th scope="row">CI command line and run requests</th><td class="no" data-label="Community">No</td><td data-label="Solo">CI command line; run requests with a workspace</td><td class="yes" data-label="Team">Yes</td></tr>
+            <tr><th scope="row">Record by clicking</th><td class="yes" data-label="Community">Yes</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
+            <tr><th scope="row">Describe a step to the local AI</th><td class="yes" data-label="Community">Yes</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
+            <tr><th scope="row">The AI names what you click</th><td class="yes" data-label="Community">Yes</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
+            <tr><th scope="row">Screen checks and the report</th><td class="yes" data-label="Community">Yes</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
+            <tr><th scope="row">Shared steps and suites</th><td class="yes" data-label="Community">Yes</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
+            <tr><th scope="row">Where tests are kept</th><td data-label="Community">A folder</td><td class="solo-only" data-label="Solo">A folder or Git, or your own workspace</td><td data-label="Team">Your company's Firebase project</td></tr>
+            <tr><th scope="row">History</th><td data-label="Community">Through Git</td><td class="solo-only" data-label="Solo">Through Git, or built in with a workspace</td><td data-label="Team">Built in</td></tr>
+            <tr><th scope="row">People</th><td data-label="Community">1</td><td class="solo-only" data-label="Solo">1</td><td data-label="Team">Your team</td></tr>
+            <tr><th scope="row">Self-healing tests (Fixed automatically)</th><td class="no" data-label="Community">No</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
+            <tr><th scope="row">Local runner and schedules</th><td class="no" data-label="Community">No</td><td class="solo-only" data-label="Solo">Schedules on your Mac; the local runner with a workspace</td><td class="yes" data-label="Team">Yes</td></tr>
+            <tr><th scope="row">CI command line and run requests</th><td class="no" data-label="Community">No</td><td class="solo-only" data-label="Solo">CI command line; run requests with a workspace</td><td class="yes" data-label="Team">Yes</td></tr>
           </tbody>
         </table>
       </div>
@@ -399,7 +403,7 @@ suites/smoke.json</pre>
       <div class="faq">
         <details>
           <summary>Is it free?</summary>
-          <div class="a"><p>Community is free and open source under Apache 2.0, with no time limit and no account. Solo, for one person, is $19 a month, or $16 a month billed yearly. Team is paid: $20 per person per month, or $16 billed yearly, for 3 people or more, with one machine licence for the runner or CI included. See <a href="/pricing/">pricing</a>.</p></div>
+          <div class="a"><p>Community is free and open source under Apache 2.0, with no time limit and no account.<span class="solo-only"> Solo, for one person, is $19 a month, or $16 a month billed yearly.</span> Team is paid: $20 per person per month, or $16 billed yearly, for 3 people or more, with one machine licence for the runner or CI included. See <a href="/pricing/">pricing</a>.</p></div>
         </details>
         <details>
           <summary>Which AI model does it use?</summary>
@@ -468,5 +472,7 @@ suites/smoke.json</pre>
   </div>
 </footer>
 <script src="/assets/site.js"></script>
+<script src="/assets/get-json.js"></script>
+<script src="/assets/runs-count.js"></script>
 </body>
 </html>
