@@ -5,14 +5,22 @@
 //! The counts since the last report the service took are kept in `usage.json` in the app data
 //! folder (not the Keychain), with the few settings below.
 //!
-//! - **Team** (licence keys built in): sent with each licence refresh as `usage` (licence.rs), and
-//!   only while this Mac holds a licence. Cleared only when the answer says `usageAccepted`.
+//! - **Team** (licence keys built in): one bucket per workspace (the licence's `wsKey`,
+//!   licence.rs), counted only while this Mac holds that workspace's licence and sent with that
+//!   licence's refresh as `usage`, so each licence reports its own. Cleared only when the answer
+//!   says `usageAccepted`. Counts from before buckets (version 1 of the file) move to the
+//!   workspace whose licence moves with them, or else go with the next refresh.
 //! - **Community** (no keys): on unless turned off (Settings → Privacy, or `BREAKPATCH_NO_USAGE=1`).
 //!   Nothing is sent before the one-time notice has been shown. Then, on each day the app is used,
 //!   one ping to `/api/usage` with the counts since the last ping, the app version, and four
 //!   booleans worked out here from the last-sent date: first ping today, this week, this month,
 //!   and ever. There is no identifier of any kind; the last-sent date is the only thing stored
 //!   for it. Turning it off drops what's waiting.
+//!
+//! Going back to an older version: an app from before buckets keeps its own top-level counts and
+//! drops the `buckets` it doesn't know when it next saves, so Team counts it hadn't reported are
+//! lost. Buckets of workspaces removed from this Mac aren't pruned either; they're small and go
+//! with that licence's refresh if it's ever connected again.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -29,7 +37,11 @@ pub const PING_CAP_TESTS: u64 = 500;
 pub const PING_CAP_RUNS: u64 = 5_000;
 /// Days already counted are remembered this long, so a day is counted once.
 const REPORTED_DAYS_KEPT: i64 = 60;
-const FILE_VERSION: u32 = 1;
+/// 2: Team counts per workspace (`buckets`). The version isn't checked on read: a version 1 app
+/// (after a downgrade) reads a version 2 file without complaint, ignores `buckets` and writes the
+/// file back as version 1 on its next save, so Team counts not yet reported are lost. That's
+/// accepted (numbers only, a few days' worth at most); see "Going back to an older version" above.
+const FILE_VERSION: u32 = 2;
 const DAY: i64 = 86_400;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,14 +187,68 @@ impl Default for Community {
     }
 }
 
+/// One Team workspace's counts since its licence's last report, and the days it already sent.
+#[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+struct Bucket {
+    counts: Counts,
+    reported_days: BTreeSet<i64>,
+}
+
+impl Bucket {
+    fn record(&mut self, ev: Event, now: i64) {
+        let c = &mut self.counts;
+        match ev {
+            Event::TestCreated => bump(&mut c.tests_created),
+            Event::Run { source, passed } => {
+                bump(match source {
+                    Source::Manual => &mut c.runs.manual,
+                    Source::Schedule => &mut c.runs.schedule,
+                    Source::Runner => &mut c.runs.runner,
+                    Source::Ci => &mut c.runs.ci,
+                });
+                bump(if passed { &mut c.runs_passed } else { &mut c.runs_failed });
+            }
+        }
+        let day = now.div_euclid(DAY);
+        if !self.reported_days.contains(&day) {
+            self.counts.days.insert(day);
+        }
+    }
+
+    fn reported(&mut self, sent: &Counts, now: i64) {
+        self.counts.subtract(sent);
+        self.reported_days.extend(sent.days.iter().copied());
+        let oldest = now.div_euclid(DAY) - REPORTED_DAYS_KEPT;
+        self.reported_days.retain(|d| *d >= oldest);
+    }
+
+    fn add(&mut self, other: Bucket) {
+        let (c, o) = (&mut self.counts, other.counts);
+        let add = |a: &mut u64, b: u64| *a = (*a + b).min(LOCAL_CAP);
+        add(&mut c.tests_created, o.tests_created);
+        add(&mut c.runs.manual, o.runs.manual);
+        add(&mut c.runs.schedule, o.runs.schedule);
+        add(&mut c.runs.runner, o.runs.runner);
+        add(&mut c.runs.ci, o.runs.ci);
+        add(&mut c.runs_passed, o.runs_passed);
+        add(&mut c.runs_failed, o.runs_failed);
+        c.days.extend(o.days.into_iter().filter(|d| !self.reported_days.contains(d)));
+        self.reported_days.extend(other.reported_days);
+    }
+}
+
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 struct File {
     v: u32,
+    /// Community's counts; in Team, counts kept before buckets (version 1), until adopted.
     counts: Counts,
-    /// Days already sent (Team), so each is counted once.
+    /// Days already sent (Community never keeps any; Team before buckets).
     reported_days: BTreeSet<i64>,
     community: Community,
+    /// Team: per workspace key (licence.rs `wsKey`).
+    buckets: std::collections::BTreeMap<String, Bucket>,
 }
 
 /// What Settings → Privacy shows.
@@ -267,61 +333,72 @@ impl UsageStore {
     }
 
     /// Counts one thing that happened at `now` (Unix seconds). Team counts only while this Mac holds
-    /// a licence (`licensed`); Community only while sharing is on. Community has manual runs only.
-    pub fn record(&self, ev: Event, now: i64, licensed: bool) {
+    /// the licence of the workspace open (`licensed_ws`, its key), in that workspace's bucket;
+    /// Community only while sharing is on. Community has manual runs only.
+    pub fn record(&self, ev: Event, now: i64, licensed_ws: Option<&str>) {
         let mut f = self.state.lock().unwrap();
-        let counting = match self.edition {
-            Edition::Team => licensed,
+        match self.edition {
+            Edition::Team => {
+                let Some(ws) = licensed_ws else { return };
+                f.buckets.entry(ws.to_string()).or_default().record(ev, now);
+            }
             Edition::Community => {
-                self.community_on(&f) && !matches!(ev, Event::Run { source, .. } if source != Source::Manual)
+                if !self.community_on(&f) || matches!(ev, Event::Run { source, .. } if source != Source::Manual) {
+                    return;
+                }
+                let mut b = Bucket {
+                    counts: std::mem::take(&mut f.counts),
+                    reported_days: std::mem::take(&mut f.reported_days),
+                };
+                b.record(ev, now);
+                (f.counts, f.reported_days) = (b.counts, b.reported_days);
             }
-        };
-        if !counting {
-            return;
-        }
-        let c = &mut f.counts;
-        match ev {
-            Event::TestCreated => bump(&mut c.tests_created),
-            Event::Run { source, passed } => {
-                bump(match source {
-                    Source::Manual => &mut c.runs.manual,
-                    Source::Schedule => &mut c.runs.schedule,
-                    Source::Runner => &mut c.runs.runner,
-                    Source::Ci => &mut c.runs.ci,
-                });
-                bump(if passed { &mut c.runs_passed } else { &mut c.runs_failed });
-            }
-        }
-        let day = now.div_euclid(DAY);
-        if !f.reported_days.contains(&day) {
-            f.counts.days.insert(day);
         }
         self.save(&f);
     }
 
-    /// Team: the counts to send with the next refresh, or None when there's nothing.
-    pub fn pending_team(&self) -> Option<Counts> {
+    /// Team: counts kept before buckets go to `ws` (the workspace whose licence they were counted
+    /// under, or the next one to refresh).
+    pub fn adopt_legacy(&self, ws: &str) {
+        if self.edition != Edition::Team {
+            return;
+        }
+        let mut f = self.state.lock().unwrap();
+        if f.counts.is_empty() && f.reported_days.is_empty() {
+            return;
+        }
+        let old = Bucket { counts: std::mem::take(&mut f.counts), reported_days: std::mem::take(&mut f.reported_days) };
+        f.buckets.entry(ws.to_string()).or_default().add(old);
+        self.save(&f);
+    }
+
+    /// Team: this workspace's counts to send with its next refresh, or None when there's nothing.
+    pub fn pending_team(&self, ws: &str) -> Option<Counts> {
         if self.edition != Edition::Team {
             return None;
         }
         let f = self.state.lock().unwrap();
-        (!f.counts.is_empty()).then(|| f.counts.clone())
+        f.buckets.get(ws).map(|b| &b.counts).filter(|c| !c.is_empty()).cloned()
     }
 
-    /// The service took `sent`: take it off (anything counted meanwhile stays).
-    pub fn reported(&self, sent: &Counts, now: i64) {
+    /// The service took `sent` for `ws`: take it off (anything counted meanwhile stays).
+    pub fn reported(&self, ws: &str, sent: &Counts, now: i64) {
         let mut f = self.state.lock().unwrap();
-        f.counts.subtract(sent);
-        f.reported_days.extend(sent.days.iter().copied());
-        let oldest = now.div_euclid(DAY) - REPORTED_DAYS_KEPT;
-        f.reported_days.retain(|d| *d >= oldest);
+        f.buckets.entry(ws.to_string()).or_default().reported(sent, now);
+        if f.buckets.get(ws).is_some_and(|b| b.counts.is_empty() && b.reported_days.is_empty()) {
+            f.buckets.remove(ws);
+        }
         self.save(&f);
     }
 
-    pub fn settings(&self) -> Settings {
+    /// What Settings → Privacy shows. Team: the bucket of `ws`, the workspace open.
+    pub fn settings(&self, ws: Option<&str>) -> Settings {
         let f = self.state.lock().unwrap();
         let pending = match self.edition {
-            Edition::Team => f.counts.team_payload(),
+            Edition::Team => ws
+                .and_then(|w| f.buckets.get(w))
+                .map(|b| b.counts.team_payload())
+                .unwrap_or_else(|| Counts::default().team_payload()),
             Edition::Community if self.community_on(&f) => f.counts.for_ping().community_payload(),
             Edition::Community => Counts::default().community_payload(),
         };
@@ -346,7 +423,7 @@ impl UsageStore {
             }
             self.save(&f);
         }
-        self.settings()
+        self.settings(None)
     }
 
     /// Community: the one-time notice was shown (OK). Sending may start.
@@ -356,7 +433,7 @@ impl UsageStore {
             f.community.notice_seen = true;
             self.save(&f);
         }
-        self.settings()
+        self.settings(None)
     }
 
     /// Community: today's ping, when one is due (sharing on, notice shown, none sent today yet).

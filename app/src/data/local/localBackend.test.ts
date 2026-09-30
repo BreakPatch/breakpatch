@@ -409,6 +409,9 @@ describe('reading a whole folder', () => {
     expect(snap.schemaVersion).toBe(3);
     expect(snap.apps[0].tests.map(t => t.test.id)).toEqual(['ok']);
     expect(snap.skipped).toEqual(['apps/web-app/tests/broken.json: not valid JSON, skipped']);
+    // The texts it was read from come with it, broken ones included, so a copy can tell if the folder changed.
+    expect(Object.keys(snap.files).sort()).toEqual(['apps/web-app/app.json', 'apps/web-app/tests/broken.json', 'apps/web-app/tests/ok.json', 'breakpatch.json']);
+    expect(snap.files['breakpatch.json']).toContain('"Later"');
   });
 
   it("refuses a folder that isn't a Breakpatch folder", async () => {
@@ -424,6 +427,7 @@ describe('file size limit', () => {
     const { b } = await setup({ 'apps/web-app/app.json': toFileText({ name: 'Web app', baseUrl: 'https://app.example.com' }), 'apps/web-app/tests/huge.json': big });
     const snap = await b.snapshot();
     expect(snap.skipped).toContain('apps/web-app/tests/huge.json: bigger than 5 MB, skipped');
+    expect(snap.files['apps/web-app/tests/huge.json']).toBe('');
   });
   it('refuses a breakpatch.json over 5 MB', async () => {
     const st = new MemoryStorage();

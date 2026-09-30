@@ -143,3 +143,53 @@ export async function fullUserName(): Promise<string | null> {
   if (!isTauri()) return null;
   return tauriInvoke<string | null>('system_full_name');
 }
+
+// ---- Upgrade to Team: moving the copied tests folder to the Trash (src-tauri migration.rs) ----
+
+/** What a Trash request did. `error`: why it stopped part-way (what's in `moved` went before it). */
+export interface TrashResult { moved: string[]; missing: string[]; error?: string }
+
+/**
+ * Moves items to the Trash (to undo it, drag them back out of the Trash: Finder may not offer Put
+ * Back for them). The shell only accepts breakpatch.json, apps and suites directly under a tests
+ * folder opened in Breakpatch with a valid breakpatch.json, or run folders directly under the
+ * screenshots folder; anything else is refused before anything moves. A folder that isn't there
+ * any more, or whose breakpatch.json went already, has every name missing.
+ * Browser preview: removes them from the in-memory folder instead.
+ */
+export async function trashItems(place: 'folder' | 'screenshots', folder: string | null, names: string[]): Promise<TrashResult> {
+  if (isTauri()) return tauriInvoke<TrashResult>('trash_items', { place, folder, names });
+  if (place === 'screenshots') return { moved: [], missing: names };
+  const { previewStorage } = await import('./data/local/folder');
+  const st = previewStorage();
+  const out: TrashResult = { moved: [], missing: [] };
+  const wanted = ['apps', 'suites', 'breakpatch.json'].filter(x => names.includes(x));
+  // As the shell does (migration.rs `plan`): without breakpatch.json, only a finished move is asked about again.
+  if (!(await st.exists(`${folder}/breakpatch.json`))) {
+    for (const n of wanted) if (await st.exists(`${folder}/${n}`)) throw new Error("This isn't a Breakpatch tests folder (its breakpatch.json is missing or not valid).");
+    return { moved: [], missing: wanted };
+  }
+  for (const n of wanted) {
+    const p = `${folder}/${n}`;
+    if (await st.exists(p)) { await st.remove(p); out.moved.push(n); } else out.missing.push(n);
+  }
+  return out;
+}
+
+/** This Mac's screenshots folder (the engine's), or null in a browser preview. */
+export async function screenshotsFolder(): Promise<string | null> {
+  if (!isTauri()) return null;
+  return tauriInvoke<string>('screenshots_folder');
+}
+
+/** The Git repository holding this folder, or null. The shell only looks for `.git`; it never runs git. */
+export async function gitRepoOf(path: string): Promise<string | null> {
+  if (!isTauri()) return null;
+  return tauriInvoke<string | null>('git_repo_of', { path });
+}
+
+/** Keeps a report in the app's data folder and returns where (null in a browser preview). */
+export async function saveMigrationReport(text: string): Promise<string | null> {
+  if (!isTauri()) return null;
+  return tauriInvoke<string>('migration_report_save', { text });
+}

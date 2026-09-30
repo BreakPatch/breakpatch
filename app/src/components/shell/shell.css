@@ -23,3 +23,12 @@
 .window-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; position: relative; }
 .page { padding: 32px 40px; display: flex; flex-direction: column; gap: 24px; animation: bpIn 300ms ease-out both; }
 .page-title { font-size: 26px; font-weight: 600; letter-spacing: -0.015em; margin: 0; }
+
+/* The workspace switcher (WorkspaceSwitcher.tsx), after the wordmark on top-level screens. */
+.ws-switch { position: relative; flex: none; }
+.ws-switch-btn { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 10px; border-radius: 8px; color: var(--text-muted); font-size: 13px; font-weight: 600; max-width: 240px; }
+.ws-switch-btn { transition: background var(--t-fast) ease-out, color var(--t-fast) ease-out; }
+.ws-switch-btn:hover { color: var(--text); background: var(--raised); }
+.ws-switch-btn[aria-expanded="true"] { color: var(--text); background: var(--selected); }
+.ws-switch-btn:disabled { opacity: .6; }
+.ws-switch-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }

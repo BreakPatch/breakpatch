@@ -343,16 +343,19 @@ Install Breakpatch Team over Community. The AI assistant, the test browser, your
 
 1. **Connect a workspace**: [create one](#create-a-workspace), or open an invite link from your team. Then sign in.
 2. **The licence.** If you created the workspace, enter the licence key once in **Settings → Licence** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). If you joined with an invite link, the link sets up your licence and there's no key to enter. See [Licences and seats](#licences-and-seats).
-3. **Copy your tests**. Breakpatch shows what it will copy first, for example "1 app, 12 tests, 3 shared steps and 2 suites will be copied.", then copies the apps, tests, shared steps, suites and the last run of each test into the workspace.
+3. **Move your tests**. Choose the tests folder. Breakpatch shows what it will copy first, for example "1 app, 12 tests, 3 shared steps and 2 suites will be copied.", and you can rename apps, or merge them with apps the workspace already has. It then copies the apps, tests, shared steps, suites and the last run of each test into the workspace.
+4. **Check, then move to the Trash.** Breakpatch reads everything back from the workspace and compares it with the folder. Only when it all matches, and you confirm, does it move the folder's `breakpatch.json`, `apps` and `suites` to the Trash, so there's one place to edit your tests. To undo it, drag them from the Trash back into the folder.
 
 Good to know:
 
-- **The folder stays as it is.** Nothing in it changes, so you can keep it in your project's repo.
+- **Only Breakpatch's files move.** Everything else in the folder stays as it is. If the folder is in a Git repository, the removed tests show as deleted files to commit, and earlier versions stay in the repository's history.
+- **If the move stops half way** (the Mac restarts, say), Breakpatch picks it up where it left off the next time you open **Upgrade to Team**.
+- **A report of the move** is kept in Breakpatch's data folder on this Mac: what was copied, what went to the Trash, and anything left out.
 - **Each test starts at version 1** in the workspace, because the folder keeps only the latest version.
 - **Saved secrets** travel as names in the steps. Their values stay in this Mac's Keychain; teammates add their own in **Settings → Saved secrets**.
-- **Files that can't be read** are listed and left out. Fix them in the folder and copy again.
-- **Copying again is safe.** Only what's new is added, and nothing already in the workspace changes. That's also true when a teammate copies their clone of the same folder.
-- A folder saved by a newer Breakpatch can't be copied until you update.
+- **Files that can't be read** stop the move until you fix them in the folder, so nothing unread goes to the Trash.
+- **Already in the workspace?** Anything that's already there is left out. If a test there differs from the folder's (a teammate copied an older version, say), Breakpatch names it, and you can keep the workspace's version.
+- A folder saved by a newer Breakpatch can't be moved until you update.
 
 ## Create a workspace
 

@@ -6,6 +6,8 @@
 import type { ComponentType, LazyExoticComponent, ReactNode } from 'react';
 import type { Backend } from '../data/backend';
 import type { Person, Run, Step, StepRun, Suite, Test, Workspace } from '../data/types';
+import type { MenuItem } from '../components/ui';
+import type { Connection } from '../state/connections';
 
 /**
  * What the edition allows. Community has all of these off. They can change while the app runs
@@ -116,7 +118,20 @@ export interface Slots {
   reportFixActions?: ComponentType<ReportFixProps>;
   /** Under the title bar, after the system banners, e.g. "Breakpatch Team needs a licence." */
   banner?: ComponentType;
+  /**
+   * The workspace switcher (title bar): a hook giving why switching is off right now, in plain
+   * words, or null (Team: on the local runner's Mac, which serves one workspace).
+   */
+  useSwitchLock?: () => string | null;
+  /**
+   * The workspace switcher: extra entries at the end, e.g. "Connect a workspace". Called while
+   * rendering, with what the switcher shows (so it re-renders with it) and its router's navigate.
+   */
+  switcherActions?: (o: { close(): void; navigate(path: string): void; workspace: Workspace | null; connections: readonly Connection[] }) => MenuItemEntry[];
 }
+
+/** An entry the edition adds to a menu: the ui Menu's own item. */
+export type MenuItemEntry = MenuItem;
 
 export interface Edition {
   name: 'community' | 'team';

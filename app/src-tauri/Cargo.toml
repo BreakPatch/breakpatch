@@ -46,6 +46,8 @@ ed25519-dalek = "2"
 base64 = "0.22"
 sha2 = "0.10"
 getrandom = "0.3"
+# Upgrade to Team moves the copied tests folder to the macOS Trash (migration.rs), so Put Back undoes it.
+trash = "5"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
