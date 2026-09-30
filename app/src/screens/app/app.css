@@ -8,7 +8,10 @@
 .app-table { display: flex; flex-direction: column; padding: 0 20px 24px; }
 .app-row { display: grid; gap: 16px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); border-radius: var(--r-row); min-width: 0; }
 .app-row > * { min-width: 0; }
-.app-row.clickable { cursor: pointer; transition: background var(--t-fast) ease-out; animation: bpIn 260ms ease-out both; }
+/* backwards, not both: a kept transform would make each row its own stacking context and trap
+   its ⋯ menu under the rows below. The row with an open menu sits above the rest. */
+.app-row.clickable { cursor: pointer; transition: background var(--t-fast) ease-out; animation: bpIn 260ms ease-out backwards; }
+.app-row:has(> * .menu), .app-row:has(> .menu) { position: relative; z-index: 5; }
 .app-row.clickable:hover { background: var(--surface); }
 .app-row.clickable:focus-visible { outline-offset: -2px; }
 .app-row-head { font-size: 12px; font-weight: 600; color: var(--text-faint); border-bottom-color: var(--line); border-radius: 0; }

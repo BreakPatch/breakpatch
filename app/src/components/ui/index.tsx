@@ -80,12 +80,18 @@ export function Select({ label, hint, options, className, id, ...rest }: SelectH
 export function Switch({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return <button type="button" role="switch" className="switch" aria-checked={checked} aria-label={label} disabled={disabled} onClick={() => onChange(!checked)} />;
 }
-export function Checkbox({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
+/**
+ * A checkbox with its label shown beside it; the label is clickable too. `hideLabel` only where
+ * the same words are already on screen next to it (a list row's name), so they aren't said twice.
+ */
+export function Checkbox({ checked, onChange, label, hideLabel }: { checked: boolean; onChange: (v: boolean) => void; label: string; hideLabel?: boolean }) {
+  const box = (
     <button type="button" role="checkbox" className="checkbox" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}>
       {checked && <Icon name="check" />}
     </button>
   );
+  if (hideLabel) return box;
+  return <label className="checkbox-row">{box}<span className="checkbox-label">{label}</span></label>;
 }
 
 // ---------- Status ----------

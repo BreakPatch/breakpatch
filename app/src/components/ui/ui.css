@@ -103,6 +103,8 @@ select.input { appearance: none; padding-right: 32px; background-image: none; cu
 .checkbox:active { transform: scale(.92); }
 .checkbox[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .checkbox .icon { font-size: 15px; font-weight: 700; }
+.checkbox-row { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13.5px; color: var(--text); user-select: none; }
+.checkbox-row .checkbox-label { line-height: 1.35; }
 
 /* ---------- Segmented control ---------- */
 .segmented { display: inline-flex; gap: 2px; background: var(--bg); border-radius: 10px; padding: 3px; }

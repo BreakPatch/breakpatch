@@ -9,7 +9,7 @@
   position: relative; display: flex; flex-direction: column; border-radius: 10px; border: 1.5px solid transparent; flex: none;
   transition: background 160ms ease-out, border-color 160ms ease-out;
 }
-.step-card.fresh { animation: bpIn 220ms ease-out both; }
+.step-card.fresh { animation: bpIn 220ms ease-out backwards; }   /* not both: see .app-row.clickable */
 .step-card:hover:not(.sel):not(.failed) { background: var(--raised); }
 .step-card.sel { background: var(--accent-tint); border-color: var(--accent); }
 /* The open card sits above the cards after it. Its parts fade in with a transform, which makes

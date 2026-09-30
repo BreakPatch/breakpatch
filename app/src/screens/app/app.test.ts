@@ -98,3 +98,17 @@ describe('cleanCall', () => {
     expect(cleanCall({ method: 'GET', url: 'https://a.dev' }, false)).toEqual({ method: 'GET', url: 'https://a.dev' });
   });
 });
+
+const fsModule = 'node:fs', urlModule = 'node:url', pathModule = 'node:path';
+describe('a row\'s ⋯ menu sits above the rows below it (DES2-04)', () => {
+  it('the rows rise in without keeping a transform, and the row with an open menu is raised', async () => {
+    // CSS through Vite comes back empty in tests: read the file (Node modules are untyped here).
+    const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync(path: string, enc: 'utf8'): string };
+    const { fileURLToPath } = (await import(/* @vite-ignore */ urlModule)) as { fileURLToPath(url: string): string };
+    const { dirname, join } = (await import(/* @vite-ignore */ pathModule)) as { dirname(p: string): string; join(...p: string[]): string };
+    const css = fs.readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'app.css'), 'utf8');
+    expect(css).toMatch(/\.app-row\.clickable \{[^}]*animation: bpIn 260ms ease-out backwards;/);
+    expect(css).not.toMatch(/\.app-row\.clickable \{[^}]*animation:[^;]*both/);
+    expect(css).toMatch(/\.app-row:has\(> \* \.menu\), \.app-row:has\(> \.menu\) \{ position: relative; z-index: 5; \}/);
+  });
+});

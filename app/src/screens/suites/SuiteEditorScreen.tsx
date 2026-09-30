@@ -151,7 +151,7 @@ export default function SuiteEditorScreen() {
                   const n = order.get(key(r));
                   return (
                     <div key={t.id} className={`se-test${n ? ' on' : ''}`} onClick={() => toggle(r)}>
-                      <span onClick={e => e.stopPropagation()} style={{ display: 'flex' }}><Checkbox checked={!!n} onChange={() => toggle(r)} label={t.name} /></span>
+                      <span onClick={e => e.stopPropagation()} style={{ display: 'flex' }}><Checkbox checked={!!n} onChange={() => toggle(r)} label={t.name} hideLabel /></span>
                       <div className="se-test-name ellipsis">{t.name}</div>
                       {n && <span className="se-order-no" aria-label={`Runs number ${n}`}>{n}</span>}
                       <div className="se-test-steps">{plural(t.stepCount, 'step')}</div>

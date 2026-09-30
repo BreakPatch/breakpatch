@@ -319,3 +319,26 @@ describe('a file picker that opens after the click was answered', () => {
     expect(result.current.steps[0]).toMatchObject({ id: 'k1', action: 'upload', sample: 'jpeg', label: 'Upload JPEG image', target: 'Add photo' });
   });
 });
+
+describe('the Enter that sends a sentence never confirms it too (DES2-01)', () => {
+  it('pressing Enter in the describe box shows the proposal and waits; a new Enter confirms it', async () => {
+    const { AddStepBar } = await import('./AddStepBar');
+    const confirm = vi.fn();
+    function Bar() {
+      const rec = useRecorder({ viewport: vp, onError: vi.fn() });
+      return <AddStepBar rec={{ ...rec, confirmAi: () => { confirm(); rec.confirmAi(); } }} appId="a" allowGroups onInsertGroup={() => undefined} />;
+    }
+    const { container } = render(<Bar />);
+    const box = screen.getByLabelText('Describe the next step');
+    fireEvent.change(box, { target: { value: 'enter the password' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    await waitFor(() => expect(container.querySelector('.rec-ai-result')).not.toBeNull());
+    expect(container.querySelector('.rec-ai-result')!.textContent).toMatch(/the password/);
+    await act(async () => { await new Promise(r => setTimeout(r, 20)); });
+    expect(confirm).not.toHaveBeenCalled();                                   // the same Enter didn't answer it
+    fireEvent.keyDown(window, { key: 'Enter', repeat: true });                // a held Enter's repeats don't either
+    expect(confirm).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: 'Enter' });                              // a deliberate one does
+    expect(confirm).toHaveBeenCalledTimes(1);
+  });
+});
