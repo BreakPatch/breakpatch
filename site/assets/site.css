@@ -209,7 +209,7 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
 .point span{font-size:0.9062rem;color:var(--muted);line-height:1.45;display:block}
 
 /* Editions */
-.compare{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:stretch}
+.compare{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:stretch}
 .plan{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:30px 30px 28px;display:flex;flex-direction:column;gap:14px}
 .plan.team{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));box-shadow:0 24px 60px -36px color-mix(in srgb,var(--accent) 60%,transparent)}
 .plan-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -231,6 +231,7 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
 .matrix thead th{font-size:0.7812rem;color:var(--faint);font-weight:600;background:var(--surface);letter-spacing:.02em}
 .matrix tbody th{font-weight:500;color:var(--text2)}
 .matrix td{width:30%;text-align:center;color:var(--muted)}
+.matrix.stack td{width:22%}
 .matrix thead th:not(:first-child){text-align:center}
 .matrix tr:last-child > *{border-bottom:0}
 .yes{color:var(--accent);font-weight:700}

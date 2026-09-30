@@ -2,7 +2,7 @@
 
 Everything about Breakpatch on one page. Use the contents or your browser's find.
 
-Breakpatch comes in two editions. **Community** is free and open source: one person, one Mac, tests saved as files. **Team** is paid and adds a shared workspace, version history, fixed automatically, schedules and a local runner. The last part of this manual is Team only.
+Breakpatch comes in these editions. **Community** is free and open source: one person, one Mac, tests saved as files. **Solo** is paid, for one person: it adds fixed automatically, schedules on your Mac, notifications, result messages and the CI command line, and keeps your tests in your folder. **Team** is paid and adds a shared workspace, version history, schedules and a local runner for the whole team. **Business** is Team for 20 people or more. The last part of this manual is for the paid editions: see [Solo](#solo) for what Solo includes.
 
 **Getting started**
 
@@ -27,20 +27,21 @@ Breakpatch comes in two editions. **Community** is free and open source: one per
 **Team**
 
 15. [What Team adds](#what-team-adds)
-16. [Upgrading to Team](#upgrading-to-team)
-17. [Create a workspace](#create-a-workspace)
-18. [Invite your team](#invite-your-team)
-19. [Members and roles](#members-and-roles)
-20. [Version history](#version-history)
-21. [Fixed automatically](#fixed-automatically)
-22. [Schedules](#schedules)
-23. [The local runner](#the-local-runner)
-24. [Run requests](#run-requests)
-25. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
-26. [Result messages](#result-messages)
-27. [Security rules](#security-rules)
-28. [Licences and seats](#licences-and-seats)
-29. [The back office](#the-back-office)
+16. [Solo](#solo)
+17. [Upgrading to Team](#upgrading-to-team)
+18. [Create a workspace](#create-a-workspace)
+19. [Invite your team](#invite-your-team)
+20. [Members and roles](#members-and-roles)
+21. [Version history](#version-history)
+22. [Fixed automatically](#fixed-automatically)
+23. [Schedules](#schedules)
+24. [The local runner](#the-local-runner)
+25. [Run requests](#run-requests)
+26. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
+27. [Result messages](#result-messages)
+28. [Security rules](#security-rules)
+29. [Licences and seats](#licences-and-seats)
+30. [The back office](#the-back-office)
 
 ---
 
@@ -323,7 +324,7 @@ The counts wait in `~/Library/Application Support/Breakpatch/usage.json`, with y
 
 # Team
 
-Everything in this part needs **Breakpatch Team**, the paid edition.
+Everything in this part needs a paid edition: **Breakpatch Team**, or **Solo** for one person. [Solo](#solo) says which parts Solo includes.
 
 ## What Team adds
 
@@ -336,6 +337,30 @@ Everything in this part needs **Breakpatch Team**, the paid edition.
 - **Run requests** from CI or any other tool, and **result messages** after every suite run.
 
 Choosing another AI model for the assistant is in Business.
+
+## Solo
+
+Solo is for one person who wants the automation for themselves: $19 a month, or $16 a month billed yearly.
+
+| | Community | Solo | Team | Business |
+|---|---|---|---|---|
+| Price | Free | $19 a month, or $16 a month billed yearly | $20 per person a month, or $16 billed yearly | $30 per person a month, billed yearly |
+| People | 1 | 1 | 3 or more | 20 or more |
+| Machine licences | None | 1 | 1 included, you can buy more | 5 included, you can buy more |
+| Where tests are kept | A folder | A folder or Git, or your own workspace if you want one | Your company's Firebase project | Your company's Firebase project |
+| Fixed automatically | No | Yes | Yes | Yes |
+| Schedules, notifications and result messages | No | Yes, on your Mac | Yes | Yes |
+| The CI command line | No | Yes | Yes | Yes |
+| Run requests, the local runner and version history | No | With your own workspace | Yes | Yes |
+| Members, roles and sharing | No | No | Yes | Yes |
+| Another AI model | No | No | No | Yes |
+
+- **Your tests stay where they are.** Solo works on your [tests folder](#the-tests-folder), or a folder you keep in [Git](#git-tips). There's nothing to set up in the cloud.
+- **A workspace is optional.** For [run requests](#run-requests), the [local runner](#the-local-runner) and [version history](#version-history), connect a workspace of your own ([Create a workspace](#create-a-workspace)). It stays yours alone: Solo has no members or invites.
+- **The licence.** Enter the key in **Settings → Licence**. It works on one Mac at a time. To use it on another Mac, free it on your licence page at [account.breakpatch.dev](#the-back-office), then enter the key on the new Mac.
+- **One machine licence**, for [breakpatch-ci](#from-ci-with-breakpatch-ci) or a runner. Your Mac and the machine licence each run one test at a time. Solo has no extra machine licences.
+- **One Solo per company.** If someone at your company email domain already has Solo, the pricing page offers Team instead. A personal address (such as Gmail or iCloud) counts on its own.
+- **Moving to Team** keeps your tests. Email [support@breakpatch.dev](mailto:support@breakpatch.dev) to switch your plan, then follow [Upgrading to Team](#upgrading-to-team).
 
 ## Upgrading to Team
 
@@ -729,6 +754,6 @@ If you're one of your licence's admins, you see:
 - **Free a seat**, for someone who has left or a Mac you no longer use. Freeing a seat lets someone else take it.
 - **Usage**: tests created and runs each week for the last 12 weeks (by hand, schedules, local runner and CI), the pass rate, and the same per person and machine.
 
-If you bought Breakpatch Team on the [pricing page](https://breakpatch.dev/pricing/), sign in with the email you bought with: the first time, you see **Your new licence key (shown once)**. Press **Show my licence key** and keep it somewhere safe, because it isn't shown again. The same page has **Manage billing** (invoices, payment method, cancelling, through Paddle, our reseller) and **Change seats** (seats and extra machine licences, charged or credited straight away, pro rata for the rest of the billing period; credits go against your next payments). A cancelled licence keeps working until the end of the period you paid for.
+If you bought Breakpatch Team on the [pricing page](https://breakpatch.dev/pricing/), sign in with the email you bought with: the first time, you see **Your new licence key (shown once)**. Press **Show my licence key** and keep it somewhere safe, because it isn't shown again. The same page has **Manage billing** (invoices, payment method, cancelling, through Paddle, our reseller) and **Change seats** (seats and extra machine licences, charged or credited straight away, pro rata for the rest of the billing period; credits go against your next payments; Solo has no seats to change). A cancelled licence keeps working until the end of the period you paid for.
 
 For a licence you didn't buy on the site, contact Breakpatch to add seats or renew. If you see "No licences for this email", ask whoever bought Breakpatch Team to add you as an admin.
