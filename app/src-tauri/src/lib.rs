@@ -418,6 +418,8 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         // Local notifications when a run finishes in the background (Settings, Notifications).
         .plugin(tauri_plugin_notification::init())
+        // Paste buttons (platform.ts readClipboard): read text only, no bubble to confirm.
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(engine)
         .manage(KeepAwake::default())
         .manage(WorkspaceInbox::default())
@@ -532,6 +534,20 @@ mod config_tests {
     fn the_ui_may_notify() {
         let caps: Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
         assert!(caps["permissions"].as_array().unwrap().iter().any(|p| p == "notification:default"));
+    }
+
+    /// Paste buttons read the clipboard through the shell (platform.ts readClipboard), text only.
+    #[test]
+    fn the_ui_may_read_the_clipboard_text_only() {
+        let caps: Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let clip: Vec<&str> = caps["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p.as_str())
+            .filter(|p| p.starts_with("clipboard-manager:"))
+            .collect();
+        assert_eq!(clip, ["clipboard-manager:allow-read-text"]);
     }
 
     /// The local backend checks a test file's size before reading it (localBackend.ts).

@@ -19,6 +19,19 @@ export async function copyText(text: string): Promise<void> {
   try { document.execCommand('copy'); } finally { ta.remove(); }
 }
 
+/**
+ * The clipboard's text, for a Paste button; null when it can't be read. In the app it's read
+ * through the shell (tauri-plugin-clipboard-manager): WebKit's navigator.clipboard.readText()
+ * first shows a "Paste" bubble to confirm. In a browser (the preview), navigator.clipboard.
+ */
+export async function readClipboard(): Promise<string | null> {
+  if (isTauri()) {
+    try { return await tauriInvoke<string>('plugin:clipboard-manager|read_text'); }
+    catch { /* an older shell without the plugin: the browser's way */ }
+  }
+  try { return await navigator.clipboard.readText(); } catch { return null; }
+}
+
 /** Saves text to a file the user picks (desktop) or downloads it (browser). */
 export async function saveTextFile(defaultName: string, contents: string): Promise<boolean> {
   if (isTauri()) {
