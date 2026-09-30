@@ -82,7 +82,9 @@ export function SecretsSection() {
 function SecretDialog({ secret, taken, onClose, onSaved }: { secret?: SecretInfo; taken: string[]; onClose: () => void; onSaved: (name: string) => void }) {
   const fixed = secret?.name;
   const exists = !!secret?.present;
-  const runnerFeature = useFeature('runner');
+  // Team's local runner, or Solo's schedules on this Mac: both run tests unattended.
+  const runnerOn = useFeature('runner'), schedulesOn = useFeature('schedules');
+  const runnerFeature = runnerOn || schedulesOn;
   const [name, setName] = useState(fixed ?? '');
   const [value, setValue] = useState('');
   const [origins, setOrigins] = useState<string[]>(secret?.origins ?? []);
@@ -151,7 +153,7 @@ function SecretDialog({ secret, taken, onClose, onSaved }: { secret?: SecretInfo
         {(runnerFeature || runner) && (
           <label className="set-runner-flag">
             <Switch checked={runner} onChange={setRunner} label="Runner can use" />
-            <span>Runner can use<span className="set-note" style={{ display: 'block', margin: 0 }}>The local runner may type it in tests it runs unattended on this Mac. Off by default.</span></span>
+            <span>Runner can use<span className="set-note" style={{ display: 'block', margin: 0 }}>The local runner and scheduled runs may type it in tests they run unattended on this Mac. Off by default.</span></span>
           </label>
         )}
         {err && <p className="set-note" role="alert" style={{ color: 'var(--failed)', margin: 0 }}>{err}</p>}

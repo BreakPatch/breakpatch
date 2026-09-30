@@ -369,10 +369,12 @@ Solo is for one person who wants the automation for themselves: $19 a month, or 
 
 - **Your tests stay where they are.** Solo works on your [tests folder](#the-tests-folder), or a folder you keep in [Git](#git-tips). There's nothing to set up in the cloud.
 - **A workspace is optional.** For [run requests](#run-requests), the [local runner](#the-local-runner) and [version history](#version-history), connect a workspace of your own ([Create a workspace](#create-a-workspace)). It stays yours alone: Solo has no members or invites.
-- **The licence.** Enter the key in **Settings → Licence**. It works on one Mac at a time. To use it on another Mac, free it on your licence page at [account.breakpatch.dev](#the-back-office), then enter the key on the new Mac.
-- **One machine licence**, for [breakpatch-ci](#from-ci-with-breakpatch-ci) or a runner. Your Mac and the machine licence each run one test at a time. Solo has no extra machine licences.
+- **The licence.** With your tests folder open, go to **Settings → Licence** → **Enter Solo licence key**, and give the email you bought Solo with and the key (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). The key stays in this Mac's Keychain. It works on one Mac at a time. To use it on another Mac, press **Release this Mac**, or free it on your licence page at [account.breakpatch.dev](#the-back-office), then enter the key on the new Mac. A Team or Business key there says "This is a Team licence key. Team licences are used in a workspace: connect or create one, then enter the key there."
+- **Schedules on your Mac.** Set a suite's [schedule](#schedules) and where its [result message](#result-messages) goes, as in Team. The suite runs on this Mac while Breakpatch is open, one test at a time: if you're running a test yourself, it waits for it. A time missed while Breakpatch was closed isn't run later. When it finishes, you get a notification if Breakpatch is in the background (**Settings → Notifications** says which). The result message's address stays in this Mac's Keychain, never in the folder, so it doesn't end up in Git. The failed step's screenshot needs a workspace, so it isn't sent from a folder. A saved secret a scheduled test types needs **Runner can use** turned on in **Settings → Saved secrets**.
+- **One machine licence**, for [breakpatch-ci](#from-ci-with-breakpatch-ci) or a runner. Your Mac and the machine licence each run one test at a time. Solo has no extra machine licences. In CI, set `BREAKPATCH_LICENCE_KEY` to your Solo key and leave `BREAKPATCH_WORKSPACE` out to run test files from your folder (`--test FILE.json`); a second job on the same machine waits for the first.
+- **Your own workspace, if you want one.** After you connect it, **Settings → Licence** offers **Use Solo here**: it's the same seat, for the same email, so there's no key to type. The workspace has no **Members** page and no invite link.
 - **One Solo per company.** If someone at your company email domain already has Solo, the pricing page offers Team instead. A personal address (such as Gmail or iCloud) counts on its own.
-- **Moving to Team** keeps your tests. Email [support@breakpatch.dev](mailto:support@breakpatch.dev) to switch your plan, then follow [Upgrading to Team](#upgrading-to-team).
+- **Moving to Team** keeps your tests. Email [support@breakpatch.dev](mailto:support@breakpatch.dev) to switch your plan, then follow [Upgrading to Team](#upgrading-to-team): connect or create the workspace, press **Use Solo here** (or enter the Team key if you have it already), and move your tests. Suites keep their schedules; set where their results go again in each suite. Then, in **Settings → Licence**, press **Replace key** and enter the Team key. The Solo seat on this Mac is given back.
 
 ## Upgrading to Team
 
@@ -519,6 +521,8 @@ It looks at the screenshot of the failure and what the page said was on screen t
 Open a suite and set its **Schedule**: the days and a 24-hour time, like *Mon to Fri, 06:00*. The time is the local runner's clock. With no schedule, the suite is *By request only*: the Run button, CI or another tool.
 
 The suite shows its next run. If the runner was off when a run was due, the missed run happens once when it's back, not once for every time it missed.
+
+With [Solo](#solo) on a tests folder there's no runner: the time is this Mac's clock, and the suite runs while Breakpatch is open. A time missed while Breakpatch was closed isn't run later.
 
 ## The local runner
 
@@ -897,6 +901,8 @@ A Team licence has **seats** for people and **machine licences** for the local r
 - **Usage counts go with the licence check.** Each check sends how many tests were created and how many runs there were (by hand, from schedules, on the local runner and in CI), passed and failed, and on how many days Breakpatch was used, since the last check. Only numbers: never test names, addresses, steps or screenshots. The licence check already knows the licence and seat, so your admin sees the numbers per person and machine in the [back office](#the-back-office). They're part of how the licence works, so there's no switch for them in Team. `breakpatch-ci` counts its runs the same way in its licence file and sends them with its next check; on CI machines that don't keep that file between jobs they aren't sent.
 
 Without a licence, Breakpatch keeps working as Community (tests, recording and running on this Mac) and Team features are off. A quiet banner under the title bar says why: "Breakpatch Team needs a licence. Your admin enters the key once in Settings → Licence, then everyone gets a seat when they sign in.", "Your team is out of seats. Ask your admin to add one.", "Reconnect to check your licence." (after 30 days offline) or "Your licence has expired." A runner with no machine licence left gets "Your team has no machine licences left. Ask your admin to add one."
+
+With Solo, the messages are for one person: "This Solo licence is in use on another Mac. Free it at account.breakpatch.dev, then try again.", "Your Solo licence has expired. Renew it at account.breakpatch.dev." or "This Solo licence is already used by someone else. Solo is for one person: for more people, choose Team." The banner then has a button to open account.breakpatch.dev.
 
 Other messages you may see:
 
