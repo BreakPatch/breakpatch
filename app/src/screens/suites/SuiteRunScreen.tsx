@@ -3,6 +3,7 @@
 // the suite's tests with their status on the right, a report link per finished test.
 // The app screen's Run all (/apps/:appId/run-all) is the same run over every test of that app,
 // as a suite made on the spot: each test's run is saved, but there's no suite to save a result on.
+// Tests with no saved steps yet (drafts) are left out of it: they can't run, so they don't fail it.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { App, Suite, Test } from '../../data/types';
@@ -38,8 +39,8 @@ const ITEM: Record<SuiteTestState, { icon: string; tone: string; word: string }>
   missing: { icon: 'error', tone: 'failed', word: "Couldn't run" },
 };
 
-/** What runs: a saved suite, or every test of one app (Run all). */
-interface Plan { name: string; tests: Suite['tests']; suite?: Suite; app?: App }
+/** What runs: a saved suite, or every test of one app (Run all). `unrecorded`: Run all's tests left out, with no steps yet. */
+interface Plan { name: string; tests: Suite['tests']; suite?: Suite; app?: App; unrecorded?: number }
 
 export default function SuiteRunScreen() {
   const { suiteId, appId } = useParams();
@@ -55,8 +56,11 @@ export default function SuiteRunScreen() {
   const suite = suiteId ? suites?.find(s => s.id === suiteId) : undefined;
   const plan = useMemo<Plan | undefined>(() => {
     if (suiteId) return suite && { name: suite.name, tests: suite.tests, suite };
-    if (!app || !testsByApp) return undefined;
-    return { name: 'All tests', tests: (testsByApp[app.id] ?? []).map(t => ({ appId: app.id, testId: t.id })), app };
+    // Only once the app's tests have loaded: until then there's nothing to say "no tests" about.
+    if (!app || !testsByApp || !(app.id in testsByApp)) return undefined;
+    const all = testsByApp[app.id];
+    const recorded = all.filter(t => t.currentVersion > 0);
+    return { name: 'All tests', tests: recorded.map(t => ({ appId: app.id, testId: t.id })), app, unrecorded: all.length - recorded.length };
   }, [suiteId, suite, app, testsByApp]);
   const run = useTestRun();
   const { start } = run;
@@ -151,7 +155,8 @@ export default function SuiteRunScreen() {
   if (plan?.app && !plan.tests.length && view.phase === 'idle') {
     return (
       <AppFrame back={home} crumb={crumb} title="All tests">
-        <EmptyState icon="playlist_play" title={`No tests for ${plan.app.name} yet.`} text="Add a test first, then run them all."
+        <EmptyState icon="playlist_play" title={plan.unrecorded ? `No recorded tests for ${plan.app.name} yet.` : `No tests for ${plan.app.name} yet.`}
+          text={plan.unrecorded ? "Record a test's steps first, then run them all." : 'Add a test first, then run them all.'}
           action={<Button kind="primary" icon="arrow_back" onClick={() => navigate(home)}>Back to {plan.app.name}</Button>} />
       </AppFrame>
     );
@@ -197,7 +202,8 @@ export default function SuiteRunScreen() {
         <aside className="srun-side" aria-label={plan?.app ? `All tests in ${plan.app.name}` : `${plan?.name ?? 'Suite'} tests`}>
           <div className="srun-head">
             <div className="srun-head-row"><div className="srun-name ellipsis">{plan?.app ? `All tests in ${plan.app.name}` : plan?.name ?? ' '}</div><div className="srun-count">{done} of {total}</div></div>
-            <div className="srun-sub">{view.startedAt ? `Started ${clock(view.startedAt)} · on this Mac, one test after another` : 'Getting the tests ready'}</div>
+            <div className="srun-sub">{view.startedAt ? `Started ${clock(view.startedAt)} · on this Mac, one test after another` : 'Getting the tests ready'}
+              {plan?.unrecorded ? ` · ${plural(plan.unrecorded, 'test')} with no steps yet left out` : ''}</div>
           </div>
           <div className="srun-list" role="list">
             {view.items.map((it, i) => <SuiteRow key={`${it.appId}/${it.testId}/${i}`} item={it} onReport={it.runId ? () => navigate(`/apps/${it.appId}/runs/${it.runId}`) : undefined} />)}

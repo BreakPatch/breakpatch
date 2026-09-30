@@ -71,6 +71,12 @@ def test_what_counts_as_a_plus_or_a_minus():
     assert near.kind_of(c(0, [0, 0, 1, 1], name="Add this item to my shopping cart now")) is None
     assert near.kind_of(c(0, [0, 0, 1, 1], name="Sign up")) is None
     assert near.kind_of(c(0, [0, 0, 1, 1], text="+", disabled=True)) is None
+    # A symbol at the start of a longer name is a button or a price, not a stepper's.
+    assert near.kind_of(c(0, [0, 0, 1, 1], name="+ New project")) is None
+    assert near.kind_of(c(0, [0, 0, 1, 1], text="-20% off")) is None
+    assert near.kind_of(c(0, [0, 0, 1, 1], text="− 20 % off today")) is None
+    assert near.kind_of(c(0, [0, 0, 1, 1], name="+ Add")) == "increase"             # the symbol and one word
+    assert near.kind_of(c(0, [0, 0, 1, 1], text="−1")) == "decrease"
 
 
 def test_the_plus_next_to_the_thing_not_the_minus_or_another_row():

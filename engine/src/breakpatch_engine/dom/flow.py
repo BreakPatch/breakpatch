@@ -103,8 +103,9 @@ class LocateFlow:
         """The current page's route, when it has been decided and kept."""
         return self._route if self._route_key == self._page_key() else None
 
-    async def _extract(self) -> Extraction | None:
-        """The controls on screen now, or None when the page's structure can't be read."""
+    async def _extract(self, texts: bool = False) -> Extraction | None:
+        """The controls on screen now (and, with `texts`, the short text runs near.py needs), or
+        None when the page's structure can't be read."""
         key = (self.b.page, self.b.navigations)
         for _ in range(2):
             try:
@@ -112,7 +113,7 @@ class LocateFlow:
                     await self.close()
                     self._ex = await Extractor(self.b.page, (self.b.width, self.b.height)).open()
                     self._ex_key = key
-                return await self._ex.extract()
+                return await self._ex.extract(texts)
             except Exception as e:  # noqa: BLE001 - a frame went away mid-read: open again once
                 log.info("couldn't read the page's structure: %s", e)
                 await self.close()
@@ -135,7 +136,7 @@ class LocateFlow:
         r = self.route
         if r is None:
             key = self._page_key()          # before the read: a navigation meanwhile routes again
-            ex = await self._extract()
+            ex = await self._extract(texts=bool(near))
             r = route(ex) if ex is not None else Route(VISUAL, "no page structure", final=False)
             if r.final:
                 self._route, self._route_key = r, key
@@ -143,7 +144,7 @@ class LocateFlow:
         self.last_route = r
         found = Found(None, PATH_VISUAL)
         if r.mode == FAST and ex is None:
-            ex = await self._extract()
+            ex = await self._extract(texts=bool(near))
         # (A Fast page whose structure can't be read this time is looked at as a Visual one: an
         # empty list must never read as "not found".)
         if r.mode == FAST and ex is not None and near:

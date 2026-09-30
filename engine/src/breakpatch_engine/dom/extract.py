@@ -147,7 +147,8 @@ class Extraction:
     n_documents: int = 1
     extra: dict = field(default_factory=dict)   # what a subclass's hooks collected
     # Short visible text runs, `{text, box}` (an element's own text, 60 characters at most): what
-    # sits next to a control ("People" by its + and −), for near.py. Never candidates.
+    # sits next to a control ("People" by its + and −), for near.py. Never candidates. Only
+    # collected when asked for (`extract(texts=True)`, a locate with `near`); else empty.
     texts: list = field(default_factory=list)
 
     @property
@@ -162,8 +163,9 @@ class Extraction:
 class Look:
     """The state of one extract() call, so overlapping calls never share any."""
 
-    def __init__(self, snaps, axmaps, oopif_of):
+    def __init__(self, snaps, axmaps, oopif_of, texts: bool = False):
         self.snaps, self.axmaps, self.oopif_of = snaps, axmaps, oopif_of
+        self.want_texts = texts
         self.out: list[dict] = []
         self.flutter = False
         self.canvas = 0.0
@@ -278,13 +280,14 @@ class Extractor:
                         ax[bids[j]] = nd
                         break
 
-    async def extract(self) -> Extraction:
+    async def extract(self, texts: bool = False) -> Extraction:
+        """`texts`: also collect the short text runs (Extraction.texts), for near.py."""
         t0 = time.perf_counter()
         procs = list(self.procs)
         snaps = await asyncio.gather(*(p.s.send("DOMSnapshot.captureSnapshot",
                                                 {"computedStyles": STYLES, "includePaintOrder": True})
                                        for p in procs))
-        look = Look(snaps, [{} for _ in procs], {p.owner: i for i, p in enumerate(procs) if p.owner})
+        look = Look(snaps, [{} for _ in procs], {p.owner: i for i, p in enumerate(procs) if p.owner}, texts)
         vw, vh = self.viewport
         try:
             await self._walk(look, procs, 0, 0, 0.0, 0.0, (0.0, 0.0, float(vw), float(vh)), "")
@@ -524,7 +527,7 @@ class Extractor:
         for i in range(n):
             if types[i] == 1:
                 self._element(look, (pi, di, i), attrd[i] or {}, box[i], vis[i], ancestors_of(i))
-                if vis[i] and tagn[i] not in ("STYLE", "SCRIPT"):
+                if look.want_texts and vis[i] and tagn[i] not in ("STYLE", "SCRIPT"):
                     own = [st[nval[j]] for j in kids.get(i, ()) if types[j] == 3 and j in lay and nval[j] >= 0]
                     t = " ".join(" ".join(own).split())
                     if t and len(t) <= 60:
@@ -581,10 +584,10 @@ async def _detach(session) -> None:
         pass
 
 
-async def extract(page, viewport: tuple[int, int]) -> Extraction:
+async def extract(page, viewport: tuple[int, int], texts: bool = False) -> Extraction:
     """One look, opening and closing its own sessions (Extractor reuses them)."""
     ex = await Extractor(page, viewport).open()
     try:
-        return await ex.extract()
+        return await ex.extract(texts)
     finally:
         await ex.close()

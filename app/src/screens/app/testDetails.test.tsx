@@ -1,14 +1,19 @@
 // Test details: a test's name, description and start address can be changed after it's made,
 // from the ⋯ menu on the Tests tab and from the recorder.
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { App, Test, Version } from '../../data/types';
 import { DemoBackend } from '../../data/demo/demoBackend';
 import { useSession } from '../../state/session';
 import { TestsTab } from './TestsTab';
 import { TestDetailsDialog } from './TestDetailsDialog';
-import recorderSource from '../recorder/RecorderScreen.tsx?raw';
+import { ToastProvider } from '../../components/ui';
+import { getEngine } from '../../engine';
+import RecorderScreen from '../recorder/RecorderScreen';
+
+globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;   // not in jsdom
+Element.prototype.scrollIntoView ??= () => undefined;
 
 const VP = { width: 1440, height: 900, dpr: 1 as const };
 let backend: DemoBackend;
@@ -99,9 +104,20 @@ describe('the Test details dialog', () => {
 });
 
 describe('Test details in the recorder', () => {
-  it('has a Test details button, and the browser stays on the address it opened at', () => {
-    expect(recorderSource).toContain('<IconButton icon="description" label="Test details"');
-    expect(recorderSource).toContain('<TestDetailsDialog open={detailsOpen} test={test}');
-    expect(recorderSource).toContain('useBrowserSession(openedAt?.url');
+  it('has a Test details button, and the browser stays on the address it opened at', async () => {
+    const t = await recordedTest();
+    const opened = vi.spyOn(getEngine(), 'openBrowser');
+    render(<ToastProvider><MemoryRouter initialEntries={[`/apps/${app.id}/tests/${t.id}/record`]}>
+      <Routes><Route path="/apps/:appId/tests/:testId/record" element={<RecorderScreen />} /></Routes>
+    </MemoryRouter></ToastProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Test details' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Test details' });
+    expect(dialog).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Start address'), { target: { value: 'https://app.example.com/signin' } });
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Save' })); });
+    await waitFor(async () => expect(await testNow(t.id)).toMatchObject({ startUrl: 'https://app.example.com/signin' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Test details' })).not.toBeInTheDocument());
+    // The new address is for the next run: the page being recorded on isn't reopened.
+    expect(opened.mock.calls.map(c => c[0])).toEqual(['https://app.example.com/login']);
   });
 });

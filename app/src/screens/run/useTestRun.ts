@@ -1,7 +1,7 @@
 // Runs one test on this Mac: loads its current steps (shared steps resolved), starts the engine,
 // follows its events and writes the run. Shared by the Run view and the suite run view.
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import type { Backend } from '../../data/backend';
+import { startUrlOf, type Backend } from '../../data/backend';
 import type { Person, RecordedOn, Run, Step, Test } from '../../data/types';
 import { useBackend } from '../../data/hooks';
 import { demoEngine, getEngine, type RunEnded, type RunStepEvent } from '../../engine';
@@ -21,10 +21,10 @@ import { demoFailIds, demoSeen } from './demo';
 
 export interface Finished { ended: RunEnded; run: Run | null; steps: Step[] }
 
-/** The test's current version with its shared steps filled in, and where it was recorded. */
-export async function prepareTest(backend: Backend, test: Test): Promise<{ steps: Step[]; recordedOn?: RecordedOn }> {
+/** The test's current version with its shared steps filled in, where it was recorded and where it starts. */
+export async function prepareTest(backend: Backend, test: Test): Promise<{ steps: Step[]; recordedOn?: RecordedOn; startUrl: string }> {
   const v = await backend.version(test.appId, test.id, test.currentVersion);
-  return { steps: await resolveSteps(v?.steps ?? [], backendGroupLoader(backend, test.appId)), recordedOn: v?.recordedOn };
+  return { steps: await resolveSteps(v?.steps ?? [], backendGroupLoader(backend, test.appId)), recordedOn: v?.recordedOn, startUrl: startUrlOf(test, v) };
 }
 
 /** Where a run from this Mac says it ran. The demo matches the sample runs ("Maria's MacBook Pro"). */
@@ -51,6 +51,8 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
   keepOpen?: boolean; upToStepId?: string; fromStepId?: string; abandoned?: () => boolean;
   /** Where the test was recorded (its version's `recordedOn`), to compare with this system. */
   recordedOn?: RecordedOn;
+  /** Where the version being run starts (startUrlOf); the test's start address by default. */
+  startUrl?: string;
   /** Just before the engine starts, when the secrets are read. */
   onStart?: (at: number) => void;
   onStep?: (ev: RunStepEvent) => void;
@@ -74,7 +76,7 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
     });
     const offEnd = engine.on('run.ended', ev => { if (ev.runId !== runId) return; offStep(); offEnd(); resolve(ev); });
     engine.startRun({
-      runId, startUrl: t.startUrl, appUrl, viewport: t.viewport, steps, setUp: t.setUp, cleanUp: t.cleanUp,
+      runId, startUrl: opts.startUrl ?? t.startUrl, appUrl, viewport: t.viewport, steps, setUp: t.setUp, cleanUp: t.cleanUp,
       settings: { autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix, allowSystemDifferences: prefs.allowSystemDifferences },
       secrets: values, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}),
       ...(filesDir(backend.local?.path) ? { filesDir: filesDir(backend.local?.path) } : {}),
@@ -129,7 +131,7 @@ export function useTestRun() {
     const handle = { runId: newRunId(), abandoned: false };
     active.current = handle;
     try {
-      const { steps: resolved, recordedOn } = await prepareTest(backend, t);
+      const { steps: resolved, recordedOn, startUrl } = await prepareTest(backend, t);
       setSteps(resolved);
       if (!resolved.length) throw new NoStepsError();
       const byId = new Map(preorder(resolved).map(s => [s.id, s]));
@@ -143,7 +145,7 @@ export function useTestRun() {
       }
       const { user } = useSession.getState();
       const got = await engineRun(backend, t, resolved, handle.runId, {
-        abandoned: () => handle.abandoned, recordedOn,
+        abandoned: () => handle.abandoned, recordedOn, startUrl,
         onStart: at => dispatch({ type: 'start', runId: handle.runId, ids: [...byId.keys()], at }),
         onStep: ev => {
           // The sample page follows the run. A run that will fail at the moved Done button

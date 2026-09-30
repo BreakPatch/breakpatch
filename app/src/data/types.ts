@@ -141,7 +141,8 @@ export interface Version {
   recordedOn?: RecordedOn;
   /**
    * Tests only: the start address this version starts at. Versions saved before it existed have
-   * none; they start at the test's.
+   * none, and the local backend never sets it (it keeps only the latest version): they start at
+   * the test's. Read it with startUrlOf (backend.ts).
    */
   startUrl?: string;
 }
