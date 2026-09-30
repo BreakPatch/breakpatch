@@ -52,7 +52,11 @@ export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' 
 export interface Proposal { at: Point; frame?: number; box?: Box; name?: string; target?: string }
 
 /** `frame`: the live view frame the box was found on (pass it on when recording the step). */
-export interface LocateResult { box: Box; at: Point; target: string; frame?: number }
+// `path`: how the engine found it (engine/PROTOCOL.md): from the page's own controls ("fast"), by
+// the AI assistant after those weren't enough ("fast-visual"), or by the AI assistant alone
+// ("visual"). `s0Score`: the page-structure score, whenever it was used. The UI doesn't show them.
+export type LocatePath = 'fast' | 'fast-visual' | 'visual';
+export interface LocateResult { box: Box; at: Point; target: string; frame?: number; path?: LocatePath; s0Score?: number }
 
 export interface RunSettings {
   autoFix: boolean; failOnFix: boolean;
