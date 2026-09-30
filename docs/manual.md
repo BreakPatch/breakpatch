@@ -387,17 +387,18 @@ Good to know:
 
 ## Create a workspace
 
-Do this once for your organisation. You need owner access to a Firebase project. Use the project your product already signs in with, so everyone keeps their usual login.
+Do this once for your organisation. You need owner access to a Firebase project. Use the project your product already signs in with, so everyone keeps their usual login. A new project works too: step 5 turns on sign-in and adds your account.
 
 In Breakpatch: **Connect a team workspace** → *Setting up for your team?* → **Create a workspace**. Each step has **Open Firebase console**, which opens the right page.
 
 1. **Create the web app.** Project settings → General → Your apps → **Add app** → Web. Name it `Breakpatch`, leave Firebase Hosting off and click Register app. Ignore the code Firebase shows and click Continue to console.
 2. **Paste the config.** Under Web apps, pick Breakpatch. In SDK setup and configuration, choose Config, copy it and paste it into Breakpatch. Then fill in **Who can sign in**: just the part after @, for example `example.com`.
-3. **Create the database.** Firestore → Databases → **Add database**. Keep Standard edition, enter the database ID `breakpatch` (copy it from the app), pick the same location as your main database (you can't change it later), keep Production mode and click Create.
+3. **Create the database.** Open Firestore Database. If the project already has a database, open the database menu at the top of the page (the one that shows `(default)`) and choose **Add database**. If it has none yet, the page shows **Create database** instead. Keep Standard edition, enter the database ID `breakpatch` (copy it from the app), pick the same location as your main database (you can't change it later), keep Production mode and click Create.
 4. **Paste the rules.** In Breakpatch press **Copy rules**. In Firestore pick the `breakpatch` database, open the Rules tab, replace everything with the rules you copied and click Publish.
-5. **Connect.** Check the summary, name the workspace, add a logo if you like and press **Create workspace**. Then sign in.
+5. **Turn on sign-in and add yourself.** Open Authentication (click **Get started** if it's new). In Sign-in method choose **Email/Password**, turn on Enable and click Save. Then in Users click **Add user** and add yourself, with an address in the *Who can sign in* domain. Add your teammates the same way, now or later. If your team already signs in to this project with email and password, just check it's on. Breakpatch never creates accounts.
+6. **Connect.** Check the summary, name the workspace, add a logo if you like and press **Create workspace**. Then sign in with the account you added. If you haven't added it yet, the sign-in screen says where, with a link to Authentication → Users in the Firebase console.
 
-In Firebase, also check that Authentication → Sign-in method → **Email/Password** is on. People sign in with their work email and a password. The first time, Breakpatch sends them a link to confirm their email address.
+People sign in with their work email and a password. The first time, Breakpatch sends them a link to confirm their email address.
 
 Whoever connects the workspace becomes its first admin.
 

@@ -30,7 +30,8 @@ export function cleanDetails(d: TestDetails): TestDetails {
 }
 
 export class AuthError extends Error {
-  code: 'wrongPassword' | 'wrongDomain' | 'network' | 'unknown';
+  /** `signInOff`: the workspace's Firebase project doesn't have email and password sign-in turned on. */
+  code: 'wrongPassword' | 'wrongDomain' | 'network' | 'signInOff' | 'unknown';
   constructor(code: AuthError['code'], message: string) { super(message); this.code = code; }
 }
 
