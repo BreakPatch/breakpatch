@@ -24,13 +24,17 @@ from urllib.parse import urlparse
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(REPO / "engine" / "tests"))   # the shared page server and target tracking
 try:
     import breakpatch_engine  # noqa: F401
 except ImportError:            # not installed in this Python: use the checkout's
     sys.path.insert(0, str(REPO / "engine" / "src"))
 
+import domsite  # noqa: E402
+import domtrack  # noqa: E402
 import scoring  # noqa: E402
-from serve import PORT_MAIN, PORT_OTHER, start_servers  # noqa: E402
+
+PORT_MAIN = 8801               # and 8802 for the other origin, as the experiment served its corpus
 
 LOCATE_TASKS = ("T1", "T2", "T4")
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]", "::1"}
@@ -91,39 +95,6 @@ def sample(trials: list[dict], pages: dict, frac: float, seed: int) -> list[dict
 
 # ---------------------------------------------------------------- browser
 
-async def settle(page, extra_ms: int) -> None:
-    try:
-        await page.wait_for_load_state("networkidle", timeout=10000)
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        await page.evaluate("document.fonts ? document.fonts.ready.then(() => true) : true")
-    except Exception:  # noqa: BLE001
-        pass
-    await page.wait_for_timeout(extra_ms)
-
-
-async def load_state(page, base: str, state: dict, extra_ms: int) -> list[str]:
-    """The experiment's browserenv.load_state: go, then scroll, click to open, hover (last, so the
-    pointer stays on it), wait. Returns the set-up errors."""
-    errors = []
-    await page.goto(base + state["url"].lstrip("/"), wait_until="load", timeout=30000)
-    setup = json.loads(state.get("setup") or "{}")
-    await settle(page, 200)
-    if setup.get("scroll_y"):
-        await page.evaluate(f"window.scrollTo(0, {int(setup['scroll_y'])})")
-    for what in ("click_open", "hover"):
-        if setup.get(what):
-            try:
-                await (page.click if what == "click_open" else page.hover)(setup[what], timeout=5000)
-            except Exception as e:  # noqa: BLE001
-                errors.append(f"{what}: {e}"[:200])
-    if setup.get("wait_ms"):
-        await page.wait_for_timeout(int(setup["wait_ms"]))
-    await settle(page, extra_ms)
-    return errors
-
-
 class NoModel:
     """--no-model: the AI assistant is 'there' but never finds anything (fallbacks count as not found)."""
 
@@ -156,7 +127,6 @@ def the_model(path: str | None):
 async def run(a) -> dict:
     from breakpatch_engine.browser import BrowserSession
     from breakpatch_engine.config import Timings
-    from breakpatch_engine.dom.extract import extract
     from breakpatch_engine.protocol import NULL
     from breakpatch_engine.recorder import Recorder
 
@@ -179,8 +149,7 @@ async def run(a) -> dict:
         v1, v1_name = NoModel(), "none (--no-model)"
     else:
         v1, v1_name = the_model(a.model)
-    stop = start_servers(data / "pages", a.port, a.port + 1)
-    base = f"http://localhost:{a.port}/"
+    base, stop = domsite.serve(data / "pages", a.port)
     b = BrowserSession(Timings.from_env(), on_frame=None, headless=True)
     rows = []
     try:
@@ -201,7 +170,7 @@ async def run(a) -> dict:
             if st is None:
                 print(f"bench: {sid} isn't in states.csv; skipped", flush=True)
                 continue
-            errors = await load_state(b.page, base, st, a.settle_ms)
+            errors = await domsite.load_state(b.page, base, st, a.settle_ms, idle_ms=10000)
             render = data / "render" / sid / "hidden.json"
             render_boxes = json.loads(render.read_text()).get("boxes") if render.exists() else None
             while warm > 0:                     # not counted: imports, first sessions, the model's load
@@ -216,9 +185,9 @@ async def run(a) -> dict:
                     times.append((time.perf_counter() - t0) * 1000)
                     if rep == 0:
                         answer, found = got, rec.finder.last
-                gt = await extract(b.page, (1440, 900), track="data-gt-id")   # the page as it is now
+                gt = await domtrack.extract_tracked(b.page)       # the page as it is now, not timed
                 at = answer["at"] if answer is not NULL else None
-                boxes = scoring.target_boxes(t, gt.tracked, [c["box"] for c in gt.candidates],
+                boxes = scoring.target_boxes(t, domtrack.tracked(gt), [c["box"] for c in gt.candidates],
                                              twins.get(t["trial_id"]), render_boxes)
                 page = pages.get(t["page_id"], {})
                 rows.append({"trial_id": t["trial_id"], "state_id": sid, "page_id": t["page_id"], "task": t["task"],
@@ -276,10 +245,10 @@ def report(s: dict, meta: dict) -> str:
     lo, hi = TARGETS["dom_rich_t1"]
     lines = [f"Fast locator benchmark: {s['n']} trials, AI assistant {meta['v1']}, {meta['machine']}", "",
              "Finds the target (T1, click-only), by page type:",
-             "  page type      n    new path   paths (fast / fast→visual / visual)    experiment: V1 / S0 / S0→V1"]
+             "  page type      n    new path   paths (fast / fast-visual / visual)    experiment: V1 / S0 / S0→V1"]
     for k, v in s["t1_by_kind"].items():
         p = v["paths"]
-        mix = f"{p.get('fast', 0):4d} / {p.get('fast→visual', 0):4d} / {p.get('visual', 0):4d}"
+        mix = f"{p.get('fast', 0):4d} / {p.get('fast-visual', 0):4d} / {p.get('visual', 0):4d}"
         e = EXPERIMENT.get(k)
         exp = " / ".join(f"{100 * x:.0f}%" for x in e) if e else ""
         lines.append(f"  {k:<10} {v['n']:5d}    {pct(v['t1'])}     {mix:<30}         {exp}")
@@ -315,7 +284,7 @@ def main() -> int:
     ap.add_argument("--settle-ms", type=int, default=1000, help="wait after a page loads (the experiment: 1000)")
     ap.add_argument("--t2-without-absence", action="store_true",
                     help="run T2 trials without the absence flag (S0's unsure answers then go to the AI assistant)")
-    ap.add_argument("--port", type=int, default=PORT_MAIN, help=f"main origin port; the other is +1 ({PORT_OTHER})")
+    ap.add_argument("--port", type=int, default=PORT_MAIN, help=f"main origin port; the other is +1 ({PORT_MAIN + 1})")
     ap.add_argument("--out", help="results folder (default results/<date-time> next to this file)")
     a = ap.parse_args()
     if a.fixtures:

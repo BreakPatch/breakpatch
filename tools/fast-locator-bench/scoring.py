@@ -1,11 +1,12 @@
-"""Click-only scoring, the experiment's rules (its scripts/harness/scoring.py, section 2c of the report)
+"""Click-only scoring: the System 1 experiment's rules (section 2c of its report)
 for an answer that is a point on the screen:
 
 - T1, T4 (find the target): correct when the click point lies inside the target element's own box,
   or inside the box of the candidate the extractor maps it to (the element itself, else its
   nearest listed ancestor), or inside a twin candidate's box (deviation D2: the target listed
   twice, a list item and its link). Boxes come from the page as it is when the step runs (the
-  experiment's note (b)); twins from the ground-truth render when there is one.
+  experiment saw a few pages add or move a control between loads); twins from the ground-truth
+  render when there is one.
 - T2 (the target isn't on the page): correct when the answer is "not found".
 
 "Not found" is the positive class for precision, recall and F1, over T1, T2 and T4 trials.

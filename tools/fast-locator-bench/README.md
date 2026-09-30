@@ -17,7 +17,7 @@ experiment's report), with the experiment's exclusions and twin candidates, and 
 - "not found" F1 (absence trials run with `absence: true`, so S0 alone answers them on Fast pages);
 - p50 and p95 latency of Fast steps: from the question to the answer, the page load left out and
   reading the page's controls included;
-- which path answered how many steps (`fast`, `fast→visual`, `visual`).
+- which path answered how many steps (`fast`, `fast-visual`, `visual`).
 
 Targets: about **88-93%** found on DOM-rich pages, and about **12 ms** p50 on Fast steps.
 
@@ -42,7 +42,7 @@ engine/.venv/bin/python tools/fast-locator-bench/bench.py \
   --excluded ~/breakpatch-fast-locator-handoff/reference_code/results/excluded_trials.json
 ```
 
-It serves the pages itself, offline, on `http://localhost:8801/` and `http://127.0.0.1:8802/`
+It serves the pages itself (with `engine/tests/domsite.py`), offline, on `http://localhost:8801/` and `http://127.0.0.1:8802/`
 (the second origin is for cross-origin iframes), and blocks every other address. The default is
 30% of the test trials, taken from every cell of DOM quality, rendering and page type (seed
 20260930). With the AI assistant, expect about a second for each step it answers. Close other apps
@@ -71,8 +71,8 @@ Results go to `tools/fast-locator-bench/results/<date-time>/`: `report.txt` (wha
 - `excluded_trials.json`'s `trial_ids` are left out (140 trials).
 - Only the locate tasks run (T1, T2, T4); T3 (naming a point) isn't part of `record.locate`.
 
-`serve.py` and `scoring.py` are ports of the experiment's `scripts/harness/serve.py` and
-`scoring.py` (click-only rules).
+`scoring.py` is the experiment's click-only scoring rules. The pages are served, and the targets
+followed, by the engine tests' own helpers (`engine/tests/domsite.py`, `engine/tests/domtrack.py`).
 
 ## Without the corpus
 
