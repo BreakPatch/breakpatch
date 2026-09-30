@@ -72,6 +72,8 @@ describe('the preview\'s "Why did this fail?"', () => {
     const e = new DemoEngine();
     (e as unknown as { sleep: () => Promise<void> }).sleep = async () => undefined;
     const failed = { stepId: 'A', result: 'failed' as const, reason: 'targetNotFound' as const };
+    // Community locks its features at start: unlock them for the test.
+    resetFeaturesForTests();
     setFeatures({ ...NO_FEATURES, explain: false });
     await expect(e.explain(st('A'), failed, { width: 1, height: 1 })).rejects.toMatchObject({ code: 'not_ready' });
     setFeatures({ ...NO_FEATURES, explain: true });
