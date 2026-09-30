@@ -282,7 +282,7 @@ class Engine:
     async def record_locate(self, p: dict):
         self._not_during_run()
         self.browser.require()
-        return await self.recorder.locate(p.get("description") or "")
+        return await self.recorder.locate(p.get("description") or "", absence=p.get("absence") is True)
 
     # ---------------------------------------------------------------- replay
 

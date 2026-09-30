@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Canvas app</title></head>
+<body style="margin:0">
+  <!-- A drawing app: a canvas over most of the page, and a toolbar of real buttons. -->
+  <div style="height:40px"><button>Pen</button> <button>Eraser</button> <button>Undo</button> <button>Save</button></div>
+  <canvas width="1200" height="700" style="display:block"></canvas>
+  <script>var c = document.querySelector('canvas').getContext('2d');
+    c.fillStyle = '#6b3fd4'; c.fillRect(400, 300, 200, 48); c.fillStyle = '#fff'; c.font = '18px sans-serif';
+    c.fillText('Next', 480, 330);</script>
+</body></html>

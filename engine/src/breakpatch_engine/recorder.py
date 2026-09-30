@@ -12,6 +12,7 @@ from pathlib import Path
 from . import checks, config, imaging, labels
 from .actions import FILE_REF, POINTER_ACTIONS, ActionFailed, Context, parse_secrets, perform, sample_path
 from .browser import BrowserSession
+from .dom.flow import PATH_FAST, LocateFlow
 from .locator import Locator
 from .protocol import NULL, EngineError
 
@@ -79,6 +80,8 @@ class Recorder:
         self.emit = emit or (lambda event, data: None)
         self._choice: asyncio.Future | None = None
         self.locator_fn = locator_fn
+        # Describing a step: the fast locator (page structure) in front of the AI assistant.
+        self.finder = LocateFlow(browser, locator_fn)
         self.t = timings
         self._download_mark = 0
         self._noise: dict[str, list] = {}
@@ -246,6 +249,7 @@ class Recorder:
             # address never changes): what earlier steps saw moving belongs to the old screen.
             if blast is not None and imaging.box_area(blast) > 0.5 * w * h:
                 self._noise = {}
+                self.finder.invalidate()          # and it may not be the same kind of page
                 self.remember_noise(imaging.cap_noise(noise_now, w, h, config.NOISE_MAX_SHARE))
 
             if anchor is not None:
@@ -509,21 +513,26 @@ class Recorder:
                 out.update(name=got["name"], target=got["target"])
         return out
 
-    async def locate(self, description: str):
+    async def locate(self, description: str, absence: bool = False):
+        """Finds a described element (dom/flow.py): from the page's structure on pages that have
+        one, else with the AI assistant. `absence`: "not found" is the expected answer, so the AI
+        assistant is never asked after the page's structure didn't find it."""
         if not description or not description.strip():
             raise EngineError("bad_request", "Describe what to look for.")
-        loc = self.locator_fn()
-        if not loc.available():
-            raise EngineError("not_ready", "The AI assistant isn't downloaded yet. Finish setup to use it.")
-        seq = self.b.last_seq               # the frame the live view shows as the screenshot is taken
-        img = imaging.to_image(await self.b.shoot())
-        box = await loc.locate(img, description.strip())
-        if box is None:
+        self.b.require()
+        seq = self.b.last_seq               # the frame the live view shows as the page is looked at
+        found = await self.finder.locate(description.strip(), absence=absence)
+        if found.box is None:
             return NULL
-        box = imaging.clamp_box(box, self.b.width, self.b.height)
+        box = imaging.clamp_box(found.box, self.b.width, self.b.height)
         # A box over most of the page isn't an answer: the model boxes the whole screen when what
-        # was described isn't there (DESK-04). Not found, so nothing is clicked.
-        if imaging.box_area(box) > config.LOCATE_MAX_SHARE * self.b.width * self.b.height:
+        # was described isn't there (DESK-04). Not found, so nothing is clicked. (An element the
+        # page itself lists is an answer, however big.)
+        if found.path != PATH_FAST and imaging.box_area(box) > config.LOCATE_MAX_SHARE * self.b.width * self.b.height:
             return NULL
-        at = [round((box[0] + box[2]) / 2, 1), round((box[1] + box[3]) / 2, 1)]
-        return {"box": box, "at": at, "target": description.strip(), "frame": seq}
+        # The click point is the centre of the box found (S0: of the element's own box).
+        at = found.at if found.path == PATH_FAST else [round((box[0] + box[2]) / 2, 1), round((box[1] + box[3]) / 2, 1)]
+        out = {"box": box, "at": at, "target": description.strip(), "frame": seq, "path": found.path}
+        if found.s0_score is not None:
+            out["s0Score"] = found.s0_score
+        return out

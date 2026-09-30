@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "breakpatch-engine"
 version = "0.1.0b1"  # PEP 440 for 0.1.0-beta.1 (breakpatch_engine.__version__, app/package.json)
-description = "Breakpatch engine sidecar: pixel-only browser automation, screen checks and replay."
+description = "Breakpatch engine sidecar: browser automation checked on the screen, screen checks and replay."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
@@ -18,6 +18,8 @@ dependencies = [
   # Pinned: the resumable download is tested against it (spec §7). 1.9.x, not 2.x: transformers 5.x
   # (the mlx extra) needs huggingface_hub below 2.0, so 2.0 can't be installed with the AI assistant.
   "huggingface_hub==1.9.2",
+  # The fast locator's text matching (dom/s0.py): fuzzy ratios over the page's control names.
+  "rapidfuzz>=3.9",
 ]
 
 [project.optional-dependencies]

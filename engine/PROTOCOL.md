@@ -30,8 +30,8 @@ Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`,
   `run.stop`, `setup.pause` or `system.info`. Responses can therefore arrive out of order.
 - A line that isn't JSON gets `{"id": null, "error": {"code": "bad_request", ...}}`. Blank lines are ignored.
 - `params` must be an object (or omitted). A result of `{}` means "done, nothing to return";
-  `record.locate` can return `null` (also for a box over more than 60% of the page: the model boxes
-the whole screen when what was described isn't there).
+  `record.locate` can return `null` (also for an AI assistant box over more than 60% of the page:
+  the model boxes the whole screen when what was described isn't there).
 - When stdin closes, requests still in flight get 3 s to answer, the rest are answered with
   `stopped`, Chromium is closed and the process exits 0. SIGTERM and SIGINT do the same.
 
@@ -157,7 +157,7 @@ The browser methods answer `busy` during a run.
 | Method | Params | Result |
 |---|---|---|
 | `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
-| `record.locate` | `{ description }` | `{ box, at, target, frame } \| null` — AI assistant; `null` means not found |
+| `record.locate` | `{ description, absence? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
 | `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
 
@@ -255,6 +255,33 @@ Per action:
 - `checkpoint` through `record.point` needs `region` and is the same as `record.checkpoint`.
 
 Recording answers `busy` while a previous `record.point` is still checking, or during a run.
+
+**Finding a described element (`record.locate`).** The engine first reads the page's own structure,
+then uses the AI assistant when that isn't enough (`engine/src/breakpatch_engine/dom/`):
+
+- The page's controls on screen are listed through the DevTools protocol (DOMSnapshot and the
+  accessibility tree, through open and closed shadow roots and same- and cross-origin iframes;
+  no page script runs). Only accessible names, roles, labels and text are used, never CSS or
+  XPath selectors, and the answer is a point on the screen like any other.
+- Each page is routed once, the first time something is looked for on it, and again after it
+  navigates or a step changes most of the screen. **Visual** when it has a Flutter host
+  (`flt-glass-pane`, `flutter-view`, `flt-scene-host`), a `<canvas>` over a quarter of the
+  viewport or more, or fewer than 3 controls listed; **Fast** otherwise.
+- Fast pages: S0 scores the controls listed for this call against the description (text, role
+  and position words, English and Spanish) and answers when its best score is at least 0.65: the
+  element's own box, `at` its centre. No model is loaded for that. When S0 is unsure, the AI
+  assistant looks at the screenshot as before.
+- Visual pages: the AI assistant only.
+- `absence: true` says "not found" is the expected answer (a check that something is *not* on the
+  page). On a Fast page only S0's answer counts, and the AI assistant is never asked after it: it
+  always boxes something, so it would report things that aren't there. On a Visual page the AI
+  assistant is all there is. No step type sends it yet; it's there for absence checks to come.
+- The result says which way it was found in `path`: `"fast"` (S0), `"fast→visual"` (S0 was
+  unsure, the AI assistant answered) or `"visual"`, and S0's best score in `s0Score` whenever S0
+  ran. The app may ignore both. A `null` result has neither; the engine logs every call's path, S0
+  score, number of controls and timings (`breakpatch.locate`).
+- The AI assistant is only needed when S0 is unsure or the page is Visual: without it those calls
+  fail with `not_ready`, and S0's answers still work.
 
 ### Replay
 | Method | Params | Result |

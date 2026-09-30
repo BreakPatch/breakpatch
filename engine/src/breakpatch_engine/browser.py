@@ -1,4 +1,5 @@
-"""Controlled Chromium (Playwright, async API). Used only for screenshots, mouse and text input.
+"""Controlled Chromium (Playwright, async API). Used for screenshots, mouse and text input; the page's
+structure is only read through the DevTools protocol (names, roles, boxes), never scripted.
 
 Fixed viewport, device_scale_factor=1, light colour scheme, en-US locale, so the same test renders
 the same way on every Mac. The live view is a stream of JPEG frames sent only when the page changes
@@ -126,6 +127,9 @@ class BrowserSession:
         self._frames: OrderedDict[int, str] = OrderedDict()
         self._changed_at: float | None = None    # when the frame stream last saw the page change
         self.start_origin: str | None = None     # the site the browser was opened on
+        # Main-frame navigations so far (same-document ones too): the fast locator routes a page
+        # again after one (dom/flow.py).
+        self.navigations = 0
 
     # ---------- lifecycle ----------
 
@@ -242,6 +246,8 @@ class BrowserSession:
         """Belt and braces for what route interception can't see (Chromium serves file:, chrome:
         and about: pages itself): a main frame that ends up on one goes back to about:blank."""
         try:
+            if frame.parent_frame is None:
+                self.navigations += 1
             if frame.parent_frame is not None or is_web_address(frame.url) or frame.url.startswith(_ERROR_PAGE):
                 return
         except Exception:  # noqa: BLE001

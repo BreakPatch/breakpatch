@@ -365,10 +365,19 @@ async def test_locate_maps_box_and_handles_not_found(site):
     hx = Harness(FakeLocator(MOVED_BOX))
     await hx.call("browser.open", {"url": site + "/index.html", "viewport": VIEWPORT})
     try:
+        # The page lists its controls (a Fast page): the button is found from them, with its own box.
         got = await hx.call("record.locate", {"description": "the Create project button"})
         frame = got.pop("frame")
-        assert got == {"box": MOVED_BOX, "at": [490.0, 222.0], "target": "the Create project button"}
-        assert isinstance(frame, int) and 0 < frame <= hx.engine.browser.last_seq   # the frame shown as the box was found
+        assert got.pop("s0Score") >= 0.65
+        assert got == {"box": [100, 200, 240, 244], "at": [170.0, 222.0], "target": "the Create project button",
+                       "path": "fast"}
+        assert isinstance(frame, int) and 0 < frame <= hx.engine.browser.last_seq   # the frame shown as it was found
+        assert hx.locator.calls == []
+        # A description the page's structure can't answer goes to the AI assistant; its box maps as before.
+        got = await hx.call("record.locate", {"description": "the blue thing a bit left of the middle"})
+        got.pop("frame"), got.pop("s0Score")
+        assert got == {"box": MOVED_BOX, "at": [490.0, 222.0], "target": "the blue thing a bit left of the middle",
+                       "path": "fast→visual"}
         hx.locator.box = None
         from breakpatch_engine.protocol import NULL
         assert await hx.call("record.locate", {"description": "a unicorn"}) is NULL
