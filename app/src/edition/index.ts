@@ -15,4 +15,4 @@ setFeatures(edition.features);
 if (edition.name === 'community') lockFeatures();
 
 export { hasFeature, useFeature } from './features';
-export type { Edition, Features, ReportFixProps, SettingsSection, SuiteEditorPanelProps, SuiteExtras } from './types';
+export type { Edition, Features, ReportFailProps, ReportFixProps, SettingsSection, SuiteEditorPanelProps, SuiteExtras } from './types';

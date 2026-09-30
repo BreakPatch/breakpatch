@@ -29,11 +29,13 @@ export interface Features {
   modelOverride: boolean;
   /** "Why did this fail?": the AI assistant explains a failed step in the report (engine run.explain). */
   explain: boolean;
+  /** Create issue in GitHub, Linear or Jira from a failed run. */
+  integrations: boolean;
 }
 
 export const NO_FEATURES: Features = {
   collaboration: false, versions: false, autoFix: false, calibration: false,
-  schedules: false, runner: false, ci: false, modelOverride: false, explain: false,
+  schedules: false, runner: false, ci: false, modelOverride: false, explain: false, integrations: false,
 };
 
 type Screen = ComponentType | LazyExoticComponent<ComponentType>;
@@ -73,7 +75,11 @@ export interface GateState {
 }
 
 /** Suite editor fields that only an edition's panel edits (schedule, result address). */
-export interface SuiteExtras { schedule: Suite['schedule']; resultUrl?: string }
+export interface SuiteExtras {
+  schedule: Suite['schedule']; resultUrl?: string;
+  /** Where the result goes; `url` only when the panel changed the address. null: nowhere. */
+  notify?: Suite['notify'] | null;
+}
 
 export interface SuiteEditorPanelProps {
   /** The saved suite, or undefined while it's new or loading. */
@@ -98,6 +104,14 @@ export interface ReportFixProps {
   test: Test | undefined;
 }
 
+export interface ReportFailProps extends ReportFixProps {
+  /** Steps as the run tested them (shared steps resolved). */
+  steps: Step[];
+  /** "6", or "2.3" inside a shared-steps card. */
+  number: string;
+  appName: string;
+}
+
 /** Places in open screens where the Team edition adds its own pieces. */
 export interface Slots {
   /** Suites list: extra columns after Name, before (default) or after "Last run", e.g. Schedule and "Result goes to". */
@@ -118,6 +132,8 @@ export interface Slots {
   homeBanner?: ComponentType;
   /** Report, a step fixed automatically: e.g. "Accept new position" and Dismiss. */
   reportFixActions?: ComponentType<ReportFixProps>;
+  /** Report, a failed step: e.g. Create issue (GitHub, Linear, Jira) or Open issue. */
+  reportFailActions?: ComponentType<ReportFailProps>;
   /** Under the title bar, after the system banners, e.g. "Breakpatch Team needs a licence." */
   banner?: ComponentType;
   /**

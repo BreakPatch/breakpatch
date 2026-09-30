@@ -5,7 +5,7 @@
 
 import type {
   App, Explanation, HttpCall, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
-  Suite, SuiteRun, Test, TestStatus, Version, Viewport, Workspace,
+  RunIssue, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Workspace,
 } from './types';
 
 export type Unsubscribe = () => void;
@@ -18,7 +18,11 @@ export interface NewTest {
 }
 /** A test's details as the Test details dialog edits them. */
 export interface TestDetails { name: string; description?: string; startUrl: string }
-export interface NewSuite { name: string; tests: Suite['tests']; schedule: Suite['schedule']; resultUrl?: string }
+export interface NewSuite {
+  name: string; tests: Suite['tests']; schedule: Suite['schedule']; resultUrl?: string;
+  /** Where the result goes (Team, admins). With `url`, the address is saved apart from the suite; without, it stays as it was. */
+  notify?: SuiteNotify | null;
+}
 
 /** The note on the version a new start address makes (Backend.updateTestDetails). */
 export const startUrlNote = (url: string) => `Start address changed to ${url}`;
@@ -148,6 +152,8 @@ export interface Backend {
    * a refused write (a run someone else started) is only a cache miss.
    */
   saveExplanation?(appId: string, runId: string, stepId: string, e: Explanation): Promise<void>;
+  /** Optional (Team): notes the issue made from a run (Create issue), so the report offers Open issue. */
+  setRunIssue?(appId: string, runId: string, issue: RunIssue): Promise<void>;
 
   // Suites and local runner
   suites(l: Listener<Suite[]>): Unsubscribe;
@@ -158,6 +164,11 @@ export interface Backend {
   suiteRuns(l: Listener<SuiteRun[]>, limit?: Limit): Unsubscribe;
   /** Creates a runRequests document; the runner picks it up. */
   requestSuiteRun(suiteId: string, note?: string): Promise<void>;
+  /**
+   * Optional (Team): the suite's result address, which only admins and the runner may read (it's
+   * a secret: anyone with it can post). null when there's none or this account can't read it.
+   */
+  notifyAddress?(suiteId: string): Promise<string | null>;
   removeFromQueue(id: string): Promise<void>;
 
   // Runner side (used by the RunnerService on the runner Mac, spec §12.4)

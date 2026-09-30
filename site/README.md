@@ -10,6 +10,7 @@ site/
   install-ci            breakpatch-ci's install command (Team, for CI machines; text/plain too)
   manual/index.html     the full manual (built from docs/manual.md)
   connect/index.html    Team invite link page
+  report/index.html     run report links from Slack, Teams and issues (opens the report in the app)
   pricing/index.html    pricing and the Team checkout (Paddle.js overlay)
   thanks/index.html     after checkout: where the licence key is
   terms/ privacy/ refunds/   legal pages (drafts; Paddle's website review needs them)
@@ -17,6 +18,7 @@ site/
   assets/pricing.js, pricing.css   the plan picker and checkout, and these pages' styles
   assets/get-json.js    the one GET helper for the back office (founding places, Solo domain, test runs)
   assets/runs-count.js  the home page's "12,300 tests run with Breakpatch" line
+  assets/report-link.js the report page's link check (report-link.test.mjs)
   robots.txt, sitemap.xml, favicon.ico, apple-touch-icon.png
   assets/site.css       styles (dark, follows light mode automatically)
   assets/site.js        GitHub links, copy buttons, contents highlighting
@@ -113,6 +115,14 @@ https://breakpatch.dev/connect#c=<base64url(JSON)>
 
 JSON: `{ "name", "logo"?, "config": { …Firebase web config… }, "database": "breakpatch", "domain": "example.com" }`.
 The page decodes it in the browser only, shows the workspace, then opens `breakpatch://connect#c=…`. If the app doesn't open within 2.5 s it shows "Didn't open?". Non-Mac devices get "Open this link on your Mac". Invite links come from a Breakpatch Team workspace.
+
+## Report link format
+
+```
+https://breakpatch.dev/report#r=<appId>/<runId>
+```
+
+Result messages to Slack and Teams and issues made with **Create issue** (Team) link here, since a `breakpatch://` link doesn't open from Slack on the web or a phone. On a Mac the page opens `breakpatch://report/<appId>/<runId>` at once (and offers "Didn't open?" after 2.5 s, as the invite page). Other devices get "Open this link on your Mac". Ids are letters, digits, `-` and `_` only (`assets/report-link.js`); anything else shows "This link doesn't work". Test it with `node --test site/report-link.test.mjs`.
 
 ## Checkout (Paddle)
 

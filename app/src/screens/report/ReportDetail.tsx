@@ -13,10 +13,11 @@ import { isTauri } from '../../platform';
 import { edition } from '../../edition';
 import { demoSeen, isDemo, targetBox } from '../run/demo';
 import { reasonAdvice } from '../run/reasons';
+import { issueContent } from './issueText';
 import { copyDetails, detailKind, detailText, expectLabel, fixBoxes, showsScreens, systemNote } from './reportData';
 import { WhyFailed } from './WhyFailed';
 
-const { reportFixActions: FixActions } = edition.slots;
+const { reportFixActions: FixActions, reportFailActions: FailActions } = edition.slots;
 
 function shotUrl(path: string | undefined): string | undefined {
   if (!path) return undefined;
@@ -118,6 +119,8 @@ export function ReportDetail({ run, test, steps, step, stepRun, number, groupId,
             ? <Button kind="primary" size="lg" icon="replay" onClick={() => navigate(`/apps/${run.appId}/tests/${run.testId}/record?rerecord=${encodeURIComponent(step.id)}`)}>Re-record this step</Button>
             : <Button kind="primary" size="lg" icon="edit" onClick={() => navigate(`/apps/${run.appId}/shared/${groupId}/edit`)}>Edit shared steps</Button>}
         <CopyButton size="lg" label="Copy details" copiedLabel="Copied" text={() => copyDetails(run, step, number, stepRun, appName)} />
+        <CopyButton size="lg" label="Copy as Markdown" copiedLabel="Copied" text={() => { const c = issueContent({ run, test, steps, step, stepRun, number, appName }); return `## ${c.title}\n\n${c.markdown}`; }} />
+        {FailActions && <FailActions run={run} stepRun={stepRun ?? { stepId: step.id, result: 'failed' }} step={step} test={test} steps={steps} number={number} appName={appName} />}
         {rerecordHere && stepRun?.reason !== 'secretMissing' && <div className="rp-hint">Re-record takes you back to this step with the page as it was.</div>}
       </div>
     </>

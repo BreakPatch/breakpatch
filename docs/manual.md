@@ -40,9 +40,10 @@ Breakpatch comes in these editions. **Community** is free and open source: one p
 26. [Run requests](#run-requests)
 27. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
 28. [Result messages](#result-messages)
-29. [Security rules](#security-rules)
-30. [Licences and seats](#licences-and-seats)
-31. [The back office](#the-back-office)
+29. [Create an issue](#create-an-issue)
+30. [Security rules](#security-rules)
+31. [Licences and seats](#licences-and-seats)
+32. [The back office](#the-back-office)
 
 ---
 
@@ -226,7 +227,7 @@ Common reasons:
 - **Saved secret is missing on this Mac.** Add it in Settings → Saved secrets, then run again.
 - **STAGING_PASSWORD isn't allowed on login.example.com.** The page wasn't one of the secret's sites, so nothing was typed. If that site is right, add it to the secret in Settings → Saved secrets.
 
-Every error has **Copy details**, to paste into an issue or send to a developer.
+Every error has **Copy details**, to paste into a message or send to a developer, and **Copy as Markdown**: a ready-made bug report with a title, the steps up to the failure, what was expected and what was seen, the reason, and where and when it ran. Paste it into GitHub, Jira, Linear or any tracker that takes Markdown. In Team, **Create issue** makes the issue for you: see [Create an issue](#create-an-issue).
 
 In Team, a failed step also has **Why did this fail?**: the AI assistant says in plain words what changed on the screen. See [Why did this fail?](#why-did-this-fail).
 
@@ -340,7 +341,8 @@ Everything in this part needs a paid edition: **Breakpatch Team**, or **Solo** f
 - **Why did this fail?** In the report, the AI assistant says in plain words what changed, for example "The Save button now reads “Save changes”", with the likely cause and what to do.
 - **Schedules** for suites, on any days and time.
 - **The local runner**: one Mac that runs suites for the whole team.
-- **Run requests** from CI or any other tool, and **result messages** after every suite run.
+- **Run requests** from CI or any other tool, and **result messages** after every suite run, to Slack, Microsoft Teams or any web address.
+- **Create issue** in GitHub, Linear or Jira from a failed step, with the steps, the screenshot and a link to the report.
 - **`breakpatch-ci`**: run the workspace's suites on your CI machines, with the results in the run history.
 
 Choosing another AI model for the assistant is in Business.
@@ -705,6 +707,7 @@ Keep the sites to your own test environments. A workspace member who can edit te
 - `--auto-fix` lets the AI assistant find a button that moved, as [Fixed automatically](#fixed-automatically) does in the app. It only works on a self-hosted Mac where Breakpatch is installed and its AI assistant is downloaded (Settings → AI assistant), with a licence that includes Fixed automatically. Anywhere else the run carries on without fixing and says so.
 - `--fail-on-fix` fails the run when a step needed fixing.
 - `--strict-systems` turns off **Allow for small differences between systems** for this run (see below).
+- `--notify-url URL` sends the result to Slack, Microsoft Teams or any web address when the run ends, as the local runner does (see [Result messages](#result-messages)). Anyone with the address can post to your channel, so keep it in a CI secret and set it as `BREAKPATCH_NOTIFY_URL` instead: then it never shows in the log. `--notify-kind slack|teams|webhook` says which format to send (Breakpatch picks it from the address), and `--notify-when failures` sends only failed runs (the default is `every`). The JSON gets `"notified"`, with what Slack or Teams said if it didn't work; the exit code is still the test's result. *When it starts failing, and when it passes again* isn't available in CI, since the CI account can't read the suite's last result.
 
 **Record and run on the same kind of machine.** Screen checks compare the page with how it looked when the step was recorded, and another system can draw text a little differently. Tests recorded on a Mac pass most reliably on a Mac with the same Breakpatch version. When a test was recorded on another system, `breakpatch-ci` says so in one line when the run starts, allows for small differences as the app's **Allow for small differences between systems** does (`--strict-systems` turns that off), and adds `systemMismatch` to the JSON, with the explanation when a check fails. See [Recorded on another system](#recorded-on-another-system).
 
@@ -792,7 +795,25 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 
 ## Result messages
 
-Give a suite a **Result address** (*After each run, send the result to*): any web address that accepts a message. After every run, the runner sends it a `POST` with JSON:
+After each run, the local runner can send the suite's result where your team talks: **Slack**, **Microsoft Teams**, or any **web address** that takes a message. Set it in the suite (*After each run, send the result to*). Only admins can set or see it.
+
+**When.** *After every run*, *Only when it fails*, or *When it starts failing, and when it passes again*: the first failed run after a pass, then the first pass after that. A run that was replaced by a newer request is only sent with *After every run*.
+
+**Slack.** Make an [incoming webhook](https://api.slack.com/messaging/webhooks) for the channel (a Slack app with *Incoming Webhooks* turned on) and paste its address, `https://hooks.slack.com/services/…`. The message has the result, the counts, one line per failed test with the step and why, the screenshot if you include it, and an **Open the report** button.
+
+**Microsoft Teams.** In the channel, add the Workflows template **Send webhook alerts to a channel** (or a workflow that starts with *When a Teams webhook request is received*), and paste its address. It ends in `environment.api.powerplatform.com`. The message is an Adaptive Card with the same things. Microsoft turned off the old Office 365 connector addresses (`….webhook.office.com`) in Teams, so Breakpatch doesn't take them. If Teams says it wants a sign-in, set *Who can trigger the flow* to *Anyone* in the workflow's first step. Older Workflows addresses on `logic.azure.com` are being replaced by Microsoft: if the test message fails, copy the workflow's address again.
+
+**Include the failed step's screenshot** (Slack and Teams, off by default). Slack and Teams can only show a picture from a web address, so the runner puts the screenshot of the step that failed in your workspace's own Firebase Storage, at a random address. Anyone who has the message can open the picture. It needs Storage turned on in your Firebase project (new projects need the pay-as-you-go plan for it) and its rules published: Settings → Workspace → **Copy storage rules**, then Firebase console → Storage → Rules → Publish. Without it, the message goes without the picture.
+
+**The address is a secret.** Anyone who has it can post to your channel. So it isn't stored with the suite: only admins and the runner can read it, not members or the CI account. Once saved it shows masked, like `hooks.slack.com/services/•••••`; press **Change** to paste a new one. It never goes in a message, a warning or the log.
+
+**Send a test message** posts a sample result to the address before you rely on it, and shows what Slack or Teams answered, for example "Slack doesn't know this webhook any more".
+
+If the address doesn't answer, the runner tries 3 times over 5 minutes. If Slack or Teams refuses the message (a removed webhook, say), it stops at once. Either way the runner's status says so.
+
+**The report link.** **Open the report** goes to `https://breakpatch.dev/report#r=…`, which opens the run's report in Breakpatch on a Mac, and on a phone says to open it on a Mac. The part after `#` never reaches a server.
+
+**A web address** gets the result as JSON, in a `POST`:
 
 ```json
 {
@@ -807,16 +828,37 @@ Give a suite a **Result address** (*After each run, send the result to*): any we
   "note": "",
   "startedAt": "2026-09-24T14:52:03.000Z",
   "durationSeconds": 292,
-  "reportLink": "breakpatch://report/run_8f21c",
+  "reportLink": "breakpatch://report/web-app/run_8f21c",
+  "reportUrl": "https://breakpatch.dev/report#r=web-app/run_8f21c",
   "text": "Smoke failed: 4 of 6 tests passed, 1 failed, 1 not run · 4:52 · asked by CI · build 412"
 }
 ```
 
-`result` is one of `passed`, `passed_with_fixes`, `failed` or `replaced`. `reportLink` opens the report in Breakpatch. Use `text` as it is, or build your own message.
+`result` is one of `passed`, `passed_with_fixes`, `failed` or `replaced`. `reportLink` opens the report in Breakpatch on a Mac, and `reportUrl` does the same from anywhere (both are empty when there's no run to open). A failure can also have `explanation`, the AI assistant's sentence on why, and the message `imageUrl`, the screenshot, when the suite includes one. Use `text` as it is, or build your own message. Any relay works: n8n, Zapier, an email service. Discord and Google Chat take it through such a relay.
 
-If the address doesn't answer, the runner tries 3 times over 5 minutes. **Send a test message** in the suite checks the address before you rely on it.
+[breakpatch-ci](#from-ci-with-breakpatch-ci) sends the same messages with `--notify-url`.
 
-Any relay works: an n8n workflow that posts to Teams, a Slack incoming webhook, an email service.
+**Updating.** Result addresses saved by an earlier Breakpatch were kept with the suite, where the CI account could read them. When an admin opens the updated app, it moves them to where only admins and the runner can read them. Update the runner Mac first, then publish the new [security rules](#security-rules). Older apps can't save in a workspace once the updated app has saved there (they say to update).
+
+## Create an issue
+
+On a failed step in a report, **Create issue** writes it up in **GitHub**, **Linear** or **Jira Cloud** in one click: the title ("Create a project: step 5 Click Done failed: couldn't find the Done button"), the steps up to the failure, what was expected and what was seen, the reason, the app, the start address, the test version, who or what ran it (a person, the local runner or CI), the Mac, the time and a link to the report. If the AI assistant explained the failure, its explanation goes in too. Afterwards the report shows **Open issue** instead, for everyone in the team.
+
+**The screenshot.** Jira gets the failed step's screenshot as an attachment, and Linear as a picture in the issue. GitHub has no way to attach one, so it's put in your workspace's Firebase Storage and linked, as for [result messages](#result-messages) (it needs Storage and its rules); without Storage the issue goes without it. The screenshot is on the Mac that ran the test, so an issue made on another Mac, or from a runner or CI run, has no picture.
+
+**Set it up** in Settings → **Issue trackers**:
+
+1. **Where issues go** (admins, for the whole team): the GitHub repository (`acme/web`) and labels, the Linear team's key (`ENG`), or the Jira site (`acme.atlassian.net`), project key (`WEB`), issue type (Bug unless you say otherwise) and labels.
+2. **Your token, on this Mac** (each person): issues are made in your name, with your own token.
+   - **GitHub:** a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with access to the repository and *Issues: Read and write*.
+   - **Linear:** a personal API key (Linear → Settings → Security & access).
+   - **Jira:** an [API token](https://id.atlassian.com/manage-profile/security/api-tokens) with the email you sign in to Jira with.
+
+   **Check and save** asks the tracker whether the token works, then keeps it in this Mac's Keychain. It's only used to make issues, and never goes to the workspace, your teammates or Breakpatch. **Remove** takes it off this Mac.
+
+If a tracker refuses, Breakpatch says why in plain words, for example "GitHub said the token can't create issues in acme/web".
+
+Create issue comes with a Breakpatch Team licence that includes it; licences get it at their next check. In Community, **Copy as Markdown** gives the same text to paste yourself.
 
 ## Security rules
 
@@ -830,6 +872,8 @@ Any relay works: an n8n workflow that posts to Teams, a Slack incoming webhook, 
 - A test's released version must be one that's saved.
 - Every change to apps, tests, shared steps or suites also updates `workspace/changes`, a small document that tells the other Macs what changed, so they don't read everything again. Apps from before this can't save until they're updated.
 - Runs and suite runs carry `expiresAt`, 90 days after they're saved, which the TTL policy deletes them by. It can't be changed.
+- Only admins set where a suite's result goes. Its address is kept apart from the suite, and only admins and the runner can read it.
+- Anyone in the team can note the issue made from a run, and change nothing else about it. Only admins set where issues go. Tokens for GitHub, Linear and Jira are never in the workspace.
 
 To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the `breakpatch` database. Disable the user in Firebase Authentication to cut it off.
 

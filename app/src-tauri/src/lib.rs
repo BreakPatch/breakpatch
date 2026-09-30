@@ -1,6 +1,7 @@
 //! Breakpatch desktop shell: window, engine sidecar, Keychain secrets, tests folder, file association,
 //! deep links, updater, runner-mode helpers, the Team licence check (licence.rs), the usage counts
-//! (usage.rs) and the last step of Upgrade to Team (migration.rs). The UI calls these through
+//! (usage.rs), the last step of Upgrade to Team (migration.rs), result messages (runner.rs) and
+//! the issue trackers for Create issue (trackers.rs). The UI calls these through
 //! `platform.ts`, `lib/usage.ts`, `engine/sidecarEngine.ts` and `lib/updates.ts`.
 
 mod engine;
@@ -9,6 +10,7 @@ mod licence;
 mod migration;
 mod runner;
 mod secrets;
+mod trackers;
 mod usage;
 mod workspace;
 
@@ -29,6 +31,7 @@ use workspace::WorkspaceInbox;
 type SecretsState = Arc<Secrets<KeyringStore>>;
 type LicenceState = Arc<Licensing<KeyringStore>>;
 type UsageState = Arc<UsageStore>;
+type TrackersState = Arc<trackers::Trackers<KeyringStore>>;
 
 // ---- Engine ----------------------------------------------------------------------------
 
@@ -390,6 +393,88 @@ async fn runner_post_result(url: String, body: Value) -> Result<u16, String> {
     runner::post_result(&url, &body).await
 }
 
+/// POSTs a result message (JSON, Slack or Teams) and answers the status with the start of the
+/// reply, for "Send a test message" and the runner's messages.
+#[tauri::command]
+async fn runner_post_message(url: String, body: Value) -> Result<runner::PostReply, String> {
+    runner::post_message(&url, &body).await
+}
+
+/// A failure screenshot's bytes (only from the engine's screenshots folder), for a result
+/// message's picture or an issue. The webview can't fetch asset URLs (connect-src).
+#[tauri::command]
+async fn screenshot_read(app: tauri::AppHandle, path: String) -> Result<tauri::ipc::Response, String> {
+    let base = screenshots_dir(&app)?;
+    blocking(move || runner::read_screenshot(&base, &path)).await.map(tauri::ipc::Response::new)
+}
+
+// ---- Issue trackers (Team, Create issue; trackers.rs) ------------------------------------
+
+/// The trackers set up on this Mac and as whom (never a token).
+#[tauri::command]
+async fn trackers_status(t: State<'_, TrackersState>) -> Result<Vec<trackers::TrackerStatus>, String> {
+    let t = Arc::clone(&t);
+    blocking(move || Ok(t.status())).await
+}
+
+/// Checks a personal token with the tracker, then keeps it in the Keychain. Jira also needs the
+/// email and the site.
+#[tauri::command]
+async fn trackers_save(
+    t: State<'_, TrackersState>,
+    provider: String,
+    token: String,
+    email: Option<String>,
+    site: Option<String>,
+) -> Result<trackers::TrackerStatus, String> {
+    let p = trackers::Provider::parse(&provider)?;
+    let t = Arc::clone(&t);
+    let c = trackers::client()?;
+    let e = trackers::Endpoints::production();
+    let account = trackers::verify(&c, &e, p, &token, email.as_deref(), site.as_deref()).await?;
+    blocking(move || {
+        let (site, email) = if p == trackers::Provider::Jira {
+            (Some(trackers::normalize_site(site.as_deref().unwrap_or(""))?), email.map(|m| m.trim().to_string()))
+        } else {
+            (None, None)
+        };
+        let who = trackers::TrackerStatus { provider: p, account, site, email };
+        t.put(who.clone(), &token)?;
+        Ok(who)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn trackers_forget(t: State<'_, TrackersState>, provider: String) -> Result<(), String> {
+    let p = trackers::Provider::parse(&provider)?;
+    let t = Arc::clone(&t);
+    blocking(move || t.forget(p)).await
+}
+
+/// Makes the issue with this Mac's token, attaching the failure screenshot where the tracker
+/// can take it (Jira, Linear). The token never leaves the shell.
+#[tauri::command]
+async fn trackers_create_issue(
+    app: tauri::AppHandle,
+    t: State<'_, TrackersState>,
+    provider: String,
+    request: trackers::IssueRequest,
+) -> Result<trackers::CreatedIssue, String> {
+    let p = trackers::Provider::parse(&provider)?;
+    let t = Arc::clone(&t);
+    let (token, who) = blocking(move || t.get(p)).await?;
+    let shot = match (&request.screenshot_path, p) {
+        (Some(path), trackers::Provider::Jira | trackers::Provider::Linear) => {
+            let base = screenshots_dir(&app)?;
+            let path = path.clone();
+            blocking(move || Ok(runner::read_screenshot(&base, &path).ok())).await?
+        }
+        _ => None,
+    };
+    trackers::create_issue(&trackers::client()?, &trackers::Endpoints::production(), p, &token, &who, &request, shot).await
+}
+
 // ---- App -----------------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -427,6 +512,10 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             let index = SecretsIndex::new(data_dir.join("secrets-index.json"));
             app.manage::<SecretsState>(Arc::new(Secrets::new(KeyringStore::default(), index)));
+            app.manage::<TrackersState>(Arc::new(trackers::Trackers::new(
+                KeyringStore::new(trackers::SERVICE),
+                data_dir.join("trackers.json"),
+            )));
             let machine_dir = data_dir.clone();
             let keys = KeyTable::compiled();
             let edition = if keys.is_empty() { usage::Edition::Community } else { usage::Edition::Team };
@@ -482,6 +571,12 @@ pub fn run() {
             runner_open_at_login_enabled,
             system_memory_gb,
             runner_post_result,
+            runner_post_message,
+            screenshot_read,
+            trackers_status,
+            trackers_save,
+            trackers_forget,
+            trackers_create_issue,
             licence_status,
             licence_select,
             licence_activate,

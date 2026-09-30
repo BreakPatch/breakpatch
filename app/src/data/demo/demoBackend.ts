@@ -3,7 +3,7 @@
 import { edition } from '../../edition';
 import { AuthError, cleanDetails, detailsDiff, startUrlNote, upTo, type Backend, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
 import type {
-  App, Explanation, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
+  App, Explanation, Member, Person, QueueItem, RecordedOn, Role, Run, RunIssue, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
 } from '../types';
 import { communityDemo, people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
 
@@ -169,6 +169,9 @@ export class DemoBackend implements Backend {
   // ---- runs ----
   runs(appId: string, l: Listener<Run[]>, limit?: Limit) { return this.watch(() => upTo(this.st.runs.filter(r => r.appId === appId).sort((a, b) => b.startedAt - a.startedAt), limit), l); }
   testRuns(appId: string, testId: string, l: Listener<Run[]>, limit?: Limit) { return this.watch(() => upTo(this.st.runs.filter(r => r.appId === appId && r.testId === testId).sort((a, b) => b.startedAt - a.startedAt), limit), l); }
+  async setRunIssue(appId: string, runId: string, issue: RunIssue) {
+    this.mutate(s => { s.runs = s.runs.map(r => (r.appId === appId && r.id === runId ? { ...r, issue } : r)); });
+  }
   async run(appId: string, runId: string) { return this.wait(this.st.runs.find(r => r.appId === appId && r.id === runId) ?? null); }
   async addRun(r: Omit<Run, 'id'>) {
     const run: Run = { ...r, id: newId('run') };
@@ -190,16 +193,25 @@ export class DemoBackend implements Backend {
   suites(l: Listener<Suite[]>) { return this.watch(() => [...this.st.suites], l); }
   async saveSuite(id: string | null, n: NewSuite) {
     const me = this.me(); const now = Date.now();
+    // The address of a result message is kept apart from the suite, as in a workspace.
+    const { notify, ...rest } = n;
+    const pub = notify ? { kind: notify.kind, when: notify.when, ...(notify.screenshot ? { screenshot: true } : {}) } : undefined;
     let out: Suite;
     if (id) {
-      out = { ...this.st.suites.find(x => x.id === id)!, ...n, updatedBy: me, updatedAt: now };
+      const before = this.st.suites.find(x => x.id === id)!;
+      out = { ...before, ...rest, updatedBy: me, updatedAt: now };
+      if (notify === null) delete out.notify; else if (pub) out.notify = pub;
       this.mutate(s => { s.suites = s.suites.map(x => x.id === id ? out : x); });
     } else {
-      out = { id: slug(n.name) + '-' + Math.random().toString(16).slice(2, 6), ...n, createdBy: me, createdAt: now, updatedBy: me, updatedAt: now };
+      out = { id: slug(n.name) + '-' + Math.random().toString(16).slice(2, 6), ...rest, ...(pub ? { notify: pub } : {}), createdBy: me, createdAt: now, updatedBy: me, updatedAt: now };
       this.mutate(s => { s.suites.push(out); });
     }
+    if (notify === null) this.addresses.delete(out.id);
+    else if (notify?.url) this.addresses.set(out.id, notify.url);
     return this.wait(out);
   }
+  private addresses = new Map<string, string>();
+  async notifyAddress(suiteId: string) { return this.addresses.get(suiteId) ?? this.st.suites.find(x => x.id === suiteId)?.resultUrl ?? null; }
   async deleteSuite(id: string) { this.mutate(s => { s.suites = s.suites.filter(x => x.id !== id); }); }
   runner(l: Listener<RunnerStatus | null>) { return this.watch(() => this.st.runner && { ...this.st.runner, lastSeen: this.st.runner.status === 'paused' ? this.st.runner.lastSeen : Date.now() }, l); }
   queue(l: Listener<QueueItem[]>) { return this.watch(() => [...this.st.queue], l); }
