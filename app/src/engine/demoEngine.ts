@@ -3,6 +3,7 @@
 import type { Box, Explanation, FailReason, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
 import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
 import { edition } from '../edition';
+import { hasFeature } from '../edition/features';
 import { labelFor } from './labels';
 import { MODELS_DIR } from './paths';
 
@@ -173,7 +174,8 @@ export class DemoEngine implements Engine {
 
   /** The preview's "Why did this fail?": a fixed sentence per reason, as the Team engine would put it. */
   async explain(step: Step, stepRun: StepRun, _viewport: Pick<Viewport, 'width' | 'height'>): Promise<Explanation | null> {
-    if (edition.name !== 'team') throw new EngineError('not_ready', 'Explaining failures is part of Breakpatch Team.');
+    // The same flag as the report's button and the real engine's licence check: the feature, not the edition.
+    if (!hasFeature('explain')) throw new EngineError('not_ready', 'Explaining failures is part of Breakpatch Team.');
     await this.sleep(1200);
     const name = (step.target ?? '').split(',')[0].trim().replace(/^(the|a|an)\s+/i, '');
     const the = name ? `The ${name}` : 'What this step acts on';

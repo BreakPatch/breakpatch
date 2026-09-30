@@ -64,3 +64,18 @@ describe('demo run', () => {
     expect(end.steps.map(s => `${s.stepId}:${s.result}`)).toEqual(['A:passed', 'G:failed', 'g1:passed', 'g2:failed', 'Done:notRun']);
   });
 });
+
+describe('the preview\'s "Why did this fail?"', () => {
+  it('follows the explain feature, as the report\'s button does (not the edition\'s name)', async () => {
+    const { resetFeaturesForTests, setFeatures } = await import('../../edition/features');
+    const { NO_FEATURES } = await import('../../edition/types');
+    const e = new DemoEngine();
+    (e as unknown as { sleep: () => Promise<void> }).sleep = async () => undefined;
+    const failed = { stepId: 'A', result: 'failed' as const, reason: 'targetNotFound' as const };
+    setFeatures({ ...NO_FEATURES, explain: false });
+    await expect(e.explain(st('A'), failed, { width: 1, height: 1 })).rejects.toMatchObject({ code: 'not_ready' });
+    setFeatures({ ...NO_FEATURES, explain: true });
+    expect(await e.explain(st('A'), failed, { width: 1, height: 1 })).toMatchObject({ cause: 'moved' });
+    resetFeaturesForTests();
+  });
+});
