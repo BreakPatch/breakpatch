@@ -20,7 +20,8 @@ export function useReport(appId: string, runId: string) {
   const runs = history.data;
   const test = useLive<Test | null>((b, l) => (testId ? b.test(appId, testId, l) : () => {}), [appId, testId]).data;
   const apps = useLive<App[]>((b, l) => b.apps(l), []).data;
-  const run = withLaterFields(runs?.find(r => r.id === runId), fetched);
+  // The live list's copy (it has what was added to the run later, on any Mac: Backend.runNotes), else the one read by id.
+  const run = runs?.find(r => r.id === runId) ?? fetched;
 
   const [steps, setSteps] = useState<Step[] | null>(null);
   const version = fetched?.testVersion;
@@ -39,22 +40,4 @@ export function useReport(appId: string, runId: string) {
   }, [backend, appId, testId, version, current, test === undefined]);
 
   return { run, runs, moreRuns: history.hasMore ? history.more : undefined, test, steps, app: apps?.find(a => a.id === appId), missing: fetched === null };
-}
-
-/**
- * The run as the report shows it: the live list's copy, with what may be added to a saved run
- * later (the issue made from it, a failed step's explanation) taken from the copy read by id when
- * the list's doesn't have it. A workspace's lists keep runs from this Mac's cache, which doesn't
- * hear about those later changes made on another Mac; the read by id asks the workspace.
- */
-export function withLaterFields(listed: Run | undefined, fetched: Run | null | undefined): Run | null | undefined {
-  if (!listed || !fetched || fetched.id !== listed.id) return listed ?? fetched;
-  const issue = listed.issue ?? fetched.issue;
-  const steps = listed.steps.map(s => {
-    if (s.explanation) return s;
-    const e = fetched.steps.find(f => f.stepId === s.stepId && f.result === s.result)?.explanation;
-    return e ? { ...s, explanation: e } : s;
-  });
-  const changed = issue !== listed.issue || steps.some((x, i) => x !== listed.steps[i]);
-  return changed ? { ...listed, ...(issue ? { issue } : {}), steps } : listed;
 }

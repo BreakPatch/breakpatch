@@ -4,8 +4,8 @@
 // Firestore database). Reads are live subscriptions; writes return promises.
 
 import type {
-  App, Explanation, HttpCall, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
-  RunIssue, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Workspace,
+  App, Explanation, HttpCall, Member, NotifyInput, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
+  RunIssue, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Viewport, Workspace,
 } from './types';
 
 export type Unsubscribe = () => void;
@@ -21,7 +21,7 @@ export interface TestDetails { name: string; description?: string; startUrl: str
 export interface NewSuite {
   name: string; tests: Suite['tests']; schedule: Suite['schedule']; resultUrl?: string;
   /** Where the result goes (Team, admins). With `url`, the address is saved apart from the suite; without, it stays as it was. */
-  notify?: SuiteNotify | null;
+  notify?: NotifyInput | null;
 }
 
 /** The note on the version a new start address makes (Backend.updateTestDetails). */
@@ -74,8 +74,48 @@ export class AuthError extends Error {
   constructor(code: AuthError['code'], message: string, fix?: AuthError['fix']) { super(message); this.code = code; if (fix) this.fix = fix; }
 }
 
+// ---------- What only some backends can do ----------
+// Each is an optional part of Backend: a backend that can sets it, and callers use
+// `backend.<part>?.…` and nothing else (never duck typing, never `kind`).
+
+/**
+ * What's added to a saved run later, apart from the run (it's written once and only ever read
+ * after): the AI assistant's explanation of a failed step (#7) and the issue made from it (#5).
+ * The run lists and `run()` show them merged into the run.
+ */
+export interface RunNotes {
+  /** Keeps "Why did this fail?" for the run's failed step, so it isn't asked again. A refused write is only a cache miss. */
+  saveExplanation(appId: string, runId: string, stepId: string, e: Explanation): Promise<void>;
+  /** Notes the issue made from a run (Create issue), so the report offers Open issue to everyone. */
+  setIssue(appId: string, runId: string, issue: RunIssue): Promise<void>;
+}
+
+/** A suite's result messages (Team): the secret address, and how a message is posted. */
+export interface NotifyStore {
+  /** The suite's result address, which only admins and the runner may read. null when there's none or this account can't read it. */
+  address(suiteId: string): Promise<string | null>;
+  /**
+   * How to post a message, when not through the shell: the sample workspace answers without
+   * sending anything anywhere. Unset: the shell posts it.
+   */
+  post?: (url: string, body: string) => Promise<{ ok: boolean; status: number; body?: string }>;
+}
+
+/** Where Create issue sends issues (Team): the workspace's tracker settings. */
+export interface TrackerStore {
+  settings(l: Listener<TrackerSettings>): Unsubscribe;
+  /** Admins only. */
+  save(t: TrackerSettings): Promise<void>;
+}
+
 export interface Backend {
   readonly kind: 'demo' | 'firebase' | 'local';
+  /** Optional: things added to saved runs later (see RunNotes). */
+  readonly runNotes?: RunNotes;
+  /** Optional (Team): result messages (see NotifyStore). */
+  readonly notify?: NotifyStore;
+  /** Optional (Team): issue trackers (see TrackerStore). */
+  readonly trackers?: TrackerStore;
   /** The team workspace; null for a local tests folder. */
   readonly workspace: Workspace | null;
   /** The tests folder (kind 'local'). */
@@ -146,14 +186,6 @@ export interface Backend {
    * never saved and backends may ignore it.
    */
   addRun(r: Omit<Run, 'id'>, o?: { trigger?: 'schedule' }): Promise<Run>;
-  /**
-   * Keeps the AI assistant's "Why did this fail?" on a saved run's failed step (StepRun
-   * `explanation`), so it isn't asked again. Optional: a backend without it keeps nothing, and
-   * a refused write (a run someone else started) is only a cache miss.
-   */
-  saveExplanation?(appId: string, runId: string, stepId: string, e: Explanation): Promise<void>;
-  /** Optional (Team): notes the issue made from a run (Create issue), so the report offers Open issue. */
-  setRunIssue?(appId: string, runId: string, issue: RunIssue): Promise<void>;
 
   // Suites and local runner
   suites(l: Listener<Suite[]>): Unsubscribe;
@@ -164,11 +196,6 @@ export interface Backend {
   suiteRuns(l: Listener<SuiteRun[]>, limit?: Limit): Unsubscribe;
   /** Creates a runRequests document; the runner picks it up. */
   requestSuiteRun(suiteId: string, note?: string): Promise<void>;
-  /**
-   * Optional (Team): the suite's result address, which only admins and the runner may read (it's
-   * a secret: anyone with it can post). null when there's none or this account can't read it.
-   */
-  notifyAddress?(suiteId: string): Promise<string | null>;
   removeFromQueue(id: string): Promise<void>;
 
   // Runner side (used by the RunnerService on the runner Mac, spec §12.4)

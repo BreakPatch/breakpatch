@@ -1,10 +1,11 @@
 // In-memory backend for development, the browser preview and tests.
 // Behaves like the Firebase backend: live subscriptions, immutable versions, audit fields.
 import { edition } from '../../edition';
-import { AuthError, cleanDetails, detailsDiff, startUrlNote, upTo, type Backend, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
+import { AuthError, cleanDetails, detailsDiff, startUrlNote, upTo, type Backend, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type RunNotes, type TestDetails, type TrackerStore, type Unsubscribe } from '../backend';
 import type {
-  App, Explanation, Member, Person, QueueItem, RecordedOn, Role, Run, RunIssue, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
+  App, Explanation, Member, Person, QueueItem, RecordedOn, Role, Run, RunIssue, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Workspace,
 } from '../types';
+import { applyRunnerPreview, runnerPreviewFlag, type RunnerPreview } from './preview';
 import { communityDemo, people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
 
 export const DEMO_WORKSPACE: Workspace = {
@@ -169,9 +170,6 @@ export class DemoBackend implements Backend {
   // ---- runs ----
   runs(appId: string, l: Listener<Run[]>, limit?: Limit) { return this.watch(() => upTo(this.st.runs.filter(r => r.appId === appId).sort((a, b) => b.startedAt - a.startedAt), limit), l); }
   testRuns(appId: string, testId: string, l: Listener<Run[]>, limit?: Limit) { return this.watch(() => upTo(this.st.runs.filter(r => r.appId === appId && r.testId === testId).sort((a, b) => b.startedAt - a.startedAt), limit), l); }
-  async setRunIssue(appId: string, runId: string, issue: RunIssue) {
-    this.mutate(s => { s.runs = s.runs.map(r => (r.appId === appId && r.id === runId ? { ...r, issue } : r)); });
-  }
   async run(appId: string, runId: string) { return this.wait(this.st.runs.find(r => r.appId === appId && r.id === runId) ?? null); }
   async addRun(r: Omit<Run, 'id'>) {
     const run: Run = { ...r, id: newId('run') };
@@ -182,12 +180,18 @@ export class DemoBackend implements Backend {
     });
     return this.wait(run);
   }
-  async saveExplanation(appId: string, runId: string, stepId: string, e: Explanation) {
-    this.mutate(s => {
-      s.runs = s.runs.map(r => r.appId === appId && r.id === runId
-        ? { ...r, steps: r.steps.map(sr => sr.stepId === stepId && sr.result === 'failed' ? { ...sr, explanation: e } : sr) } : r);
-    });
-  }
+  /** Explanations and issues are kept on the sample runs themselves (in memory). */
+  readonly runNotes: RunNotes = {
+    saveExplanation: async (appId, runId, stepId, e: Explanation) => {
+      this.mutate(s => {
+        s.runs = s.runs.map(r => r.appId === appId && r.id === runId
+          ? { ...r, steps: r.steps.map(sr => sr.stepId === stepId && sr.result === 'failed' ? { ...sr, explanation: e } : sr) } : r);
+      });
+    },
+    setIssue: async (appId, runId, issue: RunIssue) => {
+      this.mutate(s => { s.runs = s.runs.map(r => (r.appId === appId && r.id === runId ? { ...r, issue } : r)); });
+    },
+  };
 
   // ---- suites and runner ----
   suites(l: Listener<Suite[]>) { return this.watch(() => [...this.st.suites], l); }
@@ -211,9 +215,24 @@ export class DemoBackend implements Backend {
     return this.wait(out);
   }
   private addresses = new Map<string, string>();
-  async notifyAddress(suiteId: string) { return this.addresses.get(suiteId) ?? this.st.suites.find(x => x.id === suiteId)?.resultUrl ?? null; }
+  /** Result messages: the addresses in memory, and a test message is never really posted (the sample workspace). */
+  readonly notify: NotifyStore = {
+    address: async suiteId => this.addresses.get(suiteId) ?? this.st.suites.find(x => x.id === suiteId)?.resultUrl ?? null,
+    post: () => new Promise(res => setTimeout(() => res({ ok: true, status: 200 }), 700)),
+  };
+  /** Issue trackers: the sample workspace's settings, in memory (tokens are the shell's, on a Mac). */
+  private trackerSettings: TrackerSettings = { github: { repo: 'acme/web', labels: ['bug'] } };
+  private trackerListeners = new Set<Listener<TrackerSettings>>();
+  readonly trackers: TrackerStore = {
+    settings: l => { this.trackerListeners.add(l); l(this.trackerSettings); return () => { this.trackerListeners.delete(l); }; },
+    save: async t => { this.trackerSettings = t; this.trackerListeners.forEach(l => l(t)); },
+  };
   async deleteSuite(id: string) { this.mutate(s => { s.suites = s.suites.filter(x => x.id !== id); }); }
-  runner(l: Listener<RunnerStatus | null>) { return this.watch(() => this.st.runner && { ...this.st.runner, lastSeen: this.st.runner.status === 'paused' ? this.st.runner.lastSeen : Date.now() }, l); }
+  runner(l: Listener<RunnerStatus | null>) {
+    return this.watch(() => applyRunnerPreview(this.st.runner && { ...this.st.runner, lastSeen: this.st.runner.status === 'paused' ? this.st.runner.lastSeen : Date.now() }, this.runnerPreview()), l);
+  }
+  /** The address's ?runner= preview (preview.ts), for screenshots of the runner's states. */
+  runnerPreview(): RunnerPreview | null { return runnerPreviewFlag(); }
   queue(l: Listener<QueueItem[]>) { return this.watch(() => [...this.st.queue], l); }
   suiteRuns(l: Listener<SuiteRun[]>, limit?: Limit) { return this.watch(() => upTo([...this.st.suiteRuns], limit), l); }
   async requestSuiteRun(suiteId: string, note?: string) {

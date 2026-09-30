@@ -9,7 +9,7 @@ import { useSession } from '../../state/session';
 import { NO_FEATURES } from '../../edition/types';
 import { resetFeaturesForTests, setFeatures } from '../../edition/features';
 import { EngineError } from '../../engine/engine';
-import { clearExplanationsForTests, explanationText } from '../../lib/explain';
+import { clearExplanationsForTests, explainStep, explanationText, MAX_KEPT } from '../../lib/explain';
 import { copyDetails } from './reportData';
 
 const fake = vi.hoisted(() => ({ explain: vi.fn() }));
@@ -56,7 +56,7 @@ describe('Why did this fail?', () => {
 
   it('keeps the answer on the run, and asks only once', async () => {
     fake.explain.mockResolvedValue(RENAMED);
-    const save = vi.spyOn(backend, 'saveExplanation');
+    const save = vi.spyOn(backend.runNotes, 'saveExplanation');
     why();
     fireEvent.click(screen.getByRole('button', { name: 'Why did this fail?' }));
     await screen.findByText(RENAMED.summary);
@@ -128,5 +128,26 @@ describe('Why did this fail?', () => {
     expect(text).toContain('AI assistant: The Save button now reads “Save changes”.\nLikely cause: Its text changed.');
     expect(copyDetails(run, SAVE, '3', FAILED, 'Web')).not.toContain('AI assistant');
     expect(explanationText({ summary: 'Odd.', cause: 'aliens' as Explanation['cause'], suggestion: 'rerecord' })).toBe('AI assistant: Odd.\nSuggested: Re-record this step.');
+  });
+});
+
+describe('the explanations kept in this session (A16)', () => {
+  const engine = (e: Explanation) => ({ explain: vi.fn(async () => e) }) as unknown as Parameters<typeof explainStep>[0]['engine'];
+  it('are kept per workspace: the same run id in another one asks again', async () => {
+    const other = new DemoBackend({ empty: true, signedIn: true, delayMs: 0 });
+    const a = engine(RENAMED), b = engine({ ...RENAMED, summary: 'Another workspace.' });
+    expect(await explainStep({ engine: a, backend, run, step: SAVE, stepRun: FAILED, viewport: VP })).toEqual(RENAMED);
+    expect((await explainStep({ engine: b, backend: other, run, step: SAVE, stepRun: FAILED, viewport: VP }))!.summary).toBe('Another workspace.');
+    expect(await explainStep({ engine: b, backend, run, step: SAVE, stepRun: FAILED, viewport: VP })).toEqual(RENAMED);   // from the first one's
+  });
+  it(`keep at most ${MAX_KEPT}, the oldest going first`, async () => {
+    const e = engine(RENAMED);
+    const ask = (i: number) => explainStep({ engine: e, backend: null, run: { ...run, id: `r${i}` }, step: SAVE, stepRun: FAILED, viewport: VP });
+    for (let i = 0; i <= MAX_KEPT; i++) await ask(i);
+    const asked = (e.explain as ReturnType<typeof vi.fn>).mock.calls.length;
+    await ask(MAX_KEPT);                                   // still kept
+    expect((e.explain as ReturnType<typeof vi.fn>).mock.calls.length).toBe(asked);
+    await ask(0);                                          // the oldest went
+    expect((e.explain as ReturnType<typeof vi.fn>).mock.calls.length).toBe(asked + 1);
   });
 });

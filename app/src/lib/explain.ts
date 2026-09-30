@@ -42,11 +42,27 @@ export function explanationText(e: Explanation): string {
   return [`AI assistant: ${e.summary}`, cause && `Likely cause: ${cause}.`, next && `Suggested: ${next}`].filter(Boolean).join('\n');
 }
 
-const cache = new Map<string, Explanation>();
+/**
+ * Explanations asked in this session, per backend (so per workspace or folder: two workspaces'
+ * runs never share one, and a closed connection's go with it), at most MAX_KEPT each, oldest out first.
+ */
+export const MAX_KEPT = 200;
+const caches = new WeakMap<object, Map<string, Explanation>>();
+const noBackend = {};
+const cacheOf = (b: Backend | null | undefined) => {
+  const k = b ?? noBackend;
+  let c = caches.get(k);
+  if (!c) { c = new Map(); caches.set(k, c); }
+  return c;
+};
+function keep(c: Map<string, Explanation>, key: string, e: Explanation) {
+  c.delete(key); c.set(key, e);
+  while (c.size > MAX_KEPT) c.delete(c.keys().next().value!);
+}
 const pending = new Map<string, Promise<Explanation | null>>();
 
 /** For tests only. */
-export function clearExplanationsForTests(): void { cache.clear(); pending.clear(); }
+export function clearExplanationsForTests(): void { caches.delete(noBackend); pending.clear(); }
 
 /**
  * The explanation of a failed step: the one saved on the run, else the one asked earlier, else a
@@ -56,18 +72,20 @@ export function clearExplanationsForTests(): void { cache.clear(); pending.clear
 export async function explainStep(o: { engine: Engine; backend?: Backend | null; run: Pick<Run, 'id' | 'appId'>; step: Step; stepRun: StepRun; viewport: Pick<Viewport, 'width' | 'height'> }): Promise<Explanation | null> {
   if (o.stepRun.explanation) return o.stepRun.explanation;
   const key = `${o.run.appId}/${o.run.id}/${o.stepRun.stepId}`;
+  const cache = cacheOf(o.backend);
   const had = cache.get(key);
   if (had) return had;
-  let p = pending.get(key);
+  const pendingKey = `${o.backend?.workspace?.config.projectId ?? o.backend?.kind ?? ''}|${key}`;
+  let p = pending.get(pendingKey);
   if (!p) {
     p = o.engine.explain(o.step, o.stepRun, o.viewport).then(e => {
       if (e) {
-        cache.set(key, e);
-        o.backend?.saveExplanation?.(o.run.appId, o.run.id, o.stepRun.stepId, e).catch(() => undefined);
+        keep(cache, key, e);
+        o.backend?.runNotes?.saveExplanation(o.run.appId, o.run.id, o.stepRun.stepId, e).catch(() => undefined);
       }
       return e;
-    }).finally(() => pending.delete(key));
-    pending.set(key, p);
+    }).finally(() => pending.delete(pendingKey));
+    pending.set(pendingKey, p);
   }
   return p;
 }

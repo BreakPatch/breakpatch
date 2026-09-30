@@ -5,7 +5,7 @@
 // imports Team code, only this contract.
 import type { ComponentType, LazyExoticComponent, ReactNode } from 'react';
 import type { Backend } from '../data/backend';
-import type { Person, Run, Step, StepRun, Suite, Test, Workspace } from '../data/types';
+import type { NotifyInput, Person, Run, Step, StepRun, Suite, Test, Workspace } from '../data/types';
 import type { MenuItem } from '../components/ui';
 import type { Connection } from '../state/connections';
 
@@ -78,7 +78,7 @@ export interface GateState {
 export interface SuiteExtras {
   schedule: Suite['schedule']; resultUrl?: string;
   /** Where the result goes; `url` only when the panel changed the address. null: nowhere. */
-  notify?: Suite['notify'] | null;
+  notify?: NotifyInput | null;
 }
 
 export interface SuiteEditorPanelProps {

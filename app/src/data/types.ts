@@ -15,6 +15,11 @@ export interface Workspace {
   config: FirebaseWebConfig;
   database: string;              // named Firestore database, default "breakpatch"
   domain: string;                // allowed email domain, e.g. "example.com"
+  /**
+   * How many days runs are kept: a hosted workspace's (90, or 365 for Business), as Breakpatch
+   * Cloud says. Unset for a workspace in the customer's own Firebase, which keeps them 90 days.
+   */
+  historyDays?: number;
 }
 
 export interface FirebaseWebConfig {
@@ -266,16 +271,28 @@ export type NotifyKind = 'webhook' | 'slack' | 'teams';
 export type NotifyWhen = 'every' | 'failures' | 'changes';
 
 /**
- * Where a suite's result goes. The address is a secret (anyone with it can post), so it isn't on
- * the suite: a workspace keeps it where only admins and the runner can read it
- * (Backend.notifyAddress). `url` is set only while an admin edits or saves it.
+ * Where a suite's result goes, as the suite keeps it and everyone reads it. Never the address: that
+ * is a secret (anyone with it can post), which a workspace keeps where only admins and the runner
+ * can read it (Backend.notify).
  */
 export interface SuiteNotify {
   kind: NotifyKind;
   when: NotifyWhen;
   /** Put the failed step's screenshot in the message (uploaded so Slack or Teams can show it). Off by default. */
   screenshot?: boolean;
-  url?: string;
+}
+
+/**
+ * What an admin's save sends: the public part, and `url` when a new address was pasted (it's saved
+ * apart from the suite). Only the save path takes this type; the suite never holds it.
+ */
+export type NotifyInput = SuiteNotify & { url?: string | null };
+
+/** Where Create issue sends issues (Team, workspace/trackers): set by admins, used by everyone with their own token. */
+export interface TrackerSettings {
+  github?: { repo: string; labels?: string[] };
+  linear?: { team: string };
+  jira?: { site: string; project: string; issueType?: string; labels?: string[] };
 }
 
 export interface RunnerStatus {
