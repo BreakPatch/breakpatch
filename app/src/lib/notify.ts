@@ -13,7 +13,9 @@ export const NOTIFY_DEFAULTS: NotifyPrefs = { notifyFailures: true, notifyAll: f
 
 export type Finished =
   | { kind: 'test'; name: string; result: 'pass' | 'fail'; failedAt?: { number: number | string; label: string }; path: string }
-  | { kind: 'suite'; name: string; tests: number; failed: number; durationMs: number; path: string };
+  | { kind: 'suite'; name: string; tests: number; failed: number; durationMs: number; path: string }
+  /** Run all on an app screen: every test of the app (`name`) one after another. */
+  | { kind: 'app'; name: string; tests: number; failed: number; durationMs: number; path: string };
 
 export interface Note { title: string; body: string; path: string }
 
@@ -31,7 +33,9 @@ export function notificationFor(f: Finished, prefs: Partial<NotifyPrefs>, focuse
     };
   }
   const summary = failed ? `${f.failed} of ${f.tests} failed` : `passed: ${f.tests} ${f.tests === 1 ? 'test' : 'tests'} in ${minutes(f.durationMs)}`;
-  return { title: failed ? `${f.name} suite: ${summary}` : `${f.name} suite ${summary}`, body: failed ? 'Open the suite to see which.' : 'Every test passed.', path: f.path };
+  const what = f.kind === 'app' ? `All tests in ${f.name}` : `${f.name} suite`;
+  return { title: failed ? `${what}: ${summary}` : `${what} ${summary}`,
+    body: failed ? (f.kind === 'app' ? 'Open the Runs tab to see which.' : 'Open the suite to see which.') : 'Every test passed.', path: f.path };
 }
 
 /** "Test2 failed at step 9, Click Close button" as one line (the title and body together). */

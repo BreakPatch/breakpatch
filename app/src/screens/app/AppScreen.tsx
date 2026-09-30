@@ -48,11 +48,10 @@ export default function AppScreen() {
     );
   }
 
-  const firstTest = tests.data?.[0];
-  // "Run all" opens the first test's run view until suite-style multi-test runs exist in the app.
+  // Every test of the app, one after another, in one view like a suite run (SuiteRunScreen).
   const runAll = () => {
-    if (!firstTest) { toast('Add a test first, then run it.'); return; }
-    navigate(`/apps/${appId}/tests/${firstTest.id}/run`);
+    if (!tests.data?.length) { toast('Add a test first, then run it.'); return; }
+    navigate(`/apps/${appId}/run-all`);
   };
   const newGroup = async () => {
     const g = await backend.createGroup(appId, 'New shared steps', '', []);

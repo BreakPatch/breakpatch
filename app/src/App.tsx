@@ -34,6 +34,7 @@ const SuiteRunScreen = lazy(() => import('./screens/suites/SuiteRunScreen'));
  *   /apps/:appId?tab=tests|shared|runs     App
  *   /apps/:appId/tests/:testId/record      Recorder (?step=<id> opens on a step, ?rerecord=<id>)
  *   /apps/:appId/tests/:testId/run         Run view (live)
+ *   /apps/:appId/run-all                   Run every test of the app, like a suite (SuiteRunScreen)
  *   /apps/:appId/runs/:runId               Run report (?tab=history)
  *   /apps/:appId/shared/:groupId/edit      Shared steps editor
  *   /suites, /suites/new, /suites/:suiteId Suites and suite editor
@@ -59,6 +60,7 @@ export default function App() {
                 <Route path="/apps/:appId" element={<AppScreen />} />
                 <Route path="/apps/:appId/tests/:testId/record" element={<RecorderScreen />} />
                 <Route path="/apps/:appId/tests/:testId/run" element={<RunScreen />} />
+                <Route path="/apps/:appId/run-all" element={<SuiteRunScreen />} />
                 <Route path="/apps/:appId/runs/:runId" element={<ReportScreen />} />
                 <Route path="/apps/:appId/shared/:groupId/edit" element={<SharedStepsEditorScreen />} />
                 <Route path="/suites" element={<SuitesScreen />} />
