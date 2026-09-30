@@ -25,6 +25,11 @@ import {
   type SuiteAction, type SuiteItem, type SuiteRunView, type SuiteTestState,
 } from '../run/suiteRun';
 import { useAllTests } from './useAllTests';
+import { ExportDialog } from '../report/ExportDialog';
+import { reportInput, type ExportTest } from '../../lib/report/collect';
+import { removePrinted } from '../../lib/report/print';
+import { getEngine } from '../../engine';
+import type { Run, Step } from '../../data/types';
 import '../run/run.css';
 
 const DEFAULT_VP = { width: 1440, height: 900 };
@@ -72,12 +77,18 @@ export default function SuiteRunScreen() {
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
+  // Each test's saved run and the steps it ran, for Export (by the test's place in the suite).
+  const results = useRef(new Map<number, { run: Run | null; steps: Step[] }>());
+  const [exporting, setExporting] = useState(false);
+  useEffect(() => removePrinted, []);
+
   const findTest = useCallback((appId: string, testId: string): Test | undefined => testsByApp?.[appId]?.find(t => t.id === testId), [testsByApp]);
 
   const runAll = useCallback(async () => {
     if (!plan || !apps) return;
     act({ type: 'plan', items: planSuite(plan, findTest, apps) });
     act({ type: 'begin', at: Date.now() });
+    results.current = new Map();
     const runIds: string[] = [];
     for (let i = nextIndex(state.current); i >= 0; i = nextIndex(state.current)) {
       const item = state.current.items[i];
@@ -88,6 +99,7 @@ export default function SuiteRunScreen() {
         const out = await start(test, { notify: false });
         if (!out || !alive.current) return;                       // left the screen
         if (out.run) runIds.push(out.run.id);
+        results.current.set(i, { run: out.run, steps: out.steps });
         const stopped = out.ended.steps.some(s => s.reason === 'stopped');
         const failed = out.ended.steps.filter(s => s.result === 'failed').pop();
         const flat = preorder(out.steps);
@@ -189,7 +201,10 @@ export default function SuiteRunScreen() {
     <>
       <div className="run-timer" aria-label={`Time ${formatDuration(shown)}`}><Icon name="timer" />{formatDuration(shown)}</div>
       {running ? <Button kind="primary" icon="stop" onClick={stop} disabled={view.phase !== 'running' || view.stopped}>Stop</Button>
-        : <Button kind="primary" icon="replay" onClick={() => void runAll()}>Run again</Button>}
+        : <>
+            <Button icon="download" onClick={() => setExporting(true)}>Export</Button>
+            <Button kind="primary" icon="replay" onClick={() => void runAll()}>Run again</Button>
+          </>}
     </>
   );
 
@@ -216,6 +231,23 @@ export default function SuiteRunScreen() {
           </div>
         </aside>
       </div>
+      {view.phase === 'ended' && plan && (
+        <ExportDialog open={exporting} onClose={() => setExporting(false)} what="this suite run"
+          load={screenshots => reportInput({
+            kind: 'suite', name: plan.app ? `All tests in ${plan.app.name}` : plan.name, screenshots, engine: getEngine(),
+            suite: {
+              result: suiteResult(counts), counts, requestedBy: useSession.getState().user?.name ?? backend.currentUser()?.name ?? 'This Mac',
+              startedAt: view.startedAt ?? Date.now(), finishedAt: view.finishedAt ?? Date.now(),
+            },
+            tests: view.items.map((it, i): ExportTest => {
+              const got = results.current.get(i);
+              const t = findTest(it.appId, it.testId);
+              return got?.run
+                ? { appName: it.appName, name: it.name, steps: got.steps, run: got.run, viewport: t?.viewport }
+                : { appName: it.appName, name: it.name, steps: [], run: null, note: it.note ?? (it.state === 'notRun' ? "It didn't run: the suite was stopped." : "It couldn't run.") };
+            }),
+          })} />
+      )}
     </AppFrame>
   );
 }

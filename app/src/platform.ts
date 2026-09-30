@@ -32,18 +32,21 @@ export async function readClipboard(): Promise<string | null> {
   try { return await navigator.clipboard.readText(); } catch { return null; }
 }
 
-/** Saves text to a file the user picks (desktop) or downloads it (browser). */
-export async function saveTextFile(defaultName: string, contents: string): Promise<boolean> {
+/**
+ * Saves text to a file the user picks (desktop) or downloads it (browser). `type` is the
+ * download's media type (default JSON), `filters` the save dialog's kinds of file.
+ */
+export async function saveTextFile(defaultName: string, contents: string, opts: { type?: string; filters?: { name: string; extensions: string[] }[] } = {}): Promise<boolean> {
   if (isTauri()) {
     const { save } = await import('@tauri-apps/plugin-dialog');
-    const path = await save({ defaultPath: defaultName });
+    const path = await save({ defaultPath: defaultName, ...(opts.filters ? { filters: opts.filters } : {}) });
     if (!path) return false;
     const { writeTextFile } = await import('@tauri-apps/plugin-fs');
     await writeTextFile(path, contents);
     return true;
   }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
+  a.href = URL.createObjectURL(new Blob([contents], { type: opts.type ?? 'application/json' }));
   a.download = defaultName; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   return true;

@@ -42,7 +42,7 @@ breakpatch-engine = "breakpatch_engine.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-breakpatch_engine = ["samples/*"]
+breakpatch_engine = ["samples/*", "report/*.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

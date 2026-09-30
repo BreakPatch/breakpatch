@@ -324,6 +324,7 @@ Without `near`, `record.locate` is unchanged.
 | `run.stop` | `{ runId }` | `{}` — stops after the current step |
 | `call.try` | `{ call: Call, appUrl, secrets? }` | `{ ok, status?, ms?, error?, message? }` — "Try it": one request under the same rules as a run |
 | `run.explain` | `{ step: Step, stepRun: StepRun, viewport? }` | `{ explanation: Explanation \| null }` — "Why did this fail?" for one failed step of a finished run (Breakpatch Team, see below) |
+| `report.images` | `{ items: [{ path, size: "full"\|"small" }], viewportWidth? }` | `{ images: [{ src, width, height, bytes } \| null] }` — screenshots for an exported report, as WebP `data:` URIs (see Export a report) |
 
 Each step's `run.step` events and its entry in `run.ended` `steps` carry `timings` `{ preMs, actionMs,
 settleMs, postMs, settled, preTries, postTries }`: where its time went. Settling waits until three
@@ -436,6 +437,20 @@ above, capped at 0.75 s, and keeps them next to the failure screenshot as
 `<screenshot>.page.json` (roles, names, short texts and boxes; no attributes, no passwords). In
 Community, or without the feature, nothing is read or written and a run is exactly as before.
 
+### Export a report
+
+The app's Export (issue #43) saves a run's report, or a suite run's, as one self-contained HTML file
+(which also prints to PDF) or as JUnit XML. The files are made from `breakpatch_engine/report/`:
+`template.html` (the one template), filled by the app (`app/src/lib/report/`) and by
+`breakpatch-ci --junit/--html` in the same way, checked by both against the golden files in
+`engine/tests/fixtures/report/`.
+
+`report.images` gives the screenshots for it: each item's `path` is a `screenshotPath` from
+`run.ended.steps`; `"full"` is the test's `viewportWidth` wide (at most 1600, a Retina screenshot
+scaled down), `"small"` 480 wide, both WebP (quality 72 and 60). Like `run.explain`, only PNGs inside
+the engine's screenshots folder are read: any other path, or one that can't be read, is `null`. At
+most 200 items; more is `bad_request`. Community and Team alike; it doesn't wait for a run.
+
 ### Where a test was recorded
 
 Screen checks compare an area with how it looked when the step was recorded. Another operating
@@ -544,6 +559,9 @@ read or its shared steps can't be found, 3 = no usable licence. Like the app, it
 `group` step's children before the run (the pinned version or the latest, nested groups too), from
 `apps/<appId>/shared/` next to the test's `tests/` folder. This engine's own command line is `serve` (the sidecar) and `info`;
 `breakpatch-engine run` exits 2 and points at `breakpatch-ci`.
+`--junit FILE` and `--html FILE` (any `run`) also write the result as JUnit XML and as the app's HTML
+report (see Export a report); `--html-no-screenshots` leaves the screenshots out of it. The JSON result
+then has `report: { junit?, html?, junitError?, htmlError? }`.
 
 **From the workspace.** `breakpatch-ci run --workspace FILE.bpworkspace --suite <id|name>` (or
 `--test <testId|appId/testId>`, `--version latest|released|N`, `--label TEXT`) reads the tests

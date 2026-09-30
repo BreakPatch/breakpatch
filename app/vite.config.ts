@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
-import type { Plugin, Rollup } from 'vite'
+import { searchForWorkspaceRoot, type Plugin, type Rollup } from 'vite'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
@@ -61,7 +61,8 @@ export default defineConfig({
     preserveSymlinks: true,
     alias: [{ find: /^@bp\//, replacement: fileURLToPath(new URL('./src/', import.meta.url)) }],
   },
-  server: { port: 1420, strictPort: true },
+  // The exported report's template is the open engine's (src/lib/report): the dev server may read it there.
+  server: { port: 1420, strictPort: true, fs: { allow: [searchForWorkspaceRoot(process.cwd()), fileURLToPath(new URL('../engine/src/breakpatch_engine/report/', import.meta.url))] } },
   build: {
     target: 'safari16',
     outDir: 'dist',

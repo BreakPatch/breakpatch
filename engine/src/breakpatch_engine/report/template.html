@@ -1,0 +1,196 @@
+{{! Breakpatch's exported run report (issue #43): one self-contained HTML file.
+    The one template for the app (app/src/lib/report/render.ts) and breakpatch-ci (render.py): both fill it
+    with the same small subset of Mustache, from the same view (view.py, app/src/lib/report/view.ts), and are
+    checked against the same golden file (engine/tests/fixtures/report/report.html). Change them together.
+    Tags: a name in double braces (escaped), hash-name ... slash-name (a list, or shown when set), caret-name ...
+    slash-name (shown when not set), bang (a comment like this one). No partials, no unescaped values.
+    No external requests: the styles and the script are inline, pictures are data: URIs, and the page's
+    Content-Security-Policy refuses anything else. Everything in .bpr is scoped, so the app can print it
+    inside its own window (the part between the bpr-body comments). }}<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta name="generator" content="{{generator}}">
+<title>{{title}}</title>
+<style>
+.bpr {
+  --bpr-bg: #FBF7F3; --bpr-surface: #FFFFFF; --bpr-raised: #F3ECE5; --bpr-line: #E6DCD2;
+  --bpr-text: #221A15; --bpr-muted: #5A4C42; --bpr-faint: #7D6E62; --bpr-accent: #B8502D;
+  --bpr-passed: #3E7A2A; --bpr-fixed: #8A6410; --bpr-failed: #B42B45; --bpr-running: #1F6D8C;
+  --bpr-passed-tint: rgba(62, 122, 42, .10); --bpr-fixed-tint: rgba(138, 100, 16, .10); --bpr-failed-tint: rgba(180, 43, 69, .09);
+  color-scheme: light;
+  box-sizing: border-box; min-height: 100vh; margin: 0; padding: 32px max(20px, calc((100% - 980px) / 2)) 48px;
+  background: var(--bpr-bg); color: var(--bpr-text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+.bpr[data-theme="dark"] {
+  --bpr-bg: #171412; --bpr-surface: #211C19; --bpr-raised: #2C2521; --bpr-line: #3A322C;
+  --bpr-text: #F6EFE9; --bpr-muted: #CFC4BA; --bpr-faint: #A3978C; --bpr-accent: #E0714A;
+  --bpr-passed: #8CC56B; --bpr-fixed: #E9B949; --bpr-failed: #F2667A; --bpr-running: #6CB8D6;
+  --bpr-passed-tint: rgba(140, 197, 107, .12); --bpr-fixed-tint: rgba(233, 185, 73, .12); --bpr-failed-tint: rgba(242, 102, 122, .12);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  .bpr:not([data-theme="light"]) {
+    --bpr-bg: #171412; --bpr-surface: #211C19; --bpr-raised: #2C2521; --bpr-line: #3A322C;
+    --bpr-text: #F6EFE9; --bpr-muted: #CFC4BA; --bpr-faint: #A3978C; --bpr-accent: #E0714A;
+    --bpr-passed: #8CC56B; --bpr-fixed: #E9B949; --bpr-failed: #F2667A; --bpr-running: #6CB8D6;
+    --bpr-passed-tint: rgba(140, 197, 107, .12); --bpr-fixed-tint: rgba(233, 185, 73, .12); --bpr-failed-tint: rgba(242, 102, 122, .12);
+    color-scheme: dark;
+  }
+}
+body.bpr-page { margin: 0; }
+.bpr *, .bpr *::before, .bpr *::after { box-sizing: border-box; }
+.bpr h1, .bpr h2, .bpr p, .bpr dl, .bpr dd, .bpr ol, .bpr figure { margin: 0; }
+.bpr-head { display: grid; gap: 12px; padding-bottom: 20px; border-bottom: 1px solid var(--bpr-line); }
+.bpr-kind { color: var(--bpr-faint); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.bpr h1 { font-size: 28px; line-height: 1.2; font-weight: 700; }
+.bpr h2 { font-size: 19px; line-height: 1.3; font-weight: 650; }
+.bpr-pill { display: inline-flex; align-items: center; gap: 7px; width: fit-content; padding: 4px 12px 4px 10px; border-radius: 999px;
+  font-weight: 650; font-size: 14px; background: var(--bpr-raised); color: var(--bpr-muted); }
+.bpr-pill::before, .bpr-dot { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex: none; }
+.bpr-pill.bpr-passed { background: var(--bpr-passed-tint); color: var(--bpr-passed); }
+.bpr-pill.bpr-fixed { background: var(--bpr-fixed-tint); color: var(--bpr-fixed); }
+.bpr-pill.bpr-failed { background: var(--bpr-failed-tint); color: var(--bpr-failed); }
+.bpr-counts { font-size: 16px; }
+.bpr-meta { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.bpr-meta dt { color: var(--bpr-faint); font-size: 12px; }
+.bpr-meta dd { font-weight: 550; overflow-wrap: anywhere; }
+.bpr-muted { color: var(--bpr-muted); }
+.bpr-small { font-size: 13px; }
+.bpr-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.bpr-tools button { font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 8px; border: 1px solid var(--bpr-line);
+  background: var(--bpr-surface); color: var(--bpr-text); cursor: pointer; }
+.bpr-tools button:hover { border-color: var(--bpr-faint); }
+.bpr-test { margin-top: 28px; }
+.bpr-test-head { display: grid; gap: 8px; margin-bottom: 12px; }
+.bpr-test-head .bpr-app { color: var(--bpr-faint); font-size: 13px; }
+.bpr-steps { list-style: none; padding: 0; display: grid; gap: 6px; }
+.bpr-step { border: 1px solid var(--bpr-line); border-radius: 10px; background: var(--bpr-surface); }
+.bpr-step.bpr-failed { border-color: var(--bpr-failed); }
+.bpr-d1 { margin-left: 24px; } .bpr-d2 { margin-left: 48px; } .bpr-d3 { margin-left: 72px; } .bpr-d4 { margin-left: 96px; }
+.bpr-row, .bpr-step summary { display: flex; align-items: center; gap: 10px; padding: 9px 14px; min-height: 42px; }
+.bpr-step summary { cursor: pointer; list-style: none; }
+.bpr-step summary::-webkit-details-marker { display: none; }
+.bpr-step summary::after { content: ""; width: 7px; height: 7px; margin-left: 2px; border-right: 2px solid var(--bpr-faint);
+  border-bottom: 2px solid var(--bpr-faint); transform: rotate(-45deg); flex: none; }
+.bpr-step details[open] > summary::after { transform: rotate(45deg); }
+.bpr-step summary:focus-visible, .bpr-tools button:focus-visible { outline: 2px solid var(--bpr-accent); outline-offset: 2px; }
+.bpr-no { min-width: 30px; color: var(--bpr-faint); font-variant-numeric: tabular-nums; font-size: 13px; }
+.bpr-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.bpr-status { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.bpr-took { font-size: 13px; color: var(--bpr-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bpr-step .bpr-dot { color: var(--bpr-faint); }
+.bpr-step.bpr-passed .bpr-dot, .bpr-step.bpr-passed .bpr-status { color: var(--bpr-passed); }
+.bpr-step.bpr-fixed .bpr-dot, .bpr-step.bpr-fixed .bpr-status { color: var(--bpr-fixed); }
+.bpr-step.bpr-failed .bpr-dot, .bpr-step.bpr-failed .bpr-status { color: var(--bpr-failed); }
+.bpr-step.bpr-notRun .bpr-status, .bpr-step.bpr-stopped .bpr-status { color: var(--bpr-faint); }
+.bpr-detail { display: grid; gap: 10px; padding: 4px 14px 16px 54px; }
+.bpr-headline { font-weight: 650; font-size: 16px; }
+.bpr-callout { padding: 10px 12px; border-radius: 8px; background: var(--bpr-raised); }
+.bpr-ai { display: grid; gap: 4px; padding: 10px 12px; border-radius: 8px; border-left: 3px solid var(--bpr-running); background: var(--bpr-raised); }
+.bpr-ai-t { font-size: 12px; font-weight: 700; color: var(--bpr-running); letter-spacing: .03em; text-transform: uppercase; }
+.bpr-shot { display: grid; gap: 6px; }
+.bpr-shot img { display: block; height: auto; border-radius: 8px; border: 1px solid var(--bpr-line); background: var(--bpr-raised); }
+.bpr-shot-full img { width: 100%; }
+.bpr-shot-small img { width: 100%; max-width: 360px; }
+.bpr-shot figcaption { font-size: 12px; color: var(--bpr-faint); }
+.bpr-foot { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--bpr-line); color: var(--bpr-faint); font-size: 12px; }
+@media (max-width: 600px) {
+  .bpr { padding: 20px 16px 36px; }
+  .bpr-detail { padding-left: 14px; }
+  .bpr-d1, .bpr-d2, .bpr-d3, .bpr-d4 { margin-left: 12px; }
+  .bpr-took { display: none; }
+}
+@media print {
+  .bpr, .bpr[data-theme] {
+    --bpr-bg: #FFFFFF; --bpr-surface: #FFFFFF; --bpr-raised: #F4F0EC; --bpr-line: #D9CCBF;
+    --bpr-text: #000000; --bpr-muted: #3A2E26; --bpr-faint: #5A4C42; --bpr-accent: #B8502D;
+    --bpr-passed: #2F6420; --bpr-fixed: #74540C; --bpr-failed: #9E2239; --bpr-running: #1F6D8C;
+    --bpr-passed-tint: #EAF2E6; --bpr-fixed-tint: #F5EFE0; --bpr-failed-tint: #F7E6E9;
+    color-scheme: light; min-height: 0; padding: 0; font-size: 11pt;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .bpr-tools { display: none; }
+  .bpr-step summary::after { display: none; }
+  .bpr-step, .bpr-shot, .bpr-ai, .bpr-callout { break-inside: avoid; }
+  .bpr-test { break-before: auto; }
+  .bpr-shot-full img { max-height: 16cm; object-fit: contain; object-position: left top; }
+}
+@page { margin: 14mm 12mm; }
+</style>
+</head>
+<body class="bpr-page">
+<!--bpr-body-->
+<div class="bpr" id="bpr">
+<header class="bpr-head">
+<div class="bpr-kind">{{kindLabel}}</div>
+<h1>{{heading}}</h1>
+<div class="bpr-pill bpr-{{result}}">{{resultText}}</div>
+{{#countsText}}<p class="bpr-counts">{{countsText}}</p>
+{{/countsText}}<dl class="bpr-meta">{{#summary}}<div><dt>{{k}}</dt><dd>{{v}}</dd></div>{{/summary}}</dl>
+{{#note}}<p class="bpr-callout">{{note}}</p>
+{{/note}}{{#screenshotsLeftOut}}<p class="bpr-muted bpr-small">Screenshots were left out of this report.</p>
+{{/screenshotsLeftOut}}<div class="bpr-tools" hidden><button type="button" data-bpr="open">Open all steps</button><button type="button" data-bpr="close">Close all steps</button><button type="button" data-bpr="theme">Theme: automatic</button></div>
+</header>
+{{#tests}}<section class="bpr-test" id="{{anchor}}" aria-label="{{name}}">
+{{#multi}}<div class="bpr-test-head">
+<div class="bpr-app">{{appName}}</div>
+<h2>{{name}}</h2>
+<div class="bpr-pill bpr-{{result}}">{{resultText}}</div>
+<dl class="bpr-meta">{{#meta}}<div><dt>{{k}}</dt><dd>{{v}}</dd></div>{{/meta}}</dl>
+</div>
+{{/multi}}{{#testNote}}<p class="bpr-callout">{{testNote}}</p>
+{{/testNote}}<ol class="bpr-steps">
+{{#steps}}<li class="bpr-step bpr-{{result}} bpr-d{{depth}}">{{#hasDetail}}<details{{#open}} open{{/open}}><summary><span class="bpr-no">{{number}}</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">{{label}}</span><span class="bpr-status">{{resultText}}</span>{{#took}}<span class="bpr-took">{{took}}</span>{{/took}}</summary>
+<div class="bpr-detail">
+{{#headline}}<p class="bpr-headline">{{headline}}</p>
+{{/headline}}{{#body}}<p>{{body}}</p>
+{{/body}}{{#stepNote}}<p class="bpr-muted">{{stepNote}}</p>
+{{/stepNote}}{{#system}}<p class="bpr-callout">{{system}}</p>
+{{/system}}{{#explanation}}<div class="bpr-ai"><div class="bpr-ai-t">AI assistant</div><p>{{summary}}</p>{{#cause}}<p class="bpr-muted">Likely cause: {{cause}}.</p>{{/cause}}{{#suggestion}}<p class="bpr-muted">Suggested: {{suggestion}}</p>{{/suggestion}}</div>
+{{/explanation}}{{#advice}}<p><strong>What to try:</strong> {{advice}}</p>
+{{/advice}}{{#phases}}<p class="bpr-muted bpr-small">Where the time went: {{phases}}</p>
+{{/phases}}{{#image}}<figure class="bpr-shot bpr-shot-{{size}}"><img src="{{src}}" width="{{width}}" height="{{height}}" alt="{{alt}}"><figcaption>{{caption}}</figcaption></figure>
+{{/image}}</div>
+</details>{{/hasDetail}}{{^hasDetail}}<div class="bpr-row"><span class="bpr-no">{{number}}</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">{{label}}</span><span class="bpr-status">{{resultText}}</span>{{#took}}<span class="bpr-took">{{took}}</span>{{/took}}</div>{{/hasDetail}}</li>
+{{/steps}}</ol>
+</section>
+{{/tests}}<footer class="bpr-foot">{{footer}}</footer>
+</div>
+<!--/bpr-body-->
+<script>
+(function () {
+  var root = document.getElementById('bpr');
+  if (!root) return;
+  var tools = root.querySelector('.bpr-tools');
+  var all = function () { return root.querySelectorAll('details'); };
+  var names = { auto: 'automatic', light: 'light', dark: 'dark' };
+  var theme = 'auto';
+  try { theme = localStorage.getItem('breakpatch-report-theme') || 'auto'; } catch (e) { }
+  var setTheme = function (t) {
+    theme = names[t] ? t : 'auto';
+    if (theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', theme);
+    tools.querySelector('[data-bpr="theme"]').textContent = 'Theme: ' + names[theme];
+    try { localStorage.setItem('breakpatch-report-theme', theme); } catch (e) { }
+  };
+  setTheme(theme);
+  tools.hidden = false;
+  tools.addEventListener('click', function (ev) {
+    var what = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-bpr');
+    if (what === 'open' || what === 'close') all().forEach(function (d) { d.open = what === 'open'; });
+    if (what === 'theme') setTheme(theme === 'auto' ? 'light' : theme === 'light' ? 'dark' : 'auto');
+  });
+  var closed = [];
+  window.addEventListener('beforeprint', function () {
+    closed = [];
+    all().forEach(function (d) { if (!d.open) { closed.push(d); d.open = true; } });
+  });
+  window.addEventListener('afterprint', function () { closed.forEach(function (d) { d.open = false; }); closed = []; });
+})();
+</script>
+</body>
+</html>

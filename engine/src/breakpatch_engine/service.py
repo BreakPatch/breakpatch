@@ -99,6 +99,7 @@ class Engine:
             "run.start": self.run_start,
             "run.stop": self.run_stop,
             "run.explain": self.run_explain,
+            "report.images": self.report_images,
             "call.try": self.call_try,
         }
 
@@ -386,6 +387,27 @@ class Engine:
             while len(self._explained) > EXPLAIN_CACHE:
                 self._explained.pop(next(iter(self._explained)))
         return {"explanation": await asyncio.shield(got)}
+
+    async def report_images(self, p: dict) -> dict:
+        """Screenshots for an exported report (report/images.py): `{ images: [{src, width, height,
+        bytes} | null] }`, one per item in order. Only PNGs in the screenshots folder, as run.explain;
+        any other path, or one that can't be read, is null."""
+        from .report import images as report_images
+        items = p.get("items")
+        if not isinstance(items, list) or len(items) > report_images.MAX_ITEMS:
+            raise EngineError("bad_request", "There are no screenshots to add to the report.")
+        vw = p.get("viewportWidth")
+        width = int(vw) if isinstance(vw, (int, float)) and not isinstance(vw, bool) and vw > 0 else None
+
+        def one(item):
+            path = explain.in_screenshots(item.get("path") or "") if isinstance(item, dict) else None
+            if path is None:
+                return None
+            try:
+                return report_images.webp_data_uri(path, "small" if item.get("size") == "small" else "full", width)
+            except (OSError, ValueError):
+                return None
+        return {"images": [await asyncio.to_thread(one, i) for i in items]}
 
     async def _explain(self, ex, step: dict, sr: dict, reason: str, shot: Path, viewport) -> dict | None:
         def load():

@@ -645,6 +645,14 @@ mod config_tests {
         assert_eq!(clip, ["clipboard-manager:allow-read-text"]);
     }
 
+    /// Export as PDF prints the report (lib/report/print.ts): on macOS window.print() goes through
+    /// the shell's webview print, which opens the print dialog with Save as PDF.
+    #[test]
+    fn the_ui_may_print() {
+        let caps: Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert!(caps["permissions"].as_array().unwrap().iter().any(|p| p == "core:webview:allow-print"));
+    }
+
     /// The local backend checks a test file's size before reading it (localBackend.ts).
     #[test]
     fn the_ui_may_ask_a_files_size() {

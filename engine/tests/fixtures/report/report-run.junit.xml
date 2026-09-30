@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Create a project" tests="1" failures="1" errors="0" skipped="0" time="68.250">
+  <testsuite name="Create a project" tests="1" failures="1" errors="0" skipped="0" time="68.250" timestamp="2026-09-24T14:00:00">
+    <testcase name="Create a project" classname="Web app" time="68.250">
+      <failure message="Step 7: Click Done: Couldn&apos;t find the Done button" type="targetNotFound">Step 7: Click Done
+Couldn&apos;t find the Done button
+It wasn&apos;t where it was when this step was recorded, so there was nothing to click. The run stopped here.
+AI assistant: The Done button moved into a menu after the redesign.
+Likely cause: It moved.
+Suggested: Re-record this step.
+This test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks.
+What to try: If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer.</failure>
+    </testcase>
+  </testsuite>
+</testsuites>
