@@ -607,7 +607,9 @@ pub async fn checked(
 }
 
 /// Checks the token online, then keeps it: what the UI shows afterwards. The shell's
-/// trackers_save does the same in two halves, so the Keychain part runs off the async runtime.
+/// trackers_save does the same in two halves (`checked`, then `put` in blocking, off the async
+/// runtime); this is the two together, for the tests.
+#[cfg(test)]
 pub async fn save<S: SecretStore>(
     t: &Trackers<S>,
     c: &reqwest::Client,
