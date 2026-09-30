@@ -159,9 +159,10 @@ The browser methods answer `busy` during a run.
 |---|---|---|
 | `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
 | `record.locate` | `{ description, absence?, near? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below) |
-| `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell |
+| `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell. An empty sentence is `bad_request`; only its first 300 characters are read |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
 | `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
+| `record.chooseFile` | `{ sample }` \| `{ file, path }` \| `{ cancel: true }` | `{}` — the answer to a `record.fileChooser` event: the file for a click that opened the page's file picker (below) |
 
 Nothing the user does on the live view reaches the page by itself: the app turns a click, drag or
 scroll into a proposed step ("Click Next button?"), using `record.propose` for the element's box
@@ -294,8 +295,10 @@ then uses the AI assistant when that isn't enough (`engine/src/breakpatch_engine
 action from the action the user has chosen: the sentence decides it, with what to act on and how
 many times ("add 2 people": click the "+" next to "People", twice). The app reads the sentence
 itself first (`app/src/screens/recorder/intent.ts`: verbs such as click, type … into …, scroll
-up/down/to, wait N seconds, hover, check that; "N times" and number words; "add/increase N
-<thing>" and "remove/decrease N <thing>" as the "+" or "−" next to it). Only when the sentence
+up/down/to, wait N seconds, go to <address>, hover, check that; "N times" and number words;
+"add/increase N <thing>" and "remove/decrease N <thing>" as the "+" or "−" next to it, while "add a
+new item" stays a click; a sentence asking for what a step can't do yet, such as "wait for the
+spinner to go away", gets a plain message and nothing is looked for). Only when the sentence
 starts with words it can't place does it send `record.intent`: the AI assistant reads the
 sentence with a screenshot of the page and answers `action` (`click`, `doubleClick`, `rightClick`,
 `longClick`, `hover`, `write`, `scroll`, `waitFor` or `checkpoint`), `repeat` (1 to 20), and
@@ -308,14 +311,16 @@ repeat, that many steps one after another) through `record.point` only when the 
 **The "+" or "−" next to something (`record.locate` `near`).** `near: { control: "increase", of:
 "People" }` finds a stepper's control from the page's structure (`dom/near.py`) instead of S0,
 which folds punctuation away and can't tell "+" from "−". Controls that increase are named,
-labelled or read "+" (or an arrow up), a single word such as "plus", "add", "increase" or "more",
+labelled or read "+" (or an arrow up), on its own or before one word at most ("+ New project" and
+"-20% off" aren't steppers), a single word such as "plus", "add", "increase" or "more",
 or a short name starting with "add" or "increase" that names the thing ("Add adult"); those that
 decrease, the same with "−", "-", "minus", "remove", "decrease", "less". The one whose own name
 names the thing comes first; else the one nearest (edge to edge, a line apart counting twice) to
 a control or a short text on screen that matches `of`, within 320 px. When there is none, or the
 page is Visual, the AI assistant looks for `description` as usual (path `"fast-visual"` or
 `"visual"`), so the app sends a plain description too (`the "+" button next to "People"`).
-Without `near`, `record.locate` is unchanged.
+Without `near`, `record.locate` is unchanged, and the short text runs on screen aren't collected
+at all (they're read only for a locate with `near`).
 
 ### Replay
 | Method | Params | Result |

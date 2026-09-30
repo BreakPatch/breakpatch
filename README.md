@@ -105,7 +105,7 @@ straight away.
   and carousels.
 - **Know what broke.** The first thing that's wrong stops the run. The report shows what was
   expected next to what was on screen, and why, in plain words, with **Re-record this step** right
-  there.
+  there. **Copy as Markdown** turns a failed step into a ready-made bug report for any tracker.
 - **Every action a person does.** Click, double, long and right click, hover, swipe, scroll, drag
   and drop, typing, uploads, downloads, tabs and popups, plus checkpoints, loops, shared steps
   (record *Log in* once, use it everywhere) and suites.
@@ -123,17 +123,19 @@ in [`usage.rs`](app/src-tauri/src/usage.rs) and [`countUsage.ts`](app/src/data/c
 ## Community and Team
 
 This repository is **Breakpatch Community**: free and open source. **Breakpatch Team** is the paid
-edition for teams, built from a separate private module on top of this one.
+edition for teams, built from a separate private module on top of this one. **Business** is Team
+for 20 people or more, and **Solo**, the automation for one person, isn't on sale yet.
 
 | | Community | Team |
 |---|---|---|
 | Price | Free, Apache 2.0 | Paid, per person ([pricing](https://breakpatch.dev/pricing/)) |
 | People | One person, one Mac | Your whole team, with members and roles |
 | Recording, AI assistant, screen checks, reports | Yes | Yes |
-| Where tests live | JSON files in a folder you pick | A shared workspace in your company's own cloud |
-| History | The latest version and the last run of each test | Version history with restore, and the team's full run history |
+| Where tests live | JSON files in a folder you pick | A shared workspace in your company's own Firebase project (hosted by Breakpatch is coming soon) |
+| History | The latest version and the last run of each test | Version history with restore, and the team's run history for 90 days |
 | When a button moves | The step fails and says why | Fixed automatically: the AI finds it again, and you accept or dismiss the fix |
-| Running | By hand: tests and suites | Also schedules, a local runner, run requests from CI, result messages and the `breakpatch-ci` command line |
+| When a step fails | The report, **Copy details** and **Copy as Markdown** | Also **Why did this fail?** (the AI says what changed) and **Create issue** in GitHub, Linear or Jira |
+| Running | By hand: tests and suites (**Run all** for an app) | Also schedules, a local runner, run requests from CI, result messages to Slack, Microsoft Teams or any web address, and the `breakpatch-ci` command line |
 
 The exact line between them is in [docs/editions.md](docs/editions.md). Moving from Community to
 Team keeps your settings, saved secrets and AI assistant, and copies your tests folder into the
@@ -164,8 +166,8 @@ flowchart LR
 | Part | What it does |
 |---|---|
 | **React UI** (`app/src`) | Every screen: Home, the recorder, the run view and report, suites, setup and settings. TypeScript, Vite and Zustand. It reaches the engine only through the shell. |
-| **Tauri shell** (`app/src-tauri`) | The native app: the window, starting and supervising the engine, saved secrets in the Keychain, the updater and the usage counts. Rust and Tauri 2. |
-| **Engine sidecar** (`engine/`) | A Python process the shell starts. It drives a pinned Chromium with Playwright through screenshots, mouse and keyboard, records steps and their screen checks, and replays tests. To find a described element it reads the page's accessible names and roles where the page has them, and asks the local model otherwise. |
+| **Tauri shell** (`app/src-tauri`) | The native app: the window, starting and supervising the engine, saved secrets in the Keychain, the updater and the usage counts. For Team it also posts result messages (`runner.rs`) and talks to GitHub, Linear and Jira for Create issue, with each person's token in the Keychain (`trackers.rs`), so the webview's CSP stays strict. Rust and Tauri 2. |
+| **Engine sidecar** (`engine/`) | A Python process the shell starts. It drives a pinned Chromium with Playwright through screenshots, mouse and keyboard, records steps and their screen checks, and replays tests. To find a described element it reads the page's accessible names and roles where the page has them, and asks the local model otherwise; the model also reads a described step's meaning when the app's own reading can't (`record.intent`) and, in Team, explains a failed step (`run.explain`). |
 | **Protocol** ([`engine/PROTOCOL.md`](engine/PROTOCOL.md)) | JSON Lines on stdin and stdout: requests with an id, exactly one response per id, and events such as live frames and progress. The shell forwards requests (`engine_request`) and passes events on to the UI. It's the contract: change it there first. |
 
 Screen checks are perceptual hashes of the areas each step affects, with the parts that change by
@@ -296,8 +298,9 @@ exist.
   in `.github/workflows/website.yml` and the service account in the `website` environment.
 - `.github/CODEOWNERS` asks the owner to review workflows, scripts, the shell, the install
   script, dependencies and lock files; turn on "Require review from Code Owners" in the `main`
-  ruleset for it to be enforced. Dependabot (`.github/dependabot.yml`) proposes weekly updates,
-  including the actions, which are pinned to commit SHAs.
+  ruleset for it to be enforced. The actions are pinned to commit SHAs. Dependabot's update pull
+  requests are taken together, tested locally, in one bundle commit rather than one merge each,
+  to save Actions minutes.
 
 ### Private beta
 

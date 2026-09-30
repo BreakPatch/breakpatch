@@ -198,6 +198,8 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
 
 Screen checks are worked out automatically after every step. There's nothing to draw or approve.
 
+**Test details** (in the test's **⋯** menu on the Tests tab, or from the recorder's title bar) changes a test's name, description and start address after it's made. After a new start address, check the first steps still make sense from there. In Team a new start address on a test with steps saves a new version, so older versions, and a version marked as released, keep starting where they did.
+
 Select a step to open it. **What to look for** is the plain description of what the step acts on, for example "Done button, bottom right of the Create project dialog". Edit it if it's wrong. **What should happen** says how a run judges the step: a new page opens, something closes or disappears, something appears, text or a value changes, or nothing visible changes. Breakpatch picks one when you record; change it with one click. **+ note** adds a few words, like "closes the What's new dialog": the AI assistant reads them only when the step's check fails, to judge whether the failure is real and to say why.
 
 Under that: **Play to here** starts a new browser and plays the test from the start up to and including this step. **Play this step** does only this step, on the page as it is now, and never plays the steps before it: if the page isn't where the step expects, the step fails with its usual reason. The **⋯** menu has **Edit** (the step's text, secret, address, seconds, sample file, repeat count or name), **Re-record** (do the step again on the page; not for a wait of some seconds), **Duplicate**, **Add a step after** and **Delete**. Hover between two steps, or tab to it, for **+** to add a step there: the next step you record goes there. If the page isn't at that step, a line over the page says so, with **Play to here** to get it there (or use **Use the page**); nothing plays by itself. **Run** plays the whole test in the recorder's browser and leaves the page where it stopped.
@@ -347,6 +349,8 @@ Everything in this part needs a paid edition: **Breakpatch Team**, or **Solo** f
 
 Choosing another AI model for the assistant is in Business.
 
+**Coming soon:** workspaces hosted by Breakpatch, with nothing to set up in Firebase. Until then, a workspace lives in your company's own Firebase project, set up as in [Create a workspace](#create-a-workspace).
+
 ## Solo
 
 <!-- solo-soon --> Coming soon. Solo isn't on sale yet. To hear when it is, email [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20Solo).
@@ -361,6 +365,8 @@ Solo is for one person who wants the automation for themselves: $19 a month, or 
 | Where tests are kept | A folder | A folder or Git, or your own workspace if you want one | Your company's Firebase project | Your company's Firebase project |
 | Fixed automatically | No | Yes | Yes | Yes |
 | Why did this fail? | No | Yes | Yes | Yes |
+| Copy as Markdown | Yes | Yes | Yes | Yes |
+| Create issue in GitHub, Linear or Jira | No | No | Yes | Yes |
 | Schedules, notifications and result messages | No | Yes, on your Mac | Yes | Yes |
 | The CI command line | No | Yes | Yes | Yes |
 | Run requests, the local runner and version history | No | With your own workspace | Yes | Yes |
@@ -385,6 +391,7 @@ Install Breakpatch Team over Community. The AI assistant, the test browser, your
 
 Good to know:
 
+- **Changed your mind?** The connect screen always has a way back at the top: to where you came from, or **Back to your tests folder**, also after **Switch workspace**.
 - **Only Breakpatch's files move.** Everything else in the folder stays as it is. If the folder is in a Git repository, the removed tests show as deleted files to commit, and earlier versions stay in the repository's history.
 - **If the move stops half way** (the Mac restarts, say), Breakpatch picks it up where it left off the next time you open **Upgrade to Team**.
 - **A report of the move** is kept in Breakpatch's data folder on this Mac: what was copied, what went to the Trash, and anything left out.
@@ -397,19 +404,18 @@ Good to know:
 
 ## Create a workspace
 
-Do this once for your organisation. You need owner access to a Firebase project. Use the project your product already signs in with, so everyone keeps their usual login. A new project works too: step 6 turns on sign-in and adds your account.
+Do this once for your organisation. You need owner access to a Firebase project. Use the project your product already signs in with, so everyone keeps their usual login. A new project works too: step 5 turns on sign-in and adds your account.
 
-In Breakpatch: **Connect a team workspace** → *Setting up for your team?* → **Create a workspace**. Each step has **Open Firebase console** (step 5, **Open Google Cloud console**), which opens the right page.
+In Breakpatch: **Connect a team workspace** → *Setting up for your team?* → **Create a workspace**. It has six steps, numbered as in the app. Each has **Open Firebase console** (step 4, **Open Google Cloud console**), which opens the right page.
 
-1. **Create the web app.** Project settings → General → Your apps → **Add app** → Web. Name it `Breakpatch`, leave Firebase Hosting off and click Register app. Ignore the code Firebase shows and click Continue to console.
-2. **Paste the config.** Under Web apps, pick Breakpatch. In SDK setup and configuration, choose Config, copy it and paste it into Breakpatch. Then fill in **Who can sign in**: just the part after @, for example `example.com`.
-3. **Choose the database.** Breakpatch asks which one to use:
+1. **Create the web app and paste its config.** Project settings → General → Your apps → **Add app** → Web. Name it `Breakpatch`, leave Firebase Hosting off and click Register app. Ignore the code Firebase shows and click Continue to console. Then, under Web apps, pick Breakpatch. In SDK setup and configuration, choose Config, copy it and press **Paste** in Breakpatch (it pastes straight away). Then fill in **Who can sign in**: just the part after @, for example `example.com`.
+2. **Choose the database.** Breakpatch asks which one to use:
    - **This project's `(default)` database**: best if the Firebase project is only for Breakpatch, and it's the one Firebase's free tier covers. Open Firestore Database. If the page shows **Create database**, click it, keep Standard edition and the ID `(default)`, pick a location near your team (you can't change it later), keep Production mode and click Create. If the project has a `(default)` database already, there's nothing to do.
    - **A separate database**, if the project also runs your app, so test data stays apart. Open Firestore Database, open the database menu at the top of the page (the one that shows `(default)`) and choose **Add database** (a project with no database yet shows **Create database** instead). Keep Standard edition, enter the database ID `breakpatch` (copy it from the app), pick the same location as your main database, keep Production mode and click Create.
-4. **Paste the rules.** In Breakpatch press **Copy rules**. In Firestore pick the `breakpatch` database, open the Rules tab, replace everything with the rules you copied and click Publish.
-5. **Delete runs after 90 days automatically** (recommended, saves money). You can skip this step and do it later. Breakpatch opens the Time-to-live (TTL) page of your database in the Google Cloud console: sign in with the same Google account as for Firebase. Click **Create policy** twice: collection group `runs`, timestamp field `expiresAt`; then collection group `suiteRuns`, timestamp field `expiresAt`. Firestore takes a few minutes to turn them on, then deletes runs and suite runs 90 days after they were saved (see [Run history is kept 90 days](#run-history-is-kept-90-days)). Or with the Google Cloud CLI, as the step shows them: `gcloud firestore fields ttls update expiresAt --collection-group=runs --enable-ttl --database=breakpatch --project=<your project>`, and the same with `--collection-group=suiteRuns`. If you skip it, an admin's Breakpatch deletes old runs instead, once a day, which costs a few reads more.
-6. **Turn on sign-in and add yourself.** Open Authentication (click **Get started** if it's new). In Sign-in method choose **Email/Password**, turn on Enable and click Save. Then in Users click **Add user** and add yourself, with an address in the *Who can sign in* domain. Add your teammates the same way, now or later. If your team already signs in to this project with email and password, just check it's on. Breakpatch never creates accounts.
-7. **Connect.** Check the summary. Breakpatch checks the connection by itself (see below); fix anything it names first. Name the workspace, add a logo if you like and press **Create workspace**. Then sign in with the account you added. If you haven't added it yet, the sign-in screen says where, with a link to Authentication → Users in the Firebase console.
+3. **Paste the rules.** In Breakpatch press **Copy rules**. In Firestore pick the database you chose in step 2 (`(default)` or `breakpatch`), open the Rules tab, replace everything with the rules you copied and click Publish.
+4. **Delete runs after 90 days automatically** (recommended, saves money). You can skip this step and do it later. Breakpatch opens the Time-to-live (TTL) page of your database in the Google Cloud console: sign in with the same Google account as for Firebase. Click **Create policy** twice: collection group `runs`, timestamp field `expiresAt`; then collection group `suiteRuns`, timestamp field `expiresAt`. Firestore takes a few minutes to turn them on, then deletes runs and suite runs 90 days after they were saved (see [Run history is kept 90 days](#run-history-is-kept-90-days)). Or with the Google Cloud CLI, as the step shows them: `gcloud firestore fields ttls update expiresAt --collection-group=runs --enable-ttl --database=breakpatch --project=<your project>` (with your database's ID: `--database='(default)'` for the default one; the step shows the commands filled in), and the same with `--collection-group=suiteRuns`. If you skip it, an admin's Breakpatch deletes old runs instead, once a day, which costs a few reads more.
+5. **Turn on sign-in and add yourself.** Open Authentication (click **Get started** if it's new). In Sign-in method choose **Email/Password**, turn on Enable and click Save. Then in Users click **Add user** and add yourself, with an address in the *Who can sign in* domain. Add your teammates the same way, now or later. If your team already signs in to this project with email and password, just check it's on. Breakpatch never creates accounts.
+6. **Connect.** Check the summary. Breakpatch checks the connection by itself (see below); fix anything it names first. Name the workspace, add a logo if you like and press **Create workspace**. Then sign in with the account you added. If you haven't added it yet, the sign-in screen says where, with a link to Authentication → Users in the Firebase console.
 
 People sign in with their work email and a password. The first time, Breakpatch sends them a link to confirm their email address.
 
@@ -432,7 +438,7 @@ If the details on this Mac are wrong (the config, the database ID, *Who can sign
 
 ### Run history is kept 90 days
 
-In a team workspace, runs and suite runs are kept for 90 days, then deleted: by Firestore's TTL policy when it's set up (step 5 of [Create a workspace](#create-a-workspace), recommended), and otherwise by an admin's Breakpatch, once a day. Breakpatch from before this can't add runs to the workspace: update it on every Mac, the local runner and your CI machines. Tests, shared steps and their versions are never deleted.
+In a team workspace, runs and suite runs are kept for 90 days, then deleted: by Firestore's TTL policy when it's set up (step 4 of [Create a workspace](#create-a-workspace), recommended), and otherwise by an admin's Breakpatch, once a day. Breakpatch from before this can't add runs to the workspace: update it on every Mac, the local runner and your CI machines. Tests, shared steps and their versions are never deleted.
 
 Lists that only grow show the newest first: the **Runs** tab and **Run history** show the latest 20 runs, with **Show older runs** for 20 more, and **Version history** the latest 20 versions, with **Show older versions**.
 
@@ -550,7 +556,7 @@ The runner starts a suite whenever a document is added here:
 projects/<your-project>/databases/breakpatch/documents/runRequests
 ```
 
-Settings → Local runner → **How run requests work** shows the exact path for your workspace. Each document is one request. Let Firestore make its ID.
+Settings → Local runner → **How run requests work** shows the exact path for your workspace. If the workspace uses the project's `(default)` database, the path has `(default)` where this one has `breakpatch` (and so do the examples below). Each document is one request. Let Firestore make its ID.
 
 | Field | Needed | What it's for |
 |---|---|---|
@@ -876,7 +882,7 @@ Create issue comes with a Breakpatch Team licence that includes it; licences get
 - Only admins set where a suite's result goes. Its address is kept apart from the suite, and only admins and the runner can read it.
 - Anyone in the team can note the issue made from a run, and change nothing else about it. Only admins set where issues go. Tokens for GitHub, Linear and Jira are never in the workspace.
 
-To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the `breakpatch` database. Disable the user in Firebase Authentication to cut it off.
+To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the workspace's database. Disable the user in Firebase Authentication to cut it off.
 
 A service account using the Firebase Admin SDK skips the rules altogether. Use a normal user with the `ci` role instead: `breakpatch-ci` only signs in with one.
 

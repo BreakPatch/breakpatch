@@ -3,7 +3,10 @@
 The Python sidecar behind the desktop app: it drives a pinned Chromium (Playwright) through
 screenshots, mouse and keyboard, works out the automatic screen checks while you record, replays
 tests from stored coordinates and hashes, and uses a local vision model (Qwen3-VL through
-`mlx-vlm`) only to describe targets while recording and to find a moved target during replay.
+`mlx-vlm`) only where the page's structure isn't enough: to name and find targets while recording,
+to read what a described step means (`record.intent`), to judge a step's note when its check
+fails, and, in Team, to find a moved target during replay and to explain a failed step
+(`run.explain`).
 Finding a described element reads the page's accessible names and roles first (`dom/`, no model,
 never a CSS or XPath selector) and asks the model when that isn't enough; every step is still
 checked on the screen.
@@ -40,15 +43,18 @@ printf '%s\n' '{"id":1,"method":"system.info"}' | .venv/bin/python -m breakpatch
 
 ## Editions
 
-This engine is the Community edition (docs/editions.md). Two things are Breakpatch Team and live
-in the private `breakpatch_team_engine` package: fallback healing of moved targets (spec §11.2)
-and the headless CI command line (`breakpatch-ci run --test …`, or `--workspace … --suite …` to run
-a Team workspace's suite, spec §15). When that package is
+This engine is the Community edition (docs/editions.md). Three things are Breakpatch Team and
+live in the private `breakpatch_team_engine` package: fallback healing of moved targets (spec
+§11.2), the explainer behind "Why did this fail?" (`run.explain`, roadmap #7) and the headless CI
+command line (`breakpatch-ci run --test …`, or `--workspace … --suite …` to run a Team
+workspace's suite, spec §15, with `--notify-url` for result messages). When that package is
 installed in the same venv, `plugins.py` imports it (the only place that does) and it registers
-its healer with the runner, and the licence the app shell hands over (`licence.set`), which it
-checks itself. Without it, or without a Team licence that includes `autoFix`, a failed pre-check
-fails the step with `targetNotFound`, even with `autoFix` on. `record.locate` (describe a step and let the AI assistant find it) is
-open and works either way.
+its healer and its explainer with the runner, and the licence the app shell hands over
+(`licence.set`), which it checks itself. Without it, or without a Team licence that includes
+`autoFix`, a failed pre-check fails the step with `targetNotFound`, even with `autoFix` on; without
+it, or without `explain`, `run.explain` answers `not_ready` and nothing is read from the page after
+a failure. `record.locate` and `record.intent` (describe a step and let the AI assistant find it)
+are open and work either way.
 
 ## Sidecar build
 
@@ -81,13 +87,16 @@ src/breakpatch_engine/
   calls.py      set-up and clean-up calls and "Try it": https, the app's hosts, no private addresses
   imaging.py    region pHash with ignore zones blanked, Hamming distance, diffs, blast radius, noise
   checks.py     noise watch and settle detection over a stream of screenshots
-  recorder.py   record.point / record.checkpoint / record.locate (spec §10)
-  runner.py     replay, set-up/clean-up calls, secrets, loops/groups, the healer hook (spec §11)
+  recorder.py   record.point / record.checkpoint / record.locate / record.intent (spec §10)
+  runner.py     replay, set-up/clean-up calls, secrets, loops/groups, the healer hook (spec §11),
+                the page read after a failure when an explainer wants it
+  explain.py    run.explain's contract: Failure, Explanation, the causes and suggestions, checks
   models.py     the AI assistant models allowed: repo, revision, files and their SHA-256
   locator.py    AI assistant interface; MlxLocator (lazy mlx-vlm), NoLocator; bbox parsing
   dom/          the fast locator for record.locate: extract.py (the controls on screen, DevTools
                 DOMSnapshot + accessibility tree), s0.py (scoring a description, no model),
-                router.py (Fast or Visual per page), flow.py (S0, then the AI assistant)
+                router.py (Fast or Visual per page), flow.py (S0, then the AI assistant),
+                near.py (a stepper's "+" or "−" next to something, record.locate `near`)
   install.py    system.info, Chromium install, resumable model download of the allowed files only
   config.py     paths (env overridable) and timings (BP_FAST=1 shortens them)
   labels.py     default step labels (mirrors app/src/engine/labels.ts)
