@@ -1,9 +1,19 @@
 name: CI
 
+# A change to documentation only (the manual, READMEs, notes) runs nothing here: the site workflow
+# builds the manual. The same skip as the Team repo's CI.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '.claude/**'
   workflow_dispatch:
 
 concurrency:
