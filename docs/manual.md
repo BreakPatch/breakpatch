@@ -393,14 +393,31 @@ In Breakpatch: **Connect a team workspace** → *Setting up for your team?* → 
 
 1. **Create the web app.** Project settings → General → Your apps → **Add app** → Web. Name it `Breakpatch`, leave Firebase Hosting off and click Register app. Ignore the code Firebase shows and click Continue to console.
 2. **Paste the config.** Under Web apps, pick Breakpatch. In SDK setup and configuration, choose Config, copy it and paste it into Breakpatch. Then fill in **Who can sign in**: just the part after @, for example `example.com`.
-3. **Create the database.** Open Firestore Database. If the project already has a database, open the database menu at the top of the page (the one that shows `(default)`) and choose **Add database**. If it has none yet, the page shows **Create database** instead. Keep Standard edition, enter the database ID `breakpatch` (copy it from the app), pick the same location as your main database (you can't change it later), keep Production mode and click Create.
+3. **Choose the database.** Breakpatch asks which one to use:
+   - **This project's `(default)` database**: best if the Firebase project is only for Breakpatch, and it's the one Firebase's free tier covers. Open Firestore Database. If the page shows **Create database**, click it, keep Standard edition and the ID `(default)`, pick a location near your team (you can't change it later), keep Production mode and click Create. If the project has a `(default)` database already, there's nothing to do.
+   - **A separate database**, if the project also runs your app, so test data stays apart. Open Firestore Database, open the database menu at the top of the page (the one that shows `(default)`) and choose **Add database** (a project with no database yet shows **Create database** instead). Keep Standard edition, enter the database ID `breakpatch` (copy it from the app), pick the same location as your main database, keep Production mode and click Create.
 4. **Paste the rules.** In Breakpatch press **Copy rules**. In Firestore pick the `breakpatch` database, open the Rules tab, replace everything with the rules you copied and click Publish.
 5. **Turn on sign-in and add yourself.** Open Authentication (click **Get started** if it's new). In Sign-in method choose **Email/Password**, turn on Enable and click Save. Then in Users click **Add user** and add yourself, with an address in the *Who can sign in* domain. Add your teammates the same way, now or later. If your team already signs in to this project with email and password, just check it's on. Breakpatch never creates accounts.
-6. **Connect.** Check the summary, name the workspace, add a logo if you like and press **Create workspace**. Then sign in with the account you added. If you haven't added it yet, the sign-in screen says where, with a link to Authentication → Users in the Firebase console.
+6. **Connect.** Check the summary. Breakpatch checks the connection by itself (see below); fix anything it names first. Name the workspace, add a logo if you like and press **Create workspace**. Then sign in with the account you added. If you haven't added it yet, the sign-in screen says where, with a link to Authentication → Users in the Firebase console.
 
 People sign in with their work email and a password. The first time, Breakpatch sends them a link to confirm their email address.
 
 Whoever connects the workspace becomes its first admin.
+
+### Check the connection
+
+**Check the connection** (the last step of Create a workspace, and Settings → Workspace) looks at each part of the set-up in turn and says what to do about anything that isn't right, with **Open Firebase console** on the right page:
+
+- **Firebase project**: the config is a project's, and it answers.
+- **Email and password sign-in**: it's turned on in Authentication.
+- **Database**: the database named in the workspace is there.
+- **Security rules**: the Breakpatch rules for this version are published to it.
+
+It only reads: a sign-in with a made-up address (which never signs anyone in) and one read of the database. The sign-in counts towards Firebase's limit on failed sign-ins from your address, so after many checks in a row it may say it couldn't tell for a few minutes.
+
+### Edit connection
+
+If the details on this Mac are wrong (the config, the database ID, *Who can sign in* or the name), choose **Edit connection** on the sign-in screen or in Settings → Workspace. It changes only this Mac's saved details, never the workspace, then checks the connection with them. Changing the Firebase project or the database makes it another workspace to this Mac: its licence seat under the old details is given back, and it takes one again when you sign in.
 
 ## Invite your team
 

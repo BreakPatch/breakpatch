@@ -118,6 +118,11 @@ export const connections = {
     const { list, activeId } = useConnections.getState();
     set({ list: list.filter(c => c.id !== id), activeId: activeId === id ? null : activeId });
   },
+  /** Changes a connection's details in place (its id stays), without making it the active one. */
+  update(c: Connection) {
+    const { list, activeId } = useConnections.getState();
+    if (list.some(x => x.id === c.id)) set({ list: list.map(x => (x.id === c.id ? { ...x, ...c } : x)), activeId });
+  },
   /** Nothing is open now; the list stays as it is (leaving a workspace without forgetting it). */
   deactivate() { const { list } = useConnections.getState(); set({ list, activeId: null }); },
   /** For tests only: read again from storage. */

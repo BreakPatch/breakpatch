@@ -13,13 +13,15 @@ describe('connection ids', () => {
   it('pins the format of each kind', () => {
     expect(workspaceConnectionId(ws('acme-qa', 'breakpatch'))).toBe('team:acme-qa/breakpatch');
     expect(workspaceConnectionId(ws('acme-qa', 'qa-2'))).toBe('team:acme-qa/qa-2');
+    // Firestore's (default) database: no parentheses in a Keychain key.
+    expect(workspaceConnectionId(ws('acme-qa', '(default)'))).toBe('team:acme-qa/-default-');
     expect(workspaceConnectionId(ws('demo-breakpatch', 'breakpatch', 'demo'))).toBe('demo');
     expect(folderConnectionId('/Users/ana/web/tests')).toBe('local:4d937c00b1d4760a');
     expect(folderConnectionId('/Users/ana/web/tests/')).toBe('local:4d937c00b1d4760a');
   });
 
   it('makes only keys the shell accepts', () => {
-    for (const id of [workspaceConnectionId(ws('acme-qa', 'breakpatch')), folderConnectionId('/Users/ana/Tests with spaces/é'), 'demo']) {
+    for (const id of [workspaceConnectionId(ws('acme-qa', 'breakpatch')), workspaceConnectionId(ws('acme-qa', '(default)')), folderConnectionId('/Users/ana/Tests with spaces/é'), 'demo']) {
       expect(validWsKey(id), id).toBe(true);
     }
   });

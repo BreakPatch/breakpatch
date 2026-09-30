@@ -33,8 +33,9 @@ export class AuthError extends Error {
   /**
    * `signInOff`: the workspace's Firebase project doesn't have email and password sign-in turned on.
    * `unverified`: the address isn't confirmed yet; the message says which email to open.
+   * `setup`: the workspace isn't set up right (its database or rules); the message says what to fix.
    */
-  code: 'wrongPassword' | 'wrongDomain' | 'network' | 'signInOff' | 'unverified' | 'unknown';
+  code: 'wrongPassword' | 'wrongDomain' | 'network' | 'signInOff' | 'unverified' | 'setup' | 'unknown';
   constructor(code: AuthError['code'], message: string) { super(message); this.code = code; }
 }
 

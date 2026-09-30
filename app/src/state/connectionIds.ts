@@ -3,7 +3,9 @@
 // `valid_ws_key` must accept every id made here), the usage counts (usage.rs), the move's journal
 // (the Team module's upgrade/journal.ts) and the connection list. connectionIds.test.ts pins the
 // format; changing it orphans all of those, so it needs a migration, not an edit.
-//   team:<projectId>/<database>   a Team workspace
+//   team:<projectId>/<database>   a Team workspace; Firestore's "(default)" database is "-default-"
+//                                 (no parentheses in a Keychain key; a named database's ID starts
+//                                 with a letter, so none is "-default-")
 //   local:<hash of the path>      a tests folder
 //   demo                          the demo workspace
 import type { Workspace } from '../data/types';
@@ -16,8 +18,11 @@ function pathHash(s: string): string {
 
 export function isDemoConnection(ws: Workspace) { return ws.config.apiKey === 'demo'; }
 
+/** A database ID as it goes in an id or a path: "(default)" is "-default-" (as in Firebase console links). */
+export function databaseToken(database: string): string { return database === '(default)' ? '-default-' : database; }
+
 export function workspaceConnectionId(ws: Workspace): string {
-  return isDemoConnection(ws) ? 'demo' : `team:${ws.config.projectId}/${ws.database}`;
+  return isDemoConnection(ws) ? 'demo' : `team:${ws.config.projectId}/${databaseToken(ws.database)}`;
 }
 
 /** A trailing slash doesn't make it another folder. */
