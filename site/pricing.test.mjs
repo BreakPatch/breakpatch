@@ -6,8 +6,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
-const HTML = readFileSync(new URL('./pricing/index.html', import.meta.url), 'utf8');
-const JS = readFileSync(new URL('./assets/pricing.js', import.meta.url), 'utf8');
+const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+const HTML = read('./pricing/index.html');
+const JS = read('./assets/pricing.js');
+const GET_JSON = read('./assets/get-json.js');
+const CONFIG = read('./assets/paddle-config.js');
 
 class El {
   constructor(tag, attrs) {
@@ -88,6 +91,7 @@ async function load(config, places = { total: 25, taken: 0 }, domains = { taken:
   };
   const location = { href: 'https://breakpatch.dev/pricing/', search };
   const ctx = vm.createContext({ window, document, location, URL, setTimeout, clearTimeout, AbortController });
+  vm.runInContext(GET_JSON, ctx);
   vm.runInContext(JS, ctx);
   await new Promise(r => setImmediate(r)); // the places answer
   const $ = id => byId[id];
@@ -107,7 +111,8 @@ async function load(config, places = { total: 25, taken: 0 }, domains = { taken:
 const prices = { soloMonthly: 'pri_sm', soloYearly: 'pri_sy', teamMonthly: 'pri_tm', teamYearly: 'pri_ty', machineMonthly: 'pri_mm', machineYearly: 'pri_my' };
 const URL_ = 'https://account.breakpatch.dev/api/founding';
 const SOLO_URL = 'https://account.breakpatch.dev/api/solo-domain';
-const cfg = (extra = {}) => ({ env: 'sandbox', foundingPlacesUrl: URL_, soloDomainUrl: SOLO_URL, sandbox: { clientToken: 'test_x', prices, ...extra }, live: { prices: {} } });
+// Solo on sale, as on launch day; the tests below "Solo not on sale yet" turn it off.
+const cfg = (extra = {}) => ({ env: 'sandbox', soloOnSale: true, foundingPlacesUrl: URL_, soloDomainUrl: SOLO_URL, sandbox: { clientToken: 'test_x', prices, ...extra }, live: { prices: {} } });
 const FOUNDING = { foundingDiscountId: 'dsc_01test' };
 const TITLE = 'Founding teams: $12/person/month for 24 months · ';
 
@@ -290,7 +295,7 @@ test('checkout on: Work email and Company show, and the tax line is back', async
 
 // ---------- Solo ----------
 
-const soloCard = () => HTML.slice(HTML.indexOf('class="edition plan-solo"'), HTML.indexOf('</article>', HTML.indexOf('class="edition plan-solo"')));
+const soloCard = () => HTML.slice(HTML.indexOf('class="edition plan-solo'), HTML.indexOf('</article>', HTML.indexOf('class="edition plan-solo')));
 
 test('the Solo card: $16 a month billed yearly or $19 monthly, one person, one per company, Team for more', async () => {
   const card = soloCard();
@@ -378,18 +383,19 @@ test('Solo checkout off (no Solo prices yet): the free beta, no email field, no 
   assert.match(HTML, /<div class="fields buyer" id="solo-buyer" hidden>/);
 });
 
-test('Solo in the page description, the FAQ, the terms, the refunds and the manual', () => {
+test('Solo in the FAQ, the terms, the refunds and the manual', () => {
   const TERMS = readFileSync(new URL('./terms/index.html', import.meta.url), 'utf8');
   const REFUNDS = readFileSync(new URL('./refunds/index.html', import.meta.url), 'utf8');
   const MANUAL = readFileSync(new URL('../docs/manual.md', import.meta.url), 'utf8');
   const HOME = readFileSync(new URL('./index.html', import.meta.url), 'utf8');
-  assert.match(HTML, /<meta name="description" content="[^"]*Solo is \$16 a month billed yearly, or \$19 month to month, for one person/);
-  assert.ok(HTML.includes('<dt>Who is Solo for?</dt>'));
-  assert.ok(TERMS.includes('Breakpatch Solo, Team and Business licences'), 'terms: what they cover');
+  // The description can't follow the switch (search engines read it as served), so it leaves Solo out.
+  assert.doesNotMatch(HTML.match(/<meta name="description" content="([^"]*)"/)[1], /Solo/);
+  assert.ok(HTML.includes('<dt class="solo-only">Who is Solo for?</dt>'));
+  assert.ok(TERMS.includes('Breakpatch Team and Business licences bought on breakpatch.dev, and Solo licences when the Solo plan is offered'), 'terms: what they cover');
   assert.ok(TERMS.includes('one Solo per company'), 'terms: the Solo rule');
-  assert.ok(REFUNDS.includes('Breakpatch Solo, Team and Business'), 'refunds');
+  assert.ok(REFUNDS.includes('Breakpatch Team and Business, and the Solo plan when it’s offered'), 'refunds');
   assert.match(MANUAL, /\| *Solo *\|/, 'manual editions');
-  assert.ok(HOME.includes('<th scope="col">Solo</th>'), 'home comparison table');
+  assert.ok(HOME.includes('<th scope="col" class="solo-only">Solo</th>'), 'home comparison table');
   // The same prices everywhere.
   for (const [name, text] of [['home', HOME], ['manual', MANUAL]]) assert.match(text, /\$19/, name);
 });
@@ -450,4 +456,125 @@ test('one test run at a time is per Mac or machine licence: nothing promises it 
   assert.ok(MANUAL.includes('Your Mac and the machine licence each run one test at a time.'));
   const PRIVACY = readFileSync(new URL('./privacy/index.html', import.meta.url), 'utf8');
   assert.ok(PRIVACY.includes('The answer is only whether that company domain already has a Solo'), 'privacy: what the check answers');
+});
+
+// ---------- Solo not on sale yet (paddle-config.js soloOnSale: false) ----------
+
+/** The page's HTML with every element of `cls` taken out (what a browser shows when site.css hides it). */
+function without(html, cls) {
+  const open = new RegExp(`<([a-z0-9]+)\\b[^>]*\\bclass="[^"]*\\b${cls}\\b[^"]*"[^>]*>`, 'i');
+  for (let m; (m = open.exec(html));) {
+    const tag = m[1];
+    const re = new RegExp(`<${tag}\\b[^>]*>|</${tag}>`, 'gi');
+    re.lastIndex = m.index + m[0].length;
+    let depth = 1, end = -1;
+    for (let t; depth && (t = re.exec(html));) { depth += t[0][1] === '/' ? -1 : 1; if (!depth) end = t.index + t[0].length; }
+    assert.ok(end > 0, `unclosed <${tag}> with ${cls}`);
+    html = html.slice(0, m.index) + html.slice(end);
+  }
+  return html;
+}
+/** What a visitor can read or follow: text and links, without comments, scripts, styles or <head>. */
+const visible = html => html.replace(/<head>[\s\S]*?<\/head>/, '').replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/g, '');
+const HOME = read('./index.html');
+const MANUAL_PAGE = read('./manual/index.html');
+const SITE_CSS = read('./assets/site.css');
+const PRICING_CSS = read('./assets/pricing.css');
+
+test('the launch switch: soloOnSale is false for now, and <html data-solo> is set only when it is true', () => {
+  assert.match(CONFIG, /\n  soloOnSale: false,\n/);
+  for (const [on, expect] of [['false', false], ['true', true], ["'yes'", false]]) {
+    const attrs = {};
+    const ctx = vm.createContext({ window: {}, document: { documentElement: { setAttribute(k, v) { attrs[k] = v; } } } });
+    vm.runInContext(CONFIG.replace('soloOnSale: false', `soloOnSale: ${on}`), ctx);
+    assert.equal('data-solo' in attrs, expect, on);
+  }
+  // Loaded in <head> (before the page is drawn, so nothing moves), and no page has data-solo as served.
+  for (const [name, page] of [['home', HOME], ['pricing', HTML], ['manual', MANUAL_PAGE]]) {
+    const head = page.slice(0, page.indexOf('</head>'));
+    assert.match(head, /<script src="(\.\.)?\/assets\/paddle-config\.js"><\/script>/, name);
+    assert.doesNotMatch(page.match(/<html[^>]*>/)[0], /data-solo/, name);
+  }
+  assert.ok(SITE_CSS.includes('html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}'));
+});
+
+test('while Solo is off: no Solo card, words or links on Pricing, and no gap where the card was', () => {
+  const page = visible(without(HTML, 'solo-only'));
+  assert.doesNotMatch(page, /Solo/);
+  assert.doesNotMatch(page, /solo-/, 'nothing points at the Solo card');
+  // Three cards, in the three-column grid (and two columns on smaller screens, with Team across the top).
+  assert.equal((page.match(/<article class="edition/g) ?? []).length, 3);
+  assert.match(PRICING_CSS, /\.plans\{display:grid;grid-template-columns:1fr 1\.4fr 1fr;/);
+  assert.ok(PRICING_CSS.includes(':where([data-solo]) .plans{grid-template-columns:1fr 1.1fr 1.4fr 1fr}'));
+  assert.ok(PRICING_CSS.includes('@media (max-width:1000px){.plans{grid-template-columns:1fr 1fr}.plan-team{grid-column:1 / -1;order:-1}}'));
+  // The sentences still read: "Free on your own Mac. Pay per person …".
+  assert.ok(page.includes('<p>Free on your own Mac. Pay per person when your team tests together'));
+  assert.ok(page.includes('Your key is shown there once. On Team, a workspace admin'));
+  // And with Solo on, everything is there.
+  const on = visible(without(HTML, 'solo-off'));
+  for (const s of ['<h2 id="solo-title">Solo</h2>', 'Who is Solo for?', ' Solo when you want the automation for yourself.', ' On Solo, enter it in Breakpatch']) assert.ok(on.includes(s), s);
+  assert.equal((on.match(/<article class="edition/g) ?? []).length, 4);
+});
+
+test('while Solo is off: Home has no Solo card or column, and no gap', () => {
+  const page = visible(without(HOME, 'solo-only'));
+  assert.doesNotMatch(page, /Solo/);
+  const compare = page.slice(page.indexOf('<div class="compare">'), page.indexOf('<p class="biz">'));
+  assert.equal((compare.match(/<article class="plan/g) ?? []).length, 2);
+  assert.ok(SITE_CSS.includes('.compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));'));
+  assert.ok(SITE_CSS.includes(':where([data-solo]) .compare{grid-template-columns:repeat(3,minmax(0,1fr))}'));
+  // Every row of the table: the feature and two columns, Community and Team.
+  const matrix = html => html.slice(html.indexOf('<table class="matrix stack">'), html.indexOf('</table>', html.indexOf('<table class="matrix stack">')));
+  const rows = [...matrix(page).matchAll(/<tr>([\s\S]*?)<\/tr>/g)].map(m => m[1]);
+  assert.ok(rows.length >= 10);
+  for (const r of rows) {
+    assert.equal((r.match(/<t[dh]\b/g) ?? []).length, 3, r);
+    assert.doesNotMatch(r, /data-label="Solo"/);
+  }
+  assert.ok(page.includes('<caption>Community and Team side by side</caption>'));
+  assert.ok(page.includes('for one person on one Mac. Team shares everything'));
+  assert.ok(page.includes('no time limit and no account. Team is paid'));
+  // With Solo on: three plans, and four cells a row.
+  const on = visible(without(HOME, 'solo-off'));
+  assert.equal((on.slice(on.indexOf('<div class="compare">'), on.indexOf('<p class="biz">')).match(/<article class="plan/g) ?? []).length, 3);
+  for (const r of matrix(on).matchAll(/<tr>([\s\S]*?)<\/tr>/g)) assert.equal((r[1].match(/<t[dh]\b/g) ?? []).length, 4);
+  assert.ok(on.includes('<caption>Community<span class="solo-only">, Solo</span> and Team side by side</caption>'));
+});
+
+test('while Solo is off: pricing.js leaves the card alone and never asks about a domain', async () => {
+  for (const soloOnSale of [false, undefined, 'true']) {
+    const p = await load({ ...cfg(), soloOnSale });
+    p.$('solo-email').value = 'sam@initech.com';
+    p.$('solo-email').fire('blur');
+    assert.equal(await p.buySolo(), undefined, String(soloOnSale));
+    assert.equal(p.fetched.length, 0, 'no domain check');
+    assert.equal(p.location.href, 'https://breakpatch.dev/pricing/', 'no beta email either');
+    assert.equal(p.$('solo-price').textContent, '', 'the card isn’t set up');
+    // Team sells as usual.
+    assert.equal(p.$('buy').textContent, 'Buy Team');
+    assert.deepEqual((await p.buy()).items, [{ priceId: 'pri_ty', quantity: 5 }]);
+  }
+});
+
+test('the terms, refunds and privacy pages read right while Solo is off: "when offered", and no link to it', () => {
+  const TERMS = read('./terms/index.html'), REFUNDS = read('./refunds/index.html'), PRIVACY = read('./privacy/index.html');
+  assert.ok(TERMS.includes('<li><b>Solo</b>, when offered, is for one person'));
+  assert.ok(REFUNDS.includes('<p>The Solo plan, when offered, is one per company.'));
+  assert.ok(PRIVACY.includes('<p>When the Solo plan is offered: before its checkout opens, the pricing page sends'));
+  assert.ok(PRIVACY.includes('<th scope="row">Breakpatch Team, and Solo when offered</th>'));
+  for (const [name, text] of [['terms', TERMS], ['refunds', REFUNDS], ['privacy', PRIVACY]]) {
+    assert.doesNotMatch(text, /href="[^"]*solo/i, name);
+    assert.doesNotMatch(text, /Breakpatch Solo, Team/, name);
+  }
+});
+
+test('the manual keeps its Solo section, marked Coming soon until Solo is on sale', () => {
+  const MANUAL = read('../docs/manual.md');
+  const section = MANUAL.slice(MANUAL.indexOf('## Solo\n'), MANUAL.indexOf('## Upgrading to Team'));
+  assert.match(section, /^## Solo\n\n<!-- solo-soon --> Coming soon\. Solo isn't on sale yet\./);
+  const built = MANUAL_PAGE.slice(MANUAL_PAGE.indexOf('<section id="solo"'), MANUAL_PAGE.indexOf('</section>', MANUAL_PAGE.indexOf('<section id="solo"')));
+  assert.match(built, /<p class="solo-soon" role="note"><span class="dot" aria-hidden="true"><\/span><span>Coming soon\. Solo isn't on sale yet\./);
+  // Shown while <html> has no data-solo, in the pre-launch notes' style.
+  assert.ok(SITE_CSS.includes('[data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon{display:flex;'));
+  assert.ok(SITE_CSS.includes('.prelaunch,.solo-soon{display:none}'));
 });

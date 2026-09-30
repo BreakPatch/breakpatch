@@ -12,19 +12,8 @@
 
   // ---------- Paddle.js, shared by both cards ----------
 
-  /**
-   * GET a JSON answer from the back office: the body, or null when it can't be had (offline, a
-   * non-2xx answer, 5 s without one). Never sends cookies.
-   */
-  function getJson(url) {
-    if (!url || typeof window.fetch !== 'function') return Promise.resolve(null);
-    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
-    var timer = ctl ? setTimeout(function () { ctl.abort(); }, 5000) : null;
-    return window.fetch(url, { credentials: 'omit', signal: ctl ? ctl.signal : undefined })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .catch(function () { return null; })
-      .finally(function () { if (timer) clearTimeout(timer); });
-  }
+  // GET a JSON answer from the back office, or null (assets/get-json.js, loaded before this file).
+  var getJson = typeof window.breakpatchGetJson === 'function' ? window.breakpatchGetJson : function () { return Promise.resolve(null); };
 
   var loading = null;
   // The card that opened the checkout says what went wrong. Until one has (a Paddle payment link,
@@ -75,7 +64,9 @@
   function solo() {
     var SOLO = { month: 19, year: 16 };            // per month
     var form = $('solo-form');
-    if (!form) return;
+    // Before Solo is on sale (paddle-config.js soloOnSale), its card is hidden (site.css .solo-only)
+    // and nothing here runs: no domain check, no checkout.
+    if (!form || cfgAll.soloOnSale !== true) return;
     var email = $('solo-email'), buy = $('solo-buy'), note = $('solo-buy-note'), err = $('solo-buy-error'), taken = $('solo-taken');
     var state = { period: 'year' };
 

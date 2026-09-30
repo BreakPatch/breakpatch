@@ -338,6 +338,8 @@ Choosing another AI model for the assistant is in Business.
 
 ## Solo
 
+<!-- solo-soon --> Coming soon. Solo isn't on sale yet. To hear when it is, email [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20Solo).
+
 Solo is for one person who wants the automation for themselves: $19 a month, or $16 a month billed yearly.
 
 | | Community | Solo | Team | Business |
