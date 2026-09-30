@@ -86,6 +86,10 @@ pub struct IssueRequest {
     /// Jira: the project key and the issue type's name.
     #[serde(default)]
     pub project: Option<String>,
+    /// Jira: the workspace's site (acme.atlassian.net). The issue goes there only when this Mac's
+    /// token was saved for that site; else nothing is sent and the reply says so.
+    #[serde(default)]
+    pub site: Option<String>,
     #[serde(default)]
     pub issue_type: Option<String>,
     #[serde(default)]
@@ -337,11 +341,11 @@ pub async fn create_issue(
                 .await
                 .map_err(|x| reach_error(x, "GitHub"))?;
             match json_of(res).await {
-                (201, v) => Ok(CreatedIssue {
-                    key: format!("{repo}#{}", v["number"].as_u64().unwrap_or(0)),
-                    url: str_at(&v, &["html_url"]).unwrap_or_default().to_string(),
-                    screenshot: "none",
-                }),
+                (201, v) => match (v["number"].as_u64().filter(|n| *n > 0), str_at(&v, &["html_url"])) {
+                    (Some(n), Some(url)) => Ok(CreatedIssue { key: format!("{repo}#{n}"), url: url.to_string(), screenshot: "none" }),
+                    // Made, but the reply doesn't say which: no key to show or open.
+                    _ => Err(format!("GitHub made the issue in {repo} but didn't say which one. Look for it there.")),
+                },
                 (401, _) => Err("GitHub didn't accept the token any more. Save a new one in Settings → Issue trackers.".into()),
                 (403 | 404, _) => Err(format!(
                     "GitHub said the token can't create issues in {repo}. Give it access to that repository with Issues: Read and write."
@@ -392,6 +396,14 @@ pub async fn create_issue(
         Provider::Jira => {
             let site = who.site.clone().ok_or("Set up Jira again in Settings → Issue trackers.")?;
             let email = who.email.clone().ok_or("Set up Jira again in Settings → Issue trackers.")?;
+            if let Some(want) = r.site.as_deref().filter(|s| !s.trim().is_empty()) {
+                let want = normalize_site(want)?;
+                if want != site {
+                    return Err(format!(
+                        "The Jira token on this Mac is for {site}, but the workspace sends issues to {want}. Save a token for {want} in Settings → Issue trackers."
+                    ));
+                }
+            }
             let project = r.project.as_deref().unwrap_or_default().to_ascii_uppercase();
             let base = e.jira_base(&site);
             let description = r.description.clone().unwrap_or_else(|| adf_text(&r.body));
@@ -414,7 +426,10 @@ pub async fn create_issue(
                 .await
                 .map_err(|x| reach_error(x, "Jira"))?;
             let key = match json_of(res).await {
-                (201, v) => str_at(&v, &["key"]).unwrap_or_default().to_string(),
+                (201, v) => match str_at(&v, &["key"]).filter(|k| valid_issue_key(k)) {
+                    Some(k) => k.to_string(),
+                    None => return Err(format!("Jira made the issue in {project} but didn't say which one. Look for it there.")),
+                },
                 (401, _) => return Err(format!("Jira didn't accept {email} with the saved API token. Save a new one in Settings → Issue trackers.")),
                 (403, _) => return Err(format!("Jira said {email} can't create issues in {project}.")),
                 (404, _) => return Err(format!("Jira has no project {project}, or {email} can't see it.")),
@@ -571,9 +586,9 @@ impl<S: SecretStore> Trackers<S> {
     }
 }
 
-/// Checks the token online, then keeps it: what the UI shows afterwards.
-pub async fn save<S: SecretStore>(
-    t: &Trackers<S>,
+/// Checks the token online: who it belongs to, as it will be kept (Jira: the site and email,
+/// normalised). Nothing is stored yet.
+pub async fn checked(
     c: &reqwest::Client,
     e: &Endpoints,
     p: Provider,
@@ -588,9 +603,29 @@ pub async fn save<S: SecretStore>(
     } else {
         (None, None)
     };
-    let who = TrackerStatus { provider: p, account, site, email };
+    Ok(TrackerStatus { provider: p, account, site, email })
+}
+
+/// Checks the token online, then keeps it: what the UI shows afterwards. The shell's
+/// trackers_save does the same in two halves, so the Keychain part runs off the async runtime.
+pub async fn save<S: SecretStore>(
+    t: &Trackers<S>,
+    c: &reqwest::Client,
+    e: &Endpoints,
+    p: Provider,
+    token: &str,
+    email: Option<String>,
+    site: Option<String>,
+) -> Result<TrackerStatus, String> {
+    let who = checked(c, e, p, token, email, site).await?;
     t.put(who.clone(), token)?;
     Ok(who)
+}
+
+/// A Jira issue key as Jira makes them: PROJECT-123.
+fn valid_issue_key(k: &str) -> bool {
+    let Some((project, n)) = k.split_once('-') else { return false };
+    valid_key(project, 20) && !n.is_empty() && n.len() <= 12 && n.bytes().all(|b| b.is_ascii_digit())
 }
 
 #[cfg(test)]

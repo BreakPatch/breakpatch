@@ -343,3 +343,57 @@ async fn a_token_is_kept_only_after_it_works_and_never_in_the_index() {
     assert_eq!(Provider::parse("linear").unwrap(), Provider::Linear);
     assert!(Provider::parse("gitlab").is_err());
 }
+
+#[tokio::test]
+async fn jira_issues_go_only_to_the_site_the_token_was_saved_for() {
+    let f = fake(vec![(201, r#"{"id":"1","key":"WEB-8"}"#.into())]).await;
+    let (c, e, w) = (client().unwrap(), f.endpoints(), who(Provider::Jira));
+    let r = |site: &str| IssueRequest { title: "T".into(), project: Some("WEB".into()), site: Some(site.into()), ..Default::default() };
+    let err = create_issue(&c, &e, Provider::Jira, "t", &w, &r("globex.atlassian.net"), None).await.unwrap_err();
+    assert_eq!(err, "The Jira token on this Mac is for acme.atlassian.net, but the workspace sends issues to globex.atlassian.net. Save a token for globex.atlassian.net in Settings → Issue trackers.");
+    assert!(f.got().is_empty(), "nothing was sent");
+    let out = create_issue(&c, &e, Provider::Jira, "t", &w, &r("https://Acme.atlassian.net/jira"), None).await.unwrap();
+    assert_eq!(out.url, "https://acme.atlassian.net/browse/WEB-8");
+}
+
+#[tokio::test]
+async fn a_reply_without_the_issue_key_or_number_is_an_error_not_an_empty_key() {
+    let f = fake(vec![
+        (201, r#"{"id":"10001"}"#.into()),
+        (201, r#"{"id":"10001","key":""}"#.into()),
+        (201, r#"{"html_url":"https://github.com/acme/web/issues/"}"#.into()),
+        (201, r#"{"number":0,"html_url":"https://github.com/acme/web/issues/0"}"#.into()),
+    ])
+    .await;
+    let (c, e) = (client().unwrap(), f.endpoints());
+    let jira = IssueRequest { title: "T".into(), project: Some("WEB".into()), ..Default::default() };
+    for _ in 0..2 {
+        let err = create_issue(&c, &e, Provider::Jira, "t", &who(Provider::Jira), &jira, Some(b"png".to_vec())).await.unwrap_err();
+        assert_eq!(err, "Jira made the issue in WEB but didn't say which one. Look for it there.");
+    }
+    for _ in 0..2 {
+        let err = create_issue(&c, &e, Provider::Github, "t", &who(Provider::Github), &gh("acme/web"), None).await.unwrap_err();
+        assert_eq!(err, "GitHub made the issue in acme/web but didn't say which one. Look for it there.");
+    }
+    assert!(!f.got().iter().any(|g| g.path.contains("attachments")), "no /issue//attachments");
+}
+
+#[tokio::test]
+async fn saving_checks_first_and_keeps_what_checked_returns() {
+    // trackers_save (lib.rs) is checked() then put(): the same as save().
+    let f = fake(vec![(200, r#"{"displayName":"Ana"}"#.into())]).await;
+    let (c, e) = (client().unwrap(), f.endpoints());
+    let who = checked(&c, &e, Provider::Jira, "tok", Some(" ana@acme.com ".into()), Some("https://acme.atlassian.net/x".into())).await.unwrap();
+    assert_eq!(who, TrackerStatus { provider: Provider::Jira, account: "Ana".into(), site: Some("acme.atlassian.net".into()), email: Some("ana@acme.com".into()) });
+    let f = fake(vec![(200, r#"{"displayName":"Ana"}"#.into())]).await;
+    assert_eq!(checked(&client().unwrap(), &f.endpoints(), Provider::Jira, "tok", Some("no-at-sign".into()), Some("acme".into())).await.unwrap_err(), "Jira needs the email you sign in to Jira with.");
+}
+
+#[test]
+fn the_shells_save_command_uses_the_tested_checks() {
+    let lib = include_str!("lib.rs");
+    let cmd = &lib[lib.find("async fn trackers_save(").unwrap()..];
+    let cmd = &cmd[..cmd.find("\n}\n").unwrap()];
+    assert!(cmd.contains("trackers::checked("), "{cmd}");
+    assert!(!cmd.contains("normalize_site") && !cmd.contains("trackers::verify("), "{cmd}");
+}

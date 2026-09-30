@@ -429,16 +429,9 @@ async fn trackers_save(
 ) -> Result<trackers::TrackerStatus, String> {
     let p = trackers::Provider::parse(&provider)?;
     let t = Arc::clone(&t);
-    let c = trackers::client()?;
-    let e = trackers::Endpoints::production();
-    let account = trackers::verify(&c, &e, p, &token, email.as_deref(), site.as_deref()).await?;
+    // The same checks as trackers::save (tested there); only the Keychain part runs in blocking.
+    let who = trackers::checked(&trackers::client()?, &trackers::Endpoints::production(), p, &token, email, site).await?;
     blocking(move || {
-        let (site, email) = if p == trackers::Provider::Jira {
-            (Some(trackers::normalize_site(site.as_deref().unwrap_or(""))?), email.map(|m| m.trim().to_string()))
-        } else {
-            (None, None)
-        };
-        let who = trackers::TrackerStatus { provider: p, account, site, email };
         t.put(who.clone(), &token)?;
         Ok(who)
     })
