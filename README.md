@@ -165,7 +165,7 @@ flowchart LR
 |---|---|
 | **React UI** (`app/src`) | Every screen: Home, the recorder, the run view and report, suites, setup and settings. TypeScript, Vite and Zustand. It reaches the engine only through the shell. |
 | **Tauri shell** (`app/src-tauri`) | The native app: the window, starting and supervising the engine, saved secrets in the Keychain, the updater and the usage counts. Rust and Tauri 2. |
-| **Engine sidecar** (`engine/`) | A Python process the shell starts. It drives a pinned Chromium with Playwright using only screenshots, mouse and keyboard, records steps and their screen checks, replays tests, and asks the local model to describe or find targets. |
+| **Engine sidecar** (`engine/`) | A Python process the shell starts. It drives a pinned Chromium with Playwright through screenshots, mouse and keyboard, records steps and their screen checks, and replays tests. To find a described element it reads the page's accessible names and roles where the page has them, and asks the local model otherwise. |
 | **Protocol** ([`engine/PROTOCOL.md`](engine/PROTOCOL.md)) | JSON Lines on stdin and stdout: requests with an id, exactly one response per id, and events such as live frames and progress. The shell forwards requests (`engine_request`) and passes events on to the UI. It's the contract: change it there first. |
 
 Screen checks are perceptual hashes of the areas each step affects, with the parts that change by
@@ -340,7 +340,7 @@ What's planned is tracked as
 
 Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: it covers
 setting up, the product's voice for UI text, tests, and the few things we won't merge (such as
-selector-based automation: Breakpatch works from pixels only).
+CSS or XPath selectors: pixels decide, and page structure is only used to find things).
 
 ### Security
 

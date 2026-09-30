@@ -78,7 +78,8 @@ describe('small layout and wording', () => {
     expect(c).toMatch(/\.step-status, \.group-toggle \{ white-space: nowrap;/);
   });
   it('DESK-15 anchors the setup list at the top', () => {
-    expect(css('components/shell/gate.css')).toMatch(/\.gi-main\.top \{ align-items: flex-start;/);
+    // Its content keeps to the top (auto margins centre the other gate pages).
+    expect(css('components/shell/gate.css')).toMatch(/\.gi-main\.top \.gi-content \{ margin-top: 0; \}/);
     expect(css('screens/setup/SetupScreen.tsx')).toMatch(/<GateSplit width=\{500\} brand=\{brand\} top>/);
   });
   it('DESK-08/16 words the AI assistant by edition and About in plain words', () => {

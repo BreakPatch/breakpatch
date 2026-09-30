@@ -52,7 +52,17 @@ export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' 
 export interface Proposal { at: Point; frame?: number; box?: Box; name?: string; target?: string }
 
 /** `frame`: the live view frame the box was found on (pass it on when recording the step). */
-export interface LocateResult { box: Box; at: Point; target: string; frame?: number }
+// `path`: how the engine found it (engine/PROTOCOL.md): from the page's own controls ("fast"), by
+// the AI assistant after those weren't enough ("fast-visual"), or by the AI assistant alone
+// ("visual"). `s0Score`: the page-structure score, whenever it was used. The UI doesn't show them.
+export type LocatePath = 'fast' | 'fast-visual' | 'visual';
+/** record.locate `near`: the stepper's "+" (increase) or "−" (decrease) next to `of` ("People"). */
+export interface Near { control: 'increase' | 'decrease'; of: string }
+
+/** record.intent: the AI assistant's reading of a described step, when the app's own can't decide. */
+export interface EngineIntent { action: string; repeat: number; target?: string; text?: string; direction?: string; seconds?: number }
+
+export interface LocateResult { box: Box; at: Point; target: string; frame?: number; path?: LocatePath; s0Score?: number }
 
 export interface RunSettings {
   autoFix: boolean; failOnFix: boolean;
@@ -139,7 +149,10 @@ export interface Engine {
   pointer(kind: 'move' | 'scroll', at: Point, dx?: number, dy?: number): Promise<void>;
 
   recordPoint(p: RecordParams): Promise<Step>;
-  locate(description: string): Promise<LocateResult | null>;
+  /** `near`: the "+" or "−" next to something ("add 2 people"), found from the page's structure first. */
+  locate(description: string, opts?: { near?: Near }): Promise<LocateResult | null>;
+  /** What a described step means, from the AI assistant; null without it or when it can't tell. */
+  intent(sentence: string): Promise<EngineIntent | null>;
   /** The element at a point and its name, without acting. `name: false` skips the AI assistant. */
   propose(at: Point, opts?: { name?: boolean }): Promise<Proposal>;
   /** The answer to a `record.fileChooser` event. */

@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Modal over a form</title>
+<style>body{font:14px Arial,sans-serif;margin:0} header{position:sticky;top:0;background:#223;color:#fff;padding:10px}
+form{display:flex;flex-direction:column;gap:8px;width:300px;padding:24px}
+.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4)}
+.dlg{position:fixed;left:500px;top:200px;width:360px;padding:16px;background:#fff}</style></head><body>
+<header><button data-gt-id="menu">Menu</button></header>
+<form aria-label="Profile" onsubmit="return false">
+ <label for="em">Email</label><input id="em" type="email" data-gt-id="email">
+ <button data-gt-id="form-save">Save</button>
+ <a href="#cancel">Cancel</a>
+</form>
+<!-- The modal: its backdrop covers the form and the header; only the dialog takes clicks. -->
+<div class="backdrop"></div>
+<div class="dlg" role="dialog" aria-modal="true" aria-label="Unsaved changes">
+ <h3>Unsaved changes</h3>
+ <button data-gt-id="dlg-save">Save</button> <button data-gt-id="dlg-discard">Discard</button>
+</div>
+</body></html>

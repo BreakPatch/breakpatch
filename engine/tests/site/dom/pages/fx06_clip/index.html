@@ -1,0 +1,38 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Clipped</title>
+<style>body{font:14px Arial,sans-serif;margin:24px} .slide{flex:0 0 320px;height:120px;background:#eef;padding:12px;box-sizing:border-box}
+.rows button{display:block;height:30px;margin:0}</style></head><body>
+<main>
+ <!-- A carousel: three slides side by side, only the first inside the frame. -->
+ <section aria-label="Offers">
+  <div style="width:320px;overflow:hidden">
+   <div style="display:flex;transform:translateX(0)">
+    <div class="slide"><b>Mugs</b> <button data-gt-id="slide-1">Shop now</button></div>
+    <div class="slide"><b>Plates</b> <button data-gt-id="slide-2">Shop now</button></div>
+    <div class="slide"><b>Bowls</b> <button data-gt-id="slide-3">Shop now</button></div>
+   </div>
+  </div>
+ </section>
+ <!-- An inner list scrolled by itself: only its first four rows show. -->
+ <div class="rows" style="height:120px;overflow:auto;width:200px;margin-top:20px;border:1px solid #999">
+  <button data-gt-id="row-1">Row 1</button><button>Row 2</button><button>Row 3</button><button>Row 4</button>
+  <button>Row 5</button><button>Row 6</button><button>Row 7</button><button data-gt-id="row-8">Row 8</button>
+  <button>Row 9</button><button>Row 10</button>
+ </div>
+ <!-- A menu positioned outside a clipping box that isn't its containing block: it still shows. -->
+ <div style="position:relative;margin-top:20px">
+  <div style="overflow:hidden;height:30px;width:200px;background:#eee">
+   Account
+   <div style="position:absolute;top:36px;left:0;background:#fff;border:1px solid #999">
+    <button data-gt-id="escaped">Sign out</button>
+   </div>
+  </div>
+ </div>
+ <!-- A small badge drawn over the middle of a button doesn't hide it. -->
+ <div style="position:relative;margin-top:60px;width:120px">
+  <button data-gt-id="inbox" style="width:120px;height:32px">Inbox</button>
+  <span style="position:absolute;left:55px;top:11px;width:10px;height:10px;border-radius:5px;background:red"></span>
+ </div>
+</main>
+<!-- A toast layer over the whole page that lets clicks through hides nothing. -->
+<div style="position:fixed;inset:0;pointer-events:none"></div>
+</body></html>

@@ -64,7 +64,7 @@ export function placeholderFor(k: ActionKind): string {
     case 'checkpoint': return 'Name the checkpoint, or click the area on the page';
     case 'waitUntil': return 'Describe what should appear, or draw a box around it on the page';
     case 'navigate': return 'Type the address, for example: https://app.example.com/projects';
-    case 'swipe': case 'scroll': return 'Describe where to start, or drag on the page';
+    case 'swipe': case 'scroll': return 'Describe the step or where to start, or drag on the page';
     default: return 'Describe the next step, for example: click the Done button';
   }
 }

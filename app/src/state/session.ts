@@ -1,5 +1,9 @@
 // App-wide session: which workspace (Team, or the demo) or tests folder (Community) this Mac
 // uses, the backend for it, the person, setup progress and appearance. Persisted per Mac.
+//
+// What can be opened is the connection list (connections.ts, `breakpatch.connections.v1`); this
+// keeps the active one. `breakpatch.session.v1` is still written for the active connection for
+// one release, so an older app opens the same workspace or folder after a downgrade.
 import { create } from 'zustand';
 import type { Backend } from '../data/backend';
 import type { Person, Workspace } from '../data/types';
@@ -9,6 +13,7 @@ import { openLocalFolder } from '../data/local/folder';
 import { countUsage } from '../data/countUsage';
 import { addRecentFolder } from '../lib/recentFolders';
 import { useSystem } from './system';
+import { connections, folderConnection, useConnections, workspaceConnection, type Connection } from './connections';
 
 export type Theme = 'dark' | 'light' | 'system';
 export type SetupTask = 'browser' | 'mac' | 'model';
@@ -45,10 +50,22 @@ interface SessionState {
   /** A workspace offered by a link or file, waiting for the user to confirm. */
   pendingWorkspace: Workspace | null;
 
-  connect(ws: Workspace): Promise<void>;
+  connect(ws: Workspace, o?: { remember?: boolean }): Promise<void>;
   /** Opens a tests folder that has a breakpatch.json (data/local/folder.ts sets one up). */
   connectLocal(path: string): Promise<void>;
+  /** Signs out, closes and forgets the open workspace or folder (the connection list loses it). */
   disconnect(): void;
+  /**
+   * Switch workspace on the sign-in screen: leaves the open workspace without forgetting it, and
+   * opens this Mac's tests folder when the list has one. `folder`: it opened; `none`: nothing is
+   * open (the app shows Welcome), with the folder's problem in `localError` if it couldn't open.
+   */
+  leaveWorkspace(): Promise<'folder' | 'none'>;
+  /**
+   * Opens another connection from the list. The one open closes without signing out, so
+   * switching back finds the person still signed in. The caller stops runs and goes home first.
+   */
+  switchTo(c: Connection): Promise<void>;
   setUser(u: Person | null): void;
   setSetupDone(v: boolean): void;
   setPrefs(p: Partial<Prefs>): void;
@@ -96,17 +113,30 @@ export function canOpen(ws: Workspace) {
 
 let readOnlyOff: (() => void) | undefined;
 let warningsOff: (() => void) | undefined;
+let userOff: (() => void) | undefined;
 /**
  * A backend that can't save (e.g. a newer data format in the workspace) shows the read-only
- * banner; one that skipped data (a broken file in the tests folder) shows a warning.
+ * banner; one that skipped data (a broken file in the tests folder) shows a warning. A new
+ * backend also stops the old one's person reaching the session (followUser).
  */
 function watchBackend(b: Backend | null) {
   readOnlyOff?.(); readOnlyOff = undefined;
   warningsOff?.(); warningsOff = undefined;
+  userOff?.(); userOff = undefined;
   useSystem.getState().setReadOnly(false);
   useSystem.getState().setWarnings([]);
   if (b?.onReadOnly) readOnlyOff = b.onReadOnly(v => useSystem.getState().setReadOnly(v));
   if (b?.onWarnings) warningsOff = b.onWarnings(v => useSystem.getState().setWarnings(v));
+}
+
+/**
+ * The backend's signed-in person becomes the session's user, while it's still the open backend:
+ * a closed workspace's late sign-in event never shows its person in another workspace.
+ */
+function followUser(b: Backend | null) {
+  userOff?.(); userOff = undefined;
+  if (!b) return;
+  userOff = b.onUser(u => { if (useSession.getState().backend === b) useSession.getState().setUser(u); });
 }
 
 const saved = load();
@@ -122,10 +152,11 @@ export const useSession = create<SessionState>((set, get) => ({
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
   pendingWorkspace: null,
 
-  async connect(ws) {
+  async connect(ws, o = {}) {
     // Tests created and runs are counted where they're saved (data/countUsage.ts); the demo isn't.
     const backend = countUsage(await makeBackend(ws));
     get().backend?.close?.();
+    if (o.remember !== false) connections.opened(workspaceConnection(ws));
     set({ workspace: ws, local: null, localError: null, backend, user: backend.currentUser(), pendingWorkspace: null });
     watchBackend(backend);
     persist();
@@ -133,6 +164,7 @@ export const useSession = create<SessionState>((set, get) => ({
   async connectLocal(path) {
     const backend = countUsage(await openLocalFolder(path));
     get().backend?.close?.();
+    connections.opened(folderConnection(backend.local.path, backend.name));
     set({ workspace: null, local: { path: backend.local.path }, localError: null, backend, user: backend.currentUser(), pendingWorkspace: null });
     watchBackend(backend);
     addRecentFolder(backend.local.path);
@@ -143,8 +175,33 @@ export const useSession = create<SessionState>((set, get) => ({
     b?.signOut().catch(() => {});
     b?.close?.();
     watchBackend(null);
+    const { activeId } = useConnections.getState();
+    if (activeId) connections.remove(activeId);
     set({ workspace: null, local: null, backend: null, user: null, setupDone: false });
     persist();
+  },
+  async leaveWorkspace() {
+    const folder = useConnections.getState().list.find(c => c.kind === 'local' && c.local);
+    if (folder) {
+      try { await get().switchTo(folder); return 'folder'; }
+      catch (e) { set({ localError: `${folder.local!.path}: ${e instanceof Error ? e.message : String(e)}` }); }
+    }
+    const b = get().backend;
+    b?.signOut().catch(() => {});
+    b?.close?.();
+    watchBackend(null);
+    connections.deactivate();
+    set({ workspace: null, local: null, backend: null, user: null, pendingWorkspace: null });
+    persist();
+    return 'none';
+  },
+  async switchTo(c) {
+    if (c.kind === 'local' && c.local) await get().connectLocal(c.local.path);
+    else if ((c.kind === 'team' || c.kind === 'demo') && c.team) {
+      await get().connect(c.team.workspace);
+      // The saved sign-in comes back with the backend (bootSession does the same on launch).
+      followUser(get().backend);
+    } else throw new Error("This version of Breakpatch can't open this kind of workspace. Update Breakpatch to open it.");
   },
   setUser(user) { set({ user }); },
   setSetupDone(setupDone) { set({ setupDone }); persist(); },
@@ -184,13 +241,12 @@ export async function bootSession() {
   if (q.has('demo') && q.has('ready')) s.setSetupDone(true);
   const theme = q.get('theme');
   if (theme === 'dark' || theme === 'light' || theme === 'system') s.setPrefs({ theme });
-  const b = useSession.getState().backend;
-  b?.onUser(u => useSession.getState().setUser(u));
+  followUser(useSession.getState().backend);
 }
 
 /** `?demo` over a saved tests folder: open the demo for this launch and keep the folder saved. */
 async function connectDemo() {
   const local = useSession.getState().local;
-  await useSession.getState().connect(DEMO_WORKSPACE);
+  await useSession.getState().connect(DEMO_WORKSPACE, { remember: false });
   if (local) { const st = useSession.getState(); save({ workspace: st.workspace, local, setupDone: st.setupDone, prefs: st.prefs }); }
 }

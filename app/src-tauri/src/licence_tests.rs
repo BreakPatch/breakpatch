@@ -85,7 +85,18 @@ fn stored(token: Option<String>) -> Stored {
 /// This test Mac's hashed hardware id (the deviceId it sends).
 const DEVICE: &str = "0123456789abcdef0123456789abcdef";
 
+/// The Team workspace the tests have open, and its Keychain entry.
+const WS: &str = "team:acme-breakpatch/breakpatch";
+const ENTRY: &str = "licence:team:acme-breakpatch/breakpatch";
+
+/// A licensing with the test workspace selected (without moving anything: see the tests below).
 fn licensing(store: MemStore, url: &str, clock: Arc<AtomicI64>) -> Licensing<MemStore> {
+    let l = unselected(store, url, clock);
+    *l.selected.lock().unwrap() = Some(WS.into());
+    l
+}
+
+fn unselected(store: MemStore, url: &str, clock: Arc<AtomicI64>) -> Licensing<MemStore> {
     Licensing::new(store, keys("test-rfc8032"), url.into(), Box::new(|| ("machine-1".into(), Some("QA Mac".into()))))
         .with_clock(Box::new(move || clock.load(Ordering::SeqCst)))
         .with_hardware(Box::new(|| Some(DEVICE.into())))
@@ -265,6 +276,7 @@ async fn without_keys_everything_is_unavailable() {
     assert_eq!(st.state, State::Unavailable);
     assert_eq!(st.message.as_deref(), Some("Licences aren't available in this edition of Breakpatch."));
     let req = ActivateRequest {
+        ws_key: None,
         key: "BP-X".into(),
         workspace_project_id: "w".into(),
         subject: Some("a@b.c".into()),
@@ -272,7 +284,7 @@ async fn without_keys_everything_is_unavailable() {
     };
     assert_eq!(l.activate(req).await.unwrap_err().code, "unavailable");
     assert_eq!(l.refresh().await.state, State::Unavailable);
-    assert_eq!(l.release().await.state, State::Unavailable);
+    assert_eq!(l.release(None).await.state, State::Unavailable);
 }
 
 #[test]
@@ -389,6 +401,7 @@ fn refusal(code: &str) -> Value {
 
 fn person(key: &str, subject: &str) -> ActivateRequest {
     ActivateRequest {
+        ws_key: None,
         key: key.into(),
         workspace_project_id: "acme-breakpatch".into(),
         subject: Some(subject.into()),
@@ -420,6 +433,7 @@ async fn a_machine_activates_with_this_macs_id() {
     let store = MemStore::default();
     let l = licensing(store.clone(), &url, Arc::new(AtomicI64::new(IAT + 1)));
     let req = ActivateRequest {
+        ws_key: None,
         key: "BP-K".into(),
         workspace_project_id: "acme-breakpatch".into(),
         subject: None,
@@ -509,7 +523,7 @@ async fn release_gives_the_seat_back_and_forgets_it() {
     let store = MemStore::default();
     put(&store, &stored(Some(sign("test-rfc8032", &payload("acme-breakpatch", IAT)))));
     let l = licensing(store.clone(), &url, Arc::new(AtomicI64::new(IAT + 1)));
-    assert_eq!(l.release().await.state, State::None);
+    assert_eq!(l.release(None).await.state, State::None);
     assert_eq!(seen.lock().unwrap().as_slice(), ["/release"]);
     assert!(store.get(ENTRY).unwrap().is_none());
 }
@@ -564,9 +578,9 @@ async fn refresh_carries_the_usage_counts_and_clears_them_when_taken() {
     taken["usageAccepted"] = json!(true);
     let (url, _, bodies) = canned_bodies(vec![(200, taken)]).await;
     let (l, u) = with_usage(licensing(store, &url, Arc::new(AtomicI64::new(IAT + DAY))));
-    u.record(Event::TestCreated, IAT, true);
-    u.record(Event::Run { source: Source::Schedule, passed: true }, IAT, true);
-    u.record(Event::Run { source: Source::Manual, passed: false }, IAT, true);
+    u.record(Event::TestCreated, IAT, Some(WS));
+    u.record(Event::Run { source: Source::Schedule, passed: true }, IAT, Some(WS));
+    u.record(Event::Run { source: Source::Manual, passed: false }, IAT, Some(WS));
     assert_eq!(l.refresh().await.state, State::Active);
     let body = bodies.lock().unwrap()[0].clone();
     assert_eq!(
@@ -575,7 +589,7 @@ async fn refresh_carries_the_usage_counts_and_clears_them_when_taken() {
     );
     let keys: Vec<&str> = body.as_object().unwrap().keys().map(String::as_str).collect();
     assert_eq!(keys, ["deviceId", "token", "usage"], "nothing else goes with it");
-    assert_eq!(u.pending_team(), None);
+    assert_eq!(u.pending_team(WS), None);
 }
 
 #[tokio::test]
@@ -589,11 +603,11 @@ async fn usage_not_taken_waits_for_the_next_refresh() {
     // An older service that doesn't know about usage says nothing: that isn't "taken" either.
     let (url, _, _) = canned_bodies(vec![(200, refused), (200, ok_answer(&next)), (503, json!({}))]).await;
     let (l, u) = with_usage(licensing(store, &url, Arc::new(AtomicI64::new(IAT + DAY))));
-    u.record(Event::TestCreated, IAT, true);
+    u.record(Event::TestCreated, IAT, Some(WS));
     l.refresh().await;
     l.refresh().await;
     l.refresh().await;
-    assert_eq!(u.pending_team().unwrap().tests_created, 1);
+    assert_eq!(u.pending_team(WS).unwrap().tests_created, 1);
 }
 
 #[tokio::test]
@@ -778,6 +792,7 @@ async fn an_online_refresh_clears_a_clock_set_back() {
     let online = Licensing::new(l.store.clone(), keys("test-rfc8032"), url, Box::new(|| ("m".into(), None)))
         .with_clock(Box::new(move || clock.load(Ordering::SeqCst)))
         .with_hardware(Box::new(|| Some(DEVICE.into())));
+    online.select(Some(WS), None).unwrap();
     assert_eq!(online.refresh().await.state, State::Active);
 }
 
@@ -824,4 +839,219 @@ fn the_service_address_can_only_be_changed_in_development() {
     assert_eq!(service_url_from(local, false), DEFAULT_URL);
     assert_eq!(service_url_from(Some("  ".into()), true), DEFAULT_URL);
     assert_eq!(service_url_from(None, true), DEFAULT_URL);
+}
+
+// ---- Licences per workspace ----
+
+fn active_token(ws: &str) -> String {
+    sign("test-rfc8032", &payload(ws, IAT))
+}
+
+#[test]
+fn the_licence_of_earlier_versions_moves_to_its_workspace_on_select() {
+    let store = MemStore::default();
+    store.set(LEGACY_ENTRY, &serde_json::to_string(&stored(Some(active_token("acme-breakpatch")))).unwrap()).unwrap();
+    let clock = Arc::new(AtomicI64::new(IAT + DAY));
+    let l = unselected(store.clone(), "http://127.0.0.1:9", clock);
+    // Nothing selected: nothing unlocked, and the old entry stays.
+    assert_eq!(l.status(None).state, State::None);
+    assert!(store.get(LEGACY_ENTRY).unwrap().is_some());
+    // A local folder and another workspace don't take it.
+    assert_eq!(l.select(Some("local:c-1"), None).unwrap().state, State::None);
+    assert_eq!(l.select(Some("team:globex/breakpatch"), Some("globex")).unwrap().state, State::None);
+    assert!(store.get(LEGACY_ENTRY).unwrap().is_some());
+    // Its own workspace does: copied to licence:<wsKey>, then removed.
+    let st = l.select(Some(WS), Some("acme-breakpatch")).unwrap();
+    assert_eq!(st.state, State::Active);
+    assert!(store.get(LEGACY_ENTRY).unwrap().is_none());
+    assert!(store.get(ENTRY).unwrap().is_some());
+    // The device id stays one entry for the Mac.
+    assert_eq!(l.select(Some("local:c-1"), None).unwrap().state, State::None);
+    assert_eq!(l.select(Some(WS), Some("acme-breakpatch")).unwrap().state, State::Active);
+}
+
+#[test]
+fn a_move_interrupted_after_the_copy_finishes_on_the_next_select() {
+    let store = MemStore::default();
+    let text = serde_json::to_string(&stored(Some(active_token("acme-breakpatch")))).unwrap();
+    store.set(LEGACY_ENTRY, &text).unwrap();
+    store.set(ENTRY, &text).unwrap();
+    let l = unselected(store.clone(), "http://127.0.0.1:9", Arc::new(AtomicI64::new(IAT + DAY)));
+    assert_eq!(l.select(Some(WS), Some("acme-breakpatch")).unwrap().state, State::Active);
+    assert!(store.get(LEGACY_ENTRY).unwrap().is_none());
+}
+
+#[test]
+fn switching_workspaces_never_shows_one_workspaces_licence_in_another() {
+    let store = MemStore::default();
+    store.set(ENTRY, &serde_json::to_string(&stored(Some(active_token("acme-breakpatch")))).unwrap()).unwrap();
+    let l = unselected(store.clone(), "http://127.0.0.1:9", Arc::new(AtomicI64::new(IAT + DAY)));
+    assert_eq!(l.select(Some(WS), Some("acme-breakpatch")).unwrap().features.len(), 3);
+    assert!(l.holds_token() && l.engine_token().is_some());
+    let other = l.select(Some("team:globex/breakpatch"), Some("globex")).unwrap();
+    assert_eq!((other.state, other.features.len()), (State::None, 0));
+    assert!(!l.holds_token() && l.engine_token().is_none());
+    assert_eq!(l.select(None, None).unwrap().state, State::None);
+    assert!(l.select(Some("bad key with spaces"), None).is_err());
+    assert_eq!(l.status(None).state, State::None, "a refused key leaves nothing selected");
+}
+
+#[test]
+fn a_licence_can_belong_to_a_local_folder_connection() {
+    // The Solo plan (later): a licence for the tests folder, no workspace. Only the storage is here.
+    let store = MemStore::default();
+    let l = unselected(store.clone(), "http://127.0.0.1:9", Arc::new(AtomicI64::new(IAT + DAY)));
+    l.select(Some("local:c-1"), None).unwrap();
+    l.save_for("local:c-1", Some(stored(Some(active_token("acme-breakpatch")))));
+    assert!(store.get("licence:local:c-1").unwrap().is_some());
+    assert_eq!(l.status(None).state, State::Active);
+    assert_eq!(l.select(Some(WS), None).unwrap().state, State::None);
+}
+
+#[tokio::test]
+async fn releasing_one_workspace_keeps_the_others() {
+    let (url, _) = canned(vec![(200, json!({ "ok": true }))]).await;
+    let store = MemStore::default();
+    let text = serde_json::to_string(&stored(Some(active_token("acme-breakpatch")))).unwrap();
+    store.set(ENTRY, &text).unwrap();
+    store.set("licence:team:globex/breakpatch", &text).unwrap();
+    let l = unselected(store.clone(), &url, Arc::new(AtomicI64::new(IAT + DAY)));
+    l.select(Some(WS), Some("acme-breakpatch")).unwrap();
+    l.release(Some("team:globex/breakpatch")).await;
+    assert!(store.get("licence:team:globex/breakpatch").unwrap().is_none());
+    assert_eq!(l.status(None).state, State::Active);
+}
+
+#[tokio::test]
+async fn activating_needs_a_workspace_selected() {
+    let l = unselected(MemStore::default(), "http://127.0.0.1:9", Arc::new(AtomicI64::new(IAT)));
+    let f = l.activate(person("BP-2HC6-FWG8-CR0K-VBDB", "ana@acme.com")).await.unwrap_err();
+    assert_eq!(f.code, "bad_request");
+}
+
+#[tokio::test]
+async fn each_refresh_carries_its_own_workspaces_usage() {
+    use crate::usage::Event;
+    let (url, _, bodies) = canned_bodies(vec![(200, ok_answer(&active_token("acme-breakpatch")))]).await;
+    let store = MemStore::default();
+    store.set(ENTRY, &serde_json::to_string(&stored(Some(active_token("acme-breakpatch")))).unwrap()).unwrap();
+    let (l, u) = with_usage(unselected(store, &url, Arc::new(AtomicI64::new(IAT + DAY))));
+    l.select(Some(WS), Some("acme-breakpatch")).unwrap();
+    u.record(Event::TestCreated, IAT, Some(WS));
+    u.record(Event::TestCreated, IAT, Some("team:globex/breakpatch"));
+    u.record(Event::TestCreated, IAT, Some("team:globex/breakpatch"));
+    l.refresh().await;
+    assert_eq!(bodies.lock().unwrap()[0]["usage"]["testsCreated"], 1);
+    assert_eq!(u.pending_team("team:globex/breakpatch").unwrap().tests_created, 2);
+}
+
+fn legacy_with(store: &MemStore, s: &Stored) {
+    store.set(LEGACY_ENTRY, &serde_json::to_string(s).unwrap()).unwrap();
+}
+fn entry_of(store: &MemStore, entry: &str) -> Stored {
+    serde_json::from_str(&store.get(entry).unwrap().unwrap()).unwrap()
+}
+
+#[test]
+fn the_earlier_licence_only_moves_to_a_workspace_of_its_project_that_may_take_it() {
+    let store = MemStore::default();
+    legacy_with(&store, &stored(Some(active_token("acme-breakpatch"))));
+    let l = unselected(store.clone(), "http://127.0.0.1:9", Arc::new(AtomicI64::new(IAT + DAY)));
+    // A key for another project, or a local folder, never takes it, whatever project is named.
+    l.select(Some("team:globex/breakpatch"), Some("acme-breakpatch")).unwrap();
+    l.select(Some("local:c-1"), Some("acme-breakpatch")).unwrap();
+    // Another database of the same project, when the UI says it's ambiguous: left where it is.
+    let qa = "team:acme-breakpatch/qa";
+    assert_eq!(l.select_with(Some(qa), Some("acme-breakpatch"), false).unwrap().state, State::None);
+    assert!(store.get(LEGACY_ENTRY).unwrap().is_some());
+    assert!(store.get(&entry_for(qa)).unwrap().is_none());
+    // The one it belongs to takes it.
+    assert_eq!(l.select_with(Some(WS), Some("acme-breakpatch"), true).unwrap().state, State::Active);
+    assert!(store.get(LEGACY_ENTRY).unwrap().is_none());
+}
+
+#[tokio::test]
+async fn when_both_entries_differ_the_newer_token_stays_and_the_other_seat_goes_back() {
+    let (url, seen, bodies) = canned_bodies(vec![(200, json!({ "ok": true }))]).await;
+    let store = MemStore::default();
+    // This workspace's entry, from before a downgrade; the older app then activated a new seat
+    // (another person) in the single entry.
+    let mine = stored(Some(active_token("acme-breakpatch")));
+    put(&store, &mine);
+    let newer_token = sign("test-rfc8032", &payload("acme-breakpatch", IAT + DAY));
+    let mut old = stored(Some(newer_token.clone()));
+    old.subject = "bo@acme.com".into();
+    legacy_with(&store, &old);
+    let l = unselected(store.clone(), &url, Arc::new(AtomicI64::new(IAT + 2 * DAY)));
+    l.select(Some(WS), Some("acme-breakpatch")).unwrap();
+    l.release_stale().await;
+    assert_eq!(entry_of(&store, ENTRY).token.as_deref(), Some(newer_token.as_str()));
+    assert!(store.get(LEGACY_ENTRY).unwrap().is_none());
+    assert_eq!(seen.lock().unwrap().as_slice(), ["/release"]);
+    assert_eq!(bodies.lock().unwrap()[0]["token"], mine.token.unwrap());
+}
+
+#[tokio::test]
+async fn the_same_seat_in_both_entries_is_only_forgotten() {
+    let (url, seen) = canned(vec![]).await;
+    let store = MemStore::default();
+    let newer_token = sign("test-rfc8032", &payload("acme-breakpatch", IAT + DAY));
+    put(&store, &stored(Some(newer_token.clone())));
+    // The earlier entry: the same key and person, an older token for the same seat.
+    legacy_with(&store, &stored(Some(active_token("acme-breakpatch"))));
+    let l = unselected(store.clone(), &url, Arc::new(AtomicI64::new(IAT + 2 * DAY)));
+    l.select(Some(WS), Some("acme-breakpatch")).unwrap();
+    l.release_stale().await;
+    assert_eq!(entry_of(&store, ENTRY).token.as_deref(), Some(newer_token.as_str()));
+    assert!(store.get(LEGACY_ENTRY).unwrap().is_none());
+    assert!(seen.lock().unwrap().is_empty(), "nothing released");
+}
+
+#[tokio::test]
+async fn activate_refresh_and_status_work_on_the_connection_they_name() {
+    let token = active_token("acme-breakpatch");
+    let (url, _) = canned(vec![(200, ok_answer(&token)), (200, ok_answer(&token))]).await;
+    let store = MemStore::default();
+    let l = unselected(store.clone(), &url, Arc::new(AtomicI64::new(IAT + 1)));
+    // The UI asked for WS, then switched to a tests folder before the activation was handled.
+    l.select(Some("local:c-1"), None).unwrap();
+    let mut req = person("BP-2HC6-FWG8-CR0K-VBDB", "ana@acme.com");
+    req.ws_key = Some(WS.into());
+    assert_eq!(l.activate(req).await.unwrap().state, State::Active);
+    assert!(store.get(ENTRY).unwrap().is_some());
+    assert!(store.get("licence:local:c-1").unwrap().is_none(), "never stored under what's selected");
+    assert_eq!(l.status(None).state, State::None);
+    assert_eq!(l.status_for(Some(WS), Some("acme-breakpatch")).state, State::Active);
+    assert_eq!(l.refresh_for(Some(WS)).await.state, State::Active);
+    assert!(store.get("licence:local:c-1").unwrap().is_none());
+}
+
+#[test]
+fn the_keychain_isnt_asked_about_the_earlier_entry_once_it_has_gone() {
+    #[derive(Default, Clone)]
+    struct Counting(MemStore, Arc<AtomicI64>);
+    impl SecretStore for Counting {
+        fn get(&self, n: &str) -> Result<Option<String>, String> {
+            if n == LEGACY_ENTRY {
+                self.1.fetch_add(1, Ordering::SeqCst);
+            }
+            self.0.get(n)
+        }
+        fn set(&self, n: &str, v: &str) -> Result<(), String> {
+            self.0.set(n, v)
+        }
+        fn delete(&self, n: &str) -> Result<(), String> {
+            self.0.delete(n)
+        }
+    }
+    let store = Counting::default();
+    let l = Licensing::new(
+        store.clone(),
+        keys("test-rfc8032"),
+        "http://127.0.0.1:9".into(),
+        Box::new(|| ("m".into(), None)),
+    );
+    assert!(!l.legacy_waiting());
+    assert!(!l.legacy_waiting());
+    assert_eq!(store.1.load(Ordering::SeqCst), 1);
 }

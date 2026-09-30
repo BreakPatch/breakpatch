@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Dashboard</title>
+<style>body{font:14px Arial,sans-serif;margin:0} nav{background:#223;color:#fff;padding:10px 20px;display:flex;gap:20px}
+#menu{position:relative;cursor:pointer} #menu ul{display:none;position:absolute;top:20px;left:0;background:#fff;color:#000;list-style:none;padding:6px;margin:0;border:1px solid #999;width:140px}
+#menu:hover ul{display:block} .card{margin:30px;width:260px;height:160px;border:1px solid #aaa;position:relative}
+.card .qv{opacity:0;position:absolute;bottom:10px;left:10px} .card:hover .qv{opacity:1}
+#dd{display:none;position:absolute;left:400px;top:60px;border:1px solid #999;background:#fff;padding:6px}
+#dd.open{display:block} .soup{cursor:pointer;padding:4px 8px;border:1px solid #ccc;margin:4px;display:inline-block}</style></head><body>
+<nav aria-label="Main"><span>Home</span><div id="menu" tabindex="0" aria-haspopup="true">Settings
+<ul role="menu"><li role="menuitem" tabindex="-1" data-gt-id="mi-profile">Profile</li><li role="menuitem" tabindex="-1" data-gt-id="mi-logout">Log out</li></ul></div></nav>
+<main><div class="card" id="card"><b>Plant</b><button class="qv" data-gt-id="quick-view">Quick view</button></div>
+<button id="more" aria-expanded="false" onclick="document.getElementById('dd').classList.add('open')">More</button>
+<div id="dd" role="listbox" aria-label="Options"><div role="option" aria-selected="false" data-gt-id="opt-archive">Archive</div><div role="option" aria-selected="false">Rename</div></div>
+<div><div class="soup" data-gt-id="soup-a"><div><span>Approve</span></div></div><div class="soup"><i>Reject</i></div><div class="soup"><svg width="16" height="16"><circle cx="8" cy="8" r="6"/></svg></div></div>
+<canvas width="200" height="80" style="border:1px solid #000"></canvas></main></body></html>

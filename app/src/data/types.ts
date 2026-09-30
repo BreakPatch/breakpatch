@@ -65,6 +65,8 @@ export interface Test {
   status: TestStatus;
   viewport: Viewport;            // locked at creation
   currentVersion: number;
+  /** The version pipelines run with `breakpatch-ci --version released` (Team: Version history → Mark as released). */
+  releasedVersion?: number;
   setUp?: HttpCall;
   cleanUp?: HttpCall & { alsoOnFailure?: boolean };
   stepCount: number;
@@ -137,6 +139,11 @@ export interface Version {
   note?: string;
   /** Set when steps were recorded or re-recorded for this version; kept from the one before otherwise. */
   recordedOn?: RecordedOn;
+  /**
+   * Tests only: the start address this version starts at. Versions saved before it existed have
+   * none; they start at the test's.
+   */
+  startUrl?: string;
 }
 
 export interface StepGroup {

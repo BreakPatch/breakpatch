@@ -5,6 +5,8 @@ use std::sync::{Arc, Mutex as StdMutex};
 
 /// 2026-09-25 12:00 UTC, a Friday in ISO week 2026-W39.
 const NOW: i64 = 1_790_337_600;
+/// The Team workspace open (licence.rs `wsKey`).
+const WS: &str = "team:acme-breakpatch/breakpatch";
 
 fn run(source: Source, passed: bool) -> Event {
     Event::Run { source, passed }
@@ -38,14 +40,14 @@ fn dates_are_utc_days_iso_weeks_and_months() {
 #[test]
 fn team_counts_tests_and_runs_by_source_only_with_a_licence() {
     let u = team();
-    u.record(Event::TestCreated, NOW, false);
-    assert_eq!(u.pending_team(), None, "nothing is counted without a licence");
-    u.record(Event::TestCreated, NOW, true);
-    u.record(run(Source::Manual, true), NOW, true);
-    u.record(run(Source::Schedule, false), NOW, true);
-    u.record(run(Source::Runner, true), NOW + DAY, true);
-    u.record(run(Source::Ci, true), NOW + DAY, true);
-    let c = u.pending_team().unwrap();
+    u.record(Event::TestCreated, NOW, None);
+    assert_eq!(u.pending_team(WS), None, "nothing is counted without a licence");
+    u.record(Event::TestCreated, NOW, Some(WS));
+    u.record(run(Source::Manual, true), NOW, Some(WS));
+    u.record(run(Source::Schedule, false), NOW, Some(WS));
+    u.record(run(Source::Runner, true), NOW + DAY, Some(WS));
+    u.record(run(Source::Ci, true), NOW + DAY, Some(WS));
+    let c = u.pending_team(WS).unwrap();
     assert_eq!(
         c.team_payload(),
         json!({ "testsCreated": 1, "runs": { "manual": 1, "schedule": 1, "runner": 1, "ci": 1 }, "runsPassed": 3, "runsFailed": 1, "activeDays": 2 })
@@ -55,8 +57,8 @@ fn team_counts_tests_and_runs_by_source_only_with_a_licence() {
 #[test]
 fn the_payload_is_numbers_only() {
     let u = team();
-    u.record(Event::TestCreated, NOW, true);
-    let p = u.pending_team().unwrap().team_payload();
+    u.record(Event::TestCreated, NOW, Some(WS));
+    let p = u.pending_team(WS).unwrap().team_payload();
     let keys: Vec<&str> = p.as_object().unwrap().keys().map(String::as_str).collect();
     assert_eq!(keys, ["activeDays", "runs", "runsFailed", "runsPassed", "testsCreated"]);
     fn all_numbers(v: &Value) -> bool {
@@ -72,31 +74,31 @@ fn the_payload_is_numbers_only() {
 #[test]
 fn reported_takes_off_what_was_sent_and_keeps_what_came_after() {
     let u = team();
-    u.record(Event::TestCreated, NOW, true);
-    u.record(run(Source::Manual, true), NOW, true);
-    let sent = u.pending_team().unwrap();
+    u.record(Event::TestCreated, NOW, Some(WS));
+    u.record(run(Source::Manual, true), NOW, Some(WS));
+    let sent = u.pending_team(WS).unwrap();
     // While the refresh is on its way:
-    u.record(run(Source::Manual, false), NOW, true);
-    u.reported(&sent, NOW);
-    let left = u.pending_team().unwrap();
+    u.record(run(Source::Manual, false), NOW, Some(WS));
+    u.reported(WS, &sent, NOW);
+    let left = u.pending_team(WS).unwrap();
     assert_eq!((left.tests_created, left.runs.manual, left.runs_passed, left.runs_failed), (0, 1, 0, 1));
     // Today was already sent: it isn't counted again.
     assert!(left.days.is_empty());
     assert_eq!(left.team_payload()["activeDays"], 0);
     // Tomorrow is.
-    u.record(Event::TestCreated, NOW + DAY, true);
-    assert_eq!(u.pending_team().unwrap().team_payload()["activeDays"], 1);
-    let all = u.pending_team().unwrap();
-    u.reported(&all, NOW + DAY);
-    assert_eq!(u.pending_team(), None);
+    u.record(Event::TestCreated, NOW + DAY, Some(WS));
+    assert_eq!(u.pending_team(WS).unwrap().team_payload()["activeDays"], 1);
+    let all = u.pending_team(WS).unwrap();
+    u.reported(WS, &all, NOW + DAY);
+    assert_eq!(u.pending_team(WS), None);
 }
 
 #[test]
 fn counters_stop_at_the_local_cap() {
     let u = team();
-    u.state.lock().unwrap().counts.runs.ci = LOCAL_CAP;
-    u.record(run(Source::Ci, true), NOW, true);
-    assert_eq!(u.pending_team().unwrap().runs.ci, LOCAL_CAP);
+    u.state.lock().unwrap().buckets.entry(WS.into()).or_default().counts.runs.ci = LOCAL_CAP;
+    u.record(run(Source::Ci, true), NOW, Some(WS));
+    assert_eq!(u.pending_team(WS).unwrap().runs.ci, LOCAL_CAP);
 }
 
 #[test]
@@ -104,24 +106,24 @@ fn counts_survive_a_restart_in_usage_json() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("usage.json");
     let u = UsageStore::new(Some(path.clone()), Edition::Team, false);
-    u.record(Event::TestCreated, NOW, true);
-    u.record(run(Source::Runner, false), NOW, true);
+    u.record(Event::TestCreated, NOW, Some(WS));
+    u.record(run(Source::Runner, false), NOW, Some(WS));
     let again = UsageStore::new(Some(path.clone()), Edition::Team, false);
-    let c = again.pending_team().unwrap();
+    let c = again.pending_team(WS).unwrap();
     assert_eq!((c.tests_created, c.runs.runner, c.runs_failed), (1, 1, 1));
     let text = std::fs::read_to_string(&path).unwrap();
-    assert!(text.contains("\"v\":1"));
+    assert!(text.contains("\"v\":2"));
     // A broken file starts empty rather than failing.
     std::fs::write(&path, "{not json").unwrap();
-    assert_eq!(UsageStore::new(Some(path), Edition::Team, false).pending_team(), None);
+    assert_eq!(UsageStore::new(Some(path), Edition::Team, false).pending_team(WS), None);
 }
 
 #[test]
 fn community_sends_nothing_before_the_notice() {
     let u = community();
-    u.record(Event::TestCreated, NOW, false);
+    u.record(Event::TestCreated, NOW, None);
     assert_eq!(u.community_ping(NOW), None);
-    assert!(!u.settings().notice_seen);
+    assert!(!u.settings(None).notice_seen);
     u.notice_seen();
     assert!(u.community_ping(NOW).is_some());
 }
@@ -130,11 +132,11 @@ fn community_sends_nothing_before_the_notice() {
 fn community_pings_once_a_day_with_counts_and_no_identifier() {
     let u = community();
     u.notice_seen();
-    u.record(Event::TestCreated, NOW, false);
-    u.record(run(Source::Manual, true), NOW, false);
-    u.record(run(Source::Manual, false), NOW, false);
+    u.record(Event::TestCreated, NOW, None);
+    u.record(run(Source::Manual, true), NOW, None);
+    u.record(run(Source::Manual, false), NOW, None);
     // Community has no runner, schedules or CI: those aren't counted.
-    u.record(run(Source::Runner, true), NOW, false);
+    u.record(run(Source::Runner, true), NOW, None);
     let p = u.community_ping(NOW).unwrap();
     assert_eq!(
         p.body,
@@ -209,16 +211,16 @@ fn a_ping_carries_at_most_the_caps_and_the_rest_waits() {
 fn turning_it_off_drops_what_is_waiting_and_stops_counting_and_sending() {
     let u = community();
     u.notice_seen();
-    u.record(Event::TestCreated, NOW, false);
+    u.record(Event::TestCreated, NOW, None);
     let s = u.set_enabled(false);
     assert!(!s.enabled);
     assert_eq!(s.pending["testsCreated"], 0);
-    u.record(Event::TestCreated, NOW, false);
+    u.record(Event::TestCreated, NOW, None);
     assert_eq!(u.community_ping(NOW), None);
     assert!(u.state.lock().unwrap().counts.is_empty());
     // On again: counting starts from nothing.
     u.set_enabled(true);
-    u.record(run(Source::Manual, true), NOW, false);
+    u.record(run(Source::Manual, true), NOW, None);
     assert_eq!(u.community_ping(NOW).unwrap().body["usage"]["testsCreated"], 0);
 }
 
@@ -226,9 +228,9 @@ fn turning_it_off_drops_what_is_waiting_and_stops_counting_and_sending() {
 fn breakpatch_no_usage_turns_it_off_whatever_the_setting() {
     let u = UsageStore::new(None, Edition::Community, true);
     u.notice_seen();
-    u.record(Event::TestCreated, NOW, false);
+    u.record(Event::TestCreated, NOW, None);
     assert_eq!(u.community_ping(NOW), None);
-    let s = u.settings();
+    let s = u.settings(None);
     assert!(!s.enabled && s.turned_off_by_env);
 }
 
@@ -246,19 +248,19 @@ fn the_env_switch_reads_like_a_flag() {
 fn team_builds_never_ping_and_community_builds_never_refresh_with_usage() {
     let t = team();
     t.notice_seen();
-    t.record(Event::TestCreated, NOW, true);
+    t.record(Event::TestCreated, NOW, Some(WS));
     assert_eq!(t.community_ping(NOW), None);
     let c = community();
     c.notice_seen();
-    c.record(Event::TestCreated, NOW, true);
-    assert_eq!(c.pending_team(), None);
+    c.record(Event::TestCreated, NOW, Some(WS));
+    assert_eq!(c.pending_team(WS), None);
 }
 
 #[test]
 fn settings_show_exactly_what_would_be_sent() {
     let u = community();
-    u.record(Event::TestCreated, NOW, false);
-    let s = u.settings();
+    u.record(Event::TestCreated, NOW, None);
+    let s = u.settings(None);
     assert_eq!(s.edition, "community");
     assert!(s.enabled && !s.notice_seen && !s.turned_off_by_env);
     assert_eq!(s.pending, json!({ "testsCreated": 1, "runs": { "manual": 0 }, "runsPassed": 0, "runsFailed": 0 }));
@@ -314,7 +316,7 @@ async fn server(status: u16, body: Value) -> (String, Arc<StdMutex<Vec<Value>>>)
 async fn a_ping_the_service_takes_is_cleared() {
     let u = community();
     u.notice_seen();
-    u.record(Event::TestCreated, NOW, false);
+    u.record(Event::TestCreated, NOW, None);
     let (url, seen) = server(200, json!({ "ok": true, "accepted": true })).await;
     assert_eq!(send_community(&u, &reqwest::Client::new(), &url, NOW).await, Outcome::Sent);
     assert_eq!(seen.lock().unwrap()[0]["usage"]["testsCreated"], 1);
@@ -326,7 +328,7 @@ async fn a_ping_the_service_takes_is_cleared() {
 async fn offline_or_rate_limited_keeps_the_counts_for_later() {
     let u = community();
     u.notice_seen();
-    u.record(Event::TestCreated, NOW, false);
+    u.record(Event::TestCreated, NOW, None);
     assert_eq!(send_community(&u, &reqwest::Client::new(), "http://127.0.0.1:9", NOW).await, Outcome::Later);
     let (url, _) = server(429, json!({ "ok": false, "error": { "code": "rate_limited" } })).await;
     assert_eq!(send_community(&u, &reqwest::Client::new(), &url, NOW).await, Outcome::Later);
@@ -338,8 +340,60 @@ async fn offline_or_rate_limited_keeps_the_counts_for_later() {
 async fn a_refused_ping_is_dropped_not_repeated() {
     let u = community();
     u.notice_seen();
-    u.record(Event::TestCreated, NOW, false);
+    u.record(Event::TestCreated, NOW, None);
     let (url, _) = server(400, json!({ "ok": false, "error": { "code": "bad_request" } })).await;
     assert_eq!(send_community(&u, &reqwest::Client::new(), &url, NOW).await, Outcome::Dropped);
     assert_eq!(u.community_ping(NOW), None);
+}
+
+// ---- Per workspace (Team) ----
+
+#[test]
+fn each_workspace_counts_in_its_own_bucket() {
+    let u = team();
+    u.record(Event::TestCreated, NOW, Some(WS));
+    u.record(run(Source::Manual, true), NOW, Some("team:globex/breakpatch"));
+    u.record(run(Source::Manual, false), NOW, Some("team:globex/breakpatch"));
+    assert_eq!(u.pending_team(WS).unwrap().tests_created, 1);
+    assert_eq!(u.pending_team(WS).unwrap().runs.manual, 0);
+    let other = u.pending_team("team:globex/breakpatch").unwrap();
+    assert_eq!((other.tests_created, other.runs.manual), (0, 2));
+    // One workspace's report leaves the other's waiting.
+    let sent = u.pending_team(WS).unwrap();
+    u.reported(WS, &sent, NOW);
+    assert_eq!(u.pending_team(WS), None);
+    assert_eq!(u.pending_team("team:globex/breakpatch").unwrap().runs.manual, 2);
+    assert_eq!(u.settings(Some("team:globex/breakpatch")).pending["runs"]["manual"], 2);
+    assert_eq!(u.settings(Some(WS)).pending["testsCreated"], 0);
+}
+
+#[test]
+fn counts_from_before_buckets_move_to_one_workspace_and_are_sent_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("usage.json");
+    // A version 1 file, as the app before per-workspace usage wrote it.
+    std::fs::write(&path, r#"{"v":1,"counts":{"testsCreated":3,"runs":{"manual":2},"runsPassed":2,"days":[20000]},"reportedDays":[19999],"community":{"enabled":true}}"#).unwrap();
+    let u = UsageStore::new(Some(path.clone()), Edition::Team, false);
+    assert_eq!(u.pending_team(WS), None, "not anyone's until adopted");
+    u.record(Event::TestCreated, NOW, Some(WS));
+    u.adopt_legacy(WS);
+    u.adopt_legacy("team:globex/breakpatch");
+    let c = u.pending_team(WS).unwrap();
+    assert_eq!((c.tests_created, c.runs.manual, c.runs_passed), (4, 2, 2));
+    assert!(c.days.contains(&20000));
+    assert_eq!(u.pending_team("team:globex/breakpatch"), None);
+    let saved: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(saved["v"], 2);
+    assert_eq!(saved["counts"]["testsCreated"], 0);
+    assert_eq!(saved["buckets"][WS]["counts"]["testsCreated"], 4);
+}
+
+#[test]
+fn community_keeps_its_single_count() {
+    let u = community();
+    u.notice_seen();
+    u.record(Event::TestCreated, NOW, None);
+    u.adopt_legacy(WS);
+    assert_eq!(u.settings(None).pending["testsCreated"], 1);
+    assert_eq!(u.pending_team(WS), None);
 }

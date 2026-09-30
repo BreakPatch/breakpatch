@@ -7,7 +7,8 @@ import type { App, RecordedOn, Test } from '../../data/types';
 import { useBackend, useLive } from '../../data/hooks';
 import { findStep, flatRows, numberOf, stripUi } from '../../components/steps';
 import { AppFrame } from '../../components/shell/AppFrame';
-import { Button, EmptyState, SharedChip, useToast } from '../../components/ui';
+import { Button, EmptyState, IconButton, SharedChip, useToast } from '../../components/ui';
+import { TestDetailsDialog } from '../app/TestDetailsDialog';
 import { RecorderWorkbench } from './RecorderWorkbench';
 import { SaveButton } from './SaveButton';
 import { useLeaveGuard } from './useLeaveGuard';
@@ -36,7 +37,12 @@ export default function RecorderScreen() {
   const rec = useRecorder({ viewport, onError: m => toast(m, { error: true }), appUrl: app?.baseUrl ?? test?.startUrl, filesDir: filesDir(backend.local?.path), appId });
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const browser = useBrowserSession(test?.startUrl, test ? viewport : undefined, m => toast(m, { error: true }));
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  // The browser stays on the address it opened at: a new start address (Test details) is for the
+  // next run, and reopening would lose the page the steps are being recorded on.
+  const [openedAt, setOpenedAt] = useState<{ id: string; url: string } | null>(null);
+  if (test && openedAt?.id !== test.id) setOpenedAt({ id: test.id, url: test.startUrl });
+  const browser = useBrowserSession(openedAt?.url, test ? viewport : undefined, m => toast(m, { error: true }));
   const editorRun = useEditorRun({ test, steps: () => rec.stepsRef.current });
   const [done, setDone] = useState<EditorRunDone | null>(null);
   // The floating line over the page while steps play for Play this step ("Playing steps 1–9 first…").
@@ -169,6 +175,7 @@ export default function RecorderScreen() {
   const published = test?.status === 'published';
   const actions = test && (
     <>
+      <IconButton icon="description" label="Test details" onClick={() => setDetailsOpen(true)} disabled={editorRun.running} />
       {hasFeature('collaboration') && <SharedChip published={published} />}
       {rec.dirty && <div className="rec-dirty" role="status">Unsaved changes</div>}
       {rec.dirty && !editorRun.running && <span className="rec-run-note" title="Running never saves the test">Runs your unsaved changes too</span>}
@@ -182,9 +189,10 @@ export default function RecorderScreen() {
 
   return (
     <AppFrame back={() => guard(() => navigate(`/apps/${appId}`))} crumb={app?.name ?? ' '} title={test?.name ?? ' '} actions={actions}>
-      <RecorderWorkbench rec={rec} appId={appId} address={addressOf(test?.startUrl)} viewport={viewport} allowGroups
+      <RecorderWorkbench rec={rec} appId={appId} address={addressOf(openedAt?.url)} viewport={viewport} allowGroups
         loading={!loaded || !browser.ready} onEditGroup={id => guard(() => navigate(`/apps/${appId}/shared/${id}/edit`))} run={runProps} />
       {dialog}
+      {test && <TestDetailsDialog open={detailsOpen} test={test} onClose={() => setDetailsOpen(false)} />}
     </AppFrame>
   );
 }

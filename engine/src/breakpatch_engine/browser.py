@@ -1,4 +1,5 @@
-"""Controlled Chromium (Playwright, async API). Used only for screenshots, mouse and text input.
+"""Controlled Chromium (Playwright, async API). Used for screenshots, mouse and text input; the page's
+structure is only read through the DevTools protocol (names, roles, boxes), never scripted.
 
 Fixed viewport, device_scale_factor=1, light colour scheme, en-US locale, so the same test renders
 the same way on every Mac. The live view is a stream of JPEG frames sent only when the page changes
@@ -126,6 +127,12 @@ class BrowserSession:
         self._frames: OrderedDict[int, str] = OrderedDict()
         self._changed_at: float | None = None    # when the frame stream last saw the page change
         self.start_origin: str | None = None     # the site the browser was opened on
+        # Navigations of the current page's main frame so far (same-document ones too): the fast
+        # locator routes a page again after one (dom/flow.py).
+        self.navigations = 0
+        # Called (async, no arguments) when the current page changes and before the browser
+        # closes, by what holds on to the page (the fast locator's CDP sessions).
+        self.page_watchers: list = []
 
     # ---------- lifecycle ----------
 
@@ -184,6 +191,7 @@ class BrowserSession:
             await self.goto(url, start=True)
 
     async def close(self) -> None:
+        await self._tell_watchers()
         await self._stop_stream()
         for t in list(self._download_tasks):
             t.cancel()
@@ -242,6 +250,8 @@ class BrowserSession:
         """Belt and braces for what route interception can't see (Chromium serves file:, chrome:
         and about: pages itself): a main frame that ends up on one goes back to about:blank."""
         try:
+            if frame.parent_frame is None and frame.page is self.page:
+                self.navigations += 1
             if frame.parent_frame is not None or is_web_address(frame.url) or frame.url.startswith(_ERROR_PAGE):
                 return
         except Exception:  # noqa: BLE001
@@ -273,9 +283,18 @@ class BrowserSession:
             if open_pages:
                 await self._switch_to(open_pages[-1])   # e.g. an SSO popup closed itself
 
+    async def _tell_watchers(self) -> None:
+        for watcher in list(self.page_watchers):
+            try:
+                await watcher()
+            except Exception as e:  # noqa: BLE001
+                log.debug("page watcher: %s", e)
+
     async def _switch_to(self, page) -> None:
         if page not in self.pages:
             self._on_new_page(page)
+        if page is not self.page:
+            await self._tell_watchers()
         self.page = page
         try:
             await page.bring_to_front()
@@ -479,9 +498,7 @@ class BrowserSession:
         cdp = None
         try:
             cdp = await self.context.new_cdp_session(page)
-            await cdp.send("DOM.enable")
-            got = await cdp.send("DOM.getNodeForLocation", {"x": int(at[0]), "y": int(at[1]),
-                                                            "includeUserAgentShadowDOM": False})
+            got = await _node_at(cdp, at)
             model = await cdp.send("DOM.getBoxModel", {"backendNodeId": got["backendNodeId"]})
             q = model["model"]["border"]
             xs, ys = q[0::2], q[1::2]
@@ -507,9 +524,7 @@ class BrowserSession:
         cdp = None
         try:
             cdp = await self.context.new_cdp_session(page)
-            await cdp.send("DOM.enable")
-            got = await cdp.send("DOM.getNodeForLocation", {"x": int(at[0]), "y": int(at[1]),
-                                                            "includeUserAgentShadowDOM": False})
+            got = await _node_at(cdp, at)
             tree = await cdp.send("Accessibility.getPartialAXTree", {"backendNodeId": got["backendNodeId"],
                                                                      "fetchRelatives": True})
         except Exception as e:  # noqa: BLE001
@@ -800,3 +815,15 @@ class FrameStream:
             except Exception:  # noqa: BLE001
                 pass
             await asyncio.sleep(self.session.timings.frame_min_gap)
+
+
+async def _node_at(cdp, at: Sequence[float]) -> dict:
+    """The node under the viewport point `at`. DOM.getNodeForLocation takes page coordinates, not
+    viewport ones, so the page's scroll is added first; without it, every click after a scroll
+    was named after the element one scroll above it. (Boxes from DOM.getBoxModel are already
+    in viewport pixels.)"""
+    await cdp.send("DOM.enable")
+    view = (await cdp.send("Page.getLayoutMetrics")).get("cssVisualViewport") or {}
+    x = float(at[0]) + float(view.get("pageX") or 0)
+    y = float(at[1]) + float(view.get("pageY") or 0)
+    return await cdp.send("DOM.getNodeForLocation", {"x": int(x), "y": int(y), "includeUserAgentShadowDOM": False})

@@ -1,0 +1,10 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Late payment frame</title>
+<style>body{font:14px Arial,sans-serif;margin:20px} iframe{border:5px solid #999;padding:7px;display:block;margin-top:10px}</style></head><body>
+<main><h1>Checkout</h1><button>Back</button> <button>Help</button> <button>Change address</button>
+<!-- Starts blank, like a payment or sign-in frame, and loads a cross-site page later. -->
+<iframe id="pay" title="Payment" src="about:blank" width="600" height="220"></iframe>
+<script>
+function loadPayment() {
+  document.getElementById("pay").src = "http://127.0.0.1:" + (+location.port + 1) + "/fx03_iframe/inner_cross.html";
+}
+</script></main></body></html>

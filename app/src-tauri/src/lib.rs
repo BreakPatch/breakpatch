@@ -1,11 +1,12 @@
 //! Breakpatch desktop shell: window, engine sidecar, Keychain secrets, tests folder, file association,
-//! deep links, updater, runner-mode helpers, the Team licence check (licence.rs) and the usage counts
-//! (usage.rs). The UI calls these through `platform.ts`, `lib/usage.ts`,
-//! `engine/sidecarEngine.ts` and `lib/updates.ts`.
+//! deep links, updater, runner-mode helpers, the Team licence check (licence.rs), the usage counts
+//! (usage.rs) and the last step of Upgrade to Team (migration.rs). The UI calls these through
+//! `platform.ts`, `lib/usage.ts`, `engine/sidecarEngine.ts` and `lib/updates.ts`.
 
 mod engine;
 mod folder;
 mod licence;
+mod migration;
 mod runner;
 mod secrets;
 mod usage;
@@ -113,51 +114,81 @@ async fn secrets_resolve(s: State<'_, SecretsState>, names: Vec<String>) -> Resu
 // ---- Licence (Team; "not available in this edition" without built-in keys) ----------------
 
 /// The stored licence, checked on this Mac without the network. `workspaceProjectId`: the open
-/// workspace, so a licence for another one unlocks nothing.
+/// workspace, so a licence for another one unlocks nothing. `wsKey`: the connection asked about
+/// (None: the selected one).
 #[tauri::command]
 async fn licence_status(
     l: State<'_, LicenceState>,
+    ws_key: Option<String>,
     workspace_project_id: Option<String>,
 ) -> Result<licence::Status, String> {
     let l = Arc::clone(&l);
-    blocking(move || Ok(l.status(workspace_project_id.as_deref()))).await
+    blocking(move || Ok(l.status_for(ws_key.as_deref(), workspace_project_id.as_deref()))).await
 }
 
-/// Takes a seat: `kind` "person" (subject: the signed-in email) or "machine" (this Mac's id).
-/// Rejects with `{code, message}`.
+/// Works on this connection's licence from now on (`wsKey`, licence.rs; None: nothing unlocked).
+/// `workspaceProjectId`: the Team workspace's project, so the licence of an earlier version can
+/// move to it, unless `adoptLegacy` is false (another workspace of that project may own it). The
+/// engine gets the selected workspace's token (or none) before this answers. This is the engine's
+/// first licence hand-off after launch.
+#[tauri::command]
+async fn licence_select(
+    l: State<'_, LicenceState>,
+    host: State<'_, Arc<EngineHost>>,
+    ws_key: Option<String>,
+    workspace_project_id: Option<String>,
+    adopt_legacy: Option<bool>,
+) -> Result<licence::Status, String> {
+    let l = Arc::clone(&l);
+    let l2 = Arc::clone(&l);
+    let adopt = adopt_legacy.unwrap_or(true);
+    let st = blocking(move || l2.select_with(ws_key.as_deref(), workspace_project_id.as_deref(), adopt)).await?;
+    sync_engine_licence(&l, &host).await;
+    // A seat the earlier entry and this workspace's own both held: the older one goes back.
+    l.release_stale().await;
+    Ok(st)
+}
+
+/// Takes a seat for `wsKey`'s connection (None: the selected one): `kind` "person" (subject: the
+/// signed-in email) or "machine" (this Mac's id). Rejects with `{code, message}`.
 #[tauri::command]
 async fn licence_activate(
     l: State<'_, LicenceState>,
     host: State<'_, Arc<EngineHost>>,
+    ws_key: Option<String>,
     key: String,
     workspace_project_id: String,
     subject: Option<String>,
     kind: String,
 ) -> Result<licence::Status, Failure> {
     let l = Arc::clone(&l);
-    let out = l.activate(ActivateRequest { key, workspace_project_id, subject, kind }).await;
+    let out = l.activate(ActivateRequest { ws_key, key, workspace_project_id, subject, kind }).await;
     sync_engine_licence(&l, &host).await;
     out
 }
 
+/// A new token for `wsKey`'s seat (None: the selected connection's).
 #[tauri::command]
 async fn licence_refresh(
     l: State<'_, LicenceState>,
     host: State<'_, Arc<EngineHost>>,
+    ws_key: Option<String>,
 ) -> Result<licence::Status, String> {
     let l = Arc::clone(&l);
-    let st = l.refresh().await;
+    let st = l.refresh_for(ws_key.as_deref()).await;
     sync_engine_licence(&l, &host).await;
     Ok(st)
 }
 
+/// Gives the seat back: the selected workspace's, or `wsKey`'s (a workspace being removed).
 #[tauri::command]
 async fn licence_release(
     l: State<'_, LicenceState>,
     host: State<'_, Arc<EngineHost>>,
+    ws_key: Option<String>,
 ) -> Result<licence::Status, String> {
     let l = Arc::clone(&l);
-    let st = l.release().await;
+    let st = l.release(ws_key.as_deref()).await;
     sync_engine_licence(&l, &host).await;
     Ok(st)
 }
@@ -200,17 +231,18 @@ async fn usage_record(
     };
     let (u, l) = (Arc::clone(&u), Arc::clone(&l));
     blocking(move || {
-        // A Keychain read (cached after the first): Team counts only while this Mac holds a licence.
-        let licensed = u.edition() == usage::Edition::Team && l.holds_token();
-        u.record(ev, unix_now(), licensed);
+        // A Keychain read (cached after the first): Team counts only while this Mac holds the open
+        // workspace's licence, in that workspace's bucket.
+        let ws = (u.edition() == usage::Edition::Team && l.holds_token()).then(|| l.selected()).flatten();
+        u.record(ev, unix_now(), ws.as_deref());
         Ok(())
     })
     .await
 }
 
 #[tauri::command]
-fn usage_settings(u: State<'_, UsageState>) -> usage::Settings {
-    u.settings()
+fn usage_settings(u: State<'_, UsageState>, l: State<'_, LicenceState>) -> usage::Settings {
+    u.settings(l.selected().as_deref())
 }
 
 /// Community: sharing on or off. Off drops what's waiting to be sent.
@@ -258,6 +290,71 @@ async fn system_full_name() -> Option<String> {
 #[tauri::command]
 fn reveal_in_finder(path: String) -> Result<(), String> {
     folder::reveal(std::path::Path::new(&path))
+}
+
+// ---- Upgrade to Team: the local copy to the Trash (migration.rs) ----------------------------
+
+/// The engine's screenshots folder: `<data>/Breakpatch/screenshots` (engine config.py, and the
+/// only folder the asset scope allows). `BP_SCREENSHOTS_DIR` moves it in development builds only.
+fn screenshots_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    if cfg!(debug_assertions) {
+        if let Some(d) = std::env::var_os("BP_SCREENSHOTS_DIR").filter(|d| !d.is_empty()) {
+            return Ok(std::path::PathBuf::from(d));
+        }
+    }
+    Ok(app.path().data_dir().map_err(|e| e.to_string())?.join("Breakpatch").join("screenshots"))
+}
+
+/// Moves allowed items to the Trash. `place` "folder": `names` among breakpatch.json, apps and
+/// suites directly under `folder`, which must be a folder the person opened in Breakpatch (the fs
+/// scope) with a valid breakpatch.json. `place` "screenshots": run folders directly under the
+/// screenshots folder. Anything else is refused before anything moves. A move that stops part-way
+/// answers with what moved and `error`.
+#[tauri::command]
+async fn trash_items(
+    app: tauri::AppHandle,
+    place: String,
+    folder: Option<String>,
+    names: Vec<String>,
+) -> Result<migration::TrashResult, String> {
+    use tauri_plugin_fs::FsExt;
+    let place = migration::Place::parse(&place).ok_or("place must be folder or screenshots")?;
+    match place {
+        migration::Place::Folder => {
+            let given = std::path::PathBuf::from(folder.ok_or("Which folder?")?);
+            let scope = app.fs_scope();
+            blocking(move || migration::trash_from_folder(&given, &names, |p| scope.is_allowed(p), migration::to_trash))
+                .await
+        }
+        migration::Place::Screenshots => {
+            let base = screenshots_dir(&app)?;
+            blocking(move || migration::trash_items(place, &base, &names, migration::to_trash)).await
+        }
+    }
+}
+
+/// This Mac's screenshots folder, so the move only takes run folders that are really in it.
+#[tauri::command]
+fn screenshots_folder(app: tauri::AppHandle) -> Result<String, String> {
+    screenshots_dir(&app).map(|p| p.to_string_lossy().into_owned())
+}
+
+/// The Git repository holding this folder, if any (looks for `.git`; never runs git).
+#[tauri::command]
+async fn git_repo_of(path: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        migration::git_repo_of(std::path::Path::new(&path)).map(|p| p.to_string_lossy().into_owned())
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Keeps an Upgrade to Team report in `<app data>/reports/` and returns where.
+#[tauri::command]
+async fn migration_report_save(app: tauri::AppHandle, text: String) -> Result<String, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join("reports");
+    blocking(move || migration::save_report(&dir, unix_now(), &text).map(|p| p.to_string_lossy().into_owned())).await
 }
 
 // ---- Runner mode -------------------------------------------------------------------------
@@ -321,6 +418,8 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         // Local notifications when a run finishes in the background (Settings, Notifications).
         .plugin(tauri_plugin_notification::init())
+        // Paste buttons (platform.ts readClipboard): read text only, no bubble to confirm.
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(engine)
         .manage(KeepAwake::default())
         .manage(WorkspaceInbox::default())
@@ -346,11 +445,9 @@ pub fn run() {
                 )
                 .with_usage(usage_store),
             );
-            app.manage::<LicenceState>(Arc::clone(&licensing));
-            // The engine gets the stored token once it's read (off the main thread: a Keychain read
-            // can wait on a prompt), and again after every start and licence change.
-            let host = Arc::clone(&engine_for_setup);
-            tauri::async_runtime::spawn(async move { sync_engine_licence(&licensing, &host).await });
+            // No licence hand-off to the engine here: nothing is selected until the UI names the
+            // open connection (licence_select), which hands the engine its token (or none).
+            app.manage::<LicenceState>(licensing);
 
             // Linux/Windows pass opened files as arguments; macOS uses RunEvent::Opened.
             #[cfg(not(target_os = "macos"))]
@@ -386,6 +483,7 @@ pub fn run() {
             system_memory_gb,
             runner_post_result,
             licence_status,
+            licence_select,
             licence_activate,
             licence_refresh,
             licence_release,
@@ -393,6 +491,10 @@ pub fn run() {
             usage_settings,
             usage_set_enabled,
             usage_notice_seen,
+            trash_items,
+            screenshots_folder,
+            git_repo_of,
+            migration_report_save,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Breakpatch");
@@ -432,6 +534,20 @@ mod config_tests {
     fn the_ui_may_notify() {
         let caps: Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
         assert!(caps["permissions"].as_array().unwrap().iter().any(|p| p == "notification:default"));
+    }
+
+    /// Paste buttons read the clipboard through the shell (platform.ts readClipboard), text only.
+    #[test]
+    fn the_ui_may_read_the_clipboard_text_only() {
+        let caps: Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let clip: Vec<&str> = caps["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| p.as_str())
+            .filter(|p| p.starts_with("clipboard-manager:"))
+            .collect();
+        assert_eq!(clip, ["clipboard-manager:allow-read-text"]);
     }
 
     /// The local backend checks a test file's size before reading it (localBackend.ts).

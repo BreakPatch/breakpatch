@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Shop</title>
+<style>body{font:14px Arial,sans-serif;margin:24px}</style></head><body>
+<main>
+<h1>Shop</h1>
+<x-card id="c1" data-title="Red mug"></x-card>
+<x-card id="c2" data-title="Blue mug"></x-card>
+<x-secret></x-secret>
+<button data-gt-id="light-add">Add to wishlist</button>
+</main>
+<script>
+customElements.define('x-card', class extends HTMLElement{connectedCallback(){
+ const r=this.attachShadow({mode:'open'});
+ r.innerHTML=`<style>div{border:1px solid #aaa;padding:8px;margin:8px;width:300px}</style>
+ <div role="group" aria-label="${this.dataset.title}"><b>${this.dataset.title}</b>
+ <button data-gt-id="add-${this.id}">Add to cart</button><x-inner></x-inner></div>`;}});
+customElements.define('x-inner', class extends HTMLElement{connectedCallback(){
+ const r=this.attachShadow({mode:'open'}); r.innerHTML=`<a href="#d">Details</a>`;}});
+customElements.define('x-secret', class extends HTMLElement{connectedCallback(){
+ const r=this.attachShadow({mode:'closed'});
+ r.innerHTML=`<div style="border:2px solid #333;padding:8px;width:320px">
+ <button data-gt-id="buy-closed">Buy now</button>
+ <span role="switch" tabindex="0" aria-checked="false" aria-label="Gift wrap" data-gt-id="gift-switch" style="display:inline-block;width:40px;height:20px;background:#ccc"></span>
+ <input type="search" aria-label="Search products" data-gt-id="search-closed"></div>`;}});
+</script></body></html>

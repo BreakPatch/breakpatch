@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Acme account</title>
+<style>
+body{font:14px/1.4 Arial,sans-serif;margin:0} header{display:flex;gap:16px;padding:12px 24px;background:#eee}
+main{padding:24px;display:flex;gap:40px} form{display:flex;flex-direction:column;gap:8px;width:300px}
+table{border-collapse:collapse} td{padding:6px 10px;border:1px solid #ccc}
+.btn{display:inline-block;padding:6px 12px;background:#36c;color:#fff;cursor:pointer;border-radius:4px}
+.dlg{position:fixed;left:900px;top:120px;width:360px;padding:16px;border:1px solid #333;background:#fff;box-shadow:0 4px 20px #0004}
+footer{position:absolute;top:1500px;left:24px}
+</style></head><body>
+<header role="banner"><nav aria-label="Primary"><a href="#home">Home</a> <a href="#products">Products</a> <a href="#account" data-gt-id="nav-account">Account</a></nav></header>
+<main>
+ <form aria-label="Sign in" onsubmit="return false">
+  <label for="em">Email</label><input id="em" type="email" placeholder="you@example.com" data-gt-id="email">
+  <label for="pw">Password</label><input id="pw" type="password" data-testid="password-input">
+  <label><input type="checkbox" data-gt-id="remember"> Remember me</label>
+  
+  <button type="button" disabled data-gt-id="sso">Sign in with SSO</button>
+  <a href="#forgot" data-gt-id="forgot">Forgot password?</a><button type="submit" class="primary" style="background:#0a0;color:#fff;padding:10px" data-gt-id="signin">Sign in</button>
+ </form>
+ <section aria-label="Team">
+  <h2>Team members</h2>
+  <table><tbody>
+   <tr><td>Ana</td><td><button data-gt-id="edit-1">Edit</button></td><td><button aria-label="Delete Ana" data-gt-id="del-1">&#128465;</button></td></tr>
+   <tr><td>Bo</td><td><button data-gt-id="edit-2">Edit</button></td><td><button aria-label="Delete Bo">&#128465;</button></td></tr>
+   <tr><td>Cy</td><td><button data-gt-id="edit-3">Edit</button></td><td><button aria-label="Delete Cy">&#128465;</button></td></tr>
+  </tbody></table>
+  <p><div class="btn" onclick="void 0" data-gt-id="export"><span>Export</span> <span>CSV</span></div></p>
+  <button style="opacity:0">Ghost</button> <button style="visibility:hidden">Hidden</button>
+ </section>
+</main>
+<div class="dlg" role="dialog" aria-modal="true" aria-label="Edit profile">
+ <h3>Edit profile</h3>
+ <label>Display name <input type="text" value="Ana" data-gt-id="dlg-name"></label>
+ <div style="margin-top:12px"><button data-gt-id="dlg-save" data-testid="save-profile">Save</button> <button data-gt-id="dlg-cancel">Cancel</button></div>
+</div>
+<footer role="contentinfo"><button data-gt-id="load-more">Load more</button> <a href="#privacy">Privacy</a></footer>
+</body></html>

@@ -1,5 +1,7 @@
 /* First-launch window: connect, sign in, setup (design "1 · Getting in"). */
-.gi-window { height: 100%; display: flex; flex-direction: row; background: var(--bg); overflow: hidden; position: relative; }
+/* `.window.gi-window`: shell.css's `.window` is a column, and it may load after this file (after
+   Home or Settings), which put the brand panel on top of the content. */
+.window.gi-window { height: 100%; display: flex; flex-direction: row; background: var(--bg); overflow: hidden; position: relative; }
 .gi-drag { position: absolute; left: 0; right: 0; top: 0; height: 40px; z-index: 0; }
 .gi-traffic { position: absolute; left: 16px; top: 18px; display: flex; gap: 8px; z-index: 5; pointer-events: none; }
 .gi-traffic span { width: 12px; height: 12px; border-radius: 50%; display: block; background: #FF5F57; }
@@ -20,11 +22,22 @@
 .gi-brand-foot { font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
 .gi-brand-foot .icon { font-size: 16px; }
 
-/* Right side */
-.gi-main { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: auto; position: relative; z-index: 1; padding: 40px 24px; }
+/* Right side. The content is centred with auto margins, not align-items, so when it's taller than
+   the window it scrolls from its first line instead of being cut off above the top. */
+.gi-main { flex: 1; min-width: 0; min-height: 0; display: flex; overflow: auto; position: relative; z-index: 1; padding: 40px 24px; }
 /* The setup list gains details as it goes: it's anchored at the top so it grows downward (DESK-15). */
-.gi-main.top { align-items: flex-start; padding-top: max(40px, 14vh); }
-.gi-content { display: flex; flex-direction: column; gap: 24px; max-width: 100%; animation: bpIn 300ms ease-out both; }
+.gi-main.top { padding-top: max(40px, 14vh); }
+.gi-content { display: flex; flex-direction: column; gap: 24px; max-width: 100%; margin: auto; animation: bpIn 300ms ease-out both; }
+.gi-main.top .gi-content { margin-top: 0; }
+
+/* A narrow window (the browser preview; the app's is at least 1280 wide): the brand panel goes
+   above the content and scrolls away with it. */
+@media (max-width: 960px) {
+  .window.gi-window.gi-split { flex-direction: column; overflow: auto; }
+  .gi-split .gi-brand { width: auto; padding: 56px 32px 28px; gap: 24px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .gi-split .gi-brand-word { font-size: 40px; }
+  .gi-split .gi-main { flex: none; overflow: visible; }
+}
 .gi-head { display: flex; flex-direction: column; gap: 8px; }
 .gi-title { margin: 0; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
 .gi-lede { margin: 0; font-size: 15px; color: var(--text-muted); line-height: 1.5; }

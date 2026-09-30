@@ -1,9 +1,12 @@
 # Breakpatch engine
 
-The Python sidecar behind the desktop app: it drives a pinned Chromium (Playwright) using only
+The Python sidecar behind the desktop app: it drives a pinned Chromium (Playwright) through
 screenshots, mouse and keyboard, works out the automatic screen checks while you record, replays
 tests from stored coordinates and hashes, and uses a local vision model (Qwen3-VL through
 `mlx-vlm`) only to describe targets while recording and to find a moved target during replay.
+Finding a described element reads the page's accessible names and roles first (`dom/`, no model,
+never a CSS or XPath selector) and asks the model when that isn't enough; every step is still
+checked on the screen.
 
 The app talks to it over JSON Lines on stdio. **[PROTOCOL.md](PROTOCOL.md) is the contract.**
 
@@ -39,7 +42,8 @@ printf '%s\n' '{"id":1,"method":"system.info"}' | .venv/bin/python -m breakpatch
 
 This engine is the Community edition (docs/editions.md). Two things are Breakpatch Team and live
 in the private `breakpatch_team_engine` package: fallback healing of moved targets (spec §11.2)
-and the headless CI command line (`breakpatch-ci run --test …`, spec §15). When that package is
+and the headless CI command line (`breakpatch-ci run --test …`, or `--workspace … --suite …` to run
+a Team workspace's suite, spec §15). When that package is
 installed in the same venv, `plugins.py` imports it (the only place that does) and it registers
 its healer with the runner, and the licence the app shell hands over (`licence.set`), which it
 checks itself. Without it, or without a Team licence that includes `autoFix`, a failed pre-check
@@ -81,6 +85,9 @@ src/breakpatch_engine/
   runner.py     replay, set-up/clean-up calls, secrets, loops/groups, the healer hook (spec §11)
   models.py     the AI assistant models allowed: repo, revision, files and their SHA-256
   locator.py    AI assistant interface; MlxLocator (lazy mlx-vlm), NoLocator; bbox parsing
+  dom/          the fast locator for record.locate: extract.py (the controls on screen, DevTools
+                DOMSnapshot + accessibility tree), s0.py (scoring a description, no model),
+                router.py (Fast or Visual per page), flow.py (S0, then the AI assistant)
   install.py    system.info, Chromium install, resumable model download of the allowed files only
   config.py     paths (env overridable) and timings (BP_FAST=1 shortens them)
   labels.py     default step labels (mirrors app/src/engine/labels.ts)

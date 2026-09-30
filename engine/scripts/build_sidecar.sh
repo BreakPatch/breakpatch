@@ -164,6 +164,7 @@ if [ "$compiler" = nuitka ]; then
     --include-package-data=breakpatch_engine \
     --include-module=scipy.fftpack \
     --include-package=imagehash \
+    --include-package=rapidfuzz \
     --nofollow-import-to=tkinter --nofollow-import-to=matplotlib --nofollow-import-to=pytest \
     --assume-yes-for-downloads --remove-output \
     $mlx_flags \
@@ -177,6 +178,8 @@ if [ "$compiler" = nuitka ]; then
 fi
 
 # ---------------------------------------------------------------- pyinstaller (default)
+# rapidfuzz (the fast locator, dom/s0.py) picks its compiled or pure-Python implementation at
+# import time, by module name: both packagers are told to take all of it.
 
 "$PYTHON" -c "import PyInstaller" 2>/dev/null || { echo "build_sidecar: PyInstaller missing: $PYTHON -m pip install -e '${engine_dir}[dev]'" >&2; exit 1; }
 
@@ -203,6 +206,7 @@ fi
   --collect-data breakpatch_engine \
   --collect-data playwright \
   --collect-submodules imagehash \
+  --collect-submodules rapidfuzz \
   --hidden-import scipy.fftpack \
   --exclude-module tkinter --exclude-module matplotlib --exclude-module pytest \
   $extra \

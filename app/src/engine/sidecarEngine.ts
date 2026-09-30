@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSystem } from '../state/system';
 import { listen } from '@tauri-apps/api/event';
 import type { Box, HttpCall, Point, Step, Viewport } from '../data/types';
-import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
+import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
 
 interface Wire { event: keyof EngineEvents; data: unknown }
 
@@ -46,7 +46,8 @@ export class SidecarEngine implements Engine {
   async pointer(kind: 'move' | 'scroll', at: Point, dx?: number, dy?: number) { await this.call('browser.pointer', { kind, at, dx, dy }); }
 
   async recordPoint(p: RecordParams) { return (await this.call<{ step: Step }>('record.point', p)).step; }
-  locate(description: string) { return this.call<LocateResult | null>('record.locate', { description }); }
+  locate(description: string, opts: { near?: Near } = {}) { return this.call<LocateResult | null>('record.locate', { description, ...(opts.near ? { near: opts.near } : {}) }); }
+  intent(sentence: string) { return this.call<EngineIntent | null>('record.intent', { sentence }); }
   async chooseFile(choice: FileChoice) { await this.call('record.chooseFile', choice); }
   async hand(on: boolean) { await this.call('browser.hand', { on }); }
   async input(i: HandInput) { await this.call('browser.input', i); }

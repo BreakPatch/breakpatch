@@ -31,6 +31,19 @@ DESCRIBE_PROMPT = ('In this screenshot of a web app, look at the element at poin
                    '(coordinates from 0 to 1000). Name it the way a tester would, from what it says or shows, '
                    'and say where it is. If there is nothing there you can name, reply {{"name": null}}. '
                    'Reply with JSON only, no other text: {{"name": "<its name>", "target": "<its name>, <where it is>"}}')
+# record.intent: what a described step means, only when the app's own reading can't decide.
+INTENT_PROMPT = ('A tester typed this step for the web app in the screenshot: "{sentence}". Say what it asks for. '
+                 'action is one of: click, double click, right click, long click, hover, type, scroll, wait, check. '
+                 'target is what to act on, the way the screen names it, or null. times is how many times to do it. '
+                 'text is what to type, or null. direction is up, down, left or right, or null. '
+                 'seconds is how long to wait, or null. Reply with JSON only, no other text: '
+                 '{{"action": ..., "target": ..., "times": ..., "text": ..., "direction": ..., "seconds": ...}}')
+INTENT_ACTIONS = {"click": "click", "tap": "click", "press": "click", "double click": "doubleClick",
+                  "doubleclick": "doubleClick", "right click": "rightClick", "rightclick": "rightClick",
+                  "long click": "longClick", "long press": "longClick", "hover": "hover", "type": "write",
+                  "write": "write", "enter": "write", "scroll": "scroll", "wait": "waitFor", "check": "checkpoint",
+                  "verify": "checkpoint"}
+MAX_REPEAT = 20
 ECHOES = ("create project dialog", "<its name>", "<where it is>")
 
 
@@ -38,6 +51,8 @@ class Locator(Protocol):
     def available(self) -> bool: ...
     async def locate(self, image: Image.Image, description: str) -> list[int] | None: ...
     async def describe(self, image: Image.Image, at: Sequence[float]) -> dict | None: ...
+    # Optional: what a described step means (parse_intent's shape) or None.
+    async def intent(self, image: Image.Image, sentence: str) -> dict | None: ...
     # Optional: reads a failed step's "What should happen" note against the screen after it.
     # {"happened": bool, "why": "it's still open"} or None. Only called when a check fails.
     async def judge(self, image: Image.Image, note: str) -> dict | None: ...
@@ -57,6 +72,46 @@ class NoLocator:
 
     async def judge(self, image, note):
         return None
+
+    async def intent(self, image, sentence):
+        return None
+
+
+def parse_intent(text: str) -> dict | None:
+    """The model's reading of a step: `{action, repeat, target?, text?, direction?, seconds?}` with
+    an action the recorder knows, or None. A reply that echoes the prompt's "..." is unknown."""
+    for c in re.findall(r"\{[^{}]*\}", text or ""):
+        try:
+            obj = json.loads(c)
+        except ValueError:
+            continue
+        if not isinstance(obj, dict) or not isinstance(obj.get("action"), str):
+            continue
+        action = INTENT_ACTIONS.get(" ".join(obj["action"].lower().replace("-", " ").split()))
+        if not action:
+            return None
+        out: dict = {"action": action, "repeat": 1}
+        times = obj.get("times")
+        if isinstance(times, (int, float)) and not isinstance(times, bool) and 1 <= times <= MAX_REPEAT:
+            out["repeat"] = int(times)
+        for key, cap in (("target", 200), ("text", 500)):
+            v = obj.get(key)
+            if isinstance(v, str) and v.strip() and v.strip() not in ("...", "null"):
+                out[key] = " ".join(v.split())[:cap]
+        if obj.get("direction") in ("up", "down", "left", "right"):
+            out["direction"] = obj["direction"]
+        secs = obj.get("seconds")
+        if isinstance(secs, (int, float)) and not isinstance(secs, bool) and 0 < secs <= 600:
+            out["seconds"] = secs
+        # What each action needs, or it isn't an answer.
+        if action in ("click", "doubleClick", "rightClick", "longClick", "hover", "checkpoint") and "target" not in out:
+            return None
+        if action == "write" and "text" not in out:
+            return None
+        if action == "waitFor" and "seconds" not in out:
+            return None
+        return out
+    return None
 
 
 def parse_bbox(text: str, width: int, height: int) -> list[int] | None:
@@ -187,6 +242,10 @@ class MlxLocator:
     async def judge(self, image: Image.Image, note: str) -> dict | None:
         text = await asyncio.to_thread(self._generate, image, JUDGE_PROMPT.format(note=note.replace('"', "'").strip()))
         return parse_judge(text)
+
+    async def intent(self, image: Image.Image, sentence: str) -> dict | None:
+        text = await asyncio.to_thread(self._generate, image, INTENT_PROMPT.format(sentence=sentence.replace('"', "'").strip()))
+        return parse_intent(text)
 
     async def describe(self, image: Image.Image, at: Sequence[float]) -> dict | None:
         x = round(at[0] * 1000 / image.width)

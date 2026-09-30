@@ -1,7 +1,7 @@
 // In-memory backend for development, the browser preview and tests.
 // Behaves like the Firebase backend: live subscriptions, immutable versions, audit fields.
 import { edition } from '../../edition';
-import { AuthError, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type Unsubscribe } from '../backend';
+import { AuthError, cleanDetails, startUrlNote, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
 import type {
   App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
 } from '../types';
@@ -109,8 +109,9 @@ export class DemoBackend implements Backend {
   async saveTest(appId: string, testId: string, steps: Step[], note?: string, recordedOn?: RecordedOn) {
     const me = this.me(); const key = `${appId}/${testId}`;
     const list = this.st.versions[key] ?? [];
+    const startUrl = this.st.tests.find(t => t.appId === appId && t.id === testId)?.startUrl;
     const v: Version = { number: list.length + 1, steps: steps.map(x => ({ ...x, rerecorded: undefined })), savedBy: me, savedAt: Date.now(), note: note || undefined,
-      recordedOn: recordedOn ?? list.at(-1)?.recordedOn };
+      recordedOn: recordedOn ?? list.at(-1)?.recordedOn, ...(startUrl ? { startUrl } : {}) };
     this.mutate(s => {
       s.versions[key] = [...list, v];
       s.tests = s.tests.map(t => t.appId === appId && t.id === testId ? { ...t, currentVersion: v.number, stepCount: steps.length, updatedBy: me, updatedAt: v.savedAt } : t);
@@ -119,6 +120,17 @@ export class DemoBackend implements Backend {
   }
   async setTestStatus(appId: string, testId: string, status: TestStatus) { this.patchTest(appId, testId, { status }); }
   async renameTest(appId: string, testId: string, name: string) { this.patchTest(appId, testId, { name }); }
+  async updateTestDetails(appId: string, testId: string, details: TestDetails) {
+    const t = this.st.tests.find(x => x.appId === appId && x.id === testId);
+    if (!t) throw new Error('This test was deleted.');
+    const d = cleanDetails(details);
+    const moved = d.startUrl !== t.startUrl;
+    if (!moved && d.name === t.name && d.description === (t.description || undefined)) return this.wait(null);
+    this.patchTest(appId, testId, { name: d.name, description: d.description, startUrl: d.startUrl });
+    const last = moved && t.currentVersion > 0 ? this.st.versions[`${appId}/${testId}`]?.at(-1) : undefined;
+    // The same steps as a new version that starts at the new address, like the Firebase backend.
+    return last ? this.saveTest(appId, testId, last.steps, startUrlNote(d.startUrl), last.recordedOn) : this.wait(null);
+  }
   private patchTest(appId: string, testId: string, p: Partial<Test>) {
     const me = this.me();
     this.mutate(s => { s.tests = s.tests.map(t => t.appId === appId && t.id === testId ? { ...t, ...p, updatedBy: me, updatedAt: Date.now() } : t); });

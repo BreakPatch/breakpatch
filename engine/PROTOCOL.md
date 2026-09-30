@@ -30,8 +30,8 @@ Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`,
   `run.stop`, `setup.pause` or `system.info`. Responses can therefore arrive out of order.
 - A line that isn't JSON gets `{"id": null, "error": {"code": "bad_request", ...}}`. Blank lines are ignored.
 - `params` must be an object (or omitted). A result of `{}` means "done, nothing to return";
-  `record.locate` can return `null` (also for a box over more than 60% of the page: the model boxes
-the whole screen when what was described isn't there).
+  `record.locate` can return `null` (also for an AI assistant box over more than 60% of the page:
+  the model boxes the whole screen when what was described isn't there).
 - When stdin closes, requests still in flight get 3 s to answer, the rest are answered with
   `stopped`, Chromium is closed and the process exits 0. SIGTERM and SIGINT do the same.
 
@@ -157,7 +157,8 @@ The browser methods answer `busy` during a run.
 | Method | Params | Result |
 |---|---|---|
 | `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
-| `record.locate` | `{ description }` | `{ box, at, target, frame } \| null` — AI assistant; `null` means not found |
+| `record.locate` | `{ description, absence?, near? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below) |
+| `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
 | `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
 
@@ -255,6 +256,65 @@ Per action:
 - `checkpoint` through `record.point` needs `region` and is the same as `record.checkpoint`.
 
 Recording answers `busy` while a previous `record.point` is still checking, or during a run.
+
+**Finding a described element (`record.locate`).** The engine first reads the page's own structure,
+then uses the AI assistant when that isn't enough (`engine/src/breakpatch_engine/dom/`):
+
+- The page's controls on screen are listed through the DevTools protocol (DOMSnapshot and the
+  accessibility tree, through open and closed shadow roots and same- and cross-origin iframes;
+  no page script runs). Only accessible names, roles, labels and text are used, never CSS or
+  XPath selectors, and the answer is a point on the screen like any other.
+- Each page is routed the first time something is looked for on it, and again after it
+  navigates or a step changes most of the screen (a verdict of "too few controls" is only kept
+  for that call: a page that is still loading looks the same). **Visual** when it has a Flutter host
+  (`flt-glass-pane`, `flutter-view`, `flt-scene-host`), a `<canvas>` over a quarter of the
+  viewport or more, or fewer than 3 controls listed; **Fast** otherwise.
+- Fast pages: S0 scores the controls listed for this call against the description (text, role
+  and position words, English and Spanish) and answers when its best score is at least 0.65: the
+  element's own box (its part inside the viewport), `at` its centre; controls clipped out of
+  view by a scrolling or overflow box, or covered by something drawn over them (a modal's
+  backdrop), aren't listed. Candidates with the same score go to the first in reading order. No
+  model is loaded for that. When S0 is unsure, the AI
+  assistant looks at the screenshot as before.
+- Visual pages: the AI assistant only.
+- `absence: true` is **reserved for absence checks** (a step checking that something is *not* on
+  the page); no step type sends it yet. It says "not found" is the expected answer: on a Fast page
+  only S0's answer counts, and the AI assistant is never asked after it, because it always boxes
+  something and would report things that aren't there. On a Visual page the AI assistant is all
+  there is.
+- The result says which way it was found in `path`: `"fast"` (S0), `"fast-visual"` (S0 was
+  unsure, the AI assistant answered) or `"visual"`, and S0's best score in `s0Score` whenever S0
+  ran. The app may ignore both. A `null` result has neither; the engine logs every call's path, S0
+  score, number of controls and timings (`breakpatch.locate`).
+- The AI assistant is only needed when S0 is unsure or the page is Visual: without it those calls
+  fail with `not_ready`, and S0's answers still work.
+
+**What a described step means (`record.intent`).** The recorder's describe box doesn't take its
+action from the action the user has chosen: the sentence decides it, with what to act on and how
+many times ("add 2 people": click the "+" next to "People", twice). The app reads the sentence
+itself first (`app/src/screens/recorder/intent.ts`: verbs such as click, type … into …, scroll
+up/down/to, wait N seconds, hover, check that; "N times" and number words; "add/increase N
+<thing>" and "remove/decrease N <thing>" as the "+" or "−" next to it). Only when the sentence
+starts with words it can't place does it send `record.intent`: the AI assistant reads the
+sentence with a screenshot of the page and answers `action` (`click`, `doubleClick`, `rightClick`,
+`longClick`, `hover`, `write`, `scroll`, `waitFor` or `checkpoint`), `repeat` (1 to 20), and
+`target`, `text`, `direction` or `seconds` as the action needs them. A reply without what its
+action needs is `null`. Without the AI assistant it is `null` at once, never `not_ready`; the app
+then uses the chosen action with the sentence as what to look for, as before. Nothing is done to
+the page: the app looks for the target with `record.locate` and records the step (or, for a
+repeat, that many steps one after another) through `record.point` only when the user confirms.
+
+**The "+" or "−" next to something (`record.locate` `near`).** `near: { control: "increase", of:
+"People" }` finds a stepper's control from the page's structure (`dom/near.py`) instead of S0,
+which folds punctuation away and can't tell "+" from "−". Controls that increase are named,
+labelled or read "+" (or an arrow up), a single word such as "plus", "add", "increase" or "more",
+or a short name starting with "add" or "increase" that names the thing ("Add adult"); those that
+decrease, the same with "−", "-", "minus", "remove", "decrease", "less". The one whose own name
+names the thing comes first; else the one nearest (edge to edge, a line apart counting twice) to
+a control or a short text on screen that matches `of`, within 320 px. When there is none, or the
+page is Visual, the AI assistant looks for `description` as usual (path `"fast-visual"` or
+`"visual"`), so the app sends a plain description too (`the "+" button next to "People"`).
+Without `near`, `record.locate` is unchanged.
 
 ### Replay
 | Method | Params | Result |
@@ -443,6 +503,23 @@ read or its shared steps can't be found, 3 = no usable licence. Like the app, it
 `group` step's children before the run (the pinned version or the latest, nested groups too), from
 `apps/<appId>/shared/` next to the test's `tests/` folder. This engine's own command line is `serve` (the sidecar) and `info`;
 `breakpatch-engine run` exits 2 and points at `breakpatch-ci`.
+
+**From the workspace.** `breakpatch-ci run --workspace FILE.bpworkspace --suite <id|name>` (or
+`--test <testId|appId/testId>`, `--version latest|released|N`, `--label TEXT`) reads the tests
+straight from the Team workspace instead of files, signed in as a Firebase Auth user with the `ci`
+role (`BREAKPATCH_CI_EMAIL`, `BREAKPATCH_CI_PASSWORD`; taken out of the environment once read, and
+refused as a secret's value like the licence key). Each test gets the same run request as a file's,
+plus `appUrl` (the app's base address, for set-up and clean-up calls). A workspace test's start
+page and app address can be changed by any member, so its secrets aren't sent as bare values:
+the pipeline names their sites (`--secret NAME=https://site[,…]`), each goes as
+`{ value, origins }` with those sites, and nothing runs (exit 2) when a test uses a secret that isn't
+listed, or whose sites don't include the test's start page, `appUrl` or a call that sends it. Each run is written to
+`apps/<appId>/runs` as the app writes one, with `source: "ci"` and the local `screenshotPath` left
+out; a suite also writes `suiteRuns`. A suite prints `{ result, suite, suiteId, version, counts,
+tests: [{ name, appId, testId, version, result, failedStep?, note?, runId? }], suiteRunId?, saved }`
+and exits 0 when it passed (with fixes too) and 1 when a test failed; 2 also covers a workspace,
+suite or test that can't be read and a sign-in that fails. The Team repo's
+`engine/src/breakpatch_team_engine/workspace.py` has the details.
 
 **Another system.** A test file's `recordedOn` is compared with the CI machine as in Where a
 test was recorded. On a mismatch `breakpatch-ci` prints one line on stderr before the run

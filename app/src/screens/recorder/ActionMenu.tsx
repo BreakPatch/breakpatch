@@ -51,7 +51,7 @@ export function ActionMenu({ open, current, allowGroups, onPick, onClose }: {
           </div>
         ))}
       </div>
-      <div className="rec-menu-foot">The chosen action is used for your next click on the page or your next message.</div>
+      <div className="rec-menu-foot">The chosen action is used for your next click on the page, and for a message that doesn't say what to do.</div>
     </div>
   );
 }

@@ -1,0 +1,13 @@
+state_id,page_id,url,setup,variant_of,change_kind
+fx01-s0,fx01_plain,fx01_plain/index.html,{},,
+fx01-s1,fx01_plain,fx01_plain/index.html,"{""scroll_y"": 1100}",,
+fx01-s2,fx01_plain,fx01_plain/variant.html,{},fx01-s0,moved
+fx02-s0,fx02_shadow,fx02_shadow/index.html,{},,
+fx03-s0,fx03_iframe,fx03_iframe/index.html,{},,
+fx04-s0,fx04_hover,fx04_hover/index.html,{},,
+fx04-s1,fx04_hover,fx04_hover/index.html,"{""hover"": ""#menu""}",,
+fx04-s2,fx04_hover,fx04_hover/index.html,"{""hover"": ""#card""}",,
+fx04-s3,fx04_hover,fx04_hover/index.html,"{""click_open"": ""#more"", ""wait_ms"": 100}",,
+fx05-s0,fx05_dense,fx05_dense/index.html,{},,
+fx06-s0,fx06_clip,fx06_clip/index.html,{},,
+fx07-s0,fx07_modal,fx07_modal/index.html,{},,
