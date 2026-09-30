@@ -91,8 +91,8 @@ function Passthrough({ children }: { children: ReactNode }) { return <>{children
 function Gate({ children }: { children: ReactNode }) {
   const { workspace, local, user, setupDone, pendingWorkspace } = useSession();
   const { pathname } = useLocation();
-  const target = edition.gate.check({ workspace, local, user, pendingWorkspace }) ?? (!setupDone ? '/setup' : null);
-  if (target && pathname !== target && !edition.gate.also?.includes(pathname)) return <Navigate to={target} replace />;
+  const target = edition.gate.check({ workspace, local, user, pendingWorkspace }, pathname) ?? (!setupDone ? '/setup' : null);
+  if (target && pathname !== target) return <Navigate to={target} replace />;
   if (!target && [...edition.gate.paths, '/setup'].includes(pathname)) return <Navigate to={edition.startPath?.() ?? '/'} replace />;
   return <>{children}</>;
 }

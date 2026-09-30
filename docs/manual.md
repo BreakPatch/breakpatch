@@ -190,7 +190,7 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
    - Logs show the address without its query string, and never a header's value.
 3. Add steps, in either of these ways:
    - **Click** anything on the page. Nothing happens to the page yet: Breakpatch highlights what you clicked and asks, for example, "Click Next button?". Press **Confirm** (or Enter, or click it again) to do the step; **Try again** to pick something else; Esc to cancel. Dragging and scrolling on the page work the same way.
-   - **Describe** it in the box below, for example "click the Done button". Breakpatch highlights what it found. Press **Confirm** or **Try again**.
+   - **Describe** it in the box below, for example "click the Done button". Breakpatch highlights what it found. Press **Confirm** or **Try again**. A step with nothing to find, like "scroll down", "type hello" (into the field that has the focus) or "go to example.com", asks first too, for example "Write "hello" into the field that has the focus?". Only "wait 3 seconds" is done at once. Breakpatch can't yet wait for something to go away ("wait for the spinner to go away"): it says so, and you can use **Wait** for a set time instead.
 4. Use the action button next to the box for everything else: double, long and right click, hover, swipe, scroll, drag and drop, **Write text**, **Wait until**, **Go to address**, reload, back and forward, tabs and popups, upload a sample file, check a download, **Checkpoint**, **Repeat** and **Shared steps**.
 5. Press **Save**.
 
@@ -211,6 +211,8 @@ Under that: **Play to here** starts a new browser and plays the test from the st
 ## Run a test and read the report
 
 Press **Run**. The live view shows each step as it runs. Each step is checked before and after it acts, and the first failure stops the run with a plain reason, for example "Couldn't find the Done button".
+
+**Run all** on an app's page runs each of its tests in turn, like a suite, and saves each test's run. Tests with no steps yet are left out, so they don't fail it.
 
 The report shows what was expected next to what was on screen, why it stopped and what to try. Press **Re-record this step** to fix it straight away.
 

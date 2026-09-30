@@ -67,7 +67,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
         <LiveView address={address} viewport={viewport} status={status} tool={loading ? 'none' : toolFor(rec.action)}
           passThrough={rec.hand} onInput={i => { void getEngine().input(i).catch(() => undefined); }}
           onPoint={rec.pagePoint} onDrag={rec.pageDrag} onBox={rec.pageBox} onScroll={rec.pageScroll} blocked={blocked}
-          markers={marker ? [marker] : []} candidate={rec.ai.state === 'result' || rec.ai.state === 'proposal' ? rec.ai.box : null} thinking={rec.thinking} loading={loading} />
+          markers={marker ? [marker] : []} candidate={rec.ai.state === 'result' || rec.ai.state === 'proposal' ? rec.ai.box ?? null : null} thinking={rec.thinking} loading={loading} />
         <FileChooserDialog ask={rec.fileAsk} dir={rec.filesDir} onChoose={rec.chooseFile} />
         <FileChooserDialog ask={rec.handAsk} dir={rec.filesDir} onChoose={rec.handChooseFile} />
         <AddStepBar rec={rec} appId={appId} allowGroups={allowGroups} onInsertGroup={insertGroup} frozen={run?.running ? 'The test is playing in this browser. Stop it, or wait for it to finish, to add steps.'

@@ -1,6 +1,6 @@
 // Run all on the app screen: every test of the app, one after another, in the suite run view
 // (/apps/:appId/run-all), in Community (no workspace, local suites) and in Team alike.
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { App, Step } from '../../data/types';
@@ -9,11 +9,11 @@ import { useSession } from '../../state/session';
 import { getEngine, type EngineEvents, type RunStart } from '../../engine';
 import { notificationFor } from '../../lib/notify';
 import SuiteRunScreen from './SuiteRunScreen';
-import appSource from '../../App.tsx?raw';
-import appScreenSource from '../app/AppScreen.tsx?raw';
+import BreakpatchApp from '../../App';
 
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;   // not in jsdom
 Element.prototype.scrollIntoView ??= () => undefined;
+window.matchMedia ??= ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false })) as typeof window.matchMedia;
 
 const VP = { width: 1440, height: 900, dpr: 1 as const };
 const step = (id: string): Step => ({ id, action: 'click', label: `Click ${id}`, at: [10, 10] });
@@ -43,7 +43,7 @@ beforeEach(async () => {
     }, 0);
   });
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); window.location.hash = ''; useSession.setState({ local: null, user: null }); });
 
 const open = (path: string) => render(
   <MemoryRouter initialEntries={[path]}>
@@ -54,10 +54,57 @@ const open = (path: string) => render(
   </MemoryRouter>);
 
 describe('Run all', () => {
-  it('the app screen opens the run of every test, not the first test', () => {
-    expect(appScreenSource).toContain('navigate(`/apps/${appId}/run-all`)');
-    expect(appScreenSource).not.toContain('/tests/${firstTest.id}/run');
-    expect(appSource).toContain('<Route path="/apps/:appId/run-all" element={<SuiteRunScreen />} />');
+  it('the app screen opens the run of every test, not the first test', async () => {
+    // The whole app, on the app screen of a tests folder that is set up.
+    useSession.setState({ backend, workspace: null, local: { path: '/Users/ana/tests' }, user: backend.currentUser(), setupDone: true });
+    window.location.hash = `#/apps/${web.id}`;
+    render(<BreakpatchApp />);
+    const runAll = await screen.findByRole('button', { name: 'Run all' }, { timeout: 4000 });   // the whole app: slower to start
+    await waitFor(() => expect(runAll).toBeEnabled(), { timeout: 4000 });   // once the tests are there
+    fireEvent.click(runAll);
+    await waitFor(() => expect(window.location.hash).toBe(`#/apps/${web.id}/run-all`), { timeout: 4000 });
+    expect(await screen.findByRole('complementary', { name: 'All tests in Web app' }, { timeout: 4000 })).toBeInTheDocument();
+    await waitFor(() => expect(started).toHaveLength(3), { timeout: 4000 });
+  });
+
+  it('leaves out tests with no steps yet, so they don\'t fail the run', async () => {
+    await backend.createTest({ appId: web.id, name: 'Draft', startUrl: web.baseUrl, viewport: VP });
+    const failed = vi.spyOn(getEngine(), 'startRun');
+    open(`/apps/${web.id}/run-all`);
+    const side = await screen.findByRole('complementary', { name: 'All tests in Web app' });
+    await waitFor(() => expect(within(side).getByText('3 of 3')).toBeInTheDocument(), { timeout: 4000 });
+    expect(within(side).getAllByRole('listitem').map(r => r.getAttribute('aria-label'))).not.toContain(expect.stringContaining('Draft'));
+    expect(within(side).getByText(/1 test with no steps yet left out/)).toBeInTheDocument();
+    expect(failed).toHaveBeenCalledTimes(3);
+    expect(screen.getByText('1 test failed')).toBeInTheDocument();       // only Create a project
+  });
+
+  it('an app with only tests that have no steps says so, and runs nothing', async () => {
+    const drafts = await backend.addApp({ name: 'Drafts', baseUrl: 'https://d.example.com', defaultViewport: VP });
+    await backend.createTest({ appId: drafts.id, name: 'Draft', startUrl: drafts.baseUrl, viewport: VP });
+    open(`/apps/${drafts.id}/run-all`);
+    expect(await screen.findByText('No recorded tests for Drafts yet.')).toBeInTheDocument();
+    expect(screen.getByText("Record a test's steps first, then run them all.")).toBeInTheDocument();
+    expect(started).toEqual([]);
+  });
+
+  it('doesn\'t say "no tests" while the app\'s tests are still loading', async () => {
+    let release: (() => void) | undefined;
+    const real = backend.tests.bind(backend);
+    vi.spyOn(backend, 'tests').mockImplementation((appId, l) => {
+      let off = () => {};
+      release = () => { off = real(appId, l); };
+      return () => off();
+    });
+    open(`/apps/${web.id}/run-all`);
+    expect(await screen.findByText('Getting the tests ready')).toBeInTheDocument();
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.queryByText(/No tests for/)).not.toBeInTheDocument();
+    expect(started).toEqual([]);
+    release!();
+    const side = await screen.findByRole('complementary', { name: 'All tests in Web app' });
+    await waitFor(() => expect(within(side).getByText('3 of 3')).toBeInTheDocument(), { timeout: 4000 });
+    expect(screen.queryByText(/No tests for/)).not.toBeInTheDocument();
   });
 
   it('runs every test of the app one after another in one view, and saves each run', async () => {

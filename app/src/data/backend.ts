@@ -29,6 +29,26 @@ export function cleanDetails(d: TestDetails): TestDetails {
   return { name: d.name.trim(), ...(description ? { description } : {}), startUrl: d.startUrl.trim() };
 }
 
+/**
+ * What cleaned details (cleanDetails) change on a test as it's stored now: its name, its
+ * description (none and "" are the same) and its start address (`moved`: a new version then
+ * starts there). `changed`: any of them. For each backend's updateTestDetails.
+ */
+export function detailsDiff(current: { name?: unknown; description?: unknown; startUrl?: unknown }, d: TestDetails): { name: boolean; description: boolean; moved: boolean; changed: boolean } {
+  const name = d.name !== current.name;
+  const description = d.description !== (typeof current.description === 'string' && current.description ? current.description : undefined);
+  const moved = d.startUrl !== current.startUrl;
+  return { name, description, moved, changed: name || description || moved };
+}
+
+/**
+ * Where a run of this version starts: the version's own start address, else the test's.
+ * Versions saved before versions had one, and every version of the local backend, have none.
+ */
+export function startUrlOf(test: Pick<Test, 'startUrl'>, version?: Pick<Version, 'startUrl'> | null): string {
+  return version?.startUrl || test.startUrl;
+}
+
 export class AuthError extends Error {
   /**
    * `signInOff`: the workspace's Firebase project doesn't have email and password sign-in turned on.
@@ -36,7 +56,9 @@ export class AuthError extends Error {
    * `setup`: the workspace isn't set up right (its database or rules); the message says what to fix.
    */
   code: 'wrongPassword' | 'wrongDomain' | 'network' | 'signInOff' | 'unverified' | 'setup' | 'unknown';
-  constructor(code: AuthError['code'], message: string) { super(message); this.code = code; }
+  /** `setup`: which part of the workspace's set-up to fix, when the backend knows (the screen links to it). */
+  fix?: 'database' | 'rules';
+  constructor(code: AuthError['code'], message: string, fix?: AuthError['fix']) { super(message); this.code = code; if (fix) this.fix = fix; }
 }
 
 export interface Backend {

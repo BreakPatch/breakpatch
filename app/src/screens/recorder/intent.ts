@@ -7,7 +7,7 @@
 // user"), the engine's AI assistant is asked (`record.intent`), when it's downloaded; failing
 // that, the chosen action is used with the whole sentence as what to look for, as before.
 import type { ActionKind, Direction } from '../../data/types';
-import type { Near } from '../../engine/engine';
+import type { EngineIntent, Near } from '../../engine/engine';
 
 export interface Intent {
   action: ActionKind;
@@ -33,11 +33,17 @@ export interface Intent {
 /**
  * `intent`: the sentence says what to do. `noVerb`: it only says what to act on ("the Done
  * button"), so the chosen action applies. `unsure`: it starts with a word this doesn't know; ask
- * the AI assistant, else treat it like `noVerb`.
+ * the AI assistant, else treat it like `noVerb`. `unhandled`: it asks for something a step can't
+ * do ("wait for the spinner to go away"); `message` says so, and nothing is looked for.
  */
-export type Reading = { kind: 'intent'; intent: Intent } | { kind: 'noVerb' | 'unsure'; target: string };
+export type Reading = { kind: 'intent'; intent: Intent } | { kind: 'noVerb' | 'unsure'; target: string } | { kind: 'unhandled'; message: string };
 
+/** At most this many steps from one sentence. The engine's `record.intent` has the same limit (locator.py). */
 export const MAX_REPEAT = 20;
+/** Actions a sentence can ask for more than once ("click Next 3 times"): each time is a step of its own. */
+export const REPEATABLE: ReadonlySet<ActionKind> = new Set<ActionKind>(['click', 'doubleClick', 'rightClick', 'longClick', 'hover', 'scroll', 'swipe', 'write']);
+/** The actions the AI assistant may answer with (`record.intent`, engine/PROTOCOL.md). */
+export const AI_ACTIONS: ReadonlySet<ActionKind> = new Set<ActionKind>(['click', 'doubleClick', 'rightClick', 'longClick', 'hover', 'write', 'scroll', 'waitFor', 'checkpoint']);
 export const SCROLL_PX = 300;
 const SCREEN_PX = 700;       // "a page", "scroll to the footer": about a screen
 const FAR_PX = 5000;         // "to the top", "to the bottom"
@@ -145,6 +151,9 @@ function wait(rest: string): Reading | null {
     return intent('waitFor', { seconds: Math.min(600, /^m/i.test(n[2]) ? v * 60 : v) });
   }
   if (/^wait(?:\s+for)?(?:\s+a)?(?:\s+(?:moment|bit|second|sec|while))?$/i.test(rest)) return intent('waitFor', { seconds: 2 });
+  // "wait for the spinner to go away": a Wait until waits for something to show, the opposite.
+  if (/^wait\s+(?:until|till|for)\s+.+?\s+(?:(?:to\s+)?(?:go(?:es)?\s+away|disappears?|vanish(?:es)?|close[sd]?)|(?:to\s+be|is|are|has|have)\s+(?:gone|hidden|closed|no\s+longer\s+(?:there|visible|shown)|not\s+(?:there|visible|shown)))$/i.test(rest))
+    return { kind: 'unhandled', message: "A step can't wait for something to go away yet. Use Wait for a set time, or Wait until for what shows next." };
   const until = /^wait\s+(?:until|till|for)\s+(.+?)(?:\s+(?:to\s+)?(?:appears?|shows?(?:\s+up)?|loads?|is\s+(?:visible|shown|displayed|there)|are\s+(?:visible|shown)|comes?\s+up))?$/i.exec(rest);
   if (until) return intent('waitUntil', { target: until[1] });
   return null;
@@ -183,6 +192,8 @@ function stepper(rest: string): Reading | null {
   const byVerb = /^(increase|increment|raise|bump\s+up|decrease|decrement|reduce|lower)\s+(?:the\s+)?(?:(?:number|count|amount|quantity)\s+of\s+)?(.+?)(?:\s+by\s+(\S+))?$/i.exec(rest);
   const m = counted ?? byVerb;
   if (!m) return null;
+  // "add 2 items to the cart": a thing put somewhere, not a count next to a "+". The AI assistant may know.
+  if (counted && /\s(?:to|into|onto|in|from|on|off)\s+\S/i.test(counted[3])) return { kind: 'unsure', target: rest };
   const verb = m[1].toLowerCase().replace(/\s+/g, ' ');
   const control: Near['control'] = new RegExp(`^(?:${INCREASE})$`, 'i').test(verb) ? 'increase' : 'decrease';
   const thing = counted ? counted[3] : byVerb![2];
@@ -204,6 +215,8 @@ function pointer(rest: string): Reading | null {
     [/^upload\s+(.+)$/i, 'upload'],
     [/^(?:click|press|tap|hit|push|select|choose|pick|toggle|tick|untick|check|uncheck|activate|open|expand|collapse)(?:\s+(?:on|at))?\s+(.+)$/i, 'click'],
   ];
+  // "select 2 adults": a number to set, which depends on what's there now, not a thing named "2 adults".
+  if (new RegExp(`^(?:select|choose|pick)\\s+(?:${NUM})\\s+\\S`, 'i').test(rest)) return { kind: 'unsure', target: rest };
   for (const [re, action] of forms) {
     const m = re.exec(rest);
     if (m) return intent(action, { target: m[1] });
@@ -225,12 +238,16 @@ export function readIntent(sentence: string): Reading {
   const got = wait(r) ?? check(r) ?? write(r) ?? scroll(r) ?? stepper(r) ?? pointer(r);
   if (got?.kind === 'intent') {
     const it = got.intent;
-    if (repeat !== undefined && ['click', 'doubleClick', 'rightClick', 'longClick', 'hover', 'scroll'].includes(it.action)) it.repeat = clamp(repeat * it.repeat);
+    if (repeat !== undefined && REPEATABLE.has(it.action)) it.repeat = clamp(repeat * it.repeat);
     return got;
   }
-  const first = r.split(' ')[0]?.toLowerCase() ?? '';
+  if (got?.kind === 'unhandled') return got;
+  if (got) return { kind: 'unsure', target: whole };
+  const [first = '', second = ''] = r.toLowerCase().split(' ');
   // "click" and nothing else, or a verb whose object is missing: say what to look for instead.
   if (/^(?:click|press|tap|double|right|hover|type|enter|scroll|wait|check|verify)$/i.test(r)) return { kind: 'unsure', target: whole };
+  // "Add a new item", "delete this row": a button's word, then what it acts on. ("Sign up button" isn't.)
+  if (BUTTON_WORDS.has(first) && DETERMINERS.has(second)) return intent('click', { target: whole, repeat: repeat ? clamp(repeat) : 1 });
   if (DETERMINERS.has(first) || /^["'“‘\d]/.test(r) || ROLE_END.test(r)) return { kind: 'noVerb', target: whole };
   // A button's own words ("log out", "add to cart", "save"): click it.
   if (BUTTON_WORDS.has(first)) return intent('click', { target: whole, repeat: repeat ? clamp(repeat) : 1 });
@@ -238,10 +255,9 @@ export function readIntent(sentence: string): Reading {
 }
 
 /** The AI assistant's reading (record.intent) as an intent, or null when it doesn't add up. */
-export function fromEngine(e: { action: string; repeat?: number; target?: string; text?: string; direction?: string; seconds?: number } | null): Intent | null {
+export function fromEngine(e: EngineIntent | null): Intent | null {
   if (!e) return null;
-  const kinds: ActionKind[] = ['click', 'doubleClick', 'rightClick', 'longClick', 'hover', 'write', 'scroll', 'waitFor', 'checkpoint'];
-  if (!kinds.includes(e.action as ActionKind)) return null;
+  if (!AI_ACTIONS.has(e.action as ActionKind)) return null;
   const action = e.action as ActionKind;
   if (action !== 'scroll' && action !== 'waitFor' && action !== 'write' && !e.target) return null;
   if (action === 'write' && !e.text) return null;

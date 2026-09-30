@@ -41,6 +41,12 @@ def _raw_fields(c: dict) -> list[str]:
     return [" ".join(x.split()) for x in f if isinstance(x, str) and x.strip()]
 
 
+def _symbol(f: str, symbols: set[str]) -> bool:
+    """The symbol on its own ("+"), or before one word at most ("+ Add", "−1"): "+ New project"
+    or "-20% off" are buttons and prices, not a stepper's."""
+    return f in symbols or (f[:1] in symbols and len(f[1:].split()) <= 1)
+
+
 def _kinds(c: dict) -> tuple[str | None, str | None]:
     """(what the control does to a count on any stepper, what it does only if its name is the
     thing's): "+", "plus" or "More" say it for any; "Add a person" only for people ("Add to cart"
@@ -50,9 +56,9 @@ def _kinds(c: dict) -> tuple[str | None, str | None]:
     generic, named = set(), set()
     for f in _raw_fields(c):
         words = s0.norm(f).split()
-        if f in INCREASE_SYMBOLS or f[:1] in INCREASE_SYMBOLS:
+        if _symbol(f, INCREASE_SYMBOLS):
             generic.add("increase")
-        elif f in DECREASE_SYMBOLS or f[:1] in DECREASE_SYMBOLS:
+        elif _symbol(f, DECREASE_SYMBOLS):
             generic.add("decrease")
         elif not words or len(words) > MAX_WORDS:
             continue

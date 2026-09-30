@@ -1,7 +1,7 @@
 // In-memory backend for development, the browser preview and tests.
 // Behaves like the Firebase backend: live subscriptions, immutable versions, audit fields.
 import { edition } from '../../edition';
-import { AuthError, cleanDetails, startUrlNote, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
+import { AuthError, cleanDetails, detailsDiff, startUrlNote, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
 import type {
   App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
 } from '../types';
@@ -124,8 +124,8 @@ export class DemoBackend implements Backend {
     const t = this.st.tests.find(x => x.appId === appId && x.id === testId);
     if (!t) throw new Error('This test was deleted.');
     const d = cleanDetails(details);
-    const moved = d.startUrl !== t.startUrl;
-    if (!moved && d.name === t.name && d.description === (t.description || undefined)) return this.wait(null);
+    const { moved, changed } = detailsDiff(t, d);
+    if (!changed) return this.wait(null);
     this.patchTest(appId, testId, { name: d.name, description: d.description, startUrl: d.startUrl });
     const last = moved && t.currentVersion > 0 ? this.st.versions[`${appId}/${testId}`]?.at(-1) : undefined;
     // The same steps as a new version that starts at the new address, like the Firebase backend.

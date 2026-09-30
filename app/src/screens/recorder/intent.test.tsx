@@ -3,11 +3,18 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getEngine } from '../../engine';
-import { chosenIntent, fromEngine, readIntent, stepperTarget, type Intent } from './intent';
+import { AI_ACTIONS, chosenIntent, fromEngine, MAX_REPEAT, readIntent, stepperTarget, type Intent } from './intent';
 import { intentAskText } from './describe';
 import { useRecorder } from './useRecorder';
 
 afterEach(() => { vi.restoreAllMocks(); });
+
+// The engine lives outside the app root, which Vite won't import from, so read it from disk
+// (as paths.test.ts does; Node modules are untyped in the app's tsconfig).
+const fsModule = 'node:fs', urlModule = 'node:url', pathModule = 'node:path';
+const { readFileSync } = (await import(/* @vite-ignore */ fsModule)) as { readFileSync(path: string, enc: 'utf8'): string };
+const { fileURLToPath } = (await import(/* @vite-ignore */ urlModule)) as { fileURLToPath(url: string): string };
+const { dirname, join } = (await import(/* @vite-ignore */ pathModule)) as { dirname(p: string): string; join(...p: string[]): string };
 
 const intentOf = (s: string): Intent => {
   const r = readIntent(s);
@@ -49,6 +56,26 @@ describe('reading a described step', () => {
     expect(intentOf('put 3 in the quantity box')).toMatchObject({ action: 'write', text: '3', target: 'the quantity box' });
     expect(intentOf('fill in the quantity with 3')).toMatchObject({ action: 'write', text: '3', target: 'the quantity' });
     expect(readIntent('fill in the form').kind).not.toBe('intent');
+    // "type hello 3 times": the count isn't dropped.
+    expect(intentOf('type hello 3 times')).toMatchObject({ action: 'write', text: 'hello', repeat: 3 });
+    expect(intentOf('type hello into the search box twice')).toMatchObject({ action: 'write', text: 'hello', target: 'the search box', repeat: 2 });
+  });
+
+  it('reads everyday sentences the way they are meant (regressions)', () => {
+    // A wait for something to go away isn't a Wait until (that waits for it to show).
+    for (const s of ['wait for the spinner to go away', 'wait until the spinner disappears', 'wait for the dialog to close', 'wait until the banner is gone', 'wait until the loader is no longer visible'])
+      expect(readIntent(s).kind, s).toBe('unhandled');
+    expect(intentOf('wait until the dialog shows')).toMatchObject({ action: 'waitUntil', target: 'the dialog' });
+    // A button's word, then what it acts on: a click, not a noun phrase for the chosen action.
+    expect(intentOf('Add a new item')).toMatchObject({ action: 'click', target: 'Add a new item' });
+    expect(intentOf('delete this row')).toMatchObject({ action: 'click', target: 'delete this row' });
+    expect(readIntent('Save button')).toEqual({ kind: 'noVerb', target: 'Save button' });
+    // A thing put somewhere isn't the "+" next to it.
+    expect(readIntent('add 2 items to the cart')).toEqual({ kind: 'unsure', target: 'add 2 items to the cart' });
+    expect(readIntent('remove 1 item from the basket').kind).toBe('unsure');
+    // A number to choose depends on what's there now: not a click on something named "2 adults".
+    expect(readIntent('select 2 adults')).toEqual({ kind: 'unsure', target: 'select 2 adults' });
+    expect(intentOf('select the second option')).toMatchObject({ action: 'click', target: 'the second option' });
   });
 
   it('"scroll down" scrolls the page', () => {
@@ -102,6 +129,13 @@ describe('reading a described step', () => {
     expect(fromEngine({ action: 'click', repeat: 1 })).toBeNull();
     expect(fromEngine({ action: 'dance', repeat: 1, target: 'x' })).toBeNull();
     expect(fromEngine(null)).toBeNull();
+    for (const action of AI_ACTIONS) expect(fromEngine({ action, repeat: 1, target: 'x', text: 'y', seconds: 1 })?.action).toBe(action);
+  });
+
+  it('keeps the most steps one sentence can add the same as the engine\'s', () => {
+    // The engine's own reading (record.intent) clamps `times` to its MAX_REPEAT: both must agree.
+    const py = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../../../engine/src/breakpatch_engine/locator.py'), 'utf8');
+    expect(Number(/^MAX_REPEAT = (\d+)$/m.exec(py)?.[1])).toBe(MAX_REPEAT);
   });
 
   it('asks plainly what Confirm will do', () => {
@@ -109,6 +143,7 @@ describe('reading a described step', () => {
     expect(intentAskText(stepperTarget('increase', 'people').target, { action: 'click', repeat: 2 }))
       .toBe('Is this the "+" button next to "People"? Confirm to click it 2 times.');
     expect(intentAskText('the search box', { action: 'write', repeat: 1, text: 'hello' })).toBe('Is this the search box? Confirm to type "hello" into it.');
+    expect(intentAskText('the search box', { action: 'write', repeat: 2, text: 'hello' })).toBe('Is this the search box? Confirm to type "hello" into it 2 times.');
   });
 });
 
@@ -177,15 +212,86 @@ describe('the recorder does what the sentence says', () => {
     expect(rec.mock.calls[0][0]).toMatchObject({ action: 'scroll', from: [720, 450], direction: 'down', distance: 300 });
   });
 
-  it('"write 3" with Click chosen types 3 into the field that has the focus, looking for nothing', async () => {
+  it('"write 3" with Click chosen types 3 into the field that has the focus once it\'s confirmed, looking for nothing', async () => {
     const locate = vi.spyOn(getEngine(), 'locate');
     const rec = vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: 'w', action: p.action, label: 'Write "3"', text: p.text }));
     const { result } = hook();
     expect(result.current.action).toBe('click');
     await act(async () => { await result.current.describe('write 3'); });
     expect(locate).not.toHaveBeenCalled();
+    expect(result.current.ai.state).toBe('proposal');
+    expect(result.current.ask).toBe('Write "3" into the field that has the focus?');
+    expect(rec).not.toHaveBeenCalled();                              // nothing reaches the page before Confirm
+    act(() => { result.current.confirmAi(); });
     await waitFor(() => expect(rec).toHaveBeenCalled());
     expect(rec.mock.calls[0][0]).toEqual({ action: 'write', text: '3' });
+  });
+
+  it('a misread "enter the password" is only typed after Confirm, and Cancel types nothing', async () => {
+    const rec = vi.spyOn(getEngine(), 'recordPoint');
+    const { result } = hook();
+    await act(async () => { await result.current.describe('enter the password'); });
+    expect(result.current.ask).toBe('Write "the password" into the field that has the focus?');
+    act(() => { result.current.cancelAi(); });
+    expect(result.current.ai.state).toBe('idle');
+    expect(rec).not.toHaveBeenCalled();
+    expect(result.current.steps).toEqual([]);
+  });
+
+  it('"go to example.com" asks before it opens the address', async () => {
+    const rec = vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: 'n', action: p.action, label: 'Go to https://example.com', nav: p.nav, url: p.url }));
+    const { result } = hook();
+    await act(async () => { await result.current.describe('go to example.com'); });
+    expect(result.current.ai).toMatchObject({ state: 'proposal', params: { action: 'navigate', nav: 'url', url: 'https://example.com' } });
+    expect(result.current.ai.state === 'proposal' && result.current.ai.box).toBeUndefined();   // nothing to mark on the page
+    expect(result.current.ask).toBe('Go to https://example.com?');
+    expect(rec).not.toHaveBeenCalled();
+    act(() => { result.current.confirmAi(); });
+    await waitFor(() => expect(rec).toHaveBeenCalledTimes(1));
+    expect(rec.mock.calls[0][0]).toEqual({ action: 'navigate', nav: 'url', url: 'https://example.com' });
+  });
+
+  it('"type hello 3 times" asks once and types it 3 times', async () => {
+    const rec = vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: `w${rec.mock.calls.length}`, action: p.action, label: 'Write "hello"', text: p.text }));
+    const { result } = hook();
+    await act(async () => { await result.current.describe('type hello 3 times'); });
+    expect(result.current.ask).toBe('Write "hello" into the field that has the focus, 3 times?');
+    act(() => { result.current.confirmAi(); });
+    await waitFor(() => expect(result.current.steps).toHaveLength(3));
+    expect(rec).toHaveBeenCalledTimes(3);
+  });
+
+  it('"wait for the spinner to go away" says it can\'t, and waits for nothing', async () => {
+    const onError = vi.fn();
+    const locate = vi.spyOn(getEngine(), 'locate');
+    const rec = vi.spyOn(getEngine(), 'recordPoint');
+    const { result } = renderHook(() => useRecorder({ viewport: vp, onError }));
+    await act(async () => { await result.current.describe('wait for the spinner to go away'); });
+    expect(onError).toHaveBeenCalledWith(expect.stringMatching(/can't wait for something to go away/));
+    expect(locate).not.toHaveBeenCalled();
+    expect(rec).not.toHaveBeenCalled();
+    expect(result.current.text).toBe('wait for the spinner to go away');   // kept, to rephrase
+  });
+
+  it('a repeat while re-recording re-records the step once and adds the rest right after it', async () => {
+    vi.spyOn(getEngine(), 'locate').mockResolvedValue({ box: [0, 0, 10, 10], at: [5, 5], target: 'Next' });
+    const rec = vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: `n${rec.mock.calls.length}`, action: p.action, label: 'Click Next', at: p.at }));
+    const { result } = hook();
+    act(() => { result.current.load([
+      { id: 'a', action: 'click', label: 'Click A', at: [1, 1] },
+      { id: 'b', action: 'click', label: 'Click B', at: [2, 2] },
+      { id: 'c', action: 'click', label: 'Click C', at: [3, 3] },
+    ]); });
+    act(() => { result.current.startRerecord('b'); });
+    await act(async () => { await result.current.describe('click Next 3 times'); });
+    act(() => { result.current.confirmAi(); });
+    await waitFor(() => expect(result.current.steps).toHaveLength(5));
+    expect(rec).toHaveBeenCalledTimes(3);
+    // Step b keeps its place and id; the two other clicks come right after it, before c.
+    expect(result.current.steps.map(s => s.id)).toEqual(['a', 'b', 'n2', 'n3', 'c']);
+    expect(result.current.steps.map(s => s.label)).toEqual(['Click A', 'Click Next', 'Click Next', 'Click Next', 'Click C']);
+    expect(result.current.rerecordId).toBeNull();
+    expect(result.current.insertAfterId).toBeNull();               // new steps go at the end again
   });
 
   it('"type hello into the search box" types there once it\'s confirmed', async () => {

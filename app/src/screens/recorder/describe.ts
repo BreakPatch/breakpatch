@@ -1,5 +1,5 @@
 // Text for the Describe flow (README "Describe flow").
-import type { Intent } from './intent';
+import { REPEATABLE, type Intent } from './intent';
 
 const VERBS = /^(please\s+)?(double[\s-]?click|right[\s-]?click|long[\s-]?click|click on|click|press|tap|hit|select|choose|find|hover over|hover|open|check that|check|upload to|upload)\s+/i;
 
@@ -35,8 +35,7 @@ export function intentAskText(what: string, it: Pick<Intent, 'action' | 'repeat'
     }
   })();
   if (!doing) return q;
-  const counted = ['click', 'doubleClick', 'rightClick', 'longClick', 'hover', 'scroll', 'swipe'].includes(it.action);
-  return `${q} Confirm to ${doing}${counted ? times : ''}.`;
+  return `${q} Confirm to ${doing}${REPEATABLE.has(it.action) ? times : ''}.`;
 }
 export const notFoundText = (what: string) => `Couldn't find "${what}" on this screen. Rephrase, or click it on the page.`;
 
