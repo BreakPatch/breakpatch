@@ -380,7 +380,7 @@ Install Breakpatch Team over Community. The AI assistant, the test browser, your
 
 1. **Connect a workspace**: [create one](#create-a-workspace), or open an invite link from your team. Then sign in.
 2. **The licence.** If you created the workspace, enter the licence key once in **Settings → Licence** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). If you joined with an invite link, the link sets up your licence and there's no key to enter. See [Licences and seats](#licences-and-seats).
-3. **Move your tests**. Choose the tests folder. Breakpatch shows what it will copy first, for example "1 app, 12 tests, 3 shared steps and 2 suites will be copied.", and you can rename apps, or merge them with apps the workspace already has. It then copies the apps, tests, shared steps, suites and the last run of each test into the workspace.
+3. **Move your tests**. Choose the tests folder. Breakpatch shows what it will copy first, for example "1 app, 12 tests, 3 shared steps and 2 suites will be copied.", and you can rename apps, or merge them with apps the workspace already has. It then copies the apps, tests, shared steps, suites and the last run of each test, unless that run is over 90 days old, into the workspace.
 4. **Check, then move to the Trash.** Breakpatch reads everything back from the workspace and compares it with the folder. Only when it all matches, and you confirm, does it move the folder's `breakpatch.json`, `apps` and `suites` to the Trash, so there's one place to edit your tests. To undo it, drag them from the Trash back into the folder.
 
 Good to know:
@@ -389,6 +389,7 @@ Good to know:
 - **If the move stops half way** (the Mac restarts, say), Breakpatch picks it up where it left off the next time you open **Upgrade to Team**.
 - **A report of the move** is kept in Breakpatch's data folder on this Mac: what was copied, what went to the Trash, and anything left out.
 - **Each test starts at version 1** in the workspace, because the folder keeps only the latest version.
+- **Runs over 90 days old aren't copied**, because the workspace keeps runs for 90 days (see [Run history is kept 90 days](#run-history-is-kept-90-days)). Breakpatch says so before it copies, and the report lists them. They go to the Trash with the folder.
 - **Saved secrets** travel as names in the steps. Their values stay in this Mac's Keychain; teammates add their own in **Settings → Saved secrets**.
 - **Files that can't be read** stop the move until you fix them in the folder, so nothing unread goes to the Trash.
 - **Already in the workspace?** Anything that's already there is left out. If a test there differs from the folder's (a teammate copied an older version, say), Breakpatch names it, and you can keep the workspace's version.
@@ -396,9 +397,9 @@ Good to know:
 
 ## Create a workspace
 
-Do this once for your organisation. You need owner access to a Firebase project. Use the project your product already signs in with, so everyone keeps their usual login. A new project works too: step 5 turns on sign-in and adds your account.
+Do this once for your organisation. You need owner access to a Firebase project. Use the project your product already signs in with, so everyone keeps their usual login. A new project works too: step 6 turns on sign-in and adds your account.
 
-In Breakpatch: **Connect a team workspace** → *Setting up for your team?* → **Create a workspace**. Each step has **Open Firebase console**, which opens the right page.
+In Breakpatch: **Connect a team workspace** → *Setting up for your team?* → **Create a workspace**. Each step has **Open Firebase console** (step 5, **Open Google Cloud console**), which opens the right page.
 
 1. **Create the web app.** Project settings → General → Your apps → **Add app** → Web. Name it `Breakpatch`, leave Firebase Hosting off and click Register app. Ignore the code Firebase shows and click Continue to console.
 2. **Paste the config.** Under Web apps, pick Breakpatch. In SDK setup and configuration, choose Config, copy it and paste it into Breakpatch. Then fill in **Who can sign in**: just the part after @, for example `example.com`.
@@ -406,9 +407,9 @@ In Breakpatch: **Connect a team workspace** → *Setting up for your team?* → 
    - **This project's `(default)` database**: best if the Firebase project is only for Breakpatch, and it's the one Firebase's free tier covers. Open Firestore Database. If the page shows **Create database**, click it, keep Standard edition and the ID `(default)`, pick a location near your team (you can't change it later), keep Production mode and click Create. If the project has a `(default)` database already, there's nothing to do.
    - **A separate database**, if the project also runs your app, so test data stays apart. Open Firestore Database, open the database menu at the top of the page (the one that shows `(default)`) and choose **Add database** (a project with no database yet shows **Create database** instead). Keep Standard edition, enter the database ID `breakpatch` (copy it from the app), pick the same location as your main database, keep Production mode and click Create.
 4. **Paste the rules.** In Breakpatch press **Copy rules**. In Firestore pick the `breakpatch` database, open the Rules tab, replace everything with the rules you copied and click Publish.
-   Then, still in Firestore, open **Time-to-live (TTL)** and click **Create policy** twice: collection group `runs`, timestamp field `expiresAt`; then collection group `suiteRuns`, field `expiresAt`. Firestore then deletes runs after 90 days by itself (see [Run history is kept 90 days](#run-history-is-kept-90-days)). Or with the Google Cloud CLI: `gcloud firestore fields ttls update expiresAt --collection-group=runs --enable-ttl --database=breakpatch`, and the same with `--collection-group=suiteRuns`.
-5. **Turn on sign-in and add yourself.** Open Authentication (click **Get started** if it's new). In Sign-in method choose **Email/Password**, turn on Enable and click Save. Then in Users click **Add user** and add yourself, with an address in the *Who can sign in* domain. Add your teammates the same way, now or later. If your team already signs in to this project with email and password, just check it's on. Breakpatch never creates accounts.
-6. **Connect.** Check the summary. Breakpatch checks the connection by itself (see below); fix anything it names first. Name the workspace, add a logo if you like and press **Create workspace**. Then sign in with the account you added. If you haven't added it yet, the sign-in screen says where, with a link to Authentication → Users in the Firebase console.
+5. **Delete runs after 90 days automatically** (recommended, saves money). You can skip this step and do it later. Breakpatch opens the Time-to-live (TTL) page of your database in the Google Cloud console: sign in with the same Google account as for Firebase. Click **Create policy** twice: collection group `runs`, timestamp field `expiresAt`; then collection group `suiteRuns`, timestamp field `expiresAt`. Firestore takes a few minutes to turn them on, then deletes runs and suite runs 90 days after they were saved (see [Run history is kept 90 days](#run-history-is-kept-90-days)). Or with the Google Cloud CLI, as the step shows them: `gcloud firestore fields ttls update expiresAt --collection-group=runs --enable-ttl --database=breakpatch --project=<your project>`, and the same with `--collection-group=suiteRuns`. If you skip it, an admin's Breakpatch deletes old runs instead, once a day, which costs a few reads more.
+6. **Turn on sign-in and add yourself.** Open Authentication (click **Get started** if it's new). In Sign-in method choose **Email/Password**, turn on Enable and click Save. Then in Users click **Add user** and add yourself, with an address in the *Who can sign in* domain. Add your teammates the same way, now or later. If your team already signs in to this project with email and password, just check it's on. Breakpatch never creates accounts.
+7. **Connect.** Check the summary. Breakpatch checks the connection by itself (see below); fix anything it names first. Name the workspace, add a logo if you like and press **Create workspace**. Then sign in with the account you added. If you haven't added it yet, the sign-in screen says where, with a link to Authentication → Users in the Firebase console.
 
 People sign in with their work email and a password. The first time, Breakpatch sends them a link to confirm their email address.
 
@@ -431,9 +432,9 @@ If the details on this Mac are wrong (the config, the database ID, *Who can sign
 
 ### Run history is kept 90 days
 
-In a team workspace, runs and suite runs are kept for 90 days, then deleted: by Firestore's TTL policy when it's set up (step 4 of [Create a workspace](#create-a-workspace)), and otherwise by an admin's Breakpatch, once a day. Tests, shared steps and their versions are never deleted.
+In a team workspace, runs and suite runs are kept for 90 days, then deleted: by Firestore's TTL policy when it's set up (step 5 of [Create a workspace](#create-a-workspace), recommended), and otherwise by an admin's Breakpatch, once a day. Breakpatch from before this can't add runs to the workspace: update it on every Mac, the local runner and your CI machines. Tests, shared steps and their versions are never deleted.
 
-Lists that only grow show the newest first: the **Runs** tab and **Run history** show the latest 50 runs, with **Show older runs** for more, and **Version history** the latest 30 versions, with **Show older versions**.
+Lists that only grow show the newest first: the **Runs** tab and **Run history** show the latest 20 runs, with **Show older runs** for 20 more, and **Version history** the latest 20 versions, with **Show older versions**.
 
 Breakpatch keeps a copy of the workspace on each Mac, so opening it again only fetches what changed since, which keeps your Firebase bill small. After an update that changes the security rules, publish them again (Settings → Workspace → **Copy security rules**): until then Breakpatch reads everything each time, as before.
 
@@ -871,7 +872,7 @@ Create issue comes with a Breakpatch Team licence that includes it; licences get
 - Accounts with the `ci` role read apps, tests, shared steps, their versions and suites, and add runs marked `ci` as themselves. They can't change anything, or read members, runs or the licence.
 - A test's released version must be one that's saved.
 - Every change to apps, tests, shared steps or suites also updates `workspace/changes`, a small document that tells the other Macs what changed, so they don't read everything again. Apps from before this can't save until they're updated.
-- Runs and suite runs carry `expiresAt`, 90 days after they're saved, which the TTL policy deletes them by. It can't be changed.
+- Runs and suite runs must carry `expiresAt`, 90 days after they're saved, which the TTL policy deletes them by. It can't be changed. Runs from Breakpatch or `breakpatch-ci` from before this are refused, so update them first.
 - Only admins set where a suite's result goes. Its address is kept apart from the suite, and only admins and the runner can read it.
 - Anyone in the team can note the issue made from a run, and change nothing else about it. Only admins set where issues go. Tokens for GitHub, Linear and Jira are never in the workspace.
 

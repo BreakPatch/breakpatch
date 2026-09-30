@@ -31,7 +31,7 @@ export function useLive<T>(subscribe: (b: Backend, l: Listener<T>) => Unsubscrib
 }
 
 /** How many runs, versions or suite runs a list shows at first, and how many more "Show more" adds. */
-export const PAGE = 50;
+export const PAGE = 20;
 
 export interface PagedLive<T> extends Live<T[]> {
   /** There may be more than shown (the list is as long as asked for). */
