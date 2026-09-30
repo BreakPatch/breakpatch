@@ -102,6 +102,6 @@ describe('Test details in the recorder', () => {
   it('has a Test details button, and the browser stays on the address it opened at', () => {
     expect(recorderSource).toContain('<IconButton icon="description" label="Test details"');
     expect(recorderSource).toContain('<TestDetailsDialog open={detailsOpen} test={test}');
-    expect(recorderSource).toContain('useBrowserSession(openedAt.current?.url');
+    expect(recorderSource).toContain('useBrowserSession(openedAt?.url');
   });
 });
