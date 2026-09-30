@@ -449,7 +449,11 @@ read or its shared steps can't be found, 3 = no usable licence. Like the app, it
 straight from the Team workspace instead of files, signed in as a Firebase Auth user with the `ci`
 role (`BREAKPATCH_CI_EMAIL`, `BREAKPATCH_CI_PASSWORD`; taken out of the environment once read, and
 refused as a secret's value like the licence key). Each test gets the same run request as a file's,
-plus `appUrl` (the app's base address, for set-up and clean-up calls). Each run is written to
+plus `appUrl` (the app's base address, for set-up and clean-up calls). A workspace test's start
+page and app address can be changed by any member, so its secrets aren't sent as bare values:
+the pipeline names their sites (`--secret NAME=https://site[,…]`), each goes as
+`{ value, origins }` with those sites, and nothing runs (exit 2) when a test uses a secret that isn't
+listed, or whose sites don't include the test's start page, `appUrl` or a call that sends it. Each run is written to
 `apps/<appId>/runs` as the app writes one, with `source: "ci"` and the local `screenshotPath` left
 out; a suite also writes `suiteRuns`. A suite prints `{ result, suite, suiteId, version, counts,
 tests: [{ name, appId, testId, version, result, failedStep?, note?, runId? }], suiteRunId?, saved }`

@@ -560,7 +560,7 @@ breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a
 breakpatch-ci run --workspace team.bpworkspace --test web-app/Qx81cT2mNz
 ```
 
-`--test` takes `<app ID>/<test ID>`, or the test ID alone: open the test's **Version history** and copy it under *Run it from CI*. Anything ending in `.json`, or a file that exists, is read as a test file instead.
+`--test` takes `<app ID>/<test ID>`, or the test ID alone: open the test's **Version history** and copy it under *Run it from CI*. A value ending in `.json` is read as a test file instead.
 
 **Which version runs**
 
@@ -593,7 +593,7 @@ Shared steps are read from `apps/<app>/shared/` next to `tests/`. The run isn't 
 |---|---|
 | `0` | The test or suite passed (a suite *passed with fixes* too). |
 | `1` | A test failed: a check didn't match, or something wasn't there. The JSON says which step and why. |
-| `2` | Something couldn't be read: the test file or its shared steps, the workspace file, the suite or test, or the CI account couldn't sign in. The JSON has a `code` and a message. |
+| `2` | Nothing ran, or not all of it could: the test file or its shared steps, the workspace file, the suite or test couldn't be read, the CI account couldn't sign in, a secret isn't allowed on a test's sites, or something went wrong inside `breakpatch-ci` (`code: "internal"`). The JSON has a `code` and a message. |
 | `3` | There's no usable licence, or it's for another workspace. The JSON and the log say why. |
 
 If a run can't be saved in the workspace (for example the security rules are out of date), the log says so and the JSON has `"saved": false`. The exit code is still the test's result.
@@ -607,7 +607,14 @@ If a run can't be saved in the workspace (for example the security rules are out
 
 `breakpatch-ci licence status` shows the licence (and takes a machine licence if needed). `breakpatch-ci licence release` gives the machine licence back, for example before you stop using a pipeline. An admin can also free it in the [back office](#the-back-office).
 
-**Saved secrets.** A test that writes a saved secret, for example `STAGING_PASSWORD`, takes it from the environment variable `BP_SECRET_STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), and from no other variable. Store the value as a CI secret. `--secret STAGING_PASSWORD` (you can give it more than once) limits which secrets a run may use. They're typed only on the test's start site.
+**Saved secrets.** A test that writes a saved secret, for example `STAGING_PASSWORD`, takes it from the environment variable `BP_SECRET_STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), and from no other variable. Store the value as a CI secret. `--secret STAGING_PASSWORD` (you can give it more than once) limits which secrets a run may use. They're never the licence key or the CI account's password.
+
+**Where secrets may be used.** The pipeline decides, not the test:
+
+- **Tests from the workspace.** Anyone in your workspace can change a test's start page or an app's address. So a pipeline's secrets must not go wherever a test points. Name each secret's sites with `--secret NAME=https://site`, separating several sites with commas, for example `--secret STAGING_PASSWORD=https://staging.acme.com`. The secret is then typed only on those sites, and sent only to set-up and clean-up calls on them. Before anything runs, `breakpatch-ci` checks every test in the run. If a test uses a secret that isn't listed, or whose sites don't include the test's start page, its app's address or a call that sends it, nothing runs. It ends with exit code `2` and says which test and site.
+- **A test file** is in your repo, so changes to it go through your usual review. `--secret NAME` without sites types it only on the test's start site, as before. You can also give its sites.
+
+Keep the sites to your own test environments. A workspace member who can edit tests still can't make a pipeline type its secrets anywhere else.
 
 **Options**
 
@@ -645,7 +652,7 @@ jobs:
       - run: curl -fsSL https://breakpatch.dev/install-ci | sh
       - run: >-
           breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --version released
-          --label "GitHub · build ${{ github.run_number }}" --secret STAGING_PASSWORD --screenshots shots
+          --label "GitHub · build ${{ github.run_number }}" --secret STAGING_PASSWORD=https://staging.acme.com --screenshots shots
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -677,12 +684,12 @@ workflows:
       - name: Run the UI tests
         script: |
           $HOME/.local/bin/breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --version released \
-            --label "Codemagic · build $BUILD_NUMBER" --secret STAGING_PASSWORD --screenshots shots
+            --label "Codemagic · build $BUILD_NUMBER" --secret STAGING_PASSWORD=https://staging.acme.com --screenshots shots
     artifacts:
       - shots/**
 ```
 
-To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-app/tests/log-in.json` and leave out the sign-in variables.
+To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-app/tests/log-in.json`, leave out the sign-in variables, and `--secret STAGING_PASSWORD` may leave out its sites.
 
 **Troubleshooting**
 
@@ -696,6 +703,7 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 - **Exit code 2 with "wrong email or password"**: check `BREAKPATCH_CI_EMAIL` and `BREAKPATCH_CI_PASSWORD` in the job's secrets.
 - **Exit code 2 with "not CI"** or "isn't a member of this workspace": the account needs the *CI* role. Sign in to Breakpatch with it once, then an admin changes its role in Settings → Members.
 - **Exit code 2 with "The workspace refused the CI account"**: publish the latest security rules (Settings → Workspace → **Copy security rules**).
+- **Exit code 2 with "would use the secret … which --secret … doesn't list"**: a test's start page, app address or set-up call is on a site you didn't give that secret. If the site is right, add it: `--secret NAME=https://site1,https://site2`. If not, someone changed the test: check its Version history.
 - **"Left out: no version is marked as released"**: open the test's Version history and **Mark as released** the version CI should run, or use `--version latest`.
 - **Checks fail in CI but pass in the app**: look for the line "this test was recorded on…" at the start of the log. Re-record the test on a machine like the CI machine, or run it on a Mac.
 
@@ -755,7 +763,7 @@ A Team licence has **seats** for people and **machine licences** for the local r
 - A seat is tied to the Macs it's used on: one person can use it on a few of their own Macs, and a copy of the Keychain on another Mac doesn't work. On too many Macs you see "Your seat is already used on too many Macs. Ask your admin to free one, then sign in again."
 - A seat nobody has used for 30 days is freed automatically. An admin can also free one in the [back office](#the-back-office).
 - Breakpatch checks the licence when it opens and every day, and keeps working for up to 30 days without a connection. If this Mac's clock is set back by more than a day, the licence stops working until Breakpatch can check it online again: "This Mac's clock is behind. Set the right date and time, then reconnect to check your licence."
-- **Saved secrets in CI.** `breakpatch-ci` takes a saved secret's value only from an environment variable named `BP_SECRET_<NAME>`, for example `BP_SECRET_STAGING_PASSWORD` for `STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), never from other variables. `--secret NAME` (you can give it more than once) limits which secrets a run may use. It types them only on the test's start site.
+- **Saved secrets in CI.** `breakpatch-ci` takes a saved secret's value only from an environment variable named `BP_SECRET_<NAME>`, for example `BP_SECRET_STAGING_PASSWORD` for `STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), never from other variables. `--secret NAME` (you can give it more than once) limits which secrets a run may use. It types them only on the test's start site, or, for tests from the workspace, only on the sites the pipeline gives each one (`--secret NAME=https://site`, see [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)).
 - **Usage counts go with the licence check.** Each check sends how many tests were created and how many runs there were (by hand, from schedules, on the local runner and in CI), passed and failed, and on how many days Breakpatch was used, since the last check. Only numbers: never test names, addresses, steps or screenshots. The licence check already knows the licence and seat, so your admin sees the numbers per person and machine in the [back office](#the-back-office). They're part of how the licence works, so there's no switch for them in Team. `breakpatch-ci` counts its runs the same way in its licence file and sends them with its next check; on CI machines that don't keep that file between jobs they aren't sent.
 
 Without a licence, Breakpatch keeps working as Community (tests, recording and running on this Mac) and Team features are off. A quiet banner under the title bar says why: "Breakpatch Team needs a licence. Your admin enters the key once in Settings → Licence, then everyone gets a seat when they sign in.", "Your team is out of seats. Ask your admin to add one.", "Reconnect to check your licence." (after 30 days offline) or "Your licence has expired." A runner with no machine licence left gets "Your team has no machine licences left. Ask your admin to add one."
