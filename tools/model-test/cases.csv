@@ -1,13 +1,15 @@
-file,description,x1,y1,x2,y2
-# One row per case. x1..x2 is the expected box in pixels (optional: leave empty to judge by eye).
+file,description,x1,y1,x2,y2,hard
+# One row per case, for the screenshots in screenshots/1280x800/ (1280 x 800, deviceScaleFactor 1).
+# x1..y2 is the expected box in pixels (optional: leave empty to judge by eye). hard is 1 for
+# look-alikes, small icons, the second item of a row and fields inside dialogs.
 # Tip: in Preview, Tools > Show Inspector shows the cursor position while you drag a selection.
-login.png,the Log in button,,,,
-login.png,the Email field,,,,
-projects.png,the New project button,,,,
-projects.png,the search box,,,,
-new-project.png,the Done button,,,,
-new-project.png,the Cancel button,,,,
-new-project.png,the Project name field,,,,
-note.png,the Save icon,,,,
-note.png,the second tag chip,,,,
-settings.png,the Sign out button,,,,
+login.png,the Log in button,,,,,
+login.png,the Email field,,,,,
+projects.png,the New project button,,,,,
+projects.png,the search box,,,,,
+new-project.png,the Done button,,,,,
+new-project.png,the Cancel button,,,,,
+new-project.png,the Project name field,,,,,1
+note.png,the Save icon,,,,,1
+note.png,the second tag chip,,,,,1
+settings.png,the Sign out button,,,,,

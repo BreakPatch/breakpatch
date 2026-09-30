@@ -102,7 +102,7 @@ export BP_TEST_PASSWORD=…</pre>
       <div class="step-n">3</div>
       <div class="step-body">
         <h2>Paste the prompt</h2>
-        <p>Copy it below and paste it into Claude Code. It sets up Python, takes 20 to 25 screenshots at 1440 × 900, reads the exact box of each target from the page, runs every model, then writes the report. Leave it running; it only asks if it gets stuck.</p>
+        <p>Copy it below and paste it into Claude Code. It sets up Python, takes 20 to 25 screenshots at 1280 × 800 (the engine's viewport), reads the exact box of each target from the page, runs every model, then writes the report. Leave it running; it only asks if it gets stuck.</p>
       </div>
     </li>
     <li class="step">
@@ -138,33 +138,21 @@ export BP_TEST_PASSWORD=…</pre>
 
 ## Steps
 
-1. **Environment.** Create a Python 3.11+ venv. Install `mlx-vlm`, `pillow`, `playwright`, then `playwright install chromium`. Print the versions.
+1. **Environment.** Create a Python 3.11 venv. Install `mlx-vlm`, `pillow`, `playwright`, then `playwright install chromium`. Print the versions. Get Breakpatch's harness, so the prompt and the reading of the answers are exactly the app's: `git clone --depth 1 https://github.com/BreakPatch/breakpatch` (its `tools/model-test/model_test.py` imports them from `engine/src`). If the clone needs access you don't have, ask me for a copy of the repository.
 
-2. **Screenshots (20–25).** With Playwright (Chromium, headless, viewport **1440 × 900**, deviceScaleFactor 1), visit the apps above and capture real screens: login, main lists, a create dialog, a form, settings, a page with a row of icons. Save as `screenshots/&lt;name&gt;.png`. Don't capture real customer data; use test accounts only.
+2. **Screenshots (20–25).** With Playwright (Chromium, headless, viewport **1280 × 800**, the app's own, deviceScaleFactor 1), visit the apps above and capture real screens: login, main lists, a create dialog, a form, settings, a page with a row of icons. Save as `screenshots/1280x800/&lt;name&gt;.png`. Don't capture real customer data; use test accounts only.
 
-3. **Cases with ground truth.** For every screenshot, pick 1–3 targets a person would describe (buttons, fields, icons, tabs, links). Include hard ones on purpose: look-alike buttons (two "Save"), small icons, the *second* item of a row, fields inside dialogs. For each target, get its **exact bounding box from the DOM** at capture time (`locator.bounding_box()`), and write `cases.csv` with columns `file,description,x1,y1,x2,y2` (pixels). Aim for 40–60 cases. Descriptions must be plain words, as a non-technical user would type them ("the Done button", "the search box", "the second tag"), never selectors.
+3. **Cases with ground truth.** For every screenshot, pick 1–3 targets a person would describe (buttons, fields, icons, tabs, links). Include hard ones on purpose: look-alike buttons (two "Save"), small icons, the *second* item of a row, fields inside dialogs. For each target, get its **exact bounding box from the DOM** at capture time (`locator.bounding_box()`), and write `cases.csv` with columns `file,description,x1,y1,x2,y2,hard` (pixels; `hard` is 1 for the hard ones, empty otherwise). Aim for 40–60 cases. Descriptions must be plain words, as a non-technical user would type them ("the Done button", "the search box", "the second tag"), never selectors.
 
 4. **Check each model reads images.** Run one `python -m mlx_vlm.generate` call per model on one screenshot with "Where is the &lt;target&gt;?". If a model errors or clearly ignores the image, drop it and say why.
 
-5. **Run the test.** Write `model_test.py` that, for each model in turn:
-   - loads it with `mlx_vlm.load(repo)`, times the load,
-   - for each case builds the prompt with `mlx_vlm.prompt_utils.apply_chat_template(processor, model.config, PROMPT, num_images=1)` where
-     `PROMPT = 'Find "{desc}" in this screenshot of a web app. Reply with JSON only, no other text: {"bbox_2d": [x1, y1, x2, y2]}'`,
-   - calls `mlx_vlm.generate(..., temperature=0.0, max_tokens=96)` and times it,
-   - parses the first `bbox_2d` (or first 4-number list). Qwen3-VL answers in **0–1000 units relative to the image**; convert to pixels. If boxes are clearly off for a model, try reading them as pixels instead and keep whichever matches the ground truth better — report which,
-   - scores a **hit** when the centre of the predicted box is inside the ground-truth box; also record IoU,
-   - records peak memory (`mx.get_peak_memory()` or `mx.metal.get_peak_memory()`), resets it and frees the model before the next one.
-   Run all models. Close nothing of mine; just note what else was using memory.
+5. **Run the test.** `python breakpatch/tools/model-test/model_test.py --cases cases.csv --shots screenshots/1280x800 --out results` (add `--models 2b 4b` to leave some out). For each model in turn it loads it and times the load, makes one warm-up call that isn't counted, then asks each case with the app's prompt at temperature 0, reads the box as the app does (Qwen3-VL answers in **0–1000 units relative to the image**), scores a **hit** when the centre of the box is inside the ground-truth box, records IoU and MLX's peak memory, and frees the model before the next one. Don't write your own prompt or parser: the point is to measure what the app does. If a model's boxes are clearly off (for example it answers in pixels), say so in the report. Close nothing of mine; just note what else was using memory.
 
-6. **Report.** Create `results/index.html` (dark background is fine) with:
-   - a summary table per model: hits / total, hit rate, median and p90 answer time, load time, peak memory, answers with no box,
-   - the same split for **hard cases only**,
-   - a grid: one row per case, one column per model, each cell the screenshot with the ground-truth box (white) and the model's box (colour), hit/miss and time.
-   Also save `results/results.json`.
+6. **Report.** The harness writes `results/index.html` (a summary per model with hits, hard-case hits, median and p90 answer time, load time and peak memory, then a grid of every case with the ground-truth box in white and the model's in colour) and `results/results.json`. Open it and check it looks right.
 
 7. **Recommend.** Apply these rules and state the winner:
    - Good enough: ≥ 90 % hits overall **and** ≥ 80 % on hard cases.
-   - Fast enough: median answer ≤ 3 s on this Mac.
+   - Fast enough: median answer ≤ 3 s on this Mac (the harness reports the median and p90, never the mean).
    - Fits: peak memory ≤ 6 GB.
    - Winner = smallest model that passes all three. If only 8B passes, say so: it becomes the option for 32 GB+ Macs and the local runner, and we need a plan for 16 GB Macs.
    Then print, for the winner, the exact **commit hash** of the repo revision you used (`huggingface_hub.HfApi().model_info(repo).sha`) and the download size.
