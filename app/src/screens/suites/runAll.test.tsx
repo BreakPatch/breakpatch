@@ -73,10 +73,13 @@ describe('Run all', () => {
     open(`/apps/${web.id}/run-all`);
     const side = await screen.findByRole('complementary', { name: 'All tests in Web app' });
     await waitFor(() => expect(within(side).getByText('3 of 3')).toBeInTheDocument(), { timeout: 4000 });
-    expect(within(side).getAllByRole('listitem').map(r => r.getAttribute('aria-label'))).not.toContain(expect.stringContaining('Draft'));
-    expect(within(side).getByText(/1 test with no steps yet left out/)).toBeInTheDocument();
+    // Shown by name, greyed, with Record, and never run (DES2-16).
+    const draft = within(side).getByRole('listitem', { name: 'Draft, no steps yet, left out' });
+    expect(within(draft).getByRole('button', { name: 'Record Draft' })).toBeInTheDocument();
     expect(failed).toHaveBeenCalledTimes(3);
     expect(screen.getByText('1 test failed')).toBeInTheDocument();       // only Create a project
+    expect(screen.getByText(/Draft has no steps yet, so it was left out\./)).toBeInTheDocument();
+    expect(within(side).queryByText('Web app')).toBeNull();              // one app: not on every row
   });
 
   it('an app with only tests that have no steps says so, and runs nothing', async () => {

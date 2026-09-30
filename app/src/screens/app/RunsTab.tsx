@@ -39,7 +39,9 @@ export function RunsTab({ app, runs, more }: { app: App; runs: Run[]; more?: () 
           options={[{ value: 'all', label: 'Anywhere' }, ...(Object.keys(WHERE) as RunSource[]).map(k => ({ value: k, label: WHERE[k].label }))]} />
         {TEAM && <FilterChip name="Who" allLabel="anyone" value={who} onChange={setWho} options={[{ value: 'all', label: 'Anyone' }, ...whoOpts]} />}
         <div className="grow" />
-        <div className="app-toolbar-note">{inWeek ? `Last 7 days · ${plural(shown.length, 'run')}` : plural(shown.length, 'run')}</div>
+        {/* While older runs aren't loaded, the count is of the latest ones, worded as the report words it (DES2-14). */}
+        <div className="app-toolbar-note">{more ? `Latest ${plural(runs.length, 'run')}${filtered ? ` · ${shown.length} shown` : ''}`
+          : inWeek ? `Last 7 days · ${plural(shown.length, 'run')}` : plural(shown.length, 'run')}</div>
       </div>
       <div className="app-table" role="table" aria-label="Runs">
         <div className={`app-row app-row-head ${COLS}`} role="row">
@@ -63,8 +65,9 @@ export function RunsTab({ app, runs, more }: { app: App; runs: Run[]; more?: () 
             </div>
           );
         })}
-        {!shown.length && filtered && <div className="app-nomatch">No runs match. <Button kind="link" size="sm" onClick={clear}>Clear filters</Button></div>}
+        {!shown.length && filtered && <div className="app-nomatch">No runs match{more ? ' among the latest' : ''}. <Button kind="link" size="sm" onClick={clear}>Clear filters</Button></div>}
       </div>
+      {more && filtered && <div className="app-more-note">The filters look at the latest {plural(runs.length, 'run')} only. Older runs aren't included until you show them.</div>}
       {more && <div className="app-more"><Button kind="link" size="sm" onClick={more}>Show older runs</Button></div>}
     </>
   );

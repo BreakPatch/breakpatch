@@ -9,6 +9,7 @@ import type { App, CallHeader, HttpCall } from '../../data/types';
 import { getEngine } from '../../engine';
 import { secrets } from '../../platform';
 import { callProblem, cleanCall, describeReply, isHttpAddress, tryCall, type Reply } from './tryCall';
+import { withScheme } from './TestDetailsDialog';
 
 const METHODS: HttpCall['method'][] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
@@ -38,7 +39,7 @@ export function NewTestDialog({ open, app, onClose }: { open: boolean; app: App;
   }, [open, app.baseUrl]);
 
   const nameErr = tried && !name.trim() ? 'Give the test a name.' : undefined;
-  const urlErr = tried && !isHttpAddress(startUrl) ? 'Enter a full address, starting with https://' : undefined;
+  const urlErr = tried && !isHttpAddress(withScheme(startUrl)) ? 'Enter a full address, like https://app.example.com' : undefined;
   // The same rules the engine applies (engine/PROTOCOL.md "Set-up and clean-up calls").
   const setUpProblem = callProblem({ ...setUp, allowOtherHosts: otherHosts }, app.baseUrl);
   const cleanUpProblem = callProblem({ ...cleanUp, allowOtherHosts: otherHosts }, app.baseUrl);
@@ -47,12 +48,12 @@ export function NewTestDialog({ open, app, onClose }: { open: boolean; app: App;
 
   const start = async () => {
     setTried(true);
-    if (!name.trim() || !isHttpAddress(startUrl)) return;
+    if (!name.trim() || !isHttpAddress(withScheme(startUrl))) return;
     if (setUpProblem || cleanUpProblem) { setHooksOpen(true); return; }
     setBusy(true);
     try {
       const t = await backend.createTest({
-        appId: app.id, name: name.trim(), description: description.trim() || undefined, startUrl: startUrl.trim(), viewport: app.defaultViewport,
+        appId: app.id, name: name.trim(), description: description.trim() || undefined, startUrl: withScheme(startUrl), viewport: app.defaultViewport,
         setUp: setUp.url.trim() ? cleanCall(setUp, otherHosts) : undefined,
         cleanUp: cleanUp.url.trim() ? { ...cleanCall(cleanUp, otherHosts), alsoOnFailure } : undefined,
       });
@@ -74,7 +75,7 @@ export function NewTestDialog({ open, app, onClose }: { open: boolean; app: App;
         <TextInput label="Name" value={name} onChange={e => setName(e.target.value)} placeholder="For example: Create a project" error={nameErr} autoFocus />
         <TextInput label={<span className="app-label-split">Description<span>Optional</span></span>} value={description}
           onChange={e => setDescription(e.target.value)} placeholder="What this test checks" />
-        <TextInput label="Start address" mono value={startUrl} onChange={e => setStartUrl(e.target.value)} error={urlErr} spellCheck={false} autoCapitalize="off" />
+        <TextInput label="Start address" mono value={startUrl} onChange={e => setStartUrl(e.target.value)} onBlur={() => setStartUrl(withScheme(startUrl))} error={urlErr} spellCheck={false} autoCapitalize="off" />
         <div className="app-lock" role="note"><Icon name="lock" size={18} />Screen size {sizeLabel(app.defaultViewport)}. You can't change it later.</div>
 
         <div className="app-hooks">

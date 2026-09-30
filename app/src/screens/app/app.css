@@ -10,6 +10,7 @@
 .app-row > * { min-width: 0; }
 /* backwards, not both: a kept transform would make each row its own stacking context and trap
    its ⋯ menu under the rows below. The row with an open menu sits above the rest. */
+.app-more-note { font-size: 13px; color: var(--text-muted); text-align: center; padding: 10px 0 0; }
 .app-row.clickable { cursor: pointer; transition: background var(--t-fast) ease-out; animation: bpIn 260ms ease-out backwards; }
 .app-row:has(> * .menu), .app-row:has(> .menu) { position: relative; z-index: 5; }
 .app-row.clickable:hover { background: var(--surface); }

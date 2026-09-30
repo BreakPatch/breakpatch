@@ -39,8 +39,8 @@ const ITEM: Record<SuiteTestState, { icon: string; tone: string; word: string }>
   missing: { icon: 'error', tone: 'failed', word: "Couldn't run" },
 };
 
-/** What runs: a saved suite, or every test of one app (Run all). `unrecorded`: Run all's tests left out, with no steps yet. */
-interface Plan { name: string; tests: Suite['tests']; suite?: Suite; app?: App; unrecorded?: number }
+/** What runs: a saved suite, or every test of one app (Run all). `drafts`: Run all's tests left out, with no steps yet. */
+interface Plan { name: string; tests: Suite['tests']; suite?: Suite; app?: App; drafts?: Test[] }
 
 export default function SuiteRunScreen() {
   const { suiteId, appId } = useParams();
@@ -60,7 +60,7 @@ export default function SuiteRunScreen() {
     if (!app || !testsByApp || !(app.id in testsByApp)) return undefined;
     const all = testsByApp[app.id];
     const recorded = all.filter(t => t.currentVersion > 0);
-    return { name: 'All tests', tests: recorded.map(t => ({ appId: app.id, testId: t.id })), app, unrecorded: all.length - recorded.length };
+    return { name: 'All tests', tests: recorded.map(t => ({ appId: app.id, testId: t.id })), app, drafts: all.filter(t => t.currentVersion === 0) };
   }, [suiteId, suite, app, testsByApp]);
   const run = useTestRun();
   const { start } = run;
@@ -155,8 +155,8 @@ export default function SuiteRunScreen() {
   if (plan?.app && !plan.tests.length && view.phase === 'idle') {
     return (
       <AppFrame back={home} crumb={crumb} title="All tests">
-        <EmptyState icon="playlist_play" title={plan.unrecorded ? `No recorded tests for ${plan.app.name} yet.` : `No tests for ${plan.app.name} yet.`}
-          text={plan.unrecorded ? "Record a test's steps first, then run them all." : 'Add a test first, then run them all.'}
+        <EmptyState icon="playlist_play" title={plan.drafts?.length ? `No recorded tests for ${plan.app.name} yet.` : `No tests for ${plan.app.name} yet.`}
+          text={plan.drafts?.length ? "Record a test's steps first, then run them all." : 'Add a test first, then run them all.'}
           action={<Button kind="primary" icon="arrow_back" onClick={() => navigate(home)}>Back to {plan.app.name}</Button>} />
       </AppFrame>
     );
@@ -170,6 +170,9 @@ export default function SuiteRunScreen() {
   const result = view.phase === 'ended' ? suiteResult(counts) : undefined;
   const word = view.phase === 'ended' ? (view.stopped ? 'stopped' : result === 'failed' ? 'failed' : 'finished') : 'running';
 
+  const drafts = plan?.drafts ?? [];
+  // Named again at the end, so a test left out isn't forgotten by then (DES2-16).
+  const leftOut = drafts.length ? ` ${drafts.length === 1 ? `${drafts[0].name} has` : `${plural(drafts.length, 'test')} have`} no steps yet, so ${drafts.length === 1 ? 'it was' : 'they were'} left out.` : '';
   let strip: Strip | undefined;
   if (view.phase === 'ended') {
     const ok = result !== 'failed';
@@ -177,7 +180,7 @@ export default function SuiteRunScreen() {
       ? { icon: 'block', tone: 'muted', title: 'You stopped the suite', text: `${done} of ${plural(total, 'test')} ran.` }
       : { icon: ok ? (counts.fixed ? 'auto_fix_high' : 'check_circle') : 'cancel', tone: ok ? (counts.fixed ? 'fixed' : 'passed') : 'failed',
           title: ok ? (counts.fixed ? 'Passed with fixes' : 'Passed') : `${plural(counts.failed, 'test')} failed`,
-          text: ok ? `All ${plural(total, 'test')} worked.` : `${counts.passed + counts.fixed} of ${plural(total, 'test')} passed. Open a failed test's report to see what happened.` };
+          text: (ok ? `All ${plural(total, 'test')} worked.` : `${counts.passed + counts.fixed} of ${plural(total, 'test')} passed. Open a failed test's report to see what happened.`) + leftOut };
   } else if (cur && info) {
     const s = runStrip(run.view, info);
     strip = { ...s, title: `${cur.name} · ${s.title}`, text: `${s.text} · ${cur.appName}` };
@@ -202,11 +205,18 @@ export default function SuiteRunScreen() {
         <aside className="srun-side" aria-label={plan?.app ? `All tests in ${plan.app.name}` : `${plan?.name ?? 'Suite'} tests`}>
           <div className="srun-head">
             <div className="srun-head-row"><div className="srun-name ellipsis">{plan?.app ? `All tests in ${plan.app.name}` : plan?.name ?? ' '}</div><div className="srun-count">{done} of {total}</div></div>
-            <div className="srun-sub">{view.startedAt ? `Started ${clock(view.startedAt)} · on this Mac, one test after another` : 'Getting the tests ready'}
-              {plan?.unrecorded ? ` · ${plural(plan.unrecorded, 'test')} with no steps yet left out` : ''}</div>
+            <div className="srun-sub">{view.startedAt ? `Started ${clock(view.startedAt)} · on this Mac, one test after another` : 'Getting the tests ready'}</div>
           </div>
           <div className="srun-list" role="list">
-            {view.items.map((it, i) => <SuiteRow key={`${it.appId}/${it.testId}/${i}`} item={it} onReport={it.runId ? () => navigate(`/apps/${it.appId}/runs/${it.runId}`) : undefined} />)}
+            {/* One app (Run all): its name is in the heading, not on every row. */}
+            {view.items.map((it, i) => <SuiteRow key={`${it.appId}/${it.testId}/${i}`} item={it} oneApp={!!plan?.app} onReport={it.runId ? () => navigate(`/apps/${it.appId}/runs/${it.runId}`) : undefined} />)}
+            {drafts.map(t => (
+              <div key={`draft/${t.id}`} className="srun-t draft" role="listitem" aria-label={`${t.name}, no steps yet, left out`}>
+                <Icon name="edit" className="run-tone-muted" />
+                <div className="srun-t-main"><div className="srun-t-name">{t.name}</div><div className="srun-t-note">No steps yet, so it's left out</div></div>
+                <button type="button" className="srun-t-link" onClick={() => navigate(`/apps/${t.appId}/tests/${t.id}/record`)} aria-label={`Record ${t.name}`}>Record</button>
+              </div>
+            ))}
           </div>
           <div className="srun-foot" aria-label="Tally">
             <span><Icon name="check_circle" className="run-tone-passed" />{counts.passed} passed</span>
@@ -220,7 +230,7 @@ export default function SuiteRunScreen() {
   );
 }
 
-function SuiteRow({ item, onReport }: { item: SuiteItem; onReport?: () => void }) {
+function SuiteRow({ item, onReport, oneApp }: { item: SuiteItem; onReport?: () => void; oneApp?: boolean }) {
   const st = ITEM[item.state];
   return (
     <div className={`srun-t ${item.state}`} role="listitem" aria-current={item.state === 'running' || undefined} aria-label={`${item.name}, ${item.appName}, ${st.word}`}>
@@ -230,7 +240,7 @@ function SuiteRow({ item, onReport }: { item: SuiteItem; onReport?: () => void }
         {item.note && <div className="srun-t-note">{item.note}</div>}
       </div>
       {onReport ? <button type="button" className="srun-t-link" onClick={onReport} aria-label={`See the report for ${item.name}`}>See report</button>
-        : <div className="srun-t-app">{item.appName}</div>}
+        : !oneApp && <div className="srun-t-app">{item.appName}</div>}
     </div>
   );
 }

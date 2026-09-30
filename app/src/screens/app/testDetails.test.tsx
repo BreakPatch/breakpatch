@@ -56,11 +56,28 @@ describe('the Test details dialog', () => {
     const save = vi.spyOn(backend, 'updateTestDetails');
     render(<TestDetailsDialog open test={t} onClose={() => {}} />);
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: '  ' } });
-    fireEvent.change(screen.getByLabelText('Start address'), { target: { value: 'app.example.com' } });
+    fireEvent.change(screen.getByLabelText('Start address'), { target: { value: 'not an address' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByText('Give the test a name.')).toBeInTheDocument();
-    expect(screen.getByText('Enter a full address, starting with https://')).toBeInTheDocument();
+    expect(screen.getByText('Enter a full address, like https://app.example.com')).toBeInTheDocument();
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it('checks each field as it is left, and takes a bare host as https (DES2-18)', async () => {
+    const t = await recordedTest();
+    render(<TestDetailsDialog open test={t} onClose={() => {}} />);
+    const name = screen.getByLabelText('Name');
+    fireEvent.change(name, { target: { value: ' ' } });
+    fireEvent.blur(name);
+    expect(screen.getByText('Give the test a name.')).toBeInTheDocument();
+    const address = screen.getByLabelText('Start address');
+    fireEvent.change(address, { target: { value: 'app.example.com/signin' } });
+    fireEvent.blur(address);
+    expect(address).toHaveValue('https://app.example.com/signin');
+    expect(screen.queryByText(/Enter a full address/)).toBeNull();
+    // A future-tense note, said once: nothing is saved yet.
+    expect(screen.getByRole('note')).toHaveTextContent(/(Saves as version 2 with the same steps; earlier versions keep their start address|The steps stay the same, and runs start at the new address)\. Check the first steps/);
+    expect(screen.queryByText(/Saved as version/)).toBeNull();
   });
 
   it('renames and describes without a new version', async () => {
