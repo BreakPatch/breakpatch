@@ -4,7 +4,7 @@
 // Firestore database). Reads are live subscriptions; writes return promises.
 
 import type {
-  App, HttpCall, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
+  App, Explanation, HttpCall, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
   Suite, SuiteRun, Test, TestStatus, Version, Viewport, Workspace,
 } from './types';
 
@@ -111,6 +111,12 @@ export interface Backend {
    * never saved and backends may ignore it.
    */
   addRun(r: Omit<Run, 'id'>, o?: { trigger?: 'schedule' }): Promise<Run>;
+  /**
+   * Keeps the AI assistant's "Why did this fail?" on a saved run's failed step (StepRun
+   * `explanation`), so it isn't asked again. Optional: a backend without it keeps nothing, and
+   * a refused write (a run someone else started) is only a cache miss.
+   */
+  saveExplanation?(appId: string, runId: string, stepId: string, e: Explanation): Promise<void>;
 
   // Suites and local runner
   suites(l: Listener<Suite[]>): Unsubscribe;

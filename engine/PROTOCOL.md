@@ -76,7 +76,7 @@ Until the owner pins the models (the `TODO(owner)` in models.py) the table holds
 LFS hashes, still without code files; `scripts/build-release.sh --release` refuses to build.
 
 `edition` is `"team"` when the Breakpatch Team engine (`breakpatch_team_engine`) is installed and
-registered itself through `plugins.py` (healing on), otherwise `"community"`. The app compares it
+registered itself through `plugins.py` (healing and `run.explain` on), otherwise `"community"`. The app compares it
 with its own edition and warns in Settings → About when they differ.
 
 ### Licence
@@ -104,7 +104,8 @@ message.
 | `none` | no token |
 | `unavailable` | Community (no Team engine), or a Team engine without keys built in (a source checkout) |
 
-`features` is the token's list while `active` or `grace`, else `[]`. Healing needs `autoFix` in it.
+`features` is the token's list while `active` or `grace`, else `[]`. Healing needs `autoFix` in it;
+`run.explain` (and the page read after a failure) needs `explain`.
 The engine doesn't compare `workspaceProjectId` with the open workspace (it doesn't know it); the
 app does that for its own screens.
 
@@ -322,6 +323,7 @@ Without `near`, `record.locate` is unchanged.
 | `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix, allowSystemDifferences? }, secrets: {NAME: Secret}, runner?, recordedOn?: RecordedOn }` | `{}` — returns at once, then events |
 | `run.stop` | `{ runId }` | `{}` — stops after the current step |
 | `call.try` | `{ call: Call, appUrl, secrets? }` | `{ ok, status?, ms?, error?, message? }` — "Try it": one request under the same rules as a run |
+| `run.explain` | `{ step: Step, stepRun: StepRun, viewport? }` | `{ explanation: Explanation \| null }` — "Why did this fail?" for one failed step of a finished run (Breakpatch Team, see below) |
 
 Each step's `run.step` events and its entry in `run.ended` `steps` carry `timings` `{ preMs, actionMs,
 settleMs, postMs, settled, preTries, postTries }`: where its time went. Settling waits until three
@@ -394,6 +396,45 @@ Loops and shared steps are nested, as stored (spec §12.1): a `loop` step carrie
 `count` and child `steps`; a `group` step carries `groupId`, `groupVersion` and the child
 `steps` the UI resolved from that version before starting. The engine runs children in order.
 `{i}` in `text` (and `url`) is the 1-based repeat number; `{time}` is HH:MM and `{date}` is YYYY-MM-DD at run time.
+
+**Why did this fail? (`run.explain`).** Breakpatch Team explains a failed step in plain words,
+when the report asks (roadmap #7). Nothing about it happens during the steps of a run, and
+`run.step` and `run.ended` are unchanged: the report asks after the run, for the step the person
+is looking at.
+
+- Params: the step as the run tested it (`target`, `at`/`from`, `action`, `pre`, `post`…), its
+  `StepRun` from `run.ended.steps` (`result: "failed"`, `reason`, `screenshotPath`, and
+  `preDistance`, `postDistance`, `timings`, `oldAt`/`newAt` when it has them) and the test's
+  `viewport` (a Retina screenshot is scaled to it).
+- Only `targetNotFound`, `healFailed`, `noChange`, `unexpectedScreen` and `timeout` are explained;
+  other reasons are `bad_request` (they say it all already). `screenshotPath` must be a PNG inside
+  the engine's screenshots folder (`BP_SCREENSHOTS_DIR`), else `not_found` "The screenshot of this
+  failure isn't on this Mac…" (a run from another Mac, or a folder cleared since).
+- `Explanation`: `{ summary, cause, suggestion }`. `summary` is one or two plain sentences, at most
+  300 characters ("The Save button now reads “Save changes”."). `cause` is `moved`,
+  `textChanged`, `pageChanged`, `slowLoad`, `errorPage` or `realBug` ("looks like a real bug");
+  `suggestion` is `rerecord`, `acceptChange`, `raiseWait` or `reportBug`. Both lists may grow:
+  treat an unknown value like a missing one.
+- The app keeps an answer on the saved run, as the failed `StepRun`'s `explanation` (the same
+  object), so the report, result messages and new issues can show it without asking again.
+- `explanation: null`: it couldn't tell, or took longer than 10 s. Asking again tries again. An
+  answer is cached per failure screenshot while the engine runs, so asking again is instant.
+- `not_ready`: Community (no explainer registered), no licence with the `explain` feature (see
+  Licence), or no AI assistant downloaded. `busy` while a run is going: its own use of the AI
+  assistant (healing, a step's note) is never slowed.
+
+How it's worked out (the Team engine): the sentence always comes from templates; the facts come
+from, fastest first, the page's own structure (the fast locator's controls and short texts:
+what is at the step's old spot now, whether its `target` is on screen and where, an error page,
+a dialog over it, a page still loading) and otherwise the AI assistant on the failure screenshot
+(`describe` at the old spot, `locate` of the target). A target found where it was is never said
+to have moved or gone.
+
+The page read: only when the Team engine's explainer is registered **and** the licence has
+`explain`, the runner reads the page's controls once after a step fails with one of the reasons
+above, capped at 0.75 s, and keeps them next to the failure screenshot as
+`<screenshot>.page.json` (roles, names, short texts and boxes; no attributes, no passwords). In
+Community, or without the feature, nothing is read or written and a run is exactly as before.
 
 ### Where a test was recorded
 

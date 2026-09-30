@@ -15,6 +15,7 @@ def fresh_plugins(monkeypatch):
     monkeypatch.setattr(plugins, "_healer", None)
     monkeypatch.setattr(plugins, "_team_version", None)
     monkeypatch.setattr(plugins, "_licence", None)
+    monkeypatch.setattr(plugins, "_explainer", None)
     return plugins
 
 
@@ -54,6 +55,7 @@ def test_a_team_engine_that_cannot_register_leaves_community(fresh_plugins, monk
     if register == "raises":
         def boom(p):
             p.register_healer(lambda *a: None)
+            p.register_explainer(object())
             raise RuntimeError("licence file unreadable")
         fake.register = boom
     monkeypatch.setitem(sys.modules, plugins.TEAM_MODULE, fake)
@@ -61,6 +63,7 @@ def test_a_team_engine_that_cannot_register_leaves_community(fresh_plugins, monk
     assert fresh_plugins.edition() == "community"
     assert fresh_plugins.healer() is None
     assert fresh_plugins.licence() is None
+    assert fresh_plugins.explainer() is None
 
 
 class FakeLicence:

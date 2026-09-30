@@ -1,6 +1,7 @@
 // The right side of the report: the selected step's heading, expected vs what was on screen,
 // what to try and the actions. A fixed step shows old and new position; accepting it is the
-// edition's slot (Team: Accept new position, Dismiss).
+// edition's slot (Team: Accept new position, Dismiss). A failed step can ask the AI assistant why
+// it failed (Team, with the explain feature: WhyFailed).
 import { useNavigate } from 'react-router-dom';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { Run, Step, StepRun, Test } from '../../data/types';
@@ -13,6 +14,7 @@ import { edition } from '../../edition';
 import { demoSeen, isDemo, targetBox } from '../run/demo';
 import { reasonAdvice } from '../run/reasons';
 import { copyDetails, detailKind, detailText, expectLabel, fixBoxes, showsScreens, systemNote } from './reportData';
+import { WhyFailed } from './WhyFailed';
 
 const { reportFixActions: FixActions } = edition.slots;
 
@@ -131,6 +133,7 @@ export function ReportDetail({ run, test, steps, step, stepRun, number, groupId,
           <div className="rp-body">{body}</div>
         </div>
       </div>
+      {kind === 'failed' && <WhyFailed run={run} step={step} stepRun={stepRun} viewport={vp} />}
       {content}
       {failedActions}
       {kind === 'fixed' && FixActions && stepRun && <FixActions run={run} stepRun={stepRun} step={step} test={test} />}

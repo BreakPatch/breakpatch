@@ -184,6 +184,20 @@ export interface StepRun {
   timings?: StepTimings;
   /** Checks that had nothing left to compare (their ignore zones cover them), so they were skipped. */
   unchecked?: string[];
+  /** A failed step: the AI assistant's "Why did this fail?" (Team, engine run.explain), once asked. */
+  explanation?: Explanation;
+}
+
+/**
+ * Why a step failed, in plain words, from the AI assistant (engine/PROTOCOL.md "Why did this
+ * fail?"). Always shown as the AI assistant's. Unknown `cause` or `suggestion` values (a newer
+ * engine) are shown without their words.
+ */
+export interface Explanation {
+  /** One or two plain sentences: "The Save button now reads “Save changes”." */
+  summary: string;
+  cause: 'moved' | 'textChanged' | 'pageChanged' | 'slowLoad' | 'errorPage' | 'realBug';
+  suggestion: 'rerecord' | 'acceptChange' | 'raiseWait' | 'reportBug';
 }
 
 /** A step's phases in a run, in ms: the check before it, the action, waiting for the page to settle, the check after. */
