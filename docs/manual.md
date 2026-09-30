@@ -189,7 +189,7 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
    - Logs show the address without its query string, and never a header's value.
 3. Add steps, in either of these ways:
    - **Click** anything on the page. Nothing happens to the page yet: Breakpatch highlights what you clicked and asks, for example, "Click Next button?". Press **Confirm** (or Enter, or click it again) to do the step; **Try again** to pick something else; Esc to cancel. Dragging and scrolling on the page work the same way.
-   - **Describe** it in the box below, for example "click the Done button". The AI assistant highlights what it found. Press **Confirm** or **Try again**.
+   - **Describe** it in the box below, for example "click the Done button". Breakpatch highlights what it found. Press **Confirm** or **Try again**.
 4. Use the action button next to the box for everything else: double, long and right click, hover, swipe, scroll, drag and drop, **Write text**, **Wait until**, **Go to address**, reload, back and forward, tabs and popups, upload a sample file, check a download, **Checkpoint**, **Repeat** and **Shared steps**.
 5. Press **Save**.
 
@@ -259,6 +259,8 @@ Passwords and emails that tests type in. Add them in Settings → **Saved secret
 ## The AI assistant
 
 A small AI model that runs only on your Mac. Your screens never leave it. It finds things on the page when you describe a step, and is unloaded when it's idle.
+
+On sites with good page structure (buttons, links and fields that say what they are), Breakpatch finds what you describe at once, from the names the page gives them, without the AI assistant. It uses the AI assistant when the page doesn't say, or draws everything itself, like Flutter apps and canvas pages. Either way it clicks a spot on the screen and checks the step on the screen.
 
 - **Standard** is downloaded during setup (about 3 GB). It works well for almost every team.
 - **Larger** is optional on Macs with 32 GB of memory or more (about 5 GB). It's slower to load and rarely finds more.
