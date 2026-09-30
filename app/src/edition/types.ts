@@ -71,7 +71,11 @@ export interface GateState {
 }
 
 /** Suite editor fields that only an edition's panel edits (schedule, result address). */
-export interface SuiteExtras { schedule: Suite['schedule']; resultUrl?: string }
+export interface SuiteExtras {
+  schedule: Suite['schedule']; resultUrl?: string;
+  /** Where the result goes; `url` only when the panel changed the address. null: nowhere. */
+  notify?: Suite['notify'] | null;
+}
 
 export interface SuiteEditorPanelProps {
   /** The saved suite, or undefined while it's new or loading. */

@@ -112,23 +112,88 @@ pub async fn post_result(url: &str, body: &Value) -> Result<u16, String> {
     send_json(url, body, RESULT_TIMEOUT).await
 }
 
-/// The POST itself, after the address was checked (tests call it with a local http server).
-async fn send_json(url: url::Url, body: &Value, timeout: Duration) -> Result<u16, String> {
-    let client = reqwest::Client::builder()
+/// What a service answered a result message: the status and the start of its reply, so "Send a
+/// test message" can show Slack's `invalid_payload` or Teams' error in its own words.
+#[derive(serde::Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct PostReply {
+    pub status: u16,
+    pub body: String,
+}
+
+/// The most of a reply kept: enough for an error message, never a whole page.
+pub const REPLY_MAX: usize = 300;
+
+/// POSTs a result message (plain JSON, Slack Block Kit or a Teams Adaptive Card) and returns the
+/// status with the start of the reply. One try; the caller retries.
+pub async fn post_message(url: &str, body: &Value) -> Result<PostReply, String> {
+    let url = check_result_url(url)?;
+    send_json_reply(url, body, RESULT_TIMEOUT).await
+}
+
+async fn send_json_reply(url: url::Url, body: &Value, timeout: Duration) -> Result<PostReply, String> {
+    let res = client(timeout)?.post(url).json(body).send().await.map_err(|e| send_error(e, timeout))?;
+    let status = res.status().as_u16();
+    // A slow or huge reply doesn't hold the answer up: the status is what counts.
+    let text = tokio::time::timeout(Duration::from_secs(5), res.text()).await.ok().and_then(Result::ok).unwrap_or_default();
+    Ok(PostReply { status, body: reply_excerpt(&text) })
+}
+
+/// The reply as one short line: whitespace collapsed, cut at REPLY_MAX characters.
+pub fn reply_excerpt(text: &str) -> String {
+    let one: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one.chars().count() <= REPLY_MAX {
+        one
+    } else {
+        format!("{}…", one.chars().take(REPLY_MAX).collect::<String>())
+    }
+}
+
+fn send_error(e: reqwest::Error, timeout: Duration) -> String {
+    if e.is_timeout() {
+        format!("The address didn't answer within {} seconds", timeout.as_secs())
+    } else {
+        "Couldn't reach the address".to_string()
+    }
+}
+
+fn client(timeout: Duration) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
         .timeout(timeout)
         .connect_timeout(RESULT_CONNECT_TIMEOUT.min(timeout))
         // A redirect could lead to a plain http or local address; the status is reported instead.
         .redirect(reqwest::redirect::Policy::none())
         .user_agent(concat!("Breakpatch/", env!("CARGO_PKG_VERSION")))
         .build()
-        .map_err(|e| e.to_string())?;
-    let res = client.post(url).json(body).send().await.map_err(|e| {
-        if e.is_timeout() {
-            format!("The address didn't answer within {} seconds", timeout.as_secs())
-        } else {
-            "Couldn't reach the address".to_string()
-        }
-    })?;
+        .map_err(|e| e.to_string())
+}
+
+/// The biggest screenshot handed to the UI (a full-page PNG is well under this).
+pub const SHOT_MAX_BYTES: u64 = 15 * 1024 * 1024;
+
+/// Reads a failure screenshot for a result message or an issue: only a `.png` or `.jpg` file
+/// inside the engine's screenshots folder (the same folder the asset protocol allows), after
+/// following links, so nothing else on the Mac can be read this way.
+pub fn read_screenshot(base: &std::path::Path, path: &str) -> Result<Vec<u8>, String> {
+    let refused = || "That isn't one of Breakpatch's screenshots.".to_string();
+    let base = base.canonicalize().map_err(|_| refused())?;
+    let file = std::path::Path::new(path).canonicalize().map_err(|_| "The screenshot isn't on this Mac any more.".to_string())?;
+    if !file.starts_with(&base) {
+        return Err(refused());
+    }
+    let ext = file.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+    if !matches!(ext.as_deref(), Some("png" | "jpg" | "jpeg")) {
+        return Err(refused());
+    }
+    let meta = std::fs::metadata(&file).map_err(|e| e.to_string())?;
+    if !meta.is_file() || meta.len() > SHOT_MAX_BYTES {
+        return Err(refused());
+    }
+    std::fs::read(&file).map_err(|e| e.to_string())
+}
+
+/// The POST itself, after the address was checked (tests call it with a local http server).
+async fn send_json(url: url::Url, body: &Value, timeout: Duration) -> Result<u16, String> {
+    let res = client(timeout)?.post(url).json(body).send().await.map_err(|e| send_error(e, timeout))?;
     Ok(res.status().as_u16())
 }
 
@@ -249,6 +314,76 @@ mod tests {
         let err = send_json(url, &serde_json::json!({}), Duration::from_millis(300)).await.unwrap_err();
         assert!(started.elapsed() < Duration::from_secs(5));
         assert!(err.contains("didn't answer"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn the_reply_comes_back_with_the_status() {
+        let (url, server) = serve_once(Some(
+            "HTTP/1.1 400 Bad Request\r\ncontent-type: text/plain\r\ncontent-length: 15\r\nconnection: close\r\n\r\ninvalid_payload",
+        ))
+        .await;
+        let body = serde_json::json!({ "text": "Smoke failed", "blocks": [] });
+        let reply = send_json_reply(url, &body, RESULT_TIMEOUT).await.unwrap();
+        assert_eq!(reply, PostReply { status: 400, body: "invalid_payload".into() });
+        let request = server.await.unwrap();
+        assert!(request.ends_with(r#"{"blocks":[],"text":"Smoke failed"}"#), "{request}");
+    }
+
+    #[tokio::test]
+    async fn an_accepted_message_with_no_reply_is_fine() {
+        let (url, _server) =
+            serve_once(Some("HTTP/1.1 202 Accepted\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")).await;
+        let reply = send_json_reply(url, &serde_json::json!({}), RESULT_TIMEOUT).await.unwrap();
+        assert_eq!(reply, PostReply { status: 202, body: String::new() });
+    }
+
+    #[tokio::test]
+    async fn messages_refuse_what_results_refuse() {
+        for bad in ["http://127.0.0.1:9/x", "file:///etc/passwd", "javascript:alert(1)"] {
+            assert!(post_message(bad, &serde_json::json!({})).await.is_err(), "{bad}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_silent_service_times_out_for_messages_too() {
+        let (url, _server) = serve_once(None).await;
+        let err = send_json_reply(url, &serde_json::json!({}), Duration::from_millis(300)).await.unwrap_err();
+        assert!(err.contains("didn't answer"), "{err}");
+    }
+
+    #[test]
+    fn replies_are_cut_short_and_on_one_line() {
+        assert_eq!(reply_excerpt("  no_service\n "), "no_service");
+        let long = "x".repeat(REPLY_MAX + 50);
+        let cut = reply_excerpt(&long);
+        assert_eq!(cut.chars().count(), REPLY_MAX + 1);
+        assert!(cut.ends_with('…'));
+    }
+
+    #[test]
+    fn only_screenshots_in_the_folder_are_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let shots = dir.path().join("screenshots");
+        std::fs::create_dir_all(shots.join("run-1")).unwrap();
+        let png = shots.join("run-1").join("step-5.png");
+        std::fs::write(&png, b"\x89PNG....").unwrap();
+        assert_eq!(read_screenshot(&shots, png.to_str().unwrap()).unwrap(), b"\x89PNG....");
+
+        let outside = dir.path().join("secret.png");
+        std::fs::write(&outside, b"nope").unwrap();
+        assert!(read_screenshot(&shots, outside.to_str().unwrap()).is_err());
+        let sneaky = shots.join("run-1").join("..").join("..").join("secret.png");
+        assert!(read_screenshot(&shots, sneaky.to_str().unwrap()).is_err());
+        let text = shots.join("run-1").join("notes.txt");
+        std::fs::write(&text, b"hi").unwrap();
+        assert!(read_screenshot(&shots, text.to_str().unwrap()).is_err());
+        assert!(read_screenshot(&shots, shots.join("gone.png").to_str().unwrap()).is_err());
+        #[cfg(unix)]
+        {
+            let link = shots.join("run-1").join("link.png");
+            std::os::unix::fs::symlink(&outside, &link).unwrap();
+            assert!(read_screenshot(&shots, link.to_str().unwrap()).is_err(), "a link out of the folder is refused");
+        }
     }
 
     #[test]

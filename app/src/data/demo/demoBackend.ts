@@ -184,16 +184,25 @@ export class DemoBackend implements Backend {
   suites(l: Listener<Suite[]>) { return this.watch(() => [...this.st.suites], l); }
   async saveSuite(id: string | null, n: NewSuite) {
     const me = this.me(); const now = Date.now();
+    // The address of a result message is kept apart from the suite, as in a workspace.
+    const { notify, ...rest } = n;
+    const pub = notify ? { kind: notify.kind, when: notify.when, ...(notify.screenshot ? { screenshot: true } : {}) } : undefined;
     let out: Suite;
     if (id) {
-      out = { ...this.st.suites.find(x => x.id === id)!, ...n, updatedBy: me, updatedAt: now };
+      const before = this.st.suites.find(x => x.id === id)!;
+      out = { ...before, ...rest, updatedBy: me, updatedAt: now };
+      if (notify === null) delete out.notify; else if (pub) out.notify = pub;
       this.mutate(s => { s.suites = s.suites.map(x => x.id === id ? out : x); });
     } else {
-      out = { id: slug(n.name) + '-' + Math.random().toString(16).slice(2, 6), ...n, createdBy: me, createdAt: now, updatedBy: me, updatedAt: now };
+      out = { id: slug(n.name) + '-' + Math.random().toString(16).slice(2, 6), ...rest, ...(pub ? { notify: pub } : {}), createdBy: me, createdAt: now, updatedBy: me, updatedAt: now };
       this.mutate(s => { s.suites.push(out); });
     }
+    if (notify === null) this.addresses.delete(out.id);
+    else if (notify?.url) this.addresses.set(out.id, notify.url);
     return this.wait(out);
   }
+  private addresses = new Map<string, string>();
+  async notifyAddress(suiteId: string) { return this.addresses.get(suiteId) ?? this.st.suites.find(x => x.id === suiteId)?.resultUrl ?? null; }
   async deleteSuite(id: string) { this.mutate(s => { s.suites = s.suites.filter(x => x.id !== id); }); }
   runner(l: Listener<RunnerStatus | null>) { return this.watch(() => this.st.runner && { ...this.st.runner, lastSeen: this.st.runner.status === 'paused' ? this.st.runner.lastSeen : Date.now() }, l); }
   queue(l: Listener<QueueItem[]>) { return this.watch(() => [...this.st.queue], l); }

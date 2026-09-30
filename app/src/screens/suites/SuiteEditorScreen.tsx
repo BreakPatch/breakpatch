@@ -44,7 +44,7 @@ export default function SuiteEditorScreen() {
     if (!suite || loaded.current === suite.id) return;
     loaded.current = suite.id;
     setName(suite.name); setPicked(suite.tests);
-    setExtras({ schedule: suite.schedule, ...(suite.resultUrl ? { resultUrl: suite.resultUrl } : {}) });
+    setExtras({ schedule: suite.schedule, ...(suite.resultUrl ? { resultUrl: suite.resultUrl } : {}), ...(suite.notify ? { notify: suite.notify } : {}) });
     setDirty(false);
   }, [isNew, suite]);
 
@@ -77,7 +77,7 @@ export default function SuiteEditorScreen() {
     setSaving(true);
     try {
       const url = extras.resultUrl?.trim();
-      const out = await backend.saveSuite(suiteId ?? null, { name: name.trim(), tests: present, schedule: extras.schedule, ...(url ? { resultUrl: url } : {}) });
+      const out = await backend.saveSuite(suiteId ?? null, { name: name.trim(), tests: present, schedule: extras.schedule, ...(url ? { resultUrl: url } : {}), ...(extras.notify !== undefined ? { notify: extras.notify } : {}) });
       setDirty(false);
       toast(isNew ? `${out.name} created.` : 'Suite saved.');
       if (isNew) { loaded.current = out.id; navigate(`/suites/${out.id}`, { replace: true }); }

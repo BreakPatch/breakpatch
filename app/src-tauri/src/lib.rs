@@ -390,6 +390,21 @@ async fn runner_post_result(url: String, body: Value) -> Result<u16, String> {
     runner::post_result(&url, &body).await
 }
 
+/// POSTs a result message (JSON, Slack or Teams) and answers the status with the start of the
+/// reply, for "Send a test message" and the runner's messages.
+#[tauri::command]
+async fn runner_post_message(url: String, body: Value) -> Result<runner::PostReply, String> {
+    runner::post_message(&url, &body).await
+}
+
+/// A failure screenshot's bytes (only from the engine's screenshots folder), for a result
+/// message's picture or an issue. The webview can't fetch asset URLs (connect-src).
+#[tauri::command]
+async fn screenshot_read(app: tauri::AppHandle, path: String) -> Result<tauri::ipc::Response, String> {
+    let base = screenshots_dir(&app)?;
+    blocking(move || runner::read_screenshot(&base, &path)).await.map(tauri::ipc::Response::new)
+}
+
 // ---- App -----------------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -482,6 +497,8 @@ pub fn run() {
             runner_open_at_login_enabled,
             system_memory_gb,
             runner_post_result,
+            runner_post_message,
+            screenshot_read,
             licence_status,
             licence_select,
             licence_activate,

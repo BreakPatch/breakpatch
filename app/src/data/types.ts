@@ -228,13 +228,34 @@ export interface Suite {
   name: string;
   tests: { appId: string; testId: string }[];
   schedule: null | { days: Weekday[]; time: string };
+  /** Before `notify`: a plain JSON result address on the suite itself. Read as `notify` kind "webhook", every run. */
   resultUrl?: string;
+  /** Where the runner sends the result (Team). The address itself is kept apart (see SuiteNotify). */
+  notify?: SuiteNotify;
   lastRun?: { result: SuiteResult; at: Millis; by: string };
   createdBy: Person; createdAt: Millis;
   updatedBy: Person; updatedAt: Millis;
 }
 
 export type SuiteResult = 'passed' | 'passed_with_fixes' | 'failed' | 'replaced';
+
+/** A result message's format: plain JSON (any tool), a Slack incoming webhook, a Teams Workflows webhook. */
+export type NotifyKind = 'webhook' | 'slack' | 'teams';
+/** Every run, failed runs only, or the first failure and the first pass after it. */
+export type NotifyWhen = 'every' | 'failures' | 'changes';
+
+/**
+ * Where a suite's result goes. The address is a secret (anyone with it can post), so it isn't on
+ * the suite: a workspace keeps it where only admins and the runner can read it
+ * (Backend.notifyAddress). `url` is set only while an admin edits or saves it.
+ */
+export interface SuiteNotify {
+  kind: NotifyKind;
+  when: NotifyWhen;
+  /** Put the failed step's screenshot in the message (uploaded so Slack or Teams can show it). Off by default. */
+  screenshot?: boolean;
+  url?: string;
+}
 
 export interface RunnerStatus {
   name: string;
