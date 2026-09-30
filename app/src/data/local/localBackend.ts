@@ -12,7 +12,7 @@
 // The text of every file as last read or written is the source of truth; the model is parsed
 // from it. Saving the same thing writes nothing; outside edits (a `git pull`) are picked up on
 // window focus, through the storage's watcher, or by a light poll.
-import { cleanDetails, detailsDiff, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
+import { cleanDetails, detailsDiff, upTo, type Backend, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
 import type {
   App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Viewport,
 } from '../types';
@@ -586,10 +586,10 @@ export class LocalBackend implements Backend {
   }
 
   // ---- runs: the last one per test ----
-  runs(appId: string, l: Listener<Run[]>) {
+  runs(appId: string, l: Listener<Run[]>, limit?: Limit) {
     return this.watch(() => {
       const a = this.model.apps.get(appId);
-      return a ? [...a.runs].map(([t, r]) => this.runOut(appId, t, r)).sort((x, y) => y.startedAt - x.startedAt) : [];
+      return a ? upTo([...a.runs].map(([t, r]) => this.runOut(appId, t, r)).sort((x, y) => y.startedAt - x.startedAt), limit) : [];
     }, l);
   }
   testRuns(appId: string, testId: string, l: Listener<Run[]>) {

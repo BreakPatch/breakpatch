@@ -49,6 +49,7 @@
 .app-run-btn:hover { background: var(--accent); color: var(--on-accent); }
 .app-run-btn:active { transform: scale(.96); }
 
+.app-more { display: flex; justify-content: center; padding: 12px 0 4px; }
 .app-nomatch { padding: 24px 12px; font-size: 14px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
 .app-slow { display: flex; align-items: center; gap: 6px; padding: 8px 32px; font-size: 13px; color: var(--text-faint); animation: bpIn 220ms ease-out both; }
 

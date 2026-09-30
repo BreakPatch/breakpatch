@@ -1,7 +1,7 @@
 // In-memory backend for development, the browser preview and tests.
 // Behaves like the Firebase backend: live subscriptions, immutable versions, audit fields.
 import { edition } from '../../edition';
-import { AuthError, cleanDetails, detailsDiff, startUrlNote, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
+import { AuthError, cleanDetails, detailsDiff, startUrlNote, upTo, type Backend, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
 import type {
   App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
 } from '../types';
@@ -104,7 +104,7 @@ export class DemoBackend implements Backend {
     this.mutate(s => { s.tests.push(test); s.versions[`${n.appId}/${test.id}`] = []; });
     return this.wait(test);
   }
-  versions(appId: string, testId: string, l: Listener<Version[]>) { return this.watch(() => [...(this.st.versions[`${appId}/${testId}`] ?? [])].reverse(), l); }
+  versions(appId: string, testId: string, l: Listener<Version[]>, limit?: Limit) { return this.watch(() => upTo([...(this.st.versions[`${appId}/${testId}`] ?? [])].reverse(), limit), l); }
   async version(appId: string, testId: string, n: number) { return this.wait(this.st.versions[`${appId}/${testId}`]?.find(v => v.number === n) ?? null); }
   async saveTest(appId: string, testId: string, steps: Step[], note?: string, recordedOn?: RecordedOn) {
     const me = this.me(); const key = `${appId}/${testId}`;
@@ -147,7 +147,7 @@ export class DemoBackend implements Backend {
 
   // ---- shared steps ----
   stepGroups(appId: string, l: Listener<StepGroup[]>) { return this.watch(() => this.st.groups.filter(g => g.appId === appId), l); }
-  groupVersions(appId: string, groupId: string, l: Listener<Version[]>) { return this.watch(() => [...(this.st.groupVersions[`${appId}/${groupId}`] ?? [])].reverse(), l); }
+  groupVersions(appId: string, groupId: string, l: Listener<Version[]>, limit?: Limit) { return this.watch(() => upTo([...(this.st.groupVersions[`${appId}/${groupId}`] ?? [])].reverse(), limit), l); }
   async groupVersion(appId: string, groupId: string, n: number) { return this.wait(this.st.groupVersions[`${appId}/${groupId}`]?.find(v => v.number === n) ?? null); }
   async createGroup(appId: string, name: string, description: string, steps: Step[]) {
     const me = this.me(); const now = Date.now();
@@ -167,8 +167,8 @@ export class DemoBackend implements Backend {
   }
 
   // ---- runs ----
-  runs(appId: string, l: Listener<Run[]>) { return this.watch(() => this.st.runs.filter(r => r.appId === appId).sort((a, b) => b.startedAt - a.startedAt), l); }
-  testRuns(appId: string, testId: string, l: Listener<Run[]>) { return this.watch(() => this.st.runs.filter(r => r.appId === appId && r.testId === testId).sort((a, b) => b.startedAt - a.startedAt), l); }
+  runs(appId: string, l: Listener<Run[]>, limit?: Limit) { return this.watch(() => upTo(this.st.runs.filter(r => r.appId === appId).sort((a, b) => b.startedAt - a.startedAt), limit), l); }
+  testRuns(appId: string, testId: string, l: Listener<Run[]>, limit?: Limit) { return this.watch(() => upTo(this.st.runs.filter(r => r.appId === appId && r.testId === testId).sort((a, b) => b.startedAt - a.startedAt), limit), l); }
   async run(appId: string, runId: string) { return this.wait(this.st.runs.find(r => r.appId === appId && r.id === runId) ?? null); }
   async addRun(r: Omit<Run, 'id'>) {
     const run: Run = { ...r, id: newId('run') };
@@ -197,7 +197,7 @@ export class DemoBackend implements Backend {
   async deleteSuite(id: string) { this.mutate(s => { s.suites = s.suites.filter(x => x.id !== id); }); }
   runner(l: Listener<RunnerStatus | null>) { return this.watch(() => this.st.runner && { ...this.st.runner, lastSeen: this.st.runner.status === 'paused' ? this.st.runner.lastSeen : Date.now() }, l); }
   queue(l: Listener<QueueItem[]>) { return this.watch(() => [...this.st.queue], l); }
-  suiteRuns(l: Listener<SuiteRun[]>) { return this.watch(() => [...this.st.suiteRuns], l); }
+  suiteRuns(l: Listener<SuiteRun[]>, limit?: Limit) { return this.watch(() => upTo([...this.st.suiteRuns], limit), l); }
   async requestSuiteRun(suiteId: string, note?: string) {
     const suite = this.st.suites.find(x => x.id === suiteId);
     if (!suite) throw new Error('Suite not found');
