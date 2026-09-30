@@ -27,7 +27,7 @@ export default function ReportScreen() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { run, runs, test, steps, app, missing } = useReport(appId, runId);
+  const { run, runs, moreRuns, test, steps, app, missing } = useReport(appId, runId);
 
   const showHistory = hasFeature('versions') || (runs?.length ?? 0) > 1;
   const tab = params.get('tab') === 'history' && showHistory ? 'history' : 'run';
@@ -84,14 +84,14 @@ export default function ReportScreen() {
               <div key={m.k} className="rp-meta"><div className="rp-meta-k">{m.k}</div><div className="rp-meta-v ellipsis" title={m.v}>{m.v}</div></div>
             )) : [0, 1, 2, 3].map(i => <div key={i} className="rp-meta"><Skeleton w={40} h={11} /><Skeleton w={90} h={14} /></div>)}
           </>
-        ) : <div className="rp-count">{runs ? plural(runs.length, 'run') : ' '}</div>}
+        ) : <div className="rp-count">{runs ? (moreRuns ? `Latest ${plural(runs.length, 'run')}` : plural(runs.length, 'run')) : ' '}</div>}
         <div className="grow" />
         {showHistory && <Segmented<'run' | 'history'> label="Report" value={tab} onChange={setTab} items={[{ value: 'run', label: 'This run' }, { value: 'history', label: 'Run history' }]} />}
       </div>
 
       {tab === 'history' ? (
         <div className="rp-history-wrap">
-          {runs ? <RunHistory runs={runs} currentId={runId} onOpen={r => navigate(`/apps/${appId}/runs/${r.id}`)} /> : <Skeleton h={200} />}
+          {runs ? <RunHistory runs={runs} currentId={runId} onOpen={r => navigate(`/apps/${appId}/runs/${r.id}`)} more={moreRuns} /> : <Skeleton h={200} />}
         </div>
       ) : (
         <div className="rp-body-wrap">

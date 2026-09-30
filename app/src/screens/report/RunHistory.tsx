@@ -1,12 +1,13 @@
 // Run history, the report's second tab: every run of this test, newest first.
 import type { Run } from '../../data/types';
-import { Icon, StatusPill } from '../../components/ui';
+import { Button, Icon, StatusPill } from '../../components/ui';
 import { formatDateTime } from '../../components/common/format';
 import { tookText } from './reportData';
 import { runBy, runStatus, WHERE } from '../../components/common/runs';
 import { hasFeature } from '../../edition';
 
-export function RunHistory({ runs, currentId, onOpen }: { runs: Run[]; currentId: string; onOpen: (r: Run) => void }) {
+/** `more`: shows older runs (the list holds the newest page). */
+export function RunHistory({ runs, currentId, onOpen, more }: { runs: Run[]; currentId: string; onOpen: (r: Run) => void; more?: () => void }) {
   const versions = hasFeature('versions');
   const cols = ['200px', '200px', 'minmax(0, 1fr)', '200px', ...(versions ? ['110px'] : []), '90px', '24px'].join(' ');
   return (
@@ -33,6 +34,7 @@ export function RunHistory({ runs, currentId, onOpen }: { runs: Run[]; currentId
           </div>
         );
       })}
+      {more && <div className="rh-more"><Button kind="link" size="sm" onClick={more}>Show older runs</Button></div>}
     </div>
   );
 }

@@ -29,6 +29,15 @@ export function cleanDetails(d: TestDetails): TestDetails {
   return { name: d.name.trim(), ...(description ? { description } : {}), startUrl: d.startUrl.trim() };
 }
 
+/**
+ * Lists that grow for ever (runs, versions, suite runs) take an optional `limit`: at most that
+ * many, newest first, so a screen asks only for what it shows and asks again with a larger one
+ * for more (data/hooks.ts `usePagedLive`). Without it, all of them.
+ */
+export type Limit = number | undefined;
+/** The first `limit` of a newest-first list (all of it without one). */
+export function upTo<T>(list: T[], limit: Limit): T[] { return limit === undefined ? list : list.slice(0, Math.max(0, limit)); }
+
 export class AuthError extends Error {
   /**
    * `signInOff`: the workspace's Firebase project doesn't have email and password sign-in turned on.
@@ -73,7 +82,7 @@ export interface Backend {
   tests(appId: string, l: Listener<Test[]>): Unsubscribe;
   test(appId: string, testId: string, l: Listener<Test | null>): Unsubscribe;
   createTest(t: NewTest): Promise<Test>;
-  versions(appId: string, testId: string, l: Listener<Version[]>): Unsubscribe;
+  versions(appId: string, testId: string, l: Listener<Version[]>, limit?: Limit): Unsubscribe;
   version(appId: string, testId: string, n: number): Promise<Version | null>;
   /**
    * Writes a new immutable version and bumps currentVersion. `recordedOn`: where its steps were
@@ -97,14 +106,14 @@ export interface Backend {
 
   // Shared steps
   stepGroups(appId: string, l: Listener<StepGroup[]>): Unsubscribe;
-  groupVersions(appId: string, groupId: string, l: Listener<Version[]>): Unsubscribe;
+  groupVersions(appId: string, groupId: string, l: Listener<Version[]>, limit?: Limit): Unsubscribe;
   groupVersion(appId: string, groupId: string, n: number): Promise<Version | null>;
   createGroup(appId: string, name: string, description: string, steps: Step[]): Promise<StepGroup>;
   saveGroup(appId: string, groupId: string, steps: Step[], note?: string): Promise<Version>;
 
   // Runs
-  runs(appId: string, l: Listener<Run[]>): Unsubscribe;
-  testRuns(appId: string, testId: string, l: Listener<Run[]>): Unsubscribe;
+  runs(appId: string, l: Listener<Run[]>, limit?: Limit): Unsubscribe;
+  testRuns(appId: string, testId: string, l: Listener<Run[]>, limit?: Limit): Unsubscribe;
   run(appId: string, runId: string): Promise<Run | null>;
   /**
    * `o.trigger`: what started a runner run, for the usage counts only (data/countUsage.ts); it's
@@ -118,7 +127,7 @@ export interface Backend {
   deleteSuite(id: string): Promise<void>;
   runner(l: Listener<RunnerStatus | null>): Unsubscribe;
   queue(l: Listener<QueueItem[]>): Unsubscribe;
-  suiteRuns(l: Listener<SuiteRun[]>): Unsubscribe;
+  suiteRuns(l: Listener<SuiteRun[]>, limit?: Limit): Unsubscribe;
   /** Creates a runRequests document; the runner picks it up. */
   requestSuiteRun(suiteId: string, note?: string): Promise<void>;
   removeFromQueue(id: string): Promise<void>;

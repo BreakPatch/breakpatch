@@ -4,7 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppFrame } from '../../components/shell/AppFrame';
 import { Button, EmptyState, Icon, Skeleton, Tabs, useToast } from '../../components/ui';
 import { hostOf } from '../../components/common';
-import { useBackend, useLive } from '../../data/hooks';
+import { useBackend, useLive, usePagedLive } from '../../data/hooks';
 import type { App, Run, StepGroup, Test } from '../../data/types';
 import { NewTestDialog } from './NewTestDialog';
 import { RunsTab } from './RunsTab';
@@ -26,7 +26,7 @@ export default function AppScreen() {
   const apps = useLive<App[]>((b, l) => b.apps(l), []);
   const tests = useLive<Test[]>((b, l) => b.tests(appId, l), [appId]);
   const groups = useLive<StepGroup[]>((b, l) => b.stepGroups(appId, l), [appId]);
-  const runs = useLive<Run[]>((b, l) => b.runs(appId, l), [appId]);
+  const runs = usePagedLive<Run>((b, l, limit) => b.runs(appId, l, limit), [appId]);
   const app = apps.data?.find(a => a.id === appId);
 
   const [newOpen, setNewOpen] = useState(false);
@@ -89,7 +89,7 @@ export default function AppScreen() {
                   text="Record steps you repeat, like logging in, once. Then insert them into any test and edit them in one place."
                   action={<Button kind="primary" size="lg" icon="add" onClick={newGroup}>New shared steps</Button>} />
           ) : (
-            runs.data!.length ? <RunsTab app={app} runs={runs.data!} />
+            runs.data!.length ? <RunsTab app={app} runs={runs.data!} more={runs.hasMore ? runs.more : undefined} />
               : <EmptyState icon="play_circle" title="Nothing has run yet." text="Runs from your Mac, the local runner and CI all show up here."
                   action={<div className="row" style={{ gap: 10, marginTop: 4 }}>
                     <Button kind="primary" size="lg" icon="playlist_play" onClick={runAll} disabled={!tests.data?.length}>Run all tests</Button>

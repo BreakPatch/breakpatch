@@ -397,6 +397,7 @@ In Breakpatch: **Connect a team workspace** → *Setting up for your team?* → 
    - **This project's `(default)` database**: best if the Firebase project is only for Breakpatch, and it's the one Firebase's free tier covers. Open Firestore Database. If the page shows **Create database**, click it, keep Standard edition and the ID `(default)`, pick a location near your team (you can't change it later), keep Production mode and click Create. If the project has a `(default)` database already, there's nothing to do.
    - **A separate database**, if the project also runs your app, so test data stays apart. Open Firestore Database, open the database menu at the top of the page (the one that shows `(default)`) and choose **Add database** (a project with no database yet shows **Create database** instead). Keep Standard edition, enter the database ID `breakpatch` (copy it from the app), pick the same location as your main database, keep Production mode and click Create.
 4. **Paste the rules.** In Breakpatch press **Copy rules**. In Firestore pick the `breakpatch` database, open the Rules tab, replace everything with the rules you copied and click Publish.
+   Then, still in Firestore, open **Time-to-live (TTL)** and click **Create policy** twice: collection group `runs`, timestamp field `expiresAt`; then collection group `suiteRuns`, field `expiresAt`. Firestore then deletes runs after 90 days by itself (see [Run history is kept 90 days](#run-history-is-kept-90-days)). Or with the Google Cloud CLI: `gcloud firestore fields ttls update expiresAt --collection-group=runs --enable-ttl --database=breakpatch`, and the same with `--collection-group=suiteRuns`.
 5. **Turn on sign-in and add yourself.** Open Authentication (click **Get started** if it's new). In Sign-in method choose **Email/Password**, turn on Enable and click Save. Then in Users click **Add user** and add yourself, with an address in the *Who can sign in* domain. Add your teammates the same way, now or later. If your team already signs in to this project with email and password, just check it's on. Breakpatch never creates accounts.
 6. **Connect.** Check the summary. Breakpatch checks the connection by itself (see below); fix anything it names first. Name the workspace, add a logo if you like and press **Create workspace**. Then sign in with the account you added. If you haven't added it yet, the sign-in screen says where, with a link to Authentication → Users in the Firebase console.
 
@@ -418,6 +419,14 @@ It only reads: a sign-in with a made-up address (which never signs anyone in) an
 ### Edit connection
 
 If the details on this Mac are wrong (the config, the database ID, *Who can sign in* or the name), choose **Edit connection** on the sign-in screen or in Settings → Workspace. It changes only this Mac's saved details, never the workspace, then checks the connection with them. Changing the Firebase project or the database makes it another workspace to this Mac: its licence seat under the old details is given back, and it takes one again when you sign in.
+
+### Run history is kept 90 days
+
+In a team workspace, runs and suite runs are kept for 90 days, then deleted: by Firestore's TTL policy when it's set up (step 4 of [Create a workspace](#create-a-workspace)), and otherwise by an admin's Breakpatch, once a day. Tests, shared steps and their versions are never deleted.
+
+Lists that only grow show the newest first: the **Runs** tab and **Run history** show the latest 50 runs, with **Show older runs** for more, and **Version history** the latest 30 versions, with **Show older versions**.
+
+Breakpatch keeps a copy of the workspace on each Mac, so opening it again only fetches what changed since, which keeps your Firebase bill small. After an update that changes the security rules, publish them again (Settings → Workspace → **Copy security rules**): until then Breakpatch reads everything each time, as before.
 
 ## Invite your team
 
@@ -498,7 +507,7 @@ It uses the Standard AI assistant, like every Mac. With 32 GB of memory or more 
 
 **Record and run on the same kind of machine.** Tests pass most reliably on the runner when they're recorded on a Mac like it, with the same version of Breakpatch. A test recorded with another version of the test browser runs with **Allow for small differences between systems** (Settings → Screen checks, on unless you turn it off) on the runner Mac, and its report says so when a check fails. See [Recorded on another system](#recorded-on-another-system).
 
-Anyone can press **Run on runner** on a suite. If the runner is offline, the request waits until it's back.
+Anyone can press **Run on runner** on a suite. If the runner is offline, the request waits until it's back. The runner tells the workspace it's there every 90 seconds, and whenever what it's doing changes; after 5 minutes without that, the other Macs show it as offline.
 
 **Queue rules**
 
@@ -795,6 +804,8 @@ Any relay works: an n8n workflow that posts to Teams, a Slack incoming webhook, 
 - `runRequests` accepts a small document of a fixed shape from members and from accounts with the `ci` role. Only the runner can read or delete them.
 - Accounts with the `ci` role read apps, tests, shared steps, their versions and suites, and add runs marked `ci` as themselves. They can't change anything, or read members, runs or the licence.
 - A test's released version must be one that's saved.
+- Every change to apps, tests, shared steps or suites also updates `workspace/changes`, a small document that tells the other Macs what changed, so they don't read everything again. Apps from before this can't save until they're updated.
+- Runs and suite runs carry `expiresAt`, 90 days after they're saved, which the TTL policy deletes them by. It can't be changed.
 
 To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the `breakpatch` database. Disable the user in Firebase Authentication to cut it off.
 

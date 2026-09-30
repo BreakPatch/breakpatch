@@ -12,7 +12,8 @@ import { distinct, filterRuns, type ResultFilter } from './filters';
 
 const WEEK = 7 * 86_400_000;
 
-export function RunsTab({ app, runs }: { app: App; runs: Run[] }) {
+/** `more`: shows older runs (the list holds the newest page; see Backend `limit`). */
+export function RunsTab({ app, runs, more }: { app: App; runs: Run[]; more?: () => void }) {
   const TEAM = useFeature('collaboration'), HISTORY = useFeature('versions'), COLS = TEAM || HISTORY ? 'app-cols-runs' : 'app-cols-runs-solo';
   const navigate = useNavigate();
   const [testId, setTestId] = useState('all');
@@ -64,6 +65,7 @@ export function RunsTab({ app, runs }: { app: App; runs: Run[] }) {
         })}
         {!shown.length && filtered && <div className="app-nomatch">No runs match. <Button kind="link" size="sm" onClick={clear}>Clear filters</Button></div>}
       </div>
+      {more && <div className="app-more"><Button kind="link" size="sm" onClick={more}>Show older runs</Button></div>}
     </>
   );
 }

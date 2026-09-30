@@ -60,3 +60,4 @@
 .rh-where { display: flex; align-items: center; gap: 6px; color: var(--text-muted); min-width: 0; }
 .rh-where > .icon { flex: none; }
 .rh-machine { font-size: 12px; color: var(--text-faint); }
+.rh-more { display: flex; justify-content: center; padding: 12px 0 4px; }
