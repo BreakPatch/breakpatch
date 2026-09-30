@@ -47,6 +47,7 @@ fn device(machine: &'static str) -> Licensing<MemStore> {
 
 fn person(key: &str, subject: &str) -> ActivateRequest {
     ActivateRequest {
+        ws_key: None,
         key: key.into(),
         workspace_project_id: "acme-breakpatch".into(),
         subject: Some(subject.into()),
@@ -56,6 +57,7 @@ fn person(key: &str, subject: &str) -> ActivateRequest {
 
 fn machine(key: &str) -> ActivateRequest {
     ActivateRequest {
+        ws_key: None,
         key: key.into(),
         workspace_project_id: "acme-breakpatch".into(),
         subject: None,

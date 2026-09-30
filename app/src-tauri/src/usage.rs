@@ -16,6 +16,11 @@
 //!   booleans worked out here from the last-sent date: first ping today, this week, this month,
 //!   and ever. There is no identifier of any kind; the last-sent date is the only thing stored
 //!   for it. Turning it off drops what's waiting.
+//!
+//! Going back to an older version: an app from before buckets keeps its own top-level counts and
+//! drops the `buckets` it doesn't know when it next saves, so Team counts it hadn't reported are
+//! lost. Buckets of workspaces removed from this Mac aren't pruned either; they're small and go
+//! with that licence's refresh if it's ever connected again.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -32,7 +37,10 @@ pub const PING_CAP_TESTS: u64 = 500;
 pub const PING_CAP_RUNS: u64 = 5_000;
 /// Days already counted are remembered this long, so a day is counted once.
 const REPORTED_DAYS_KEPT: i64 = 60;
-/// 2: Team counts per workspace (`buckets`). Version 1 apps read a version 2 file as empty counts.
+/// 2: Team counts per workspace (`buckets`). The version isn't checked on read: a version 1 app
+/// (after a downgrade) reads a version 2 file without complaint, ignores `buckets` and writes the
+/// file back as version 1 on its next save, so Team counts not yet reported are lost. That's
+/// accepted (numbers only, a few days' worth at most); see "Going back to an older version" above.
 const FILE_VERSION: u32 = 2;
 const DAY: i64 = 86_400;
 

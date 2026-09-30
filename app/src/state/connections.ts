@@ -8,7 +8,8 @@
 //
 // A connection's id is also its key for what belongs to it on this Mac: the licence in the
 // Keychain (`licence:<id>`, src-tauri licence.rs) and its usage counts (usage.rs). Ids are made
-// from what they point at, so connecting the same workspace or folder again finds the same one:
+// from what they point at, so connecting the same workspace or folder again finds the same one
+// (connectionIds.ts, a persisted contract with a test that pins it):
 //   team:<projectId>/<database>   a Team workspace
 //   local:<hash of the path>      a tests folder (it may hold a licence too: the Solo plan)
 //   demo                          the demo workspace
@@ -19,6 +20,9 @@
 // Firebase project: they all use this id.
 import { create } from 'zustand';
 import type { Workspace } from '../data/types';
+import { folderConnectionId, isDemoConnection as isDemo, workspaceConnectionId } from './connectionIds';
+
+export { folderConnectionId, workspaceConnectionId };
 
 /** `hosted` is reserved for Breakpatch Cloud; this version keeps such entries but can't open them. */
 export type ConnectionKind = 'local' | 'team' | 'demo' | 'hosted';
@@ -39,19 +43,6 @@ interface Saved { list: Connection[]; activeId: string | null }
 
 export const CONNECTIONS_KEY = 'breakpatch.connections.v1';
 const SESSION_KEY = 'breakpatch.session.v1';
-
-/** FNV-1a, 32 bits, twice: a short stable id for a path. Not for secrets. */
-function pathHash(s: string): string {
-  const run = (h: number) => { for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; };
-  return run(0x811c9dc5).toString(16).padStart(8, '0') + run(0x050c5d1f).toString(16).padStart(8, '0');
-}
-
-function isDemo(ws: Workspace) { return ws.config.apiKey === 'demo'; }
-
-export function workspaceConnectionId(ws: Workspace): string {
-  return isDemo(ws) ? 'demo' : `team:${ws.config.projectId}/${ws.database}`;
-}
-export function folderConnectionId(path: string): string { return `local:${pathHash(path.replace(/\/+$/, ''))}`; }
 
 export function workspaceConnection(ws: Workspace, now = Date.now()): Connection {
   return { id: workspaceConnectionId(ws), kind: isDemo(ws) ? 'demo' : 'team', name: ws.name, team: { workspace: ws }, lastOpenedAt: now };
@@ -122,8 +113,6 @@ export const connections = {
     const next = { ...before, ...c, lastOpenedAt: Date.now() };
     set({ list: before ? list.map(x => (x.id === c.id ? next : x)) : [...list, next], activeId: c.id });
   },
-  /** Nothing is active (e.g. the person pressed Switch workspace on the sign-in screen). */
-  closed() { set({ ...useConnections.getState(), activeId: null }); },
   /** Forgets a connection. Its data on this Mac (a licence, a tests folder) isn't touched here. */
   remove(id: string) {
     const { list, activeId } = useConnections.getState();

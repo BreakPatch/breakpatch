@@ -146,12 +146,15 @@ export async function fullUserName(): Promise<string | null> {
 
 // ---- Upgrade to Team: moving the copied tests folder to the Trash (src-tauri migration.rs) ----
 
-export interface TrashResult { moved: string[]; missing: string[] }
+/** What a Trash request did. `error`: why it stopped part-way (what's in `moved` went before it). */
+export interface TrashResult { moved: string[]; missing: string[]; error?: string }
 
 /**
- * Moves items to the Trash (Finder's Put Back undoes it). The shell only accepts breakpatch.json,
- * apps and suites directly under a tests folder with a valid breakpatch.json, or run folders
- * directly under the screenshots folder; anything else is refused before anything moves.
+ * Moves items to the Trash (to undo it, drag them back out of the Trash: Finder may not offer Put
+ * Back for them). The shell only accepts breakpatch.json, apps and suites directly under a tests
+ * folder opened in Breakpatch with a valid breakpatch.json, or run folders directly under the
+ * screenshots folder; anything else is refused before anything moves. A folder that isn't there
+ * any more, or whose breakpatch.json went already, has every name missing.
  * Browser preview: removes them from the in-memory folder instead.
  */
 export async function trashItems(place: 'folder' | 'screenshots', folder: string | null, names: string[]): Promise<TrashResult> {
@@ -160,11 +163,23 @@ export async function trashItems(place: 'folder' | 'screenshots', folder: string
   const { previewStorage } = await import('./data/local/folder');
   const st = previewStorage();
   const out: TrashResult = { moved: [], missing: [] };
-  for (const n of ['apps', 'suites', 'breakpatch.json'].filter(x => names.includes(x))) {
+  const wanted = ['apps', 'suites', 'breakpatch.json'].filter(x => names.includes(x));
+  // As the shell does (migration.rs `plan`): without breakpatch.json, only a finished move is asked about again.
+  if (!(await st.exists(`${folder}/breakpatch.json`))) {
+    for (const n of wanted) if (await st.exists(`${folder}/${n}`)) throw new Error("This isn't a Breakpatch tests folder (its breakpatch.json is missing or not valid).");
+    return { moved: [], missing: wanted };
+  }
+  for (const n of wanted) {
     const p = `${folder}/${n}`;
     if (await st.exists(p)) { await st.remove(p); out.moved.push(n); } else out.missing.push(n);
   }
   return out;
+}
+
+/** This Mac's screenshots folder (the engine's), or null in a browser preview. */
+export async function screenshotsFolder(): Promise<string | null> {
+  if (!isTauri()) return null;
+  return tauriInvoke<string>('screenshots_folder');
 }
 
 /** The Git repository holding this folder, or null. The shell only looks for `.git`; it never runs git. */

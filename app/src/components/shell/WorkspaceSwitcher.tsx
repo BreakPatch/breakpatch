@@ -24,12 +24,13 @@ export function WorkspaceSwitcher() {
   const navigate = useNavigate();
   const toast = useToast();
   const { list, activeId } = useConnections();
+  const workspace = useSession(s => s.workspace);
   const lock = useLock();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const all = sortedConnections(openable(list));
   const active = all.find(c => c.id === activeId);
-  const extra = edition.slots.switcherActions?.({ close: () => setOpen(false) }) ?? [];
+  const extra = edition.slots.switcherActions?.({ close: () => setOpen(false), navigate: p => navigate(p), workspace, connections: list }) ?? [];
   if (!active || (all.length < 2 && !extra.length)) return null;
 
   const go = async (c: Connection) => {

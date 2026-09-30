@@ -114,57 +114,68 @@ async fn secrets_resolve(s: State<'_, SecretsState>, names: Vec<String>) -> Resu
 // ---- Licence (Team; "not available in this edition" without built-in keys) ----------------
 
 /// The stored licence, checked on this Mac without the network. `workspaceProjectId`: the open
-/// workspace, so a licence for another one unlocks nothing.
+/// workspace, so a licence for another one unlocks nothing. `wsKey`: the connection asked about
+/// (None: the selected one).
 #[tauri::command]
 async fn licence_status(
     l: State<'_, LicenceState>,
+    ws_key: Option<String>,
     workspace_project_id: Option<String>,
 ) -> Result<licence::Status, String> {
     let l = Arc::clone(&l);
-    blocking(move || Ok(l.status(workspace_project_id.as_deref()))).await
+    blocking(move || Ok(l.status_for(ws_key.as_deref(), workspace_project_id.as_deref()))).await
 }
 
 /// Works on this connection's licence from now on (`wsKey`, licence.rs; None: nothing unlocked).
 /// `workspaceProjectId`: the Team workspace's project, so the licence of an earlier version can
-/// move to it. The engine gets the selected workspace's token (or none) before this answers.
+/// move to it, unless `adoptLegacy` is false (another workspace of that project may own it). The
+/// engine gets the selected workspace's token (or none) before this answers. This is the engine's
+/// first licence hand-off after launch.
 #[tauri::command]
 async fn licence_select(
     l: State<'_, LicenceState>,
     host: State<'_, Arc<EngineHost>>,
     ws_key: Option<String>,
     workspace_project_id: Option<String>,
+    adopt_legacy: Option<bool>,
 ) -> Result<licence::Status, String> {
     let l = Arc::clone(&l);
     let l2 = Arc::clone(&l);
-    let st = blocking(move || l2.select(ws_key.as_deref(), workspace_project_id.as_deref())).await?;
+    let adopt = adopt_legacy.unwrap_or(true);
+    let st = blocking(move || l2.select_with(ws_key.as_deref(), workspace_project_id.as_deref(), adopt)).await?;
     sync_engine_licence(&l, &host).await;
+    // A seat the earlier entry and this workspace's own both held: the older one goes back.
+    l.release_stale().await;
     Ok(st)
 }
 
-/// Takes a seat: `kind` "person" (subject: the signed-in email) or "machine" (this Mac's id).
-/// Rejects with `{code, message}`.
+/// Takes a seat for `wsKey`'s connection (None: the selected one): `kind` "person" (subject: the
+/// signed-in email) or "machine" (this Mac's id). Rejects with `{code, message}`.
 #[tauri::command]
 async fn licence_activate(
     l: State<'_, LicenceState>,
     host: State<'_, Arc<EngineHost>>,
+    ws_key: Option<String>,
     key: String,
     workspace_project_id: String,
     subject: Option<String>,
     kind: String,
 ) -> Result<licence::Status, Failure> {
     let l = Arc::clone(&l);
-    let out = l.activate(ActivateRequest { key, workspace_project_id, subject, kind }).await;
+    let out = l.activate(ActivateRequest { ws_key, key, workspace_project_id, subject, kind }).await;
     sync_engine_licence(&l, &host).await;
     out
 }
 
+/// A new token for `wsKey`'s seat (None: the selected connection's).
 #[tauri::command]
 async fn licence_refresh(
     l: State<'_, LicenceState>,
     host: State<'_, Arc<EngineHost>>,
+    ws_key: Option<String>,
 ) -> Result<licence::Status, String> {
     let l = Arc::clone(&l);
-    let st = l.refresh().await;
+    let st = l.refresh_for(ws_key.as_deref()).await;
     sync_engine_licence(&l, &host).await;
     Ok(st)
 }
@@ -295,9 +306,10 @@ fn screenshots_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String>
 }
 
 /// Moves allowed items to the Trash. `place` "folder": `names` among breakpatch.json, apps and
-/// suites directly under `folder`, which must have a valid breakpatch.json. `place`
-/// "screenshots": run folders directly under the screenshots folder. Anything else is refused
-/// before anything moves.
+/// suites directly under `folder`, which must be a folder the person opened in Breakpatch (the fs
+/// scope) with a valid breakpatch.json. `place` "screenshots": run folders directly under the
+/// screenshots folder. Anything else is refused before anything moves. A move that stops part-way
+/// answers with what moved and `error`.
 #[tauri::command]
 async fn trash_items(
     app: tauri::AppHandle,
@@ -305,12 +317,26 @@ async fn trash_items(
     folder: Option<String>,
     names: Vec<String>,
 ) -> Result<migration::TrashResult, String> {
+    use tauri_plugin_fs::FsExt;
     let place = migration::Place::parse(&place).ok_or("place must be folder or screenshots")?;
-    let base = match place {
-        migration::Place::Folder => std::path::PathBuf::from(folder.ok_or("Which folder?")?),
-        migration::Place::Screenshots => screenshots_dir(&app)?,
-    };
-    blocking(move || migration::trash_items(place, &base, &names, migration::to_trash)).await
+    match place {
+        migration::Place::Folder => {
+            let given = std::path::PathBuf::from(folder.ok_or("Which folder?")?);
+            let scope = app.fs_scope();
+            blocking(move || migration::trash_from_folder(&given, &names, |p| scope.is_allowed(p), migration::to_trash))
+                .await
+        }
+        migration::Place::Screenshots => {
+            let base = screenshots_dir(&app)?;
+            blocking(move || migration::trash_items(place, &base, &names, migration::to_trash)).await
+        }
+    }
+}
+
+/// This Mac's screenshots folder, so the move only takes run folders that are really in it.
+#[tauri::command]
+fn screenshots_folder(app: tauri::AppHandle) -> Result<String, String> {
+    screenshots_dir(&app).map(|p| p.to_string_lossy().into_owned())
 }
 
 /// The Git repository holding this folder, if any (looks for `.git`; never runs git).
@@ -417,11 +443,9 @@ pub fn run() {
                 )
                 .with_usage(usage_store),
             );
-            app.manage::<LicenceState>(Arc::clone(&licensing));
-            // The engine gets the stored token once it's read (off the main thread: a Keychain read
-            // can wait on a prompt), and again after every start and licence change.
-            let host = Arc::clone(&engine_for_setup);
-            tauri::async_runtime::spawn(async move { sync_engine_licence(&licensing, &host).await });
+            // No licence hand-off to the engine here: nothing is selected until the UI names the
+            // open connection (licence_select), which hands the engine its token (or none).
+            app.manage::<LicenceState>(licensing);
 
             // Linux/Windows pass opened files as arguments; macOS uses RunEvent::Opened.
             #[cfg(not(target_os = "macos"))]
@@ -466,6 +490,7 @@ pub fn run() {
             usage_set_enabled,
             usage_notice_seen,
             trash_items,
+            screenshots_folder,
             git_repo_of,
             migration_report_save,
         ])

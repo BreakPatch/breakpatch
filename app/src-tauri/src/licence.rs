@@ -16,8 +16,11 @@
 //! to the log.
 //!
 //! Licences per workspace (the Team repo's docs/migration-and-workspaces.md): the UI names the open
-//! connection with [`Licensing::select`] (`licence_select`) whenever it changes, and every other
-//! call works on that entry only; with nothing selected, nothing is unlocked. A `wsKey` is the
+//! connection with [`Licensing::select`] (`licence_select`) whenever it changes; the engine's token
+//! and the usage counts follow that. Status, activate, refresh and release name the connection
+//! they're for (`wsKey`), so a switch while one is on its way never puts one workspace's licence
+//! in another's entry; without one they use the selected entry. With nothing selected, nothing is
+//! unlocked. A `wsKey` is the
 //! connection's key as the UI makes it: `team:<projectId>/<database>` for a Team workspace, and a
 //! local tests folder's connection may hold one too (the Solo plan), so nothing here assumes a
 //! licence belongs to a Team workspace. The single `licence` entry of earlier versions moves to
@@ -56,7 +59,14 @@ pub fn entry_for(ws_key: &str) -> String {
     format!("licence:{ws_key}")
 }
 
-/// A connection key the UI may name: short, printable, no spaces or control characters.
+/// The project of a Team workspace's key (`team:<projectId>/<database>`), else None.
+fn ws_project(ws_key: &str) -> Option<&str> {
+    ws_key.strip_prefix("team:")?.split_once('/').map(|(p, _)| p).filter(|p| !p.is_empty())
+}
+
+/// A connection key the UI may name: short, printable, no spaces or control characters. The UI
+/// makes them in the open repo's app/src/state/connectionIds.ts, whose test pins the format; a
+/// change there has to keep every key it makes valid here, or the Keychain entries are orphaned.
 pub fn valid_ws_key(k: &str) -> bool {
     !k.is_empty()
         && k.len() <= 200
@@ -531,6 +541,9 @@ impl Service {
 // ---- Licensing -----------------------------------------------------------------------------------
 
 pub struct ActivateRequest {
+    /// The connection whose licence this is (the UI names it, so a switch while the call is out
+    /// can't store it under another one). None: the selected one.
+    pub ws_key: Option<String>,
     pub key: String,
     pub workspace_project_id: String,
     /// The signed-in email (person); empty for a machine, which uses this Mac's own id.
@@ -556,6 +569,11 @@ pub struct Licensing<S: SecretStore> {
     busy: tokio::sync::Mutex<()>,
     /// The usage counts sent with each refresh (usage.rs).
     usage: Option<Arc<UsageStore>>,
+    /// The entry of earlier versions is known to be gone (it never comes back while the app runs).
+    legacy_gone: std::sync::atomic::AtomicBool,
+    /// Tokens of seats left behind when the earlier entry and a workspace's own both held one:
+    /// given back by [`Licensing::release_stale`].
+    stale: Mutex<Vec<String>>,
     /// This Mac's hashed hardware id, when it has one (macOS); else a random id in the Keychain.
     hardware: HardwareId,
     device: std::sync::OnceLock<Option<String>>,
@@ -590,6 +608,8 @@ impl<S: SecretStore> Licensing<S> {
             cache: Mutex::new(None),
             busy: tokio::sync::Mutex::new(()),
             usage: None,
+            legacy_gone: std::sync::atomic::AtomicBool::new(false),
+            stale: Mutex::new(Vec::new()),
             hardware: Box::new(|| platform_uuid().map(|u| hash_id(&u))),
             device: std::sync::OnceLock::new(),
         }
@@ -648,8 +668,17 @@ impl<S: SecretStore> Licensing<S> {
     /// Works on this workspace's licence from now on (None: none, nothing unlocked). `project` is
     /// the Team workspace's project id, when the connection is one: the licence of earlier
     /// versions (one entry for the Mac) moves here if it was activated for that project.
-    /// Returns the status for the newly selected workspace.
+    /// Returns the status for the newly selected workspace. (The command uses
+    /// [`Licensing::select_with`]; this is the tests' shorthand.)
+    #[cfg(test)]
     pub fn select(&self, ws_key: Option<&str>, project: Option<&str>) -> Result<Status, String> {
+        self.select_with(ws_key, project, true)
+    }
+
+    /// [`Licensing::select`]; `adopt`: whether this connection may take the licence of earlier
+    /// versions. The UI says no when this Mac has other workspaces in the same project and this one
+    /// isn't in the default `breakpatch` database, since the old entry doesn't say which it was.
+    pub fn select_with(&self, ws_key: Option<&str>, project: Option<&str>, adopt: bool) -> Result<Status, String> {
         let ws = match ws_key.map(str::trim).filter(|k| !k.is_empty()) {
             Some(k) if valid_ws_key(k) => Some(k.to_string()),
             Some(_) => return Err("That isn't a workspace key.".into()),
@@ -657,19 +686,31 @@ impl<S: SecretStore> Licensing<S> {
         };
         *self.selected.lock().unwrap() = ws.clone();
         *self.cache.lock().unwrap() = None;
-        if let (Some(ws), Some(project), false) = (&ws, project, self.keys.is_empty()) {
+        if let (Some(ws), Some(project), true, false) = (&ws, project, adopt, self.keys.is_empty()) {
             self.adopt_legacy(ws, project);
         }
         Ok(self.status(project))
     }
 
     /// Moves the single `licence` entry of earlier versions to `ws` when it was activated for
-    /// `project`: copied first, then removed, so a crash in between only leaves a copy that the
-    /// next select removes. An entry for another project stays for that workspace.
+    /// `project` and `ws` is a workspace in that project (`team:<project>/<database>`): copied
+    /// first, then removed, so a crash in between only leaves a copy that the next select removes.
+    /// An entry for another project stays for that workspace.
+    ///
+    /// When `ws` has an entry of its own that differs (an older version activated again after a
+    /// downgrade), the newer token is kept. The other one's seat is given back
+    /// ([`Licensing::release_stale`]) when it's another seat: another key, person, machine or
+    /// project. The same holder with the same key is the same seat, so it's only forgotten.
     fn adopt_legacy(&self, ws: &str, project: &str) {
+        if ws_project(ws) != Some(project) {
+            return;
+        }
         let text = match self.store.get(LEGACY_ENTRY) {
             Ok(Some(t)) => t,
-            Ok(None) => return,
+            Ok(None) => {
+                self.legacy_gone.store(true, std::sync::atomic::Ordering::Relaxed);
+                return;
+            }
             Err(e) => {
                 log::warn!("couldn't read the earlier licence from the Keychain: {e}");
                 return;
@@ -683,32 +724,76 @@ impl<S: SecretStore> Licensing<S> {
             return;
         }
         let entry = entry_for(ws);
-        match self.store.get(&entry) {
-            Ok(None) => {
-                if let Err(e) = self.store.set(&entry, &text) {
-                    log::warn!("couldn't move the licence to its workspace: {e}");
-                    return;
-                }
-                if let Some(u) = &self.usage {
-                    u.adopt_legacy(ws);
-                }
-                log::info!("the licence moved to its workspace's own Keychain entry");
-            }
-            Ok(Some(_)) => {}
+        let mine = match self.store.get(&entry) {
+            Ok(v) => v,
             Err(e) => {
                 log::warn!("couldn't read the workspace's licence from the Keychain: {e}");
                 return;
             }
+        };
+        let keep_old = match mine.as_deref() {
+            None => true,
+            Some(t) if t == text => false,
+            Some(t) => match serde_json::from_str::<Stored>(t) {
+                // The workspace's own entry is unreadable: the earlier one is all there is.
+                Err(_) => true,
+                Ok(cur) => {
+                    let old_newer = self.newness(&old) > self.newness(&cur);
+                    let (kept, dropped) = if old_newer { (&old, &cur) } else { (&cur, &old) };
+                    let same_seat = kept.key == dropped.key
+                        && kept.same_holder(&dropped.subject, dropped.kind, &dropped.workspace_project_id);
+                    if let (Some(token), false) = (&dropped.token, same_seat) {
+                        self.stale.lock().unwrap().push(token.clone());
+                    }
+                    old_newer
+                }
+            },
+        };
+        if keep_old {
+            if let Err(e) = self.store.set(&entry, &text) {
+                log::warn!("couldn't move the licence to its workspace: {e}");
+                return;
+            }
+            if let Some(u) = &self.usage {
+                u.adopt_legacy(ws);
+            }
+            log::info!("the licence moved to its workspace's own Keychain entry");
         }
-        if let Err(e) = self.store.delete(LEGACY_ENTRY) {
-            log::warn!("couldn't remove the earlier licence entry: {e}");
+        match self.store.delete(LEGACY_ENTRY) {
+            Ok(()) => self.legacy_gone.store(true, std::sync::atomic::Ordering::Relaxed),
+            Err(e) => log::warn!("couldn't remove the earlier licence entry: {e}"),
         }
         *self.cache.lock().unwrap() = None;
     }
 
-    /// Whether an entry of an earlier version is still waiting to move to its workspace.
+    /// How recent an entry is: when its token was issued, else the latest time it was seen.
+    fn newness(&self, s: &Stored) -> (i64, i64) {
+        let issued = s.token.as_deref().and_then(|t| verify(t, &self.keys).ok()).map_or(i64::MIN, |c| c.iat);
+        (issued, s.seen_at.unwrap_or(i64::MIN))
+    }
+
+    /// Gives back the seats [`Licensing::adopt_legacy`] left behind. Best effort, like release.
+    pub async fn release_stale(&self) {
+        let tokens = std::mem::take(&mut *self.stale.lock().unwrap());
+        for t in tokens {
+            self.release_token(&t).await;
+        }
+    }
+
+    /// Whether an entry of an earlier version is still waiting to move to its workspace. Once it's
+    /// gone, the Keychain isn't asked again.
     fn legacy_waiting(&self) -> bool {
-        matches!(self.store.get(LEGACY_ENTRY), Ok(Some(_)))
+        if self.legacy_gone.load(std::sync::atomic::Ordering::Relaxed) {
+            return false;
+        }
+        match self.store.get(LEGACY_ENTRY) {
+            Ok(Some(_)) => true,
+            Ok(None) => {
+                self.legacy_gone.store(true, std::sync::atomic::Ordering::Relaxed);
+                false
+            }
+            Err(_) => false,
+        }
     }
 
     fn load(&self) -> Option<Stored> {
@@ -760,20 +845,34 @@ impl<S: SecretStore> Licensing<S> {
     }
 
     pub fn status(&self, workspace: Option<&str>) -> Status {
+        self.status_for(None, workspace)
+    }
+
+    /// The status of `ws_key`'s licence (None: the selected one). The UI names the connection it
+    /// asks about, so an answer never describes a workspace switched to while it was on its way.
+    pub fn status_for(&self, ws_key: Option<&str>, workspace: Option<&str>) -> Status {
         if self.keys.is_empty() {
             return evaluate(None, &self.keys, 0, None, None);
         }
         let now = (self.now)();
-        let stored = self.observe_clock(now);
+        let stored = self.target(ws_key).and_then(|ws| self.observe_clock(&ws, now));
         evaluate(stored.as_ref(), &self.keys, now, workspace, self.device_id().as_deref())
+    }
+
+    /// The connection a call works on: the one it names (when that's a valid key), else the selected one.
+    fn target(&self, ws_key: Option<&str>) -> Option<String> {
+        match ws_key.map(str::trim).filter(|k| !k.is_empty()) {
+            Some(k) if valid_ws_key(k) => Some(k.to_string()),
+            Some(_) => None,
+            None => self.selected(),
+        }
     }
 
     /// Keeps the latest time seen with the licence (R7), and marks the clock as set back when
     /// `now` is more than [`CLOCK_SLACK`] behind it or behind when the token was issued. Only a
     /// successful online refresh or activation clears that. Returns what's stored now.
-    fn observe_clock(&self, now: i64) -> Option<Stored> {
-        let ws = self.selected()?;
-        let mut s = self.load_for(&ws)?;
+    fn observe_clock(&self, ws: &str, now: i64) -> Option<Stored> {
+        let mut s = self.load_for(ws)?;
         let issued = s.token.as_deref().and_then(|t| verify(t, &self.keys).ok()).map(|c| c.iat);
         let latest = s.seen_at.into_iter().chain(issued).max();
         let changed = if latest.is_some_and(|l| now + CLOCK_SLACK < l) {
@@ -791,7 +890,7 @@ impl<S: SecretStore> Licensing<S> {
             false
         };
         if changed {
-            self.save_for(&ws, Some(s.clone()));
+            self.save_for(ws, Some(s.clone()));
         }
         Some(s)
     }
@@ -832,7 +931,7 @@ impl<S: SecretStore> Licensing<S> {
         if key.is_empty() || ws.is_empty() {
             return Err(Failure::new("bad_request", None));
         }
-        let Some(ws_key) = self.selected() else {
+        let Some(ws_key) = self.target(req.ws_key.as_deref()) else {
             return Err(Failure { code: "bad_request".into(), message: "Open a workspace first.".into() });
         };
         let _g = self.busy.lock().await;
@@ -875,7 +974,7 @@ impl<S: SecretStore> Licensing<S> {
             Ok(v) => {
                 self.take_answer(&mut next, &v)?;
                 self.save_for(ws_key, Some(next));
-                Ok(self.status(None))
+                Ok(self.status_for(Some(ws_key), None))
             }
             Err(CallError::Refused { code, message }) => {
                 // A licence that still works here stays when someone tries another key.
@@ -926,14 +1025,20 @@ impl<S: SecretStore> Licensing<S> {
     /// A new token for the seat this Mac holds. Offline or while the service has trouble, the
     /// stored token stays (grace). A freed seat or a token the service no longer accepts is taken
     /// again with the stored key.
+    #[cfg(test)]
     pub async fn refresh(&self) -> Status {
+        self.refresh_for(None).await
+    }
+
+    /// [`Licensing::refresh`] for `ws_key`'s licence (None: the selected one): what the command calls.
+    pub async fn refresh_for(&self, ws_key: Option<&str>) -> Status {
         if self.keys.is_empty() {
             return self.status(None);
         }
-        let Some(ws_key) = self.selected() else { return self.status(None) };
+        let Some(ws_key) = self.target(ws_key) else { return self.status(None) };
         let _g = self.busy.lock().await;
-        let Some(mut s) = self.load_for(&ws_key) else { return self.status(None) };
-        let Some(token) = s.token.clone() else { return self.status(None) };
+        let Some(mut s) = self.load_for(&ws_key) else { return self.status_for(Some(&ws_key), None) };
+        let Some(token) = s.token.clone() else { return self.status_for(Some(&ws_key), None) };
         // Counts kept before usage was per workspace go with the first refresh once no licence of
         // an earlier version waits to move (it takes them to its own workspace when it does).
         if let (Some(u), false) = (&self.usage, self.legacy_waiting()) {
@@ -957,9 +1062,9 @@ impl<S: SecretStore> Licensing<S> {
                         }
                     }
                     self.save_for(&ws_key, Some(s));
-                    self.status(None)
+                    self.status_for(Some(&ws_key), None)
                 }
-                Err(_) => self.status(None),
+                Err(_) => self.status_for(Some(&ws_key), None),
             },
             Err(CallError::Refused { code, .. }) if code == "released" || code == "invalid_token" => {
                 s.token = None;
@@ -971,7 +1076,7 @@ impl<S: SecretStore> Licensing<S> {
                             s.error = Some(code);
                             self.save_for(&ws_key, Some(s));
                         }
-                        self.status(None)
+                        self.status_for(Some(&ws_key), None)
                     }
                 }
             }
@@ -979,10 +1084,10 @@ impl<S: SecretStore> Licensing<S> {
                 s.token = None;
                 s.error = Some(code);
                 self.save_for(&ws_key, Some(s));
-                self.status(None)
+                self.status_for(Some(&ws_key), None)
             }
             Err(CallError::Unreachable) => {
-                let mut st = self.status(None);
+                let mut st = self.status_for(Some(&ws_key), None);
                 if st.state == State::Active {
                     st.code = Some("offline".into());
                     st.message = Some(message_for("offline", None));

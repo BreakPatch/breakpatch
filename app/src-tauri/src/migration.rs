@@ -1,19 +1,33 @@
 //! Upgrade to Team, the last step (the Team module's `upgrade/`, and the plan in the Team repo's
 //! docs/migration-and-workspaces.md): once a tests folder has been copied into a workspace and
-//! read back, the local copy goes to the Trash, where Finder's Put Back undoes it.
+//! read back, the local copy goes to the Trash. On a Mac that's NSFileManager's Trash, which needs
+//! no Automation permission (Finder over Apple Events would, and a notarized build can't ask for
+//! it without an entitlement). Finder may not offer Put Back for what it moves, so the app says
+//! to drag the items back out of the Trash to undo it.
 //!
 //! [`trash_items`] only accepts an allow-list, checked before anything moves:
-//! - in a tests folder that has a valid `breakpatch.json`: the names `breakpatch.json`, `apps` and
-//!   `suites`, directly under it. Nothing else in the folder (`files/`, `.git`, a README) can be
-//!   named, and `breakpatch.json` always goes last, so an interrupted move can be checked again.
+//! - in a tests folder the person opened in Breakpatch ([`trash_from_folder`]: the fs scope, which
+//!   holds only folders picked in a dialog) that has a valid `breakpatch.json`: the names
+//!   `breakpatch.json`, `apps` and `suites`, directly under it. Nothing else in the folder
+//!   (`files/`, `.git`, a README) can be named, and `breakpatch.json` always goes last, so an
+//!   interrupted move can be checked again. Once `breakpatch.json` has gone, or the folder has,
+//!   every name only comes back as missing: that's how an interrupted move finishes, and nothing
+//!   more can move out of a folder without one.
 //! - in the engine's screenshots folder (`<data>/Breakpatch/screenshots`, the one the asset scope
 //!   allows): run folders by name, directly under it.
 //!
 //! A name is one plain path component (no `/`, `..` or leading dot), and a link is never followed
-//! or moved. Keychain entries are never touched here.
+//! or moved. The folder itself may be reached through a link: it's resolved first, and what's
+//! checked is what moves. Keychain entries are never touched here.
+//!
+//! Time of check and time of use: each item is checked just before the moves start (and the UI
+//! compared every file's hash just before that), but the checks and the moves aren't one atomic
+//! step. A `git pull` in between isn't seen. That window is accepted: whatever moves is in the
+//! Trash, and the copy in the workspace was read back first.
 //!
 //! [`git_repo_of`] only looks for a `.git` next to the folder or above it; it never runs git.
 
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -22,6 +36,8 @@ use serde::Serialize;
 pub const FOLDER_ITEMS: [&str; 3] = ["apps", "suites", "breakpatch.json"];
 /// Longest report kept (the report is a list of names and counts; this is plenty).
 pub const MAX_REPORT_BYTES: usize = 1024 * 1024;
+
+const NOT_TESTS_FOLDER: &str = "This isn't a Breakpatch tests folder (its breakpatch.json is missing or not valid).";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Place {
@@ -48,6 +64,9 @@ pub struct TrashResult {
     pub moved: Vec<String>,
     /// Not there (already moved, or never made): nothing to do.
     pub missing: Vec<String>,
+    /// Why moving stopped part-way, in plain words. What's in `moved` went before it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// One plain path component: not empty, no separators, no `..`, no leading dot, not too long.
@@ -73,19 +92,9 @@ pub fn is_tests_folder(dir: &Path) -> bool {
         .is_some_and(|v| v.get("format").and_then(|f| f.as_str()) == Some("breakpatch"))
 }
 
-/// The paths to move for this request, in order, and the names that aren't there. Refuses the
-/// whole request if any name isn't allowed, so nothing moves on a bad request.
-pub fn plan(place: Place, base: &Path, names: &[String]) -> Result<(Vec<PathBuf>, Vec<String>), String> {
-    if !base.is_absolute() {
-        return Err("The folder must be a full path.".into());
-    }
-    if names.is_empty() {
-        return Ok((Vec::new(), Vec::new()));
-    }
-    let base_meta = std::fs::symlink_metadata(base).map_err(|_| "This folder isn't there any more.".to_string())?;
-    if !base_meta.is_dir() {
-        return Err("This isn't a folder.".into());
-    }
+/// The names asked for, allowed and in the order they move. Refuses the whole request if any
+/// isn't allowed.
+fn allowed_names(place: Place, names: &[String]) -> Result<Vec<&str>, String> {
     let mut ordered: Vec<&str> = Vec::new();
     match place {
         Place::Folder => {
@@ -95,15 +104,6 @@ pub fn plan(place: Place, base: &Path, names: &[String]) -> Result<(Vec<PathBuf>
                         "Breakpatch only moves breakpatch.json, apps and suites from a tests folder, not {n}."
                     ));
                 }
-            }
-            // A folder whose breakpatch.json went already (the last step of an interrupted move)
-            // can only have that one name asked for again; anything else needs a valid file.
-            let only_meta = names.iter().all(|n| n == "breakpatch.json");
-            let finishing = only_meta && !base.join("breakpatch.json").exists();
-            if !finishing && !is_tests_folder(base) {
-                return Err(
-                    "This isn't a Breakpatch tests folder (its breakpatch.json is missing or not valid).".into()
-                );
             }
             ordered.extend(FOLDER_ITEMS.iter().copied().filter(|i| names.iter().any(|n| n == i)));
         }
@@ -116,6 +116,41 @@ pub fn plan(place: Place, base: &Path, names: &[String]) -> Result<(Vec<PathBuf>
                     ordered.push(n);
                 }
             }
+        }
+    }
+    Ok(ordered)
+}
+
+/// The paths to move for this request, in order, and the names that aren't there. Refuses the
+/// whole request if any name isn't allowed, so nothing moves on a bad request. A folder that
+/// isn't there any more, or a tests folder whose `breakpatch.json` went already, has every name
+/// missing (and refuses a request naming anything still in it).
+pub fn plan(place: Place, base: &Path, names: &[String]) -> Result<(Vec<PathBuf>, Vec<String>), String> {
+    if !base.is_absolute() {
+        return Err("The folder must be a full path.".into());
+    }
+    let ordered = allowed_names(place, names)?;
+    if ordered.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    let all_missing = || ordered.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+    match std::fs::symlink_metadata(base) {
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok((Vec::new(), all_missing())),
+        Err(_) => return Err("Breakpatch can't look in this folder (macOS refused it).".into()),
+        Ok(m) if !m.is_dir() => return Err("This isn't a folder.".into()),
+        Ok(_) => {}
+    }
+    if place == Place::Folder {
+        if std::fs::symlink_metadata(base.join("breakpatch.json")).is_err() {
+            // breakpatch.json goes last, so a folder without it may only be finishing: nothing
+            // asked for may still be there.
+            if ordered.iter().any(|n| std::fs::symlink_metadata(base.join(n)).is_ok()) {
+                return Err(NOT_TESTS_FOLDER.into());
+            }
+            return Ok((Vec::new(), all_missing()));
+        }
+        if !is_tests_folder(base) {
+            return Err(NOT_TESTS_FOLDER.into());
         }
     }
     let mut paths = Vec::new();
@@ -140,8 +175,9 @@ pub fn plan(place: Place, base: &Path, names: &[String]) -> Result<(Vec<PathBuf>
     Ok((paths, missing))
 }
 
-/// Moves the allowed items with `mover` (the Trash in the app). Stops at the first failure; what
-/// moved before it stays moved, and asking again moves the rest.
+/// Moves the allowed items with `mover` (the Trash in the app). Stops at the first failure and
+/// says why in `error`; what moved before it stays moved and is listed, and asking again moves
+/// the rest.
 pub fn trash_items(
     place: Place,
     base: &Path,
@@ -149,18 +185,71 @@ pub fn trash_items(
     mover: impl Fn(&Path) -> Result<(), String>,
 ) -> Result<TrashResult, String> {
     let (paths, missing) = plan(place, base, names)?;
-    let mut out = TrashResult { moved: Vec::new(), missing };
+    let mut out = TrashResult { moved: Vec::new(), missing, error: None };
     for p in paths {
         let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        mover(&p).map_err(|e| format!("Couldn't move {name} to the Trash: {e}"))?;
+        if let Err(e) = mover(&p) {
+            out.error = Some(format!("Couldn't move {name} to the Trash. {e}"));
+            break;
+        }
         out.moved.push(name);
     }
     Ok(out)
 }
 
-/// The operating system's Trash (on a Mac, Finder's, so Put Back works).
+/// The tests folder a request names, as the real folder: a full path that `allowed` (the fs
+/// scope in the app) lets Breakpatch use, followed through any link, so what's checked is what
+/// moves. A folder that isn't there any more comes back as named: [`plan`] finds nothing in it.
+pub fn resolve_folder(given: &Path, allowed: impl Fn(&Path) -> bool) -> Result<PathBuf, String> {
+    if !given.is_absolute() {
+        return Err("The folder must be a full path.".into());
+    }
+    let real = match std::fs::canonicalize(given) {
+        Ok(p) => p,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(given.to_path_buf()),
+        Err(_) => return Err("Breakpatch can't look in this folder (macOS refused it).".into()),
+    };
+    if !allowed(&real) {
+        return Err("Breakpatch only moves a tests folder you opened in it.".into());
+    }
+    Ok(real)
+}
+
+/// [`trash_items`] in a tests folder, once [`resolve_folder`] has checked it.
+pub fn trash_from_folder(
+    given: &Path,
+    names: &[String],
+    allowed: impl Fn(&Path) -> bool,
+    mover: impl Fn(&Path) -> Result<(), String>,
+) -> Result<TrashResult, String> {
+    let base = resolve_folder(given, allowed)?;
+    trash_items(Place::Folder, &base, names, mover)
+}
+
+/// The operating system's Trash. On a Mac, NSFileManager's (see the module docs); elsewhere the
+/// trash crate's default.
 pub fn to_trash(p: &Path) -> Result<(), String> {
-    trash::delete(p).map_err(|e| e.to_string())
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+    let mut ctx = trash::TrashContext::default();
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        ctx.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    ctx.delete(p).map_err(|e| trash_error_text(&e.to_string()))
+}
+
+/// What to tell the person when the Trash refused an item: a permission problem says what to
+/// check, anything else passes on what the system said.
+pub fn trash_error_text(raw: &str) -> String {
+    let low = raw.to_lowercase();
+    if ["permission", "not permitted", "code=513", "code=257", "-1743", "access"].iter().any(|k| low.contains(k)) {
+        "macOS didn't let Breakpatch move it. Check that you can change this folder in Finder (File, Get Info, Sharing & Permissions), and that Breakpatch is allowed in System Settings, Privacy & Security, Files and Folders.".into()
+    } else if low.contains("code=3328") || low.contains("unsupported") {
+        "This disk has no Trash (a network disk, for example), so Breakpatch leaves the folder as it is.".into()
+    } else {
+        format!("The system said: {raw}")
+    }
 }
 
 /// The Git repository holding `path`: the nearest folder at or above it with a `.git` (a folder,
@@ -283,6 +372,109 @@ mod tests {
         assert_eq!(r.moved, names(&["breakpatch.json"]));
         let r = trash_items(Place::Folder, d.path(), &names(&["breakpatch.json"]), fake_trash(&moved)).unwrap();
         assert_eq!(r.missing, names(&["breakpatch.json"]));
+    }
+
+    #[test]
+    fn a_move_whose_folder_items_all_went_finishes_with_everything_missing() {
+        // The shell moved all three, then the app stopped before the journal heard of it.
+        let d = folder();
+        let moved = RefCell::new(Vec::new());
+        trash_items(Place::Folder, d.path(), &names(&["apps", "suites", "breakpatch.json"]), fake_trash(&moved))
+            .unwrap();
+        let r =
+            trash_items(Place::Folder, d.path(), &names(&["apps", "suites", "breakpatch.json"]), fake_trash(&moved))
+                .unwrap();
+        assert_eq!((r.moved, r.missing, r.error), (vec![], names(&["apps", "suites", "breakpatch.json"]), None));
+        // Without breakpatch.json, nothing still in the folder may be named.
+        fs::create_dir_all(d.path().join("apps")).unwrap();
+        let err = trash_items(Place::Folder, d.path(), &names(&["apps"]), fake_trash(&moved)).unwrap_err();
+        assert!(err.contains("isn't a Breakpatch tests folder"), "{err}");
+        assert!(d.path().join("apps").is_dir() && d.path().join("files/cv.pdf").exists());
+    }
+
+    #[test]
+    fn a_folder_or_screenshots_folder_that_is_gone_has_everything_missing() {
+        let d = tempfile::tempdir().unwrap();
+        let moved = RefCell::new(Vec::new());
+        let gone = d.path().join("moved-away");
+        let r = trash_items(Place::Folder, &gone, &names(&["apps", "breakpatch.json"]), fake_trash(&moved)).unwrap();
+        assert_eq!(r.missing, names(&["apps", "breakpatch.json"]));
+        let r = trash_items(Place::Screenshots, &gone, &names(&["log-in-1"]), fake_trash(&moved)).unwrap();
+        assert_eq!(r.missing, names(&["log-in-1"]));
+        // Names are still checked first.
+        assert!(trash_items(Place::Folder, &gone, &names(&["files"]), fake_trash(&moved)).is_err());
+        assert!(moved.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_failure_part_way_says_what_moved_before_it() {
+        let d = folder();
+        let failing = |p: &Path| {
+            if p.ends_with("suites") {
+                return Err("locked".to_string());
+            }
+            fs::remove_dir_all(p).map_err(|e| e.to_string())
+        };
+        let r = trash_items(Place::Folder, d.path(), &names(&["apps", "suites", "breakpatch.json"]), failing).unwrap();
+        assert_eq!(r.moved, names(&["apps"]));
+        assert_eq!(r.error.as_deref(), Some("Couldn't move suites to the Trash. locked"));
+        assert!(d.path().join("breakpatch.json").exists(), "breakpatch.json stays when an item before it fails");
+        let json = serde_json::to_value(&r).unwrap();
+        assert_eq!(json["moved"], serde_json::json!(["apps"]));
+        assert_eq!(json["error"], "Couldn't move suites to the Trash. locked");
+        assert!(serde_json::to_value(TrashResult::default()).unwrap().get("error").is_none());
+    }
+
+    #[test]
+    fn only_a_folder_opened_in_breakpatch_can_be_named() {
+        let d = folder();
+        let real = fs::canonicalize(d.path()).unwrap();
+        let moved = RefCell::new(Vec::new());
+        let picked = |p: &Path| p == real;
+        let nothing = |_: &Path| false;
+        // The command's checks: a full path, in the fs scope.
+        assert!(trash_from_folder(Path::new("relative/tests"), &names(&["apps"]), picked, fake_trash(&moved))
+            .unwrap_err()
+            .contains("full path"));
+        assert!(trash_from_folder(d.path(), &names(&["apps"]), nothing, fake_trash(&moved))
+            .unwrap_err()
+            .contains("opened in it"));
+        assert!(moved.borrow().is_empty());
+        let r = trash_from_folder(d.path(), &names(&["apps"]), picked, fake_trash(&moved)).unwrap();
+        assert_eq!(r.moved, names(&["apps"]));
+        // A folder moved away since: nothing to check against the scope, and nothing moves.
+        let r = trash_from_folder(&d.path().join("gone"), &names(&["apps"]), nothing, fake_trash(&moved)).unwrap();
+        assert_eq!(r.missing, names(&["apps"]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_reached_through_a_link_is_checked_and_moved_where_it_really_is() {
+        let d = folder();
+        let real = fs::canonicalize(d.path()).unwrap();
+        let links = tempfile::tempdir().unwrap();
+        let via = links.path().join("tests");
+        std::os::unix::fs::symlink(d.path(), &via).unwrap();
+        let moved = RefCell::new(Vec::new());
+        // The scope is asked about the real folder, not the link.
+        let seen = RefCell::new(Vec::new());
+        let scope = |p: &Path| {
+            seen.borrow_mut().push(p.to_path_buf());
+            p == real
+        };
+        let r = trash_from_folder(&via, &names(&["apps"]), scope, fake_trash(&moved)).unwrap();
+        assert_eq!(r.moved, names(&["apps"]));
+        assert_eq!(*seen.borrow(), vec![real.clone()]);
+        assert_eq!(moved.borrow().as_slice(), [real.join("apps")]);
+        assert!(via.exists(), "the link itself stays");
+    }
+
+    #[test]
+    fn a_refusal_by_macos_says_what_to_check() {
+        let t = trash_error_text("While deleting '/x', `trashItemAtURL` failed: Error Domain=NSCocoaErrorDomain Code=513 \"You don't have permission\"");
+        assert!(t.starts_with("macOS didn't let Breakpatch move it."), "{t}");
+        assert!(trash_error_text("Code=3328 feature unsupported").contains("no Trash"));
+        assert_eq!(trash_error_text("disk full"), "The system said: disk full");
     }
 
     #[cfg(unix)]

@@ -107,17 +107,30 @@ export function canOpen(ws: Workspace) {
 
 let readOnlyOff: (() => void) | undefined;
 let warningsOff: (() => void) | undefined;
+let userOff: (() => void) | undefined;
 /**
  * A backend that can't save (e.g. a newer data format in the workspace) shows the read-only
- * banner; one that skipped data (a broken file in the tests folder) shows a warning.
+ * banner; one that skipped data (a broken file in the tests folder) shows a warning. A new
+ * backend also stops the old one's person reaching the session (followUser).
  */
 function watchBackend(b: Backend | null) {
   readOnlyOff?.(); readOnlyOff = undefined;
   warningsOff?.(); warningsOff = undefined;
+  userOff?.(); userOff = undefined;
   useSystem.getState().setReadOnly(false);
   useSystem.getState().setWarnings([]);
   if (b?.onReadOnly) readOnlyOff = b.onReadOnly(v => useSystem.getState().setReadOnly(v));
   if (b?.onWarnings) warningsOff = b.onWarnings(v => useSystem.getState().setWarnings(v));
+}
+
+/**
+ * The backend's signed-in person becomes the session's user, while it's still the open backend:
+ * a closed workspace's late sign-in event never shows its person in another workspace.
+ */
+function followUser(b: Backend | null) {
+  userOff?.(); userOff = undefined;
+  if (!b) return;
+  userOff = b.onUser(u => { if (useSession.getState().backend === b) useSession.getState().setUser(u); });
 }
 
 const saved = load();
@@ -166,8 +179,7 @@ export const useSession = create<SessionState>((set, get) => ({
     else if ((c.kind === 'team' || c.kind === 'demo') && c.team) {
       await get().connect(c.team.workspace);
       // The saved sign-in comes back with the backend (bootSession does the same on launch).
-      const b = get().backend;
-      b?.onUser(u => { if (get().backend === b) get().setUser(u); });
+      followUser(get().backend);
     } else throw new Error("This version of Breakpatch can't open this kind of workspace. Update Breakpatch to open it.");
   },
   setUser(user) { set({ user }); },
@@ -208,8 +220,7 @@ export async function bootSession() {
   if (q.has('demo') && q.has('ready')) s.setSetupDone(true);
   const theme = q.get('theme');
   if (theme === 'dark' || theme === 'light' || theme === 'system') s.setPrefs({ theme });
-  const b = useSession.getState().backend;
-  b?.onUser(u => useSession.getState().setUser(u));
+  followUser(useSession.getState().backend);
 }
 
 /** `?demo` over a saved tests folder: open the demo for this launch and keep the folder saved. */
