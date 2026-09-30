@@ -67,6 +67,8 @@ export interface Backend {
   saveTest(appId: string, testId: string, steps: Step[], note?: string, recordedOn?: RecordedOn): Promise<Version>;
   setTestStatus(appId: string, testId: string, status: TestStatus): Promise<void>;
   renameTest(appId: string, testId: string, name: string): Promise<void>;
+  /** Marks a saved version as the one CI runs with `--version released` (null clears it). Team workspaces only. */
+  setReleasedVersion?(appId: string, testId: string, version: number | null): Promise<void>;
   duplicateTest(appId: string, testId: string): Promise<Test>;
   deleteTest(appId: string, testId: string): Promise<void>;
 

@@ -332,6 +332,7 @@ Everything in this part needs **Breakpatch Team**, the paid edition.
 - **Schedules** for suites, on any days and time.
 - **The local runner**: one Mac that runs suites for the whole team.
 - **Run requests** from CI or any other tool, and **result messages** after every suite run.
+- **`breakpatch-ci`**: run the workspace's suites on your CI machines, with the results in the run history.
 
 Choosing another AI model for the assistant is in Business.
 
@@ -393,7 +394,7 @@ Everyone from your email domain joins as a **member** the first time they sign i
 | **Member** | Record, run and edit tests. Add tests to the team suite. Make suites. |
 | **Admin** | Everything a member can, plus workspace settings, roles and deleting apps. |
 | **Local runner** | For the runner Mac. Reads tests, runs suites, writes results. |
-| **CI** | Can only ask for suite runs. Sees nothing else. |
+| **CI** | For CI pipelines. Asks for suite runs, reads tests, shared steps and suites to run them with `breakpatch-ci`, and adds its runs to the history. Sees nothing else. |
 
 Only admins can change roles, and nobody can change their own. **Remove from workspace** stops someone opening it; their tests and runs stay. If they sign in again with an account from your domain, they join as a member again, so to keep someone out, disable their account in Firebase Authentication.
 
@@ -406,6 +407,8 @@ Every save is a new version, with an optional note: *What changed?* → **Save a
 On a test or shared steps, open **Version history** to see each version, who saved it, what changed since the one before and the runs on that version. **Restore version 2** saves it again as the newest version. The current one stays in the history.
 
 Every run shows the version it tested. Shared steps show which tests use the latest version and which are kept on a fixed one.
+
+**Mark as released** (on a test's version) picks the version your pipelines run with `breakpatch-ci --version released`, so edits still in progress don't break the build. The version list shows it as *Released*. **Clear release mark** takes it off.
 
 ## Fixed automatically
 
@@ -519,7 +522,9 @@ n8n, Zapier or Make can add a Firestore document on any event: a deploy, a merge
 
 ## From CI with breakpatch-ci
 
-`breakpatch-ci` runs a test on the CI machine itself and tells your pipeline whether it passed, so a failing test stops the build. It's the same engine as the app, with no window. To run a whole suite from CI instead, add a [run request](#run-requests) and let the local runner run it.
+`breakpatch-ci` runs tests on the CI machine itself and tells your pipeline whether they passed, so a failing test stops the build. It's the same engine as the app, with no window. It reads the tests **straight from your workspace**, a whole suite or one test, and each run shows up in the app's run history like any other, marked *CI*. So the workspace stays the one place where tests are edited. It can also run a test file from a [tests folder](#the-tests-folder) in your repo.
+
+To run a suite on the local runner Mac instead, add a [run request](#run-requests).
 
 **What you need**
 
@@ -527,7 +532,9 @@ n8n, Zapier or Make can add a Firestore document on any event: a deploy, a merge
 - A Mac with Apple Silicon and macOS 14 or later, for example GitHub's `macos-15` runners or a Codemagic Mac. Linux x86_64 works as a preview: it runs tests, but record them on a Mac.
 - Python 3.11 on that machine.
 - One run at a time per machine licence. To run tests in parallel, give each parallel job its own machine licence and its own `BREAKPATCH_MACHINE_ID`.
-- Your tests, as JSON files: a [tests folder](#the-tests-folder) in your repo, or a test copied out of the workspace.
+- The workspace's `.bpworkspace` file (Settings → Workspace → Invite teammates → **Save as file**), committed to your repo. It holds only the workspace's public details, never a password or key.
+- A **CI account**: a user such as `ci@yourcompany.com` with the *CI* role (see [Members and roles](#members-and-roles)). Have it sign in to Breakpatch once, then change its role in Settings → Members. Its email and password go in your CI's secrets.
+- The workspace's latest [security rules](#security-rules): they let the CI account read tests and add its runs. After updating Breakpatch, an admin publishes them again (Settings → Workspace → **Copy security rules**).
 
 **Install**
 
@@ -539,25 +546,62 @@ curl -fsSL https://breakpatch.dev/install-ci | sh
 
 It installs `breakpatch-ci` and the test browser in `~/.breakpatch-ci` and links the command into `~/.local/bin`. It checks every download against the release's checksums, and needs no administrator password. In GitHub Actions the next steps can run `breakpatch-ci` straight away; elsewhere, add `~/.local/bin` to `PATH` or use the full path. Running it again updates to the latest version, `BREAKPATCH_VERSION=1.2.3` installs a given one, and `sh -s -- --uninstall` removes it. You can [read the script](https://breakpatch.dev/install-ci) first.
 
-**Run a test**
+**Run a suite from the workspace**
+
+```sh
+breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a
+```
+
+`--suite` takes the suite's ID (on the suite, under *Start it from anywhere*) or its name. The tests run one after another, as in the app: shared steps filled in, repeats, set-up and clean-up calls. Each test's run goes into its run history, and the suite's result shows as its last run in **Suites**. The log says which test is running and, when one fails, the step and why.
+
+**Run one test from the workspace**
+
+```sh
+breakpatch-ci run --workspace team.bpworkspace --test web-app/Qx81cT2mNz
+```
+
+`--test` takes `<app ID>/<test ID>`, or the test ID alone: open the test's **Version history** and copy it under *Run it from CI*. Anything ending in `.json`, or a file that exists, is read as a test file instead.
+
+**Which version runs**
+
+- `--version latest` (the default): the latest saved version, as the Run button runs it.
+- `--version released`: the version marked in the test's [Version history](#version-history) with **Mark as released**, so edits still in progress don't break the build. In a suite, tests with no released version are left out and listed in the result; if none has one, nothing runs and it ends with exit code `2`.
+- `--version 3` (with `--test` only): that saved version.
+
+Shared steps run the version each test's step pins, or their latest, as in the app.
+
+**Signing in.** Set these from your CI's secrets. They're read once and never passed on to the browser, typed into a page or written to the log:
+
+- `BREAKPATCH_CI_EMAIL`: the CI account's email address.
+- `BREAKPATCH_CI_PASSWORD`: its password.
+
+Only an account with the *CI* role is accepted. To cut a pipeline off, disable the account in Firebase Authentication, or change its password.
+
+`--label TEXT` says who asked, for example `--label "GitHub · build 412"`. It's shown with the suite run in the app (the default is `CI`).
+
+**Run a test file**
 
 ```sh
 breakpatch-ci run --test breakpatch-tests/apps/web-app/tests/log-in.json
 ```
 
-It prints the result as JSON and ends with one of four exit codes:
+Shared steps are read from `apps/<app>/shared/` next to `tests/`. The run isn't saved anywhere.
+
+**The result.** It prints the result as JSON: for one test, each step's result; for a suite, the counts and each test's result, with the failed step and why. It ends with one of four exit codes:
 
 | Exit code | What it means |
 |---|---|
-| `0` | The test passed. |
-| `1` | A step failed: a check didn't match, or something wasn't there. The JSON says which step and why. |
-| `2` | The test file, or the shared steps it uses, couldn't be read. Keep the tests folder as it is: shared steps are read from `apps/<app>/shared/` next to `tests/`. |
-| `3` | There's no usable licence. The JSON and the log say why. |
+| `0` | The test or suite passed (a suite *passed with fixes* too). |
+| `1` | A test failed: a check didn't match, or something wasn't there. The JSON says which step and why. |
+| `2` | Something couldn't be read: the test file or its shared steps, the workspace file, the suite or test, or the CI account couldn't sign in. The JSON has a `code` and a message. |
+| `3` | There's no usable licence, or it's for another workspace. The JSON and the log say why. |
+
+If a run can't be saved in the workspace (for example the security rules are out of date), the log says so and the JSON has `"saved": false`. The exit code is still the test's result.
 
 **The machine licence.** Set these in the CI job's environment:
 
 - `BREAKPATCH_LICENCE_KEY`: your licence key, stored as a CI secret. It's used to take a machine licence and is never saved or typed into a page.
-- `BREAKPATCH_WORKSPACE`: your workspace's Firebase project ID, for example `acme-breakpatch`. Or pass `--workspace team.bpworkspace`.
+- `BREAKPATCH_WORKSPACE`: your workspace's Firebase project ID, for example `acme-breakpatch`. Or pass `--workspace team.bpworkspace` (then you don't need it).
 - `BREAKPATCH_MACHINE_ID`: a fixed name for this pipeline, for example `github-acme-web`. CI machines are often new for every job; with a fixed name every job reuses the same machine licence instead of taking a new one.
 - `BREAKPATCH_LICENCE_FILE`: where the licence is kept between runs. Keep this file between jobs, with your CI's cache: then most runs don't need to check online, and the usage counts it collects get sent with the next check (see [Licences and seats](#licences-and-seats)).
 
@@ -583,9 +627,10 @@ jobs:
     concurrency: breakpatch-ci          # one run at a time per machine licence
     env:
       BREAKPATCH_LICENCE_KEY: ${{ secrets.BREAKPATCH_LICENCE_KEY }}
-      BREAKPATCH_WORKSPACE: acme-breakpatch
       BREAKPATCH_MACHINE_ID: github-acme-web
       BREAKPATCH_LICENCE_FILE: ${{ github.workspace }}/.breakpatch/licence.json
+      BREAKPATCH_CI_EMAIL: ${{ secrets.BREAKPATCH_CI_EMAIL }}
+      BREAKPATCH_CI_PASSWORD: ${{ secrets.BREAKPATCH_CI_PASSWORD }}
       BP_SECRET_STAGING_PASSWORD: ${{ secrets.STAGING_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
@@ -598,7 +643,9 @@ jobs:
           key: breakpatch-licence-${{ github.run_id }}
           restore-keys: breakpatch-licence-
       - run: curl -fsSL https://breakpatch.dev/install-ci | sh
-      - run: breakpatch-ci run --test breakpatch-tests/apps/web-app/tests/log-in.json --secret STAGING_PASSWORD --screenshots shots
+      - run: >-
+          breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --version released
+          --label "GitHub · build ${{ github.run_number }}" --secret STAGING_PASSWORD --screenshots shots
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -615,9 +662,8 @@ workflows:
     instance_type: mac_mini_m2
     environment:
       groups:
-        - breakpatch                    # BREAKPATCH_LICENCE_KEY and BP_SECRET_STAGING_PASSWORD
+        - breakpatch                    # BREAKPATCH_LICENCE_KEY, BREAKPATCH_CI_EMAIL, BREAKPATCH_CI_PASSWORD, BP_SECRET_STAGING_PASSWORD
       vars:
-        BREAKPATCH_WORKSPACE: acme-breakpatch
         BREAKPATCH_MACHINE_ID: codemagic-acme-web
         BREAKPATCH_LICENCE_FILE: $HOME/.breakpatch/licence.json
     cache:
@@ -629,10 +675,14 @@ workflows:
           command -v python3.11 || brew install python@3.11
           curl -fsSL https://breakpatch.dev/install-ci | sh
       - name: Run the UI tests
-        script: $HOME/.local/bin/breakpatch-ci run --test breakpatch-tests/apps/web-app/tests/log-in.json --secret STAGING_PASSWORD --screenshots shots
+        script: |
+          $HOME/.local/bin/breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --version released \
+            --label "Codemagic · build $BUILD_NUMBER" --secret STAGING_PASSWORD --screenshots shots
     artifacts:
       - shots/**
 ```
+
+To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-app/tests/log-in.json` and leave out the sign-in variables.
 
 **Troubleshooting**
 
@@ -643,6 +693,10 @@ workflows:
 - **"The saved secret STAGING_PASSWORD isn't on this Mac"**: set `BP_SECRET_STAGING_PASSWORD` in the job, and add the name to `--secret` if you use it.
 - **"The browser isn't installed yet"**: run the install command again. If `BP_BROWSERS_PATH` or `PLAYWRIGHT_BROWSERS_PATH` is set in the job, `breakpatch-ci` looks there instead: unset it.
 - **Linux: the browser doesn't start**: install the libraries it needs with `sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium`.
+- **Exit code 2 with "wrong email or password"**: check `BREAKPATCH_CI_EMAIL` and `BREAKPATCH_CI_PASSWORD` in the job's secrets.
+- **Exit code 2 with "not CI"** or "isn't a member of this workspace": the account needs the *CI* role. Sign in to Breakpatch with it once, then an admin changes its role in Settings → Members.
+- **Exit code 2 with "The workspace refused the CI account"**: publish the latest security rules (Settings → Workspace → **Copy security rules**).
+- **"Left out: no version is marked as released"**: open the test's Version history and **Mark as released** the version CI should run, or use `--version latest`.
 - **Checks fail in CI but pass in the app**: look for the line "this test was recorded on…" at the start of the log. Re-record the test on a machine like the CI machine, or run it on a Mac.
 
 ## Result messages
@@ -681,10 +735,12 @@ Any relay works: an n8n workflow that posts to Teams, a Slack incoming webhook, 
 - There are four roles: **member**, **admin**, **runner** and **ci**, as in [Members and roles](#members-and-roles). Whoever connects the workspace is the first admin.
 - Versions can only be added. History can't be edited.
 - `runRequests` accepts a small document of a fixed shape from members and from accounts with the `ci` role. Only the runner can read or delete them.
+- Accounts with the `ci` role read apps, tests, shared steps, their versions and suites, and add runs marked `ci` as themselves. They can't change anything, or read members, runs or the licence.
+- A test's released version must be one that's saved.
 
 To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the `breakpatch` database. Disable the user in Firebase Authentication to cut it off.
 
-A service account using the Firebase Admin SDK skips the rules altogether. Use a normal user with the `ci` role instead.
+A service account using the Firebase Admin SDK skips the rules altogether. Use a normal user with the `ci` role instead: `breakpatch-ci` only signs in with one.
 
 ## Licences and seats
 

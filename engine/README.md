@@ -39,7 +39,8 @@ printf '%s\n' '{"id":1,"method":"system.info"}' | .venv/bin/python -m breakpatch
 
 This engine is the Community edition (docs/editions.md). Two things are Breakpatch Team and live
 in the private `breakpatch_team_engine` package: fallback healing of moved targets (spec §11.2)
-and the headless CI command line (`breakpatch-ci run --test …`, spec §15). When that package is
+and the headless CI command line (`breakpatch-ci run --test …`, or `--workspace … --suite …` to run
+a Team workspace's suite, spec §15). When that package is
 installed in the same venv, `plugins.py` imports it (the only place that does) and it registers
 its healer with the runner, and the licence the app shell hands over (`licence.set`), which it
 checks itself. Without it, or without a Team licence that includes `autoFix`, a failed pre-check

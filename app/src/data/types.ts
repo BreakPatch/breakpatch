@@ -65,6 +65,8 @@ export interface Test {
   status: TestStatus;
   viewport: Viewport;            // locked at creation
   currentVersion: number;
+  /** The version pipelines run with `breakpatch-ci --version released` (Team: Version history → Mark as released). */
+  releasedVersion?: number;
   setUp?: HttpCall;
   cleanUp?: HttpCall & { alsoOnFailure?: boolean };
   stepCount: number;
