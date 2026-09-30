@@ -498,9 +498,7 @@ class BrowserSession:
         cdp = None
         try:
             cdp = await self.context.new_cdp_session(page)
-            await cdp.send("DOM.enable")
-            got = await cdp.send("DOM.getNodeForLocation", {"x": int(at[0]), "y": int(at[1]),
-                                                            "includeUserAgentShadowDOM": False})
+            got = await _node_at(cdp, at)
             model = await cdp.send("DOM.getBoxModel", {"backendNodeId": got["backendNodeId"]})
             q = model["model"]["border"]
             xs, ys = q[0::2], q[1::2]
@@ -526,9 +524,7 @@ class BrowserSession:
         cdp = None
         try:
             cdp = await self.context.new_cdp_session(page)
-            await cdp.send("DOM.enable")
-            got = await cdp.send("DOM.getNodeForLocation", {"x": int(at[0]), "y": int(at[1]),
-                                                            "includeUserAgentShadowDOM": False})
+            got = await _node_at(cdp, at)
             tree = await cdp.send("Accessibility.getPartialAXTree", {"backendNodeId": got["backendNodeId"],
                                                                      "fetchRelatives": True})
         except Exception as e:  # noqa: BLE001
@@ -819,3 +815,15 @@ class FrameStream:
             except Exception:  # noqa: BLE001
                 pass
             await asyncio.sleep(self.session.timings.frame_min_gap)
+
+
+async def _node_at(cdp, at: Sequence[float]) -> dict:
+    """The node under the viewport point `at`. DOM.getNodeForLocation takes page coordinates, not
+    viewport ones, so the page's scroll is added first; without it, every click after a scroll
+    was named after the element one scroll above it. (Boxes from DOM.getBoxModel are already
+    in viewport pixels.)"""
+    await cdp.send("DOM.enable")
+    view = (await cdp.send("Page.getLayoutMetrics")).get("cssVisualViewport") or {}
+    x = float(at[0]) + float(view.get("pageX") or 0)
+    y = float(at[1]) + float(view.get("pageY") or 0)
+    return await cdp.send("DOM.getNodeForLocation", {"x": int(x), "y": int(y), "includeUserAgentShadowDOM": False})
