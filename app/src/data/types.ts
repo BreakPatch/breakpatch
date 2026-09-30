@@ -215,7 +215,13 @@ export interface Run {
   healedCount: number;
   steps: StepRun[];
   systemMismatch?: SystemMismatch;
+  /** The issue made from this run with Create issue (Team), so the report offers Open issue next time. */
+  issue?: RunIssue;
 }
+
+export type IssueProvider = 'github' | 'linear' | 'jira';
+/** An issue in a tracker made from a failed run: its provider, key ("acme/web#12", "ENG-42") and web address. */
+export interface RunIssue { provider: IssueProvider; key: string; url: string }
 
 export interface RunSummary { result: 'pass' | 'fail' | 'healed'; at: Millis; by: string }
 

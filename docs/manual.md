@@ -39,9 +39,10 @@ Breakpatch comes in these editions. **Community** is free and open source: one p
 25. [Run requests](#run-requests)
 26. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
 27. [Result messages](#result-messages)
-28. [Security rules](#security-rules)
-29. [Licences and seats](#licences-and-seats)
-30. [The back office](#the-back-office)
+28. [Create an issue](#create-an-issue)
+29. [Security rules](#security-rules)
+30. [Licences and seats](#licences-and-seats)
+31. [The back office](#the-back-office)
 
 ---
 
@@ -223,7 +224,7 @@ Common reasons:
 - **Saved secret is missing on this Mac.** Add it in Settings → Saved secrets, then run again.
 - **STAGING_PASSWORD isn't allowed on login.example.com.** The page wasn't one of the secret's sites, so nothing was typed. If that site is right, add it to the secret in Settings → Saved secrets.
 
-Every error has **Copy details**, to paste into an issue or send to a developer.
+Every error has **Copy details**, to paste into a message or send to a developer, and **Copy as Markdown**: a ready-made bug report with a title, the steps up to the failure, what was expected and what was seen, the reason, and where and when it ran. Paste it into GitHub, Jira, Linear or any tracker that takes Markdown. In Team, **Create issue** makes the issue for you: see [Create an issue](#create-an-issue).
 
 ### Recorded on another system
 
@@ -334,7 +335,8 @@ Everything in this part needs a paid edition: **Breakpatch Team**, or **Solo** f
 - **Fixed automatically.** When a button has moved, the AI assistant finds it during the run and carries on. You accept the new position in the report.
 - **Schedules** for suites, on any days and time.
 - **The local runner**: one Mac that runs suites for the whole team.
-- **Run requests** from CI or any other tool, and **result messages** after every suite run.
+- **Run requests** from CI or any other tool, and **result messages** after every suite run, to Slack, Microsoft Teams or any web address.
+- **Create issue** in GitHub, Linear or Jira from a failed step, with the steps, the screenshot and a link to the report.
 - **`breakpatch-ci`**: run the workspace's suites on your CI machines, with the results in the run history.
 
 Choosing another AI model for the assistant is in Business.
@@ -805,6 +807,26 @@ If the address doesn't answer, the runner tries 3 times over 5 minutes. If Slack
 
 **Updating.** Result addresses saved by an earlier Breakpatch were kept with the suite, where the CI account could read them. When an admin opens the updated app, it moves them to where only admins and the runner can read them. Update the runner Mac first, then publish the new [security rules](#security-rules). Older apps can't save in a workspace once the updated app has saved there (they say to update).
 
+## Create an issue
+
+On a failed step in a report, **Create issue** writes it up in **GitHub**, **Linear** or **Jira Cloud** in one click: the title ("Create a project: step 5 Click Done failed: couldn't find the Done button"), the steps up to the failure, what was expected and what was seen, the reason, the app, the start address, the test version, who or what ran it (a person, the local runner or CI), the Mac, the time and a link to the report. If the AI assistant explained the failure, its explanation goes in too. Afterwards the report shows **Open issue** instead, for everyone in the team.
+
+**The screenshot.** Jira gets the failed step's screenshot as an attachment, and Linear as a picture in the issue. GitHub has no way to attach one, so it's put in your workspace's Firebase Storage and linked, as for [result messages](#result-messages) (it needs Storage and its rules); without Storage the issue goes without it. The screenshot is on the Mac that ran the test, so an issue made on another Mac, or from a runner or CI run, has no picture.
+
+**Set it up** in Settings → **Issue trackers**:
+
+1. **Where issues go** (admins, for the whole team): the GitHub repository (`acme/web`) and labels, the Linear team's key (`ENG`), or the Jira site (`acme.atlassian.net`), project key (`WEB`), issue type (Bug unless you say otherwise) and labels.
+2. **Your token, on this Mac** (each person): issues are made in your name, with your own token.
+   - **GitHub:** a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with access to the repository and *Issues: Read and write*.
+   - **Linear:** a personal API key (Linear → Settings → Security & access).
+   - **Jira:** an [API token](https://id.atlassian.com/manage-profile/security/api-tokens) with the email you sign in to Jira with.
+
+   **Check and save** asks the tracker whether the token works, then keeps it in this Mac's Keychain. It's only used to make issues, and never goes to the workspace, your teammates or Breakpatch. **Remove** takes it off this Mac.
+
+If a tracker refuses, Breakpatch says why in plain words, for example "GitHub said the token can't create issues in acme/web".
+
+Create issue comes with a Breakpatch Team licence that includes it; licences get it at their next check. In Community, **Copy as Markdown** gives the same text to paste yourself.
+
 ## Security rules
 
 **Copy rules** in workspace setup gives rules with your email domain filled in. They say:
@@ -816,6 +838,7 @@ If the address doesn't answer, the runner tries 3 times over 5 minutes. If Slack
 - Accounts with the `ci` role read apps, tests, shared steps, their versions and suites, and add runs marked `ci` as themselves. They can't change anything, or read members, runs or the licence.
 - A test's released version must be one that's saved.
 - Only admins set where a suite's result goes. Its address is kept apart from the suite, and only admins and the runner can read it.
+- Anyone in the team can note the issue made from a run, and change nothing else about it. Only admins set where issues go. Tokens for GitHub, Linear and Jira are never in the workspace.
 
 To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the `breakpatch` database. Disable the user in Firebase Authentication to cut it off.
 

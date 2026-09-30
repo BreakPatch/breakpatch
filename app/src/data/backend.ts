@@ -5,7 +5,7 @@
 
 import type {
   App, HttpCall, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
-  Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Workspace,
+  RunIssue, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Workspace,
 } from './types';
 
 export type Unsubscribe = () => void;
@@ -115,6 +115,8 @@ export interface Backend {
    * never saved and backends may ignore it.
    */
   addRun(r: Omit<Run, 'id'>, o?: { trigger?: 'schedule' }): Promise<Run>;
+  /** Optional (Team): notes the issue made from a run (Create issue), so the report offers Open issue. */
+  setRunIssue?(appId: string, runId: string, issue: RunIssue): Promise<void>;
 
   // Suites and local runner
   suites(l: Listener<Suite[]>): Unsubscribe;

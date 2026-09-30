@@ -3,7 +3,7 @@
 import { edition } from '../../edition';
 import { AuthError, cleanDetails, startUrlNote, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
 import type {
-  App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
+  App, Member, Person, QueueItem, RecordedOn, Role, Run, RunIssue, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
 } from '../types';
 import { communityDemo, people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
 
@@ -169,6 +169,9 @@ export class DemoBackend implements Backend {
   // ---- runs ----
   runs(appId: string, l: Listener<Run[]>) { return this.watch(() => this.st.runs.filter(r => r.appId === appId).sort((a, b) => b.startedAt - a.startedAt), l); }
   testRuns(appId: string, testId: string, l: Listener<Run[]>) { return this.watch(() => this.st.runs.filter(r => r.appId === appId && r.testId === testId).sort((a, b) => b.startedAt - a.startedAt), l); }
+  async setRunIssue(appId: string, runId: string, issue: RunIssue) {
+    this.mutate(s => { s.runs = s.runs.map(r => (r.appId === appId && r.id === runId ? { ...r, issue } : r)); });
+  }
   async run(appId: string, runId: string) { return this.wait(this.st.runs.find(r => r.appId === appId && r.id === runId) ?? null); }
   async addRun(r: Omit<Run, 'id'>) {
     const run: Run = { ...r, id: newId('run') };
