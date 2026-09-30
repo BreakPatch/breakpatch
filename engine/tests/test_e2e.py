@@ -1357,3 +1357,28 @@ async def test_names_come_from_the_page_first_and_blank_space_says_so(site):
     finally:
         await hx.call("browser.close")
     assert drawn["label"] == "Click Create project button"
+
+
+class PageExplainer:
+    """Asks for the page read after a failure, like the Team explainer (runner._keep_page)."""
+    def wants_page(self):
+        return True
+
+    async def explain(self, failure, locator_fn):
+        return None
+
+
+async def test_the_page_read_after_a_failure_keeps_the_short_texts(site, recorded):
+    """_keep_page: the controls and the short texts on screen are kept next to the screenshot,
+    so an explainer can tell an error page ("Page not found") from a moved button."""
+    from breakpatch_engine import explain
+    hx = Harness()
+    hx.engine.explainer = PageExplainer()
+    ended = await hx.run(recorded["steps"][:1], site + "/index.html?error=1")
+    step = ended["steps"][0]
+    assert step["result"] == "failed" and step["reason"] == "targetNotFound", step
+    kept = explain.read_page(step["screenshotPath"])
+    assert kept is not None
+    texts = [t["text"] for t in kept["texts"]]
+    assert "Page not found" in texts, texts
+    assert all("Create project" not in (c.get("name") or "") for c in kept["controls"])

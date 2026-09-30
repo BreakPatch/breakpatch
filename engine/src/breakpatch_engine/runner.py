@@ -386,8 +386,8 @@ class Runner:
             if not self.explainer.wants_page():
                 return
             from .dom.extract import extract
-            ex = await asyncio.wait_for(extract(await self.b.live(), (self.b.width, self.b.height)),
-                                        explain.PAGE_READ_S)
+            ex = await asyncio.wait_for(
+                extract(await self.b.live(), (self.b.width, self.b.height), texts=True), explain.PAGE_READ_S)
             await asyncio.to_thread(explain.save_page, shot, explain.page_record(ex.candidates, ex.texts))
         except Exception as e:  # noqa: BLE001 - a page that can't be read is explained from the screenshot
             log.info("couldn't read the page for an explanation: %s", e)
