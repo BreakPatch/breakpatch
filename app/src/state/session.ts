@@ -56,6 +56,12 @@ interface SessionState {
   /** Signs out, closes and forgets the open workspace or folder (the connection list loses it). */
   disconnect(): void;
   /**
+   * Switch workspace on the sign-in screen: leaves the open workspace without forgetting it, and
+   * opens this Mac's tests folder when the list has one. `folder`: it opened; `none`: nothing is
+   * open (the app shows Welcome), with the folder's problem in `localError` if it couldn't open.
+   */
+  leaveWorkspace(): Promise<'folder' | 'none'>;
+  /**
    * Opens another connection from the list. The one open closes without signing out, so
    * switching back finds the person still signed in. The caller stops runs and goes home first.
    */
@@ -173,6 +179,21 @@ export const useSession = create<SessionState>((set, get) => ({
     if (activeId) connections.remove(activeId);
     set({ workspace: null, local: null, backend: null, user: null, setupDone: false });
     persist();
+  },
+  async leaveWorkspace() {
+    const folder = useConnections.getState().list.find(c => c.kind === 'local' && c.local);
+    if (folder) {
+      try { await get().switchTo(folder); return 'folder'; }
+      catch (e) { set({ localError: `${folder.local!.path}: ${e instanceof Error ? e.message : String(e)}` }); }
+    }
+    const b = get().backend;
+    b?.signOut().catch(() => {});
+    b?.close?.();
+    watchBackend(null);
+    connections.deactivate();
+    set({ workspace: null, local: null, backend: null, user: null, pendingWorkspace: null });
+    persist();
+    return 'none';
   },
   async switchTo(c) {
     if (c.kind === 'local' && c.local) await get().connectLocal(c.local.path);

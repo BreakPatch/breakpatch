@@ -146,8 +146,10 @@ export interface Edition {
   /**
    * First-launch gate before Setup: the path to show, or null when the person may go on.
    * `paths` are the screens only the gate shows (left for the app once it says null).
+   * `also`: screens that may show instead of the one it asks for (Team: Welcome, to start on this
+   * Mac from the connect screen).
    */
-  gate: { check(s: GateState): string | null; paths: string[] };
+  gate: { check(s: GateState): string | null; paths: string[]; also?: string[] };
   /** Where the app opens after the gate, e.g. runner mode on the runner Mac. Default "/". */
   startPath?(): string;
   /** Opens a connected workspace. Community has none: it opens the demo and local tests folders. */
