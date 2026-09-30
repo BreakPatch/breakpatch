@@ -157,7 +157,8 @@ The browser methods answer `busy` during a run.
 | Method | Params | Result |
 |---|---|---|
 | `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
-| `record.locate` | `{ description, absence? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found |
+| `record.locate` | `{ description, absence?, near? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below) |
+| `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
 | `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
 
@@ -287,6 +288,33 @@ then uses the AI assistant when that isn't enough (`engine/src/breakpatch_engine
   score, number of controls and timings (`breakpatch.locate`).
 - The AI assistant is only needed when S0 is unsure or the page is Visual: without it those calls
   fail with `not_ready`, and S0's answers still work.
+
+**What a described step means (`record.intent`).** The recorder's describe box doesn't take its
+action from the action the user has chosen: the sentence decides it, with what to act on and how
+many times ("add 2 people": click the "+" next to "People", twice). The app reads the sentence
+itself first (`app/src/screens/recorder/intent.ts`: verbs such as click, type … into …, scroll
+up/down/to, wait N seconds, hover, check that; "N times" and number words; "add/increase N
+<thing>" and "remove/decrease N <thing>" as the "+" or "−" next to it). Only when the sentence
+starts with words it can't place does it send `record.intent`: the AI assistant reads the
+sentence with a screenshot of the page and answers `action` (`click`, `doubleClick`, `rightClick`,
+`longClick`, `hover`, `write`, `scroll`, `waitFor` or `checkpoint`), `repeat` (1 to 20), and
+`target`, `text`, `direction` or `seconds` as the action needs them. A reply without what its
+action needs is `null`. Without the AI assistant it is `null` at once, never `not_ready`; the app
+then uses the chosen action with the sentence as what to look for, as before. Nothing is done to
+the page: the app looks for the target with `record.locate` and records the step (or, for a
+repeat, that many steps one after another) through `record.point` only when the user confirms.
+
+**The "+" or "−" next to something (`record.locate` `near`).** `near: { control: "increase", of:
+"People" }` finds a stepper's control from the page's structure (`dom/near.py`) instead of S0,
+which folds punctuation away and can't tell "+" from "−". Controls that increase are named,
+labelled or read "+" (or an arrow up), a single word such as "plus", "add", "increase" or "more",
+or a short name starting with "add" or "increase" that names the thing ("Add adult"); those that
+decrease, the same with "−", "-", "minus", "remove", "decrease", "less". The one whose own name
+names the thing comes first; else the one nearest (edge to edge, a line apart counting twice) to
+a control or a short text on screen that matches `of`, within 320 px. When there is none, or the
+page is Visual, the AI assistant looks for `description` as usual (path `"fast-visual"` or
+`"visual"`), so the app sends a plain description too (`the "+" button next to "People"`).
+Without `near`, `record.locate` is unchanged.
 
 ### Replay
 | Method | Params | Result |

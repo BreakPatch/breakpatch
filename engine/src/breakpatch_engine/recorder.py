@@ -513,7 +513,18 @@ class Recorder:
                 out.update(name=got["name"], target=got["target"])
         return out
 
-    async def locate(self, description: str, absence: bool = False):
+    async def intent(self, sentence: str):
+        """The AI assistant's reading of a described step (locator.parse_intent), or null when it
+        isn't downloaded or can't tell. Looks at the page as it is, so "add 2 people" can be read
+        against what's on screen."""
+        loc = self.locator_fn()
+        if not loc.available() or not hasattr(loc, "intent"):
+            return NULL
+        self.b.require()
+        got = await loc.intent(imaging.to_image(await self.b.shoot()), sentence)
+        return got or NULL
+
+    async def locate(self, description: str, absence: bool = False, near: dict | None = None):
         """Finds a described element (dom/flow.py): from the page's structure on pages that have
         one, else with the AI assistant. `absence`: "not found" is the expected answer, so the AI
         assistant is never asked after the page's structure didn't find it."""
@@ -521,7 +532,7 @@ class Recorder:
             raise EngineError("bad_request", "Describe what to look for.")
         self.b.require()
         seq = self.b.last_seq               # the frame the live view shows as the page is looked at
-        found = await self.finder.locate(description.strip(), absence=absence)
+        found = await self.finder.locate(description.strip(), absence=absence, near=near)
         if found.box is None:
             return NULL
         out = {"box": found.box, "at": found.at, "target": description.strip(), "frame": seq, "path": found.path}

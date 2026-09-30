@@ -1,7 +1,7 @@
 // Simulated engine for the browser preview and tests. Timings follow the prototype:
 // "Checking the screen…" ~1 s, run steps ~750 ms each, AI thinking ~1.5 s.
 import type { Box, FailReason, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import type { CallReply, Engine, EngineEvents, FileChoice, HandInput, LocateResult, Proposal, RecordParams, RunStart, SetupTaskName, SystemInfo } from './engine';
+import type { CallReply, Engine, EngineEvents, FileChoice, HandInput, LocateResult, Near, EngineIntent, Proposal, RecordParams, RunStart, SetupTaskName, SystemInfo } from './engine';
 import { edition } from '../edition';
 import { labelFor } from './labels';
 import { MODELS_DIR } from './paths';
@@ -87,7 +87,10 @@ export class DemoEngine implements Engine {
     return step;
   }
 
-  async locate(description: string): Promise<LocateResult | null> {
+  /** The demo has no AI assistant to read a sentence: the app's own reading is all there is. */
+  async intent(_sentence: string): Promise<EngineIntent | null> { return null; }
+
+  async locate(description: string, _opts: { near?: Near } = {}): Promise<LocateResult | null> {
     await this.sleep(1500);
     const low = description.toLowerCase();
     const hit = this.targets.find(t => t.visible() && t.words.some(w => low.includes(w)));

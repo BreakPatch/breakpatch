@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Pricing</title>
+<style>
+  body { font: 16px system-ui, sans-serif; margin: 40px; }
+  .row { display: flex; align-items: center; gap: 12px; margin: 18px 0; }
+  .row > span:first-child { width: 120px; }
+  button { min-width: 36px; height: 36px; font-size: 18px; }
+  output { width: 24px; text-align: center; }
+  .icon { width: 36px; height: 36px; background: #eee; cursor: pointer; display: inline-grid; place-items: center; }
+</style></head>
+<body>
+  <h1>Choose your plan</h1>
+  <div class="row"><span>Adults</span>
+    <button aria-label="Decrease adults" data-for="adults" data-d="-1">−</button><output id="adults">1</output>
+    <button aria-label="Increase adults" data-for="adults" data-d="1">+</button></div>
+  <div class="row"><span>People</span>
+    <button data-for="people" data-d="-1">−</button><output id="people">1</output>
+    <button data-for="people" data-d="1">+</button></div>
+  <div class="row"><span>Rooms</span>
+    <div class="icon" role="button" tabindex="0" data-for="rooms" data-d="-1">-</div><output id="rooms">1</output>
+    <div class="icon" role="button" tabindex="0" data-for="rooms" data-d="1">+</div></div>
+  <div class="row"><button>Add to cart</button><a href="#more">More options</a><button>Sign up</button></div>
+  <script>
+    document.querySelectorAll('[data-for]').forEach(b => b.addEventListener('click', () => {
+      const o = document.getElementById(b.dataset.for); o.textContent = String(Math.max(0, +o.textContent + +b.dataset.d));
+    }));
+  </script>
+</body></html>

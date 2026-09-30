@@ -13,6 +13,9 @@
   there (in the experiment, falling back cut "not found" F1 from 0.76 to 0.05). On a Visual page
   there is nothing else to ask.
 
+- `near` (a stepper's "+" or "−" next to something, from the app's "add 2 people"): on Fast
+  pages near.py instead of S0; when it finds nothing, the AI assistant with the description.
+
 S0's answers never touch the model: the locator isn't even fetched, so it can't load.
 One look at a time: looks share the page's CDP sessions, so overlapping calls wait their turn.
 """
@@ -26,7 +29,7 @@ from typing import Callable
 
 from .. import config, imaging
 from ..protocol import EngineError
-from . import s0
+from . import near as near_mod, s0
 from .extract import Extraction, Extractor
 from .router import FAST, VISUAL, Route, route
 
@@ -120,11 +123,12 @@ class LocateFlow:
             ex, self._ex, self._ex_key = self._ex, None, None
             await ex.close()
 
-    async def locate(self, description: str, absence: bool = False) -> Found:
+    async def locate(self, description: str, absence: bool = False, near: dict | None = None) -> Found:
+        """`near`: `{control: "increase"|"decrease", of}`, the "+" or "−" next to `of`."""
         async with self._lock:
-            return await self._locate(description, absence)
+            return await self._locate(description, absence, near)
 
-    async def _locate(self, description: str, absence: bool) -> Found:
+    async def _locate(self, description: str, absence: bool, near: dict | None = None) -> Found:
         t0 = time.perf_counter()
         w, h = self.b.width, self.b.height
         ex = None
@@ -142,7 +146,15 @@ class LocateFlow:
             ex = await self._extract()
         # (A Fast page whose structure can't be read this time is looked at as a Visual one: an
         # empty list must never read as "not found".)
-        if r.mode == FAST and ex is not None:
+        if r.mode == FAST and ex is not None and near:
+            t1 = time.perf_counter()
+            c = near_mod.stepper(near.get("control"), near.get("of"), ex.candidates, ex.texts)
+            found = Found(None, PATH_FAST if c else PATH_FALLBACK, None, ex.count, ex.extract_ms,
+                          round((time.perf_counter() - t1) * 1000, 2))
+            if c:
+                vis = s0.visible_box(c["box"], (w, h))
+                found.box, found.at = imaging.clamp_box(vis, w, h), _centre(vis)
+        elif r.mode == FAST and ex is not None:
             ans = s0.locate(description, ex.candidates, (w, h))
             found = Found(None, PATH_FAST, ans.score, ex.count, ex.extract_ms, ans.ms, ties=ans.ties)
             if ans.found:

@@ -39,6 +39,16 @@ def default_locator_factory() -> Callable[[], Locator]:
     return get
 
 
+
+def near_param(v) -> dict | None:
+    """record.locate's `near`: `{control: "increase"|"decrease", of: "People"}`, else None."""
+    if not isinstance(v, dict) or v.get("control") not in ("increase", "decrease"):
+        return None
+    of = v.get("of")
+    if not isinstance(of, str) or not of.strip():
+        return None
+    return {"control": v["control"], "of": " ".join(of.split())[:80]}
+
 class Engine:
     def __init__(self, emit: Emit, timings: config.Timings | None = None,
                  locator_fn: Callable[[], Locator] | None = None, headless: bool | None = None,
@@ -77,6 +87,7 @@ class Engine:
             "record.locate": self.record_locate,
             "record.checkpoint": self.record_checkpoint,
             "record.propose": self.record_propose,
+            "record.intent": self.record_intent,
             "record.chooseFile": lambda p: self._sync(self.recorder.choose_file(p)),
             "run.start": self.run_start,
             "run.stop": self.run_stop,
@@ -282,7 +293,18 @@ class Engine:
     async def record_locate(self, p: dict):
         self._not_during_run()
         self.browser.require()
-        return await self.recorder.locate(p.get("description") or "", absence=p.get("absence") is True)
+        return await self.recorder.locate(p.get("description") or "", absence=p.get("absence") is True,
+                                          near=near_param(p.get("near")))
+
+    async def record_intent(self, p: dict):
+        """What a described step means, from the AI assistant: `{action, target, repeat, text?,
+        direction?, seconds?}` or null. The app asks only when its own reading of the sentence
+        can't decide; without the AI assistant this is null, never an error."""
+        self._not_during_run()
+        sentence = p.get("sentence")
+        if not isinstance(sentence, str) or not sentence.strip():
+            raise EngineError("bad_request", "Describe the step.")
+        return await self.recorder.intent(sentence.strip()[:300])
 
     # ---------------------------------------------------------------- replay
 

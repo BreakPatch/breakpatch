@@ -146,6 +146,9 @@ class Extraction:
     n_procs: int = 1
     n_documents: int = 1
     extra: dict = field(default_factory=dict)   # what a subclass's hooks collected
+    # Short visible text runs, `{text, box}` (an element's own text, 60 characters at most): what
+    # sits next to a control ("People" by its + and −), for near.py. Never candidates.
+    texts: list = field(default_factory=list)
 
     @property
     def count(self) -> int:
@@ -165,6 +168,7 @@ class Look:
         self.flutter = False
         self.canvas = 0.0
         self.extra: dict = {}
+        self.texts: list[dict] = []
 
 
 class _Proc:
@@ -295,7 +299,7 @@ class Extractor:
         pub = [{k: c[k] for k in PUBLIC} for c in cands]
         ms = (time.perf_counter() - t0) * 1000
         return Extraction(self.viewport, pub, round(ms, 2), look.flutter, round(look.canvas, 4),
-                          len(procs), sum(len(s["documents"]) for s in snaps), look.extra)
+                          len(procs), sum(len(s["documents"]) for s in snaps), look.extra, look.texts)
 
     async def _walk(self, look: Look, procs, pi, di, ox, oy, clip, parent_lm):
         snap, ax = look.snaps[pi], look.axmaps[pi]
@@ -520,6 +524,11 @@ class Extractor:
         for i in range(n):
             if types[i] == 1:
                 self._element(look, (pi, di, i), attrd[i] or {}, box[i], vis[i], ancestors_of(i))
+                if vis[i] and tagn[i] not in ("STYLE", "SCRIPT"):
+                    own = [st[nval[j]] for j in kids.get(i, ()) if types[j] == 3 and j in lay and nval[j] >= 0]
+                    t = " ".join(" ".join(own).split())
+                    if t and len(t) <= 60:
+                        look.texts.append({"text": t, "box": box[i]})
             if keep_int[i] or (named[i] and not has_desc[i]):
                 ad = attrd[i]
                 node = axn[i]

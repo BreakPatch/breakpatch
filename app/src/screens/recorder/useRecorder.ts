@@ -12,18 +12,20 @@ import { secrets } from '../../platform';
 import { useSession } from '../../state/session';
 import { originOf } from '../../lib/sites';
 import { ensureSecretSites } from '../../lib/secretSites';
-import { askText, checkpointLabel, describeWhat, notFoundText, thinkingText } from './describe';
+import { checkpointLabel, intentAskText, notFoundText, thinkingText } from './describe';
+import { chosenIntent, fromEngine, readIntent, type Intent } from './intent';
 
 export type AiState =
   | { state: 'idle' }
   | { state: 'thinking'; text: string; what: string }
-  | { state: 'result'; text: string; what: string; box: Box; at: Point; target: string; frame?: number }
+  /** Found what a described step names. `intent`: what Confirm does with it (and how many times). */
+  | { state: 'result'; text: string; what: string; box: Box; at: Point; target: string; frame?: number; intent: Intent }
   | { state: 'notfound'; text: string; what: string }
   /**
    * A click, drag or scroll on the live view: nothing reached the page. The bar asks "Click Next
    * button?" and the step is done and recorded only on Confirm (Enter, or the same spot again).
    */
-  | { state: 'proposal'; params: RecordParams; frame?: number; box: Box; label: string; target?: string; named: boolean };
+  | { state: 'proposal'; params: RecordParams; frame?: number; box: Box; label: string; target?: string; named: boolean; repeat?: number };
 
 export interface ActionOptions {
   writeSource: 'typed' | 'secret' | 'generated';
@@ -197,8 +199,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   const afterAdd = (kind: ActionKind) => { if (!STICKY.has(kind)) setAction('click'); };
 
   /** Records one step with the engine: the row appears at once, the disc pulses while the screen is checked. */
-  async function record(params: RecordParams, extra: Extra = {}) {
-    if (busyRef.current) return;
+  async function record(params: RecordParams, extra: Extra = {}): Promise<boolean> {
+    if (busyRef.current) return false;
     busyRef.current = true;
     const rr = rerecordId;
     const tempId = localId('pending-');
@@ -231,13 +233,27 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
       afterAdd(params.action);
       const noAsk = useSession.getState().prefs.noSecretAsk ?? [];
       if (step.action === 'write' && step.masked && step.text && !step.secretRef && !step.generated && !(appId && noAsk.includes(appId))) setSecretAsk(id);
+      return true;
     } catch (e) {
       if (!rr && insertRef.current === tempId) setInsertAfter(prevInsert);
       if (!rr) setSteps(s => removeStep(s, tempId));
       setSelectedId(rr);
       onErrorRef.current(e instanceof EngineError || e instanceof Error ? e.message : "Couldn't record that step.");
+      return false;
     } finally {
       busyRef.current = false; setBusyId(null); setChecking(false); setFileAsk(a => (a?.stepId ? a : null));
+    }
+  }
+
+  /**
+   * The same step `n` times, one after another, each recorded and checked on its own ("add 2
+   * people": two clicks on the +). Only the first is held to the frame it was found on: the page
+   * moves on after each. Stops at the first that fails.
+   */
+  async function recordTimes(params: RecordParams, extra: Extra, n: number) {
+    for (let i = 0; i < n; i++) {
+      const { frame: _f, ...later } = extra;
+      if (!await record(params, i === 0 ? extra : later)) return;
     }
   }
 
@@ -257,15 +273,51 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   }
 
   // ---------- Describe ----------
+  /**
+   * The describe box: the sentence says what to do (intent.ts), what to do it to and how many
+   * times; the chosen action only counts when it names none. Then what it names is looked for
+   * (record.locate) and shown for Confirm. Nothing reaches the page before that, except a wait or
+   * typing into the field that has the focus, which the Wait and Write actions do at once too.
+   */
   async function describe(t: string) {
     const token = ++aiToken.current;
-    const what = describeWhat(t);
+    const read = readIntent(t);
+    let it: Intent;
+    if (read.kind === 'intent') it = read.intent;
+    else {
+      setAi({ state: 'thinking', text: t, what: read.target });
+      // Only for words this can't place, and only with the AI assistant; else as before.
+      let got: Intent | null = null;
+      if (read.kind === 'unsure') { try { got = fromEngine(await engine.intent(t)); } catch { got = null; } }
+      if (token !== aiToken.current) return;
+      it = got ?? chosenIntent(read.target, action, options);
+    }
+    if (!it.target) { act(it, token); return; }
+    const what = it.target;
     setAi({ state: 'thinking', text: t, what });
     let res = null;
-    try { res = await engine.locate(t); } catch { res = null; }
+    try { res = await engine.locate(what, it.near ? { near: it.near } : undefined); } catch { res = null; }
     if (token !== aiToken.current) return;
-    if (res) setAi({ state: 'result', text: t, what, box: res.box, at: res.at, target: res.target, frame: res.frame });
+    if (res) setAi({ state: 'result', text: t, what, box: res.box, at: res.at, target: res.target, frame: res.frame, intent: it });
     else { setAi({ state: 'notfound', text: t, what }); setText(t); }
+  }
+  /** A described step with nothing to look for: a scroll of the page is shown for Confirm; the rest is done. */
+  function act(it: Intent, token: number) {
+    if (token !== aiToken.current) return;
+    setAi({ state: 'idle' });
+    switch (it.action) {
+      case 'scroll': case 'swipe': {
+        const params: RecordParams = { action: it.action, from: [Math.round(viewport.width / 2), Math.round(viewport.height / 2)], direction: it.direction ?? 'down', distance: it.distance ?? options.distance };
+        aiToken.current++;
+        const times = it.repeat > 1 ? `, ${it.repeat} times` : '';
+        setAi({ state: 'proposal', params, box: around(params.from!, 24), label: `${defaultLabel(params)} ${params.distance} px${times}`, named: true, repeat: it.repeat });
+        return;
+      }
+      case 'waitFor': void record({ action: 'waitFor', durationMs: Math.max(1, it.seconds ?? options.seconds) * 1000 }); return;
+      case 'write': if (it.text) void record({ action: 'write', text: it.text }); return;
+      case 'navigate': if (it.url) void record({ action: 'navigate', nav: 'url', url: it.url }); return;
+      default: return;
+    }
   }
   const cancelAi = () => { aiToken.current++; setAi({ state: 'idle' }); };
 
@@ -287,7 +339,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     if (ai.state !== 'proposal') return;
     const a = ai; aiToken.current++; setAi({ state: 'idle' });
     // Named by the AI assistant already: the engine needn't ask it again.
-    void record(a.params, { frame: a.frame, ...(a.target ? { label: a.label, target: a.target } : {}) });
+    const extra = { frame: a.frame, ...(a.target ? { label: a.label, target: a.target } : {}) };
+    void recordTimes(a.params, extra, a.repeat ?? 1);
   }
   const retryAi = () => {
     if (ai.state === 'proposal') { cancelAi(); setRetryNote(true); return; }     // pick again on the page
@@ -299,10 +352,17 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     if (ai.state !== 'result') return;
     const a = ai; setAi({ state: 'idle' });
     const x = { target: a.target, frame: a.frame };
-    if (action === 'checkpoint') void record({ action: 'checkpoint' }, { ...x, checkpoint: a.box, label: checkpointLabel(a.text) });
-    else if (action === 'waitUntil') void record({ action: 'waitUntil', region: a.box, timeoutMs: options.maxWait * 1000 }, x);
-    else if (action === 'swipe' || action === 'scroll') void record({ action, from: a.at, direction: options.direction, distance: options.distance }, x);
-    else void record({ action: POINT_KINDS.has(action) ? action : 'click', at: a.at, ...(action === 'upload' ? { sample: options.sample } : {}) }, x);
+    // What the sentence asked for; the chosen action only when it named none (intent.ts).
+    const it = a.intent;
+    const kind = it.action;
+    if (kind === 'checkpoint') void record({ action: 'checkpoint' }, { ...x, checkpoint: a.box, label: checkpointLabel(it.from === 'words' ? it.target ?? a.text : a.text) });
+    else if (kind === 'waitUntil') void record({ action: 'waitUntil', region: a.box, timeoutMs: options.maxWait * 1000 }, x);
+    else if (kind === 'swipe' || kind === 'scroll') void recordTimes({ action: kind, from: a.at, direction: it.direction ?? options.direction, distance: it.distance ?? options.distance }, x, it.repeat);
+    else if (kind === 'write') void record({ action: 'write', at: a.at, text: it.text ?? '' }, x);
+    else {
+      const k = POINT_KINDS.has(kind) ? kind : 'click';
+      void recordTimes({ action: k, at: a.at, ...(k === 'upload' ? { sample: options.sample } : {}) }, x, it.repeat);
+    }
   }
 
   // ---------- Page ----------
@@ -420,7 +480,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     },
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),
     thinking: ai.state === 'thinking' ? thinkingText(ai.what) : null,
-    ask: ai.state === 'result' ? askText(ai.what) : ai.state === 'proposal' ? `${ai.label}?` : null,
+    ask: ai.state === 'result' ? intentAskText(ai.what, ai.intent) : ai.state === 'proposal' ? `${ai.label}?` : null,
     notFound: ai.state === 'notfound' ? notFoundText(ai.what) : null,
     busy: busyId !== null,
   };
