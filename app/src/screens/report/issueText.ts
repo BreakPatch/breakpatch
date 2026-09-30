@@ -7,6 +7,7 @@ import { runBy, WHERE } from '../../components/common/runs';
 import { preorder, rowRefs } from '../run/resolve';
 import { reasonText, reasonTitle, targetName } from '../run/reasons';
 import { systemNote } from './reportData';
+import { CAUSE_TEXT, SUGGESTION_TEXT } from '../../lib/explain';
 
 export interface IssueInput {
   run: Run;
@@ -89,8 +90,11 @@ export function issueContent(i: IssueInput): IssueContent {
   lines.push(`**${mdText(reasonTitle(r?.reason, step))}.** ${mdText(reasonText(r?.reason, step))}`, '');
   if (why) {
     lines.push(`**The AI assistant says:** ${mdText(why.summary)}`);
-    if (why.cause) lines.push(`- Cause: ${mdText(why.cause)}`);
-    if (why.suggestion) lines.push(`- Try: ${mdText(why.suggestion)}`);
+    // The explanation's cause and suggestion are codes (data/types.ts Explanation): their plain words, as the report shows them.
+    const cause = why.cause ? (CAUSE_TEXT as Record<string, string>)[why.cause] : undefined;
+    const next = why.suggestion ? (SUGGESTION_TEXT as Record<string, string>)[why.suggestion] : undefined;
+    if (cause) lines.push(`- Likely cause: ${mdText(cause)}`);
+    if (next) lines.push(`- Suggested: ${mdText(next)}`);
     lines.push('');
   }
   lines.push('### Steps', '');

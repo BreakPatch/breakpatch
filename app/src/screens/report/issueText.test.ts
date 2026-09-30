@@ -77,10 +77,13 @@ describe('the issue for a failed step', () => {
   });
 
   it("adds the AI assistant's explanation when there is one (#7)", () => {
-    const md = content(failed('targetNotFound', { explanation: { summary: 'The Done button moved into a menu.', cause: 'A redesign', suggestion: 'Re-record step 6' } } as Partial<StepRun>)).markdown;
+    const md = content(failed('targetNotFound', { explanation: { summary: 'The Done button moved into a menu.', cause: 'moved', suggestion: 'rerecord' } })).markdown;
     expect(md).toContain('**The AI assistant says:** The Done button moved into a menu.');
-    expect(md).toContain('- Cause: A redesign');
-    expect(md).toContain('- Try: Re-record step 6');
+    expect(md).toContain('- Likely cause: It moved');
+    expect(md).toContain('- Suggested: Re-record this step.');
+    // A cause or suggestion this app has no words for is left out.
+    const newer = content(failed('targetNotFound', { explanation: { summary: 'S', cause: 'someday' as 'moved', suggestion: 'rerecord' } })).markdown;
+    expect(newer).not.toContain('Likely cause');
     expect(content(failed('targetNotFound')).markdown).not.toContain('AI assistant says');
     expect(explanationIn(undefined, { explanation: { summary: 'On the run' } })).toEqual({ summary: 'On the run' });
   });
