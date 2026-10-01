@@ -44,6 +44,7 @@ Breakpatch comes in these editions. **Community** is free and open source: one p
 30. [Security rules](#security-rules)
 31. [Licences and seats](#licences-and-seats)
 32. [The back office](#the-back-office)
+33. [Encryption and the recovery code](#encryption-and-the-recovery-code)
 
 ---
 
@@ -503,6 +504,8 @@ Clicking it opens a page with **Open in Breakpatch** and **Install Breakpatch**.
 
 Teammates can also paste the link on the connect screen: **Host it yourself** → *Got a link or a .bpworkspace file?* → **Or paste the link here**.
 
+In an encrypted workspace, **Copy link with the key** gives the same link with the key that opens the tests in its `#` part, so a teammate's Mac reads them at once. Send it only to teammates. Without the key, an admin lets each new Mac in: see [Encryption and the recovery code](#encryption-and-the-recovery-code).
+
 ## Members and roles
 
 Everyone from your email domain joins as a **member** the first time they sign in (in a [hosted workspace](#invite-people), everyone you invite). Admins change roles in Settings → **Members**.
@@ -709,6 +712,7 @@ Shared steps run the version each test's step pins, or their latest, as in the a
 
 - `BREAKPATCH_CI_EMAIL`: the CI account's email address.
 - `BREAKPATCH_CI_PASSWORD`: its password.
+- `BREAKPATCH_MACHINE_KEY`: in an encrypted workspace, the machine key (`bpmk1_…`, Settings → Workspace → Encryption → **Machine key**). It opens the tests, and the runs `breakpatch-ci` writes back are encrypted with the workspace's key too.
 
 Only an account with the *CI* role is accepted. To cut a pipeline off, disable the account in Firebase Authentication, or change its password.
 
@@ -839,6 +843,7 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 - **Exit code 2 with "wrong email or password"**: check `BREAKPATCH_CI_EMAIL` and `BREAKPATCH_CI_PASSWORD` in the job's secrets.
 - **Exit code 2 with "not CI"** or "isn't a member of this workspace": the account needs the *CI* role. Sign in to Breakpatch with it once, then an admin changes its role in Settings → Members.
 - **Exit code 2 with "The workspace refused the CI account"**: publish the latest security rules (Settings → Workspace → **Copy security rules**).
+- **Exit code 2 with "This workspace's tests are encrypted"** or "isn't this workspace's machine key": set `BREAKPATCH_MACHINE_KEY` to the workspace's current machine key. After an admin makes a new one, update the secret.
 - **Exit code 2 with "would use the secret … which --secret … doesn't list"**: a test's start page, app address or set-up call is on a site you didn't give that secret. If the site is right, add it: `--secret NAME=https://site1,https://site2`. If not, someone changed the test: check its Version history.
 - **"Left out: no version is marked as released"**: open the test's Version history and **Mark as released** the version CI should run, or use `--version latest`.
 - **Checks fail in CI but pass in the app**: look for the line "this test was recorded on…" at the start of the log. Re-record the test on a machine like the CI machine, or run it on a Mac.
@@ -924,6 +929,7 @@ Create issue comes with a Breakpatch Team licence that includes it; licences get
 - Runs and suite runs must carry `expiresAt`, 90 days after they're saved, which the TTL policy deletes them by. It can't be changed. Runs from Breakpatch or `breakpatch-ci` from before this are refused, so update them first.
 - Only admins set where a suite's result goes. Its address is kept apart from the suite, and only admins and the runner can read it.
 - Anyone in the team can note the issue made from a run, and change nothing else about it. Only admins set where issues go. Tokens for GitHub, Linear and Jira are never in the workspace.
+- In an encrypted workspace, names, steps, addresses and results are stored encrypted, and the rules check only their size. Only admins can encrypt what's there again (turning encryption on, a new key), and nothing else about it. The copies of the key for the recovery code and the machine key are for admins (the machine key's for the runner and CI too), and each Mac's request to be let in is its owner's.
 
 To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the workspace's database. Disable the user in Firebase Authentication to cut it off.
 
@@ -971,3 +977,28 @@ If you're one of your licence's admins, you see:
 If you bought Breakpatch Team on the [pricing page](https://breakpatch.dev/pricing/), sign in with the email you bought with: the first time, you see **Your new licence key (shown once)**. Press **Show my licence key** and keep it somewhere safe, because it isn't shown again. The same page has **Manage billing** (invoices, payment method, cancelling, through Paddle, our reseller) and **Change seats** (seats and extra machine licences, charged or credited straight away, pro rata for the rest of the billing period; credits go against your next payments; Solo has no seats to change). A cancelled licence keeps working until the end of the period you paid for.
 
 For a licence you didn't buy on the site, contact Breakpatch to add seats or renew. If you see "No licences for this email", ask whoever bought Breakpatch Team to add you as an admin.
+
+## Encryption and the recovery code
+
+Breakpatch can encrypt a workspace's tests on your Macs, so the workspace's database keeps only unreadable text. Workspaces hosted by Breakpatch are always encrypted. For a workspace in your own Firebase, an admin turns it on in **Settings → Workspace → Encryption** (publish this version's security rules first: **Copy security rules**). It can't be turned off again.
+
+**What's encrypted.** Test, app, suite and shared-step names and descriptions; steps, with what they click and type, their addresses and labels; start addresses; run results, their steps and "Why did this fail?" explanations; where results and issues go. **What isn't:** ids, times, version numbers, pass or fail and counts, when a run expires, and who is in the team with which role. The workspace needs those to check who may do what and to delete old runs, and they say nothing about what your tests do.
+
+**The key.** Each workspace has one key, made on the first admin's Mac and kept in its Keychain. It never leaves your Macs unencrypted, and Breakpatch never has it. A teammate's Mac gets it one of two ways:
+
+- **An invite link with the key**: Settings → Workspace → **Copy link with the key**. The key is in the part after `#`, which browsers never send to a server. Send it only to teammates.
+- **An admin lets the Mac in**: a Mac without the key shows *This Mac can't read the workspace's tests yet* with four words, for example *otter maple tulip quartz*. The admin sees it under **Macs waiting to be let in**, checks the words with its owner, and presses **Let in**.
+
+Until then, that Mac shows names as *Locked* and can't save.
+
+**The recovery code.** When encryption is turned on, the admin sees a recovery code once, like `BPR1-50M6-HA79-55MT-KTHA-DANE-PAVB-NFH`. Save it with **Save recovery kit (PDF)** or **Copy code**, keep it in your password manager or with your company's papers, then type back the 4 characters Breakpatch asks for. Until you do, admins see *Save the workspace's recovery code* under the title bar. Breakpatch never sees the code and can't make it again.
+
+- **I lost access to the key**: on a new Mac, sign in as an admin and open **Settings → Workspace → Encryption → I lost access to the key**, then type the recovery code. Any Mac that still has the key can also let the new one in.
+- **Make a new recovery code** stops the old one working. Save the new one straight away.
+- **If every Mac with the key is lost and nobody has the recovery code, the tests saved so far can't be read again**, by you or by Breakpatch. An admin can **Start again with a new key**: new tests and runs are encrypted with it, and older ones stay locked.
+
+**The local runner and CI** use the **machine key** (`bpmk1_…`): **Make one** under **Machine key**, then enter it on the runner Mac (Settings → Workspace → Encryption) and save it as `BREAKPATCH_MACHINE_KEY` in CI ([From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)). A new machine key stops the old one working.
+
+**A new key.** After someone leaves the team, Breakpatch offers **Make a new key** (it's also in Settings → Workspace → Encryption). Every Mac still in the team gets it, the recovery code and machine key keep working, and what's in the workspace is encrypted again with it in the background. Anyone who had access may have kept copies of what they could read.
+
+**Turning it on**, or a new key, encrypts what's already there in the background: keep working, and if you close the app, it carries on the next time an admin opens the workspace. Breakpatch versions from before encryption can't save to an encrypted workspace, so update everyone first.

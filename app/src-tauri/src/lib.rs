@@ -1,7 +1,8 @@
 //! Breakpatch desktop shell: window, engine sidecar, Keychain secrets, tests folder, file association,
 //! deep links, updater, runner-mode helpers, the Team licence check (licence.rs), the usage counts
-//! (usage.rs), the last step of Upgrade to Team (migration.rs), result messages (runner.rs) and
-//! the issue trackers for Create issue (trackers.rs). The UI calls these through
+//! (usage.rs), the last step of Upgrade to Team (migration.rs), result messages (runner.rs),
+//! the issue trackers for Create issue (trackers.rs) and the workspace keys that seal test content
+//! (workspace_keys.rs). The UI calls these through
 //! `platform.ts`, `lib/usage.ts`, `engine/sidecarEngine.ts` and `lib/updates.ts`.
 
 mod engine;
@@ -13,6 +14,7 @@ mod secrets;
 mod trackers;
 mod usage;
 mod workspace;
+mod workspace_keys;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -505,6 +507,10 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             let index = SecretsIndex::new(data_dir.join("secrets-index.json"));
             app.manage::<SecretsState>(Arc::new(Secrets::new(KeyringStore::default(), index)));
+            // Workspace keys (workspace_keys.rs): test content sealed on this Mac.
+            app.manage::<workspace_keys::commands::KeysState>(Arc::new(workspace_keys::WorkspaceKeys::new(
+                KeyringStore::new(workspace_keys::SERVICE),
+            )));
             app.manage::<TrackersState>(Arc::new(trackers::Trackers::new(
                 KeyringStore::new(trackers::SERVICE),
                 data_dir.join("trackers.json"),
@@ -583,6 +589,24 @@ pub fn run() {
             screenshots_folder,
             git_repo_of,
             migration_report_save,
+            workspace_keys::commands::workspace_keys_status,
+            workspace_keys::commands::workspace_keys_create,
+            workspace_keys::commands::workspace_keys_rotate,
+            workspace_keys::commands::workspace_keys_seal,
+            workspace_keys::commands::workspace_keys_open,
+            workspace_keys::commands::workspace_keys_device,
+            workspace_keys::commands::workspace_keys_fingerprint,
+            workspace_keys::commands::workspace_keys_grant,
+            workspace_keys::commands::workspace_keys_accept,
+            workspace_keys::commands::workspace_keys_recovery_new,
+            workspace_keys::commands::workspace_keys_recovery_kit,
+            workspace_keys::commands::workspace_keys_recovery_done,
+            workspace_keys::commands::workspace_keys_recover,
+            workspace_keys::commands::workspace_keys_machine_new,
+            workspace_keys::commands::workspace_keys_machine_use,
+            workspace_keys::commands::workspace_keys_copy_invite,
+            workspace_keys::commands::workspace_keys_import_invite,
+            workspace_keys::commands::workspace_keys_forget,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Breakpatch");
