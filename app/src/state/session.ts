@@ -203,7 +203,7 @@ export const useSession = create<SessionState>((set, get) => ({
   },
   async switchTo(c) {
     if (c.kind === 'local' && c.local) await get().connectLocal(c.local.path);
-    else if ((c.kind === 'team' || c.kind === 'demo') && c.team) {
+    else if ((c.kind === 'team' || c.kind === 'demo' || (c.kind === 'hosted' && c.team?.workspace.tenant)) && c.team) {
       await get().connect(c.team.workspace);
       // The saved sign-in comes back with the backend (bootSession does the same on launch).
       followUser(get().backend);

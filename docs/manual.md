@@ -29,8 +29,8 @@ Breakpatch comes in these editions. **Community** is free and open source: one p
 15. [What Team adds](#what-team-adds)
 16. [Solo](#solo)
 17. [Upgrading to Team](#upgrading-to-team)
-18. [Create a workspace](#create-a-workspace)
-19. [Invite your team](#invite-your-team)
+18. [Hosted by Breakpatch](#hosted-by-breakpatch)
+19. [Host it yourself](#host-it-yourself)
 20. [Members and roles](#members-and-roles)
 21. [Version history](#version-history)
 22. [Fixed automatically](#fixed-automatically)
@@ -336,7 +336,7 @@ Everything in this part needs a paid edition: **Breakpatch Team**, or **Solo** f
 
 ## What Team adds
 
-- **A shared workspace** in your company's own Google Firebase project (see [Create a workspace](#create-a-workspace)): your team's apps, tests, suites and runs in one place, joined with an invite link. A test is *Only you* until you add it to the team suite. Then it's *In team suite*.
+- **A shared workspace**, [hosted by Breakpatch](#hosted-by-breakpatch) with nothing to set up, or in your company's own Google Firebase project ([Host it yourself](#host-it-yourself)): your team's apps, tests, suites and runs in one place. A test is *Only you* until you add it to the team suite. Then it's *In team suite*.
 - **Members and roles**: member, admin, a runner account and a CI account.
 - **Version history.** Every save is kept. Runs show which version they tested, and you can restore any version.
 - **Fixed automatically.** When a button has moved, the AI assistant finds it during the run and carries on. You accept the new position in the report.
@@ -362,7 +362,7 @@ Solo is for one person who wants the automation for themselves: $19 a month, or 
 | Price | Free | $19 a month, or $16 a month billed yearly | $20 per person a month, or $16 billed yearly | $30 per person a month, billed yearly |
 | People | 1 | 1 | 3 or more | 20 or more |
 | Machine licences | None | 1 | 1 included, you can buy more | 5 included, you can buy more |
-| Where tests are kept | A folder | A folder or Git, or your own workspace if you want one | Your company's Firebase project | Your company's Firebase project |
+| Where tests are kept | A folder | A folder or Git, or your own workspace if you want one | Hosted by Breakpatch, or your company's Firebase project | Hosted by Breakpatch, or your company's Firebase project |
 | Fixed automatically | No | Yes | Yes | Yes |
 | Why did this fail? | No | Yes | Yes | Yes |
 | Copy a failure as Markdown | Yes | Yes | Yes | Yes |
@@ -384,8 +384,8 @@ Solo is for one person who wants the automation for themselves: $19 a month, or 
 
 Install Breakpatch Team over Community. The AI assistant, the test browser, your settings and your saved secrets stay as they are, and Breakpatch opens your tests folder like before. Then go to **Settings → Upgrade to Team** (or **Upgrade to Team** on Home):
 
-1. **Connect a workspace**: [create one](#create-a-workspace), or open an invite link from your team. Then sign in.
-2. **The licence.** If you created the workspace, enter the licence key once in **Settings → Licence** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). If you joined with an invite link, the link sets up your licence and there's no key to enter. See [Licences and seats](#licences-and-seats).
+1. **Connect a workspace**: sign in to one [hosted by Breakpatch](#hosted-by-breakpatch), [create one of your own](#create-a-workspace), or open an invite link from your team. Then sign in.
+2. **The licence.** A hosted workspace needs no key: Breakpatch sets up everyone's seat. If you created a workspace of your own, enter the licence key once in **Settings → Licence** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). If you joined with an invite link, the link sets up your licence and there's no key to enter. See [Licences and seats](#licences-and-seats).
 3. **Move your tests**. Choose the tests folder. Breakpatch shows what it will copy first, for example "1 app, 12 tests, 3 shared steps and 2 suites will be copied.", and you can rename apps, or merge them with apps the workspace already has. It then copies the apps, tests, shared steps, suites and the last run of each test, unless that run is over 90 days old, into the workspace.
 4. **Check, then move to the Trash.** Breakpatch reads everything back from the workspace and compares it with the folder. Only when it all matches, and you confirm, does it move the folder's `breakpatch.json`, `apps` and `suites` to the Trash, so there's one place to edit your tests. To undo it, drag them from the Trash back into the folder.
 
@@ -402,11 +402,54 @@ Good to know:
 - **Already in the workspace?** Anything that's already there is left out. If a test there differs from the folder's (a teammate copied an older version, say), Breakpatch names it, and you can keep the workspace's version.
 - A folder saved by a newer Breakpatch can't be moved until you update.
 
-## Create a workspace
+## Hosted by Breakpatch
+
+<!-- hosted-soon --> **Opens soon.** Until it does, keep your team's tests in your own Firebase project: see [Host it yourself](#host-it-yourself).
+
+The easy way to a Team or Business workspace: Breakpatch keeps it for you, in Europe, with nothing to set up. Everyone signs in with their work email and a code; there are no passwords. It's the same Breakpatch as a workspace of your own, with the same tests, suites, runs and roles.
+
+### Sign in
+
+**Connect a team workspace** → **Hosted by Breakpatch**. Type your work email and choose **Email me a code**. Enter the 6 digits from the email (it comes from signin@breakpatch.dev and works for 10 minutes). Breakpatch then lists your workspaces and your invitations: **Open** one, or **Join** one you're invited to.
+
+This Mac stays signed in to your Breakpatch account, so next time the list opens straight away. **Use another address** signs it out. If a workspace asks you to sign in again, choose **Continue as** your address, or get a new code.
+
+### Create the hosted workspace
+
+A licence's admin does this once, after buying Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name and press **Create workspace**. You're its first admin, and the licence's other admins are invited.
+
+There's no licence key to enter: Breakpatch gives everyone in the workspace their seat. Runs are kept for 90 days (365 with the longer history on Business), then deleted.
+
+### Invite people
+
+Settings → **Members** → **Invite people**: type their email addresses, choose **Member** or **Admin**, and press **Send invitations**. Each gets an email. They open Breakpatch, choose **Hosted by Breakpatch**, sign in with that address and choose **Join**.
+
+- Invitations last 14 days. **Waiting to join** lists them; × takes one back.
+- **Anyone at @yourcompany.com can join** lets people with an address at your own company's domain join without an invitation. It's never offered for public addresses such as Gmail or Outlook.
+- A workspace holds its seats plus 5 people.
+- **Remove from workspace** stops someone opening it at once. To let them back, invite them again.
+
+### A runner Mac and CI
+
+A runner Mac and CI sign in with a token instead of an email. An admin makes one in Settings → **Local runner**:
+
+- **Set up a runner Mac**: name it, press **Make the token** and copy it. It's shown only this once. On the runner Mac choose **Connect a team workspace** → **Hosted by Breakpatch** → **This is a runner Mac**, and paste it. That Mac becomes the workspace's [local runner](#the-local-runner).
+- **Add a CI token**: for [breakpatch-ci](#from-ci-with-breakpatch-ci), with `BREAKPATCH_WORKSPACE=hosted:<workspace>` and the token in the secret `BREAKPATCH_WORKSPACE_TOKEN`. breakpatch-ci signs in with it in a coming update.
+- The trash button next to a token stops it working at once. A workspace holds its machine licences plus 2 tokens.
+
+### Plan, region and usage
+
+Settings → **Workspace** shows the plan and seats, where the workspace is kept, how long runs are kept, and how many tests and how much storage it uses against its allowance (counted once a day). When the licence ends, the workspace becomes read-only for 30 days, so you can still open and export your tests, and then it's deleted. Renewing makes it active again. **Remove from this Mac** signs you out here; the workspace and its tests stay.
+
+## Host it yourself
+
+Keep the workspace in your company's own Google Firebase project instead: for teams with an IT person or developer, or who want the data in their own cloud account. You set it up once; then teammates join with a link. In Breakpatch: **Connect a team workspace** → **Host it yourself**.
+
+### Create a workspace
 
 Do this once for your organisation. You need owner access to a Firebase project. Use the project your product already signs in with, so everyone keeps their usual login. A new project works too: step 5 turns on sign-in and adds your account.
 
-In Breakpatch: **Connect a team workspace** → *Setting up for your team?* → **Create a workspace**. It has six steps, numbered as in the app. Each has **Open Firebase console** (step 4, **Open Google Cloud console**), which opens the right page.
+In Breakpatch: **Connect a team workspace** → **Host it yourself** → *Setting up for your team?* → **Create a workspace**. It has six steps, numbered as in the app. Each has **Open Firebase console** (step 4, **Open Google Cloud console**), which opens the right page.
 
 1. **Create the web app and paste its config.** Project settings → General → Your apps → **Add app** → Web. Name it `Breakpatch`, leave Firebase Hosting off and click Register app. Ignore the code Firebase shows and click Continue to console. Then, under Web apps, pick Breakpatch. In SDK setup and configuration, choose Config, copy it and press **Paste** in Breakpatch (it pastes straight away). Then fill in **Who can sign in**: just the part after @, for example `example.com`.
 2. **Choose the database.** Breakpatch asks which one to use:
@@ -444,7 +487,7 @@ Lists that only grow show the newest first: the **Runs** tab and **Run history**
 
 Breakpatch keeps a copy of the workspace on each Mac, so opening it again only fetches what changed since, which keeps your Firebase bill small. After an update that changes the security rules, publish them again (Settings → Workspace → **Copy security rules**): until then Breakpatch reads everything each time, as before.
 
-## Invite your team
+### Invite your team
 
 Settings → Workspace → **Invite teammates** → **Copy link**. Send it any way you like. It works for everyone and doesn't expire.
 
@@ -458,11 +501,11 @@ Clicking it opens a page with **Open in Breakpatch** and **Install Breakpatch**.
 
 **Save as file** gives the same thing as a `.bpworkspace` file, handy for a shared drive, CI or the local runner. Double-click it to connect.
 
-Teammates can also paste the link on the connect screen: *Got a link or a .bpworkspace file?* → **Or paste the link here**.
+Teammates can also paste the link on the connect screen: **Host it yourself** → *Got a link or a .bpworkspace file?* → **Or paste the link here**.
 
 ## Members and roles
 
-Everyone from your email domain joins as a **member** the first time they sign in. Admins change roles in Settings → **Members**.
+Everyone from your email domain joins as a **member** the first time they sign in (in a [hosted workspace](#invite-people), everyone you invite). Admins change roles in Settings → **Members**.
 
 | Role | What they can do |
 |---|---|
@@ -473,7 +516,7 @@ Everyone from your email domain joins as a **member** the first time they sign i
 
 Only admins can change roles, and nobody can change their own. **Remove from workspace** stops someone opening it; their tests and runs stay. If they sign in again with an account from your domain, they join as a member again, so to keep someone out, disable their account in Firebase Authentication.
 
-Runner and CI accounts sign in once and join as a member. Then an admin changes their role.
+Runner and CI accounts sign in once and join as a member. Then an admin changes their role. In a hosted workspace, a runner Mac and CI use [tokens](#a-runner-mac-and-ci) instead, and people are members or admins.
 
 ## Version history
 
@@ -890,7 +933,8 @@ A service account using the Firebase Admin SDK skips the rules altogether. Use a
 
 A Team licence has **seats** for people and **machine licences** for the local runner and CI machines. The licence belongs to the workspace.
 
-- **The admin sets up the licence once**: **Settings → Licence** → **Enter licence key** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). The key is on your licence page after you buy: see [The back office](#the-back-office).
+- **Hosted by Breakpatch** needs no key in the app: Breakpatch gives each person their seat when they sign in. The rest of this section is the same.
+- **The admin sets up the licence once** (in a workspace of your own): **Settings → Licence** → **Enter licence key** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). The key is on your licence page after you buy: see [The back office](#the-back-office).
 - **Members don't enter a key.** Everyone else gets a seat by themselves when they join through the [invite link](#invite-your-team) or sign in. Only admins can see the key. Until the admin has entered it, members see "Your admin hasn't set up the licence for this workspace yet."
 - **Out of seats:** the member sees "Your team is out of seats. Your admin can see you're waiting and can add a seat or free one." Admins see who is waiting in **Settings → Licence**.
 - **A new key:** if the admin replaces the key, members' seats follow once an admin opens Breakpatch.

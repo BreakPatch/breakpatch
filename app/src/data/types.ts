@@ -14,7 +14,13 @@ export interface Workspace {
   logo?: string;                 // data URL or https URL
   config: FirebaseWebConfig;
   database: string;              // named Firestore database, default "breakpatch"
-  domain: string;                // allowed email domain, e.g. "example.com"
+  domain: string;                // allowed email domain, e.g. "example.com"; '' for a hosted workspace
+  /**
+   * Hosted by Breakpatch (Breakpatch Cloud): the workspace's tenant id. Its documents are under
+   * workspaces/<tenant>/ in the shared project, and its connection id is `hosted:<tenant>`.
+   * Unset for a workspace in the team's own Firebase.
+   */
+  tenant?: string;
   /**
    * How many days runs are kept: a hosted workspace's (90, or 365 for Business), as Breakpatch
    * Cloud says. Unset for a workspace in the customer's own Firebase, which keeps them 90 days.

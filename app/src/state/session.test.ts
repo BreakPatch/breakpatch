@@ -61,4 +61,15 @@ describe('switching workspaces', () => {
     expect(useSession.getState().user?.uid).toBe('Acme-me');
     expect(opened[2].listeners.size).toBe(1);
   });
+
+  it('opens a hosted workspace from the list, and connecting one remembers it as hosted', async () => {
+    const H: Workspace = { name: 'Acme Cloud', domain: '', database: '(default)', tenant: 'k3v9x2m8q1w7e4r6t0y5u2i8o3p1', config: { apiKey: 'k', authDomain: 'a', projectId: 'breakpatch-cloud', appId: '1' } };
+    await useSession.getState().connect(A);
+    await useSession.getState().switchTo(workspaceConnection(H));
+    expect(useSession.getState().workspace).toEqual(H);
+    expect(opened.at(-1)?.workspace).toEqual(H);
+    const { list, activeId } = (await import('./connections')).useConnections.getState();
+    expect(activeId).toBe('hosted:k3v9x2m8q1w7e4r6t0y5u2i8o3p1');
+    expect(list.find(c => c.id === activeId)).toMatchObject({ kind: 'hosted', hosted: { workspaceId: H.tenant } });
+  });
 });

@@ -67,4 +67,4 @@ export function WorkspaceSwitcher() {
 }
 
 function labelOf(c: Connection): string { return c.personal ? `Personal: ${c.name}` : c.kind === 'demo' ? 'Demo workspace' : c.name; }
-function iconOf(c: Connection): string { return c.personal ? 'folder' : c.kind === 'demo' ? 'science' : 'hub'; }
+function iconOf(c: Connection): string { return c.personal ? 'folder' : c.kind === 'demo' ? 'science' : c.kind === 'hosted' ? 'cloud' : 'hub'; }
