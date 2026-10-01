@@ -22,8 +22,10 @@ export interface Workspace {
    */
   tenant?: string;
   /**
-   * How many days runs are kept: a hosted workspace's (90, or 365 for Business), as Breakpatch
-   * Cloud says. Unset for a workspace in the customer's own Firebase, which keeps them 90 days.
+   * Legacy, a starting value only: how many days runs are kept, as a saved hosted connection
+   * remembered it. The Team backend reads the real number from the person's member document (the
+   * cloud keeps it there) and uses this only until that's read; nothing else decides by it (not
+   * whether a workspace is hosted: that's `tenant`). Unset for a team's own Firebase (90 days).
    */
   historyDays?: number;
 }

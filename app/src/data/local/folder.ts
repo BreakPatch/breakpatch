@@ -79,7 +79,9 @@ export async function localPerson(): Promise<Person> {
 /** Opens a folder that has a breakpatch.json. */
 export async function openLocalFolder(path: string): Promise<LocalBackend> {
   const [storage, person] = await Promise.all([folderStorage(), localPerson()]);
-  return LocalBackend.open({ storage, path, person });
+  // The Team edition keeps result addresses apart from the folder; Community keeps none.
+  const { edition } = await import('../../edition');
+  return LocalBackend.open({ storage, path, person, addresses: edition.resultAddresses });
 }
 
 /**

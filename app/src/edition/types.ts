@@ -170,6 +170,11 @@ export interface Edition {
   gate: { check(s: GateState, pathname: string): string | null; paths: string[] };
   /** Where the app opens after the gate, e.g. runner mode on the runner Mac. Default "/". */
   startPath?(): string;
+  /**
+   * Where a tests folder's suite result addresses are kept, apart from the folder (the Team
+   * edition's Solo plan: the Keychain). Community has none, so its folder backend keeps none.
+   */
+  resultAddresses?: import('../data/local/localBackend').AddressStore;
   /** Opens a connected workspace. Community has none: it opens the demo and local tests folders. */
   openWorkspace?(ws: Workspace): Promise<Backend>;
   /** Wraps the app, e.g. for licence checks and workspace links. */

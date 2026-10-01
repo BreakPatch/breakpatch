@@ -16,7 +16,6 @@ import { cleanDetails, detailsDiff, upTo, type Backend, type Limit, type Listene
 import type {
   App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
 } from '../types';
-import { resultAddresses } from '../../platform';
 import { folderConnectionId } from '../../state/connectionIds';
 import { FORMAT, SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
@@ -69,8 +68,19 @@ export interface FolderSnapshot {
   files: Record<string, string>;
 }
 
+/**
+ * Where a folder suite's result address is kept, apart from the folder (the Team edition's Solo
+ * plan: the Keychain, platform.ts resultAddresses). Community has none: it never saves one.
+ */
+export interface AddressStore {
+  get(wsKey: string, suiteId: string): Promise<string | null>;
+  set(wsKey: string, suiteId: string, url: string | null): Promise<void>;
+}
+
 export interface LocalOptions {
   storage: FolderStorage;
+  /** The edition's address store (edition.resultAddresses); none: addresses aren't kept. */
+  addresses?: AddressStore;
   /** The folder, absolute. */
   path: string;
   person: Person;
@@ -188,7 +198,10 @@ export class LocalBackend implements Backend {
   private stops: (() => void)[] = [];
   private closed = false;
 
+  private readonly addresses: AddressStore | null;
+
   private constructor(o: LocalOptions) {
+    this.addresses = o.addresses ?? null;
     this.st = o.storage; this.root = o.path.replace(/\/+$/, '') || '/'; this.me = o.person;
     this.local = { path: this.root };
   }
@@ -644,10 +657,10 @@ export class LocalBackend implements Backend {
       const sid = id ?? uniqueSlug(n.name, x => this.model.suites.has(x));
       const rel = `suites/${sid}.json`;
       // Schedule and where the result goes: the Team edition's Solo plan on this Mac. The address
-      // itself goes in the Keychain (platform resultAddresses), never in the folder.
+      // itself goes in the edition's address store (the Keychain), never in the folder.
       const schedule = scheduleIn(n.schedule);
       const notify = n.notify === null ? undefined : n.notify ? notifyIn(n.notify) : old?.notify;
-      if (n.notify !== undefined && (n.notify === null || n.notify.url)) await resultAddresses.set(this.connectionId, sid, n.notify?.url ?? null);
+      if (this.addresses && n.notify !== undefined && (n.notify === null || n.notify.url)) await this.addresses.set(this.connectionId, sid, n.notify?.url ?? null);
       const file = { name: n.name, tests: n.tests.map(t => ({ appId: t.appId, testId: t.testId })), ...(schedule ? { schedule } : {}), ...(notify ? { notify } : {}), resultUrl: n.resultUrl || undefined, createdBy: old?.createdBy ?? this.me, createdAt: old?.createdAt ?? now };
       // Saved again unchanged: keep the file (and its updatedAt) as it is.
       const same = !!old && this.texts.get(rel) === toFileText({ ...file, updatedBy: old.updatedBy, updatedAt: old.updatedAt });
@@ -660,11 +673,11 @@ export class LocalBackend implements Backend {
     return this.write(async () => {
       const had = !!this.model.suites.get(id)?.notify;
       await this.drop(`suites/${id}.json`); this.suiteLast.delete(id);
-      if (had) await resultAddresses.set(this.connectionId, id, null).catch(() => {});
+      if (had && this.addresses) await this.addresses.set(this.connectionId, id, null).catch(() => {});
     });
   }
   /** Where a suite's result goes: its address, from this Mac's Keychain (the folder never holds it). */
-  readonly notify: NotifyStore = { address: suiteId => resultAddresses.get(this.connectionId, suiteId) };
+  readonly notify: NotifyStore = { address: async suiteId => (this.addresses ? this.addresses.get(this.connectionId, suiteId) : null) };
   /** This folder's connection id (state/connectionIds.ts), which names its Keychain entries. */
   private get connectionId() { return folderConnectionId(this.root); }
   /** No suite run history in Community: the result shows on the suite until the app closes. */
