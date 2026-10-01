@@ -83,10 +83,12 @@ export function Switch({ checked, onChange, label, disabled }: { checked: boolea
 /**
  * A checkbox with its label shown beside it; the label is clickable too. `hideLabel` only where
  * the same words are already on screen next to it (a list row's name), so they aren't said twice.
+ * The box's click is preventDefault()ed: unticking removes the tick icon that was clicked, and the
+ * label, no longer seeing the click inside its box, would click the box again and tick it back.
  */
 export function Checkbox({ checked, onChange, label, hideLabel }: { checked: boolean; onChange: (v: boolean) => void; label: string; hideLabel?: boolean }) {
   const box = (
-    <button type="button" role="checkbox" className="checkbox" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)}>
+    <button type="button" role="checkbox" className="checkbox" aria-checked={checked} aria-label={label} onClick={e => { e.preventDefault(); onChange(!checked); }}>
       {checked && <Icon name="check" />}
     </button>
   );
