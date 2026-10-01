@@ -14,18 +14,20 @@
 // (Paddle can't cap the quantity, so the page does, and the webhook); when all 25 are taken, it
 // hides them. Leave it '' and nothing shows.
 //
-// Solo (one person, one per company email domain): `soloOnSale` is its launch switch. While it's
-// false, the site doesn't show Solo at all: no card on /pricing, no card or column on the home page,
-// no domain check, and the manual's Solo section says "Coming soon" (site.css `.solo-only`,
-// `.solo-off`, `.solo-soon`, driven by <html data-solo>, set at the bottom of this file). Set it to
-// true on launch day, once the Solo prices are in Paddle below and the back office's SOLO_ON_SALE
-// is on (site/README.md, "Launch day"). `soloMonthly` and `soloYearly` stay '' until the Solo
+// Solo (one person, one per company email domain) is on sale when the back office says so: its
+// GET /api/solo-domain (`soloDomainUrl`) answers 404 until its SOLO_ON_SALE switch is on, so the
+// site has no switch of its own to flip with it. The bottom of this file asks once per page and
+// sets `soloOnSale` and <html data-solo>, remembering the last answer on this browser so a later
+// visit is drawn right at once. Until then the site doesn't show Solo at all: no card on /pricing,
+// no card or column on the home page, no domain check, and the manual's Solo section says "Coming
+// soon" (site.css `.solo-only`, `.solo-off`, `.solo-soon`). `soloMonthly` and `soloYearly` stay '' until the Solo
 // prices exist in Paddle; while either is empty for the period picked, the Solo card invites people
 // to the beta instead. Before checkout the card asks `soloDomainUrl` (the back office's
 // GET /api/solo-domain, sent only the email's domain) whether that company has Solo already, and
 // shows Team if it has.
 window.BREAKPATCH_PADDLE = {
   env: 'sandbox',
+  // Set below from the back office's answer; never by hand.
   soloOnSale: false,
   // Until account.breakpatch.dev is connected: 'https://breakpatch-backoffice.web.app/api/founding'.
   foundingPlacesUrl: 'https://account.breakpatch.dev/api/founding',
@@ -58,5 +60,25 @@ window.BREAKPATCH_PADDLE = {
 };
 
 // Solo on the page: <html data-solo> shows it. This file loads in <head> on the pages that show
-// Solo, so the attribute is there before the first paint and nothing moves.
-if (window.BREAKPATCH_PADDLE.soloOnSale === true) document.documentElement.setAttribute('data-solo', '');
+// Solo: the last answer on this browser is there before the first paint; the back office's answer
+// follows (a "breakpatch-solo" event on window, for pricing.js) and is kept for next time.
+(function () {
+  var cfg = window.BREAKPATCH_PADDLE, root = document.documentElement, KEY = 'breakpatch.soloOnSale';
+  function show(on) {
+    cfg.soloOnSale = on;
+    if (on) root.setAttribute('data-solo', ''); else if (root.removeAttribute) root.removeAttribute('data-solo');
+  }
+  try { if (window.localStorage && window.localStorage.getItem(KEY) === '1') show(true); } catch (e) { /* storage off */ }
+  var url = typeof cfg.soloDomainUrl === 'string' ? cfg.soloDomainUrl : '';
+  if (!url || typeof window.fetch !== 'function') return;
+  // Any company domain will do: the answer's status is what counts (404: not on sale).
+  window.fetch(url + '?domain=example.com', { headers: { accept: 'application/json' } }).then(function (r) {
+    if (r.status !== 404 && !r.ok) return;     // the back office had a problem: as last time
+    var on = r.ok;
+    try { if (window.localStorage) window.localStorage.setItem(KEY, on ? '1' : '0'); } catch (e) { /* storage off */ }
+    if (on !== cfg.soloOnSale) {
+      show(on);
+      if (typeof window.dispatchEvent === 'function' && typeof window.Event === 'function') window.dispatchEvent(new window.Event('breakpatch-solo'));
+    }
+  }, function () { /* offline: as last time */ });
+})();

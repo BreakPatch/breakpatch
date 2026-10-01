@@ -64,9 +64,17 @@
   function solo() {
     var SOLO = { month: 19, year: 16 };            // per month
     var form = $('solo-form');
-    // Before Solo is on sale (paddle-config.js soloOnSale), its card is hidden (site.css .solo-only)
-    // and nothing here runs: no domain check, no checkout.
-    if (!form || cfgAll.soloOnSale !== true) return;
+    // Before Solo is on sale (paddle-config.js asks the back office), its card is hidden (site.css
+    // .solo-only) and nothing here runs: no domain check, no checkout. If the answer comes after
+    // this page started, the card is set up then.
+    if (!form) return;
+    if (cfgAll.soloOnSale !== true) {
+      if (typeof window.addEventListener === 'function') window.addEventListener('breakpatch-solo', function once() {
+        window.removeEventListener('breakpatch-solo', once);
+        if (cfgAll.soloOnSale === true) solo();
+      });
+      return;
+    }
     var email = $('solo-email'), buy = $('solo-buy'), note = $('solo-buy-note'), err = $('solo-buy-error'), taken = $('solo-taken');
     var state = { period: 'year' };
 
