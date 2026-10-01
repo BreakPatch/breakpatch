@@ -109,6 +109,10 @@ fn put(store: &MemStore, s: &Stored) {
 
 // ---- Tokens ----
 
+
+/// Where a Solo customer frees their Mac or renews (the back office's account page): Solo's messages name it.
+const ACCOUNT_SITE: &str = "account.breakpatch.dev";
+
 #[test]
 fn the_test_vector_verifies() {
     let v = vector();

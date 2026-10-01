@@ -397,8 +397,6 @@ impl Status {
 
 /// The tier with no workspace needed and one person on one Mac (the back office's tiers.ts).
 pub const SOLO: &str = "solo";
-/// Where a Solo customer frees their Mac or renews (the back office's account page).
-pub const ACCOUNT_SITE: &str = "account.breakpatch.dev";
 
 /// Whether a service message is one of Solo's own (licensing.ts words them "…Solo…").
 fn names_solo(service_message: Option<&str>) -> bool {
