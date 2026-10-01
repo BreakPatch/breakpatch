@@ -28,11 +28,17 @@
     "key": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf",
     "public_b64": "9bosFkvTzyfOfnsm3EWN8PGOjx0X3szCXSLlnu9PHGg=",
     "sealed": {
+      "by": "0uuZO2MUNSjnDc3H65yiEBDddpvpUlDCxbq/rRXUWOI=",
       "enc": "MjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJsKH3p7iKjZQu1r2L07UXTV0Bp4k0cOvAkINtFWExg/mdAOB86Q+PJunSI+0gy1dZ",
       "epk": "k9GcTNmRVpu4Um0fxnYWGPmGXWH0wnvDAt1u9QmjOTI=",
-      "kid": 1
+      "kid": 1,
+      "sig": "jcYazD3uuin6bRGGlg17A1kFnpDIGz3aTFtCg0QyUshhF8onT5URLEKNy9AY0+tr5vjIrb1NMmzzl4oDGX4UBg=="
     },
     "text": "bpmk1_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t8",
+    "vouch": {
+      "by": "HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU=",
+      "mac": "HE2XT2ZNP7sK/Zt5OW3yFuhzIGad44sI7gvgMjuU2Q8="
+    },
     "ws": "team:acme-tests/breakpatch"
   },
   "note": "Workspace keys test vectors (app/src-tauri/src/workspace_keys.rs). The Team engine's content_keys.py and its tests read the same. Hex unless it says b64.",
@@ -41,27 +47,68 @@
     "key": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
     "public_b64": "D2y3XPxLc7AclflPRJ/QFzM5lLdzEtfgQ/oA1hp5fHE=",
     "sealed": {
+      "by": "HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU=",
       "enc": "MTIzNDU2Nzg5Ojs8PT4/QEFCQ0RFRkdIdYvzilPmDdjsR5Y5GUC6xXOA5qG475X8FFKliY7h9IzQRvHWJAGhT0NlTiRuxe2W",
       "epk": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUk=",
-      "kid": 1
+      "kid": 1,
+      "sig": "MxXkE5b25/XBOezFxmrWUvn+YqkDlgE02W9ZFHHup5uYyQCPgLnb/1/h2yh9yrNDYuCdph0VDL0P7qtbSDuXCw=="
     },
     "text": "BPR1-50M6-HA79-55MT-KTHA-DANE-PAVB-NFH",
+    "vouch": {
+      "by": "HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU=",
+      "mac": "MFnY7GnHg/zfJ4L7ZRrX0Zt/cuW/M9B9O92Xd7iIFR4="
+    },
     "ws": "team:acme-tests/breakpatch"
   },
   "seal": {
     "deviceId": "9ef7b10f9d933fb4",
     "eph": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
-    "fingerprint": "gravel heron goat noodle",
+    "fingerprint": "avocado comet mosaic feather",
     "key": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
     "kid": 2,
     "nonce": "303132333435363738393a3b3c3d3e3f4041424344454647",
     "recipientPublic_b64": "NYBy1jZYgNGu6jKa35EhODhR7SGijjt16WXQ0s0WYlQ=",
     "recipientSecret": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+    "recipientSignSeed": "7172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f90",
     "sealed": {
+      "by": "HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU=",
       "enc": "MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHIQqKFLy8tcHjD/uLCqRNFphh4lVxRCGCTsAxACtTbZXpRKHRd4TRDpSFrbqr/OF7",
       "epk": "Z13VdO13iTELPS52gfN5C0ZsdzsVIf7PNld5WDcepS8=",
-      "kid": 2
+      "kid": 2,
+      "sig": "t1iOKJ9PW8wy8frymjo8AqQE0CqDyq8NuHxK8UOgneP7xUgYsr8F+uclQWA67QTzzTl8jgY/Wpz3XGdbO7CyBg=="
     },
+    "sealedMsg": "bp-sealed-v1|team:acme-tests/breakpatch|9ef7b10f9d933fb4|2|Z13VdO13iTELPS52gfN5C0ZsdzsVIf7PNld5WDcepS8=|MDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZHIQqKFLy8tcHjD/uLCqRNFphh4lVxRCGCTsAxACtTbZXpRKHRd4TRDpSFrbqr/OF7",
+    "ws": "team:acme-tests/breakpatch"
+  },
+  "sign": {
+    "adminSeed": "707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f",
+    "admin_b64": "HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU=",
+    "check1_b64": "YriNYbQOsRBKY207y3EL4XGRSfohKdkU1cjNpeElVuU=",
+    "checks": {
+      "1": {
+        "by": "HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU=",
+        "check": "YriNYbQOsRBKY207y3EL4XGRSfohKdkU1cjNpeElVuU=",
+        "sig": "PfnRlbfImObN+u69YqtCDsN8mHvFbyLH/OY65QGhJluarWDaWnLunxRFWgz6Nlp0z/BsMjbPAdmuGxb7ERN9Bg=="
+      },
+      "2": {
+        "by": "HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU=",
+        "check": "dFwykujoRiTKiDSWSwBHKUD+416dgb8AJwHQVPT8tcc=",
+        "sig": "17g9tBAGnR55daptemmb0k5nPkw3ksN7ptyonizZBSRWbsc6gcDUVF3vriPGOlgYZSKZX5qSvZHS4q7cLz79Bg=="
+      }
+    },
+    "dataKey": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+    "endorsement": {
+      "by": "HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU=",
+      "pk": "0uuZO2MUNSjnDc3H65yiEBDddpvpUlDCxbq/rRXUWOI=",
+      "sig": "JbFkrjuEeK9QzkoqgjaCNZoSp34AJJXoj68M3nFPfBnG7zyk/C0399cSyoZFlf92NNzeYNZzrw8WGIjBeJlUAQ=="
+    },
+    "holdsDevice": "9ef7b10f9d933fb4",
+    "holdsSignKey_b64": "EdYk5JIm1DyMKOk382JkCq7B4AIV/WU0tGERgFkiCls=",
+    "holds_b64": "qMKaRANlW8NoxQ6nkqEqLTb53Daq+4s/MKdIbYKdIaE=",
+    "keyMsg1": "bp-key-v1|team:acme-tests/breakpatch|1|YriNYbQOsRBKY207y3EL4XGRSfohKdkU1cjNpeElVuU=",
+    "otherSeed": "909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
+    "other_b64": "0uuZO2MUNSjnDc3H65yiEBDddpvpUlDCxbq/rRXUWOI=",
+    "signerMsg": "bp-signer-v1|team:acme-tests/breakpatch|0uuZO2MUNSjnDc3H65yiEBDddpvpUlDCxbq/rRXUWOI=",
     "ws": "team:acme-tests/breakpatch"
   },
   "v": 1

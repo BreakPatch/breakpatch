@@ -22,6 +22,27 @@
 //!   after a new key version without the code. The service never sees the code.
 //! - The *machine key* (`bpmk1_…`): the same idea for the local runner and `breakpatch-ci`
 //!   (`BREAKPATCH_MACHINE_KEY`), in `keys/machine`.
+//! - The *signing key*: an Ed25519 pair per workspace per Mac, kept with the device key. An admin's
+//!   Mac signs what it writes that makes other Macs take a key: every sealed copy (grants, the
+//!   recovery code's and the machine key's copies) and every key version it announces.
+//!
+//! **Trust** (so that whoever can write the workspace's documents, Breakpatch included through the
+//! Admin SDK, can never get a key or make a Mac take one of theirs):
+//! - A Mac takes a key only from a copy signed by an admin's signing key it trusts, and only when
+//!   the key matches the *commitment* announced for that version in `keys/meta.checks`, also signed
+//!   by a trusted admin. The commitment is HMAC-SHA256 under the data key over
+//!   `bp-check-v1|<ws>|<kid>`, so it says nothing about the key but tells a wrong one apart.
+//! - Trusted keys are *pinned* on the Mac (with its key versions, in `people:<ws>`). The first is
+//!   pinned when the Mac joins: from the invite link's key bundle, which carries the signing key of
+//!   the admin who copied it, or from that admin's four words, shown on this Mac and confirmed by the
+//!   person. The recovery code and the machine key pin the admin who made them: their copy carries a
+//!   *vouch*, an HMAC under a key derived from the code or machine key over that admin's signing key,
+//!   which only someone who saw the code could make.
+//! - Later admins are trusted when a trusted admin signs their signing key (`keys/signers`); a Mac
+//!   follows those endorsements from the keys it has pinned.
+//! - A Mac that holds the key proves it to admins' Macs with a MAC under the current data key over
+//!   its device id and signing key (`devices/<id>.proof`); a key version is passed on to a Mac only
+//!   when an admin let it in, or it proved it holds the key already.
 //!
 //! **Formats** (test vectors in `testdata/workspace-keys-v1.json`; the Team engine's Python reads
 //! the same):
@@ -34,22 +55,28 @@
 //!   `HKDF-SHA256(salt = epk ‖ recipient public key, ikm = shared secret, info = "bp-seal-v1")`, and
 //!   the data key sealed with associated data `bp-seal-v1|<ws>|<recipient>|<kid>` (the recipient is
 //!   a device id, `recovery` or `machine`).
+//! - A signature is Ed25519 over `bp-sealed-v1|<ws>|<recipient>|<kid>|<epk>|<enc>` (a sealed copy),
+//!   `bp-key-v1|<ws>|<kid>|<check>` (an announced key version) or `bp-signer-v1|<ws>|<signing key>`
+//!   (an endorsement). Keys, signatures, MACs and checks are standard base64.
 //! - `ws` is the workspace's connection id (`team:<project>/<database>` or `hosted:<id>`), and a
 //!   document path is relative to the workspace (`apps/<id>/tests/<id>`), the same for own Firebase
 //!   and Breakpatch Cloud.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
+use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
+use hkdf::hmac::{Hmac, Mac};
 use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use x25519_dalek::{PublicKey, StaticSecret};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::secrets::SecretStore;
 
@@ -60,6 +87,17 @@ const RECOVERY_INFO: &str = "bp-recovery-v1";
 const MACHINE_INFO: &str = "bp-machine-v1";
 const RECOVERY_PREFIX: &str = "BPR1";
 const MACHINE_PREFIX: &str = "bpmk1_";
+const SEALED_SIG: &str = "bp-sealed-v1";
+const KEY_SIG: &str = "bp-key-v1";
+const SIGNER_SIG: &str = "bp-signer-v1";
+const CHECK_INFO: &str = "bp-check-v1";
+const HOLDS_INFO: &str = "bp-holds-v1";
+const VOUCH_INFO: &str = "bp-vouch-v1";
+/// How long the recovery code made last is kept for the recovery kit.
+const PENDING_FOR: Duration = Duration::from_secs(15 * 60);
+/// The most signers and announced key versions a workspace's trust documents may list.
+const MAX_SIGNERS: usize = 200;
+const MAX_CHECKS: usize = 1000;
 /// The most content one field may carry (the rules cap the stored text a little above this).
 pub const MAX_FIELD_BYTES: usize = 700_000;
 /// The most fields one call seals or opens.
@@ -142,11 +180,16 @@ pub fn open_field(data_key: &[u8; 32], ws: &str, path: &str, field: &str, kid: u
 // ---- Sealing a key to an X25519 public key (devices, the recovery code, the machine key) ------
 
 /// A data key version sealed to one recipient: `keys/recovery`, `keys/machine`, `keyGrants/*`.
+/// `by` and `sig`: the signing key of the admin's Mac that sealed it, and its signature.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Sealed {
     pub kid: u32,
     pub epk: String,
     pub enc: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub by: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub sig: String,
 }
 
 pub fn seal_ad(ws: &str, recipient: &str, kid: u32) -> String {
@@ -177,7 +220,7 @@ pub fn seal_to_with(recipient_pk: &[u8; 32], eph: [u8; 32], nonce: [u8; 24], ws:
         .map_err(|_| "Couldn't seal the key.".to_string())?;
     let mut out = nonce.to_vec();
     out.extend_from_slice(&ct);
-    Ok(Sealed { kid, epk: STANDARD.encode(epk), enc: STANDARD.encode(out) })
+    Ok(Sealed { kid, epk: STANDARD.encode(epk), enc: STANDARD.encode(out), by: String::new(), sig: String::new() })
 }
 
 pub fn seal_to(recipient_pk: &[u8; 32], ws: &str, recipient: &str, kid: u32, key: &[u8; 32]) -> Result<Sealed, String> {
@@ -229,11 +272,168 @@ pub fn device_id(pk: &[u8; 32]) -> String {
 
 include!("workspace_keys_words.rs");
 
-/// Four words both admins can read out to check they approve the right Mac.
-pub fn fingerprint(pk: &[u8; 32]) -> String {
+/// A Mac's four words, read out to check the right Mac is let in, or that an admin's Mac is the
+/// one that let this Mac in. Over both its keys: its device key (X25519) and its signing key.
+pub fn fingerprint(pk: &[u8; 32], sign_pk: &[u8; 32]) -> String {
+    let mut ikm = [0u8; 64];
+    ikm[..32].copy_from_slice(pk);
+    ikm[32..].copy_from_slice(sign_pk);
     let mut out = [0u8; 4];
-    Hkdf::<Sha256>::new(None, pk).expand(b"bp-fingerprint-v1", &mut out).expect("4 bytes");
+    Hkdf::<Sha256>::new(None, &ikm).expand(b"bp-fingerprint-v2", &mut out).expect("4 bytes");
     out.iter().map(|b| WORDS[*b as usize]).collect::<Vec<_>>().join(" ")
+}
+
+// ---- Signatures, key commitments and trust ----------------------------------------------------
+
+type HmacSha256 = Hmac<Sha256>;
+
+fn hmac(key: &[u8], msg: &str) -> [u8; 32] {
+    let mut m = <HmacSha256 as Mac>::new_from_slice(key).expect("HMAC takes any key length");
+    m.update(msg.as_bytes());
+    m.finalize().into_bytes().into()
+}
+
+/// Constant-time equality of two base64 MACs or checks as stored.
+fn same_b64(a: &str, b: &[u8; 32]) -> bool {
+    let Ok(raw) = STANDARD.decode(a.trim()) else { return false };
+    raw.len() == 32 && raw.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+pub fn sealed_msg(ws: &str, recipient: &str, s: &Sealed) -> String {
+    format!("{SEALED_SIG}|{ws}|{recipient}|{}|{}|{}", s.kid, s.epk, s.enc)
+}
+pub fn key_msg(ws: &str, kid: u32, check: &str) -> String {
+    format!("{KEY_SIG}|{ws}|{kid}|{check}")
+}
+pub fn signer_msg(ws: &str, sign_pk: &str) -> String {
+    format!("{SIGNER_SIG}|{ws}|{sign_pk}")
+}
+
+/// The commitment to a data key version: HMAC-SHA256(data key, `bp-check-v1|<ws>|<kid>`), base64.
+pub fn key_check(data_key: &[u8; 32], ws: &str, kid: u32) -> String {
+    STANDARD.encode(hmac(data_key, &format!("{CHECK_INFO}|{ws}|{kid}")))
+}
+
+/// A device's proof that it holds key `kid`: HMAC-SHA256(data key, `bp-holds-v1|<ws>|<device id>|<signing key>`).
+pub fn holds_mac(data_key: &[u8; 32], ws: &str, device: &str, sign_pk: &str) -> [u8; 32] {
+    hmac(data_key, &format!("{HOLDS_INFO}|{ws}|{device}|{sign_pk}"))
+}
+
+/// The vouch of a recovery code or machine key for the admin who made it: HMAC-SHA256 under
+/// HKDF-SHA256(salt = ws, ikm = the code or key, info = "bp-vouch-v1") over `bp-vouch-v1|<ws>|<recipient>|<signing key>`.
+pub fn vouch_mac(secret: &[u8], ws: &str, recipient: &str, sign_pk: &str) -> [u8; 32] {
+    let k = hkdf32(ws.as_bytes(), secret, VOUCH_INFO);
+    hmac(&k[..], &format!("{VOUCH_INFO}|{ws}|{recipient}|{sign_pk}"))
+}
+
+fn parse_signer(b64: &str) -> Result<VerifyingKey, String> {
+    let raw: [u8; 32] = STANDARD.decode(b64.trim()).ok().and_then(|b| b.try_into().ok()).ok_or("That isn't a signing key.")?;
+    VerifyingKey::from_bytes(&raw).map_err(|_| "That isn't a signing key.".to_string())
+}
+
+pub fn sign_with(seed: &[u8; 32], msg: &str) -> String {
+    STANDARD.encode(SigningKey::from_bytes(seed).sign(msg.as_bytes()).to_bytes())
+}
+
+pub fn signer_public(seed: &[u8; 32]) -> String {
+    STANDARD.encode(SigningKey::from_bytes(seed).verifying_key().to_bytes())
+}
+
+/// Whether `sig` is `by`'s signature of `msg`.
+pub fn verify_sig(by: &str, msg: &str, sig: &str) -> bool {
+    let Ok(pk) = parse_signer(by) else { return false };
+    let Some(sig) = STANDARD.decode(sig.trim()).ok().and_then(|b| <[u8; 64]>::try_from(b.as_slice()).ok()) else { return false };
+    pk.verify_strict(msg.as_bytes(), &Signature::from_bytes(&sig)).is_ok()
+}
+
+/// A key version as `keys/meta.checks.<kid>` announces it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Check {
+    pub check: String,
+    pub by: String,
+    pub sig: String,
+}
+
+/// An admin's signing key, signed by another admin's (`keys/signers.list.<id>`).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Endorsement {
+    pub pk: String,
+    pub by: String,
+    pub sig: String,
+}
+
+/// The recovery code's or machine key's vouch for the admin who made it (`keys/recovery.vouch`).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Vouch {
+    pub by: String,
+    pub mac: String,
+}
+
+/// A device's proof that it holds the key (`devices/<id>.proof`).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Proof {
+    pub kid: u32,
+    pub mac: String,
+}
+
+/// What the workspace says about its key versions and admins: `keys/meta.checks` and `keys/signers.list`.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Trust {
+    #[serde(default)]
+    pub checks: BTreeMap<String, Check>,
+    #[serde(default)]
+    pub signers: Vec<Endorsement>,
+}
+
+impl Trust {
+    fn checked(&self) -> Result<(), String> {
+        if self.checks.len() > MAX_CHECKS || self.signers.len() > MAX_SIGNERS {
+            return Err("The workspace's key list is too long.".into());
+        }
+        Ok(())
+    }
+
+    /// `roots` and every signing key they endorse, directly or through others.
+    pub fn trusted_from(&self, ws: &str, roots: BTreeSet<String>) -> BTreeSet<String> {
+        let mut t = roots;
+        loop {
+            let before = t.len();
+            for e in &self.signers {
+                if !t.contains(&e.pk) && t.contains(&e.by) && verify_sig(&e.by, &signer_msg(ws, &e.pk), &e.sig) {
+                    t.insert(e.pk.clone());
+                }
+            }
+            if t.len() == before {
+                return t;
+            }
+        }
+    }
+
+    /// Refuses a key unless its version was announced, by a trusted admin, with this key's commitment.
+    pub fn check_key(&self, ws: &str, trusted: &BTreeSet<String>, kid: u32, key: &[u8; 32]) -> Result<(), String> {
+        let c = self.checks.get(&kid.to_string()).ok_or_else(|| format!("Key {kid} isn't one the workspace announced, so this Mac doesn't take it."))?;
+        if !trusted.contains(&c.by) || !verify_sig(&c.by, &key_msg(ws, kid, &c.check), &c.sig) {
+            return Err(format!("Key {kid} wasn't announced by an admin this Mac trusts, so it doesn't take it."));
+        }
+        if c.check != key_check(key, ws, kid) {
+            return Err(format!("Key {kid} isn't the one the workspace announced, so this Mac doesn't take it."));
+        }
+        Ok(())
+    }
+}
+
+/// Refuses a sealed copy that isn't signed by a trusted admin.
+fn check_sealed(ws: &str, recipient: &str, trusted: &BTreeSet<String>, s: &Sealed) -> Result<(), String> {
+    if s.by.is_empty() || s.sig.is_empty() {
+        return Err("That key copy isn't signed by an admin's Mac, so this Mac doesn't take it.".into());
+    }
+    if !trusted.contains(&s.by) {
+        return Err("That key copy was signed by a Mac this Mac doesn't trust, so it doesn't take it.".into());
+    }
+    if !verify_sig(&s.by, &sealed_msg(ws, recipient, s), &s.sig) {
+        return Err("That key copy's signature doesn't match, so this Mac doesn't take it.".into());
+    }
+    Ok(())
 }
 
 // ---- The recovery code and the machine key -----------------------------------------------------
@@ -259,6 +459,16 @@ pub fn recovery_code_text(code: &[u8; 16]) -> String {
 /// Reads a recovery code as typed: any case, spaces or dashes; O is 0, I and L are 1.
 pub fn parse_recovery_code(text: &str) -> Result<[u8; 16], String> {
     let bad = "That isn't a recovery code. It starts with BPR1- and has 27 letters and numbers after it.";
+    let t = text.trim().to_ascii_uppercase();
+    if t.starts_with("BPM1-") {
+        return Err("That's the runner's machine pass, not the recovery code. The recovery code starts with BPR1-.".into());
+    }
+    if t.starts_with("BPMK1_") {
+        return Err("That's the machine key, not the recovery code. The recovery code starts with BPR1-.".into());
+    }
+    if t.starts_with("BP-") {
+        return Err("That's a licence key, not the recovery code. The recovery code starts with BPR1-.".into());
+    }
     let mut s: String = text.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_uppercase();
     if !s.starts_with(RECOVERY_PREFIX) {
         return Err(bad.into());
@@ -290,8 +500,16 @@ pub fn parse_recovery_code(text: &str) -> Result<[u8; 16], String> {
     Ok(code)
 }
 
+/// An X25519 secret from derived bytes, leaving no copy of them behind.
+fn x_secret(k: Key) -> StaticSecret {
+    let mut b: [u8; 32] = *k;
+    let s = StaticSecret::from(b);
+    b.zeroize();
+    s
+}
+
 pub fn recovery_secret(code: &[u8; 16], ws: &str) -> StaticSecret {
-    StaticSecret::from(*hkdf32(ws.as_bytes(), code, RECOVERY_INFO))
+    x_secret(hkdf32(ws.as_bytes(), code, RECOVERY_INFO))
 }
 
 pub fn machine_key_text(key: &[u8; 32]) -> String {
@@ -308,7 +526,7 @@ pub fn parse_machine_key(text: &str) -> Result<Key, String> {
 }
 
 pub fn machine_secret(key: &[u8; 32], ws: &str) -> StaticSecret {
-    StaticSecret::from(*hkdf32(ws.as_bytes(), key, MACHINE_INFO))
+    x_secret(hkdf32(ws.as_bytes(), key, MACHINE_INFO))
 }
 
 // ---- The recovery kit ------------------------------------------------------------------------
@@ -392,52 +610,95 @@ pub fn ymd(unix: i64) -> String {
 
 // ---- What this Mac holds ---------------------------------------------------------------------
 
-/// The data key versions this Mac holds for one workspace (the Keychain entry `people:<ws>`).
-#[derive(Default)]
+/// The data key versions this Mac holds for one workspace, and the admins' signing keys it trusts
+/// (the Keychain entry `people:<ws>`): saved together, so a key is never kept without what let it in.
+#[derive(Default, Clone)]
 struct Ring {
     keys: BTreeMap<u32, Key>,
+    trusted: BTreeSet<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct RingFile {
     v: u32,
     keys: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    trusted: BTreeSet<String>,
 }
 
 impl Ring {
     fn current(&self) -> Option<u32> {
         self.keys.keys().next_back().copied()
     }
-    fn to_json(&self) -> String {
+    fn to_json(&self) -> Zeroizing<String> {
         let keys = self.keys.iter().map(|(k, v)| (k.to_string(), STANDARD.encode(&v[..]))).collect();
-        serde_json::to_string(&RingFile { v: 1, keys }).expect("a ring serialises")
+        Zeroizing::new(serde_json::to_string(&RingFile { v: 2, keys, trusted: self.trusted.clone() }).expect("a ring serialises"))
     }
     fn from_json(text: &str) -> Result<Ring, String> {
-        let f: RingFile = serde_json::from_str(text).map_err(|_| "The workspace key on this Mac is damaged.".to_string())?;
+        let damaged = || "The workspace key on this Mac is damaged.".to_string();
+        let f: RingFile = serde_json::from_str(text).map_err(|_| damaged())?;
+        if f.v != 1 && f.v != 2 {
+            return Err(damaged());
+        }
         let mut keys = BTreeMap::new();
         for (k, v) in f.keys {
-            let kid: u32 = k.parse().map_err(|_| "The workspace key on this Mac is damaged.".to_string())?;
+            let kid: u32 = k.parse().map_err(|_| damaged())?;
             keys.insert(kid, key32(&v)?);
         }
-        Ok(Ring { keys })
+        Ok(Ring { keys, trusted: f.trusted })
     }
 }
 
-/// What the UI may know: whether this Mac holds the key, and which versions.
+/// This Mac's two secrets for a workspace (the Keychain entry `device:<ws>`): the device key
+/// (X25519, grants are sealed to it) and the signing key (Ed25519, it signs what an admin's Mac writes).
+struct DeviceSecrets {
+    x: Key,
+    ed: Key,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DeviceFile {
+    v: u32,
+    x: String,
+    ed: String,
+}
+
+impl DeviceSecrets {
+    fn x_secret(&self) -> StaticSecret {
+        x_secret(self.x.clone())
+    }
+    fn public(&self) -> [u8; 32] {
+        PublicKey::from(&self.x_secret()).to_bytes()
+    }
+    fn signer(&self) -> String {
+        signer_public(&self.ed)
+    }
+    fn sign(&self, msg: &str) -> String {
+        sign_with(&self.ed, msg)
+    }
+    fn id(&self) -> String {
+        device_id(&self.public())
+    }
+}
+
+/// What the UI may know: whether this Mac holds the key, which versions, and whether it trusts an admin yet.
 #[derive(Serialize, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
     pub has_key: bool,
     pub current: Option<u32>,
     pub kids: Vec<u32>,
+    /// This Mac has pinned an admin's signing key for the workspace.
+    pub pinned: bool,
 }
 
-/// This Mac's device key for the workspace, as the workspace shows it (`devices/<id>`).
+/// This Mac's keys for the workspace, as the workspace shows them (`devices/<id>`).
 #[derive(Serialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Device {
     pub id: String,
     pub public_key: String,
+    pub sign_key: String,
     pub fingerprint: String,
 }
 
@@ -463,7 +724,7 @@ pub struct Blob {
     pub kid: u32,
 }
 
-/// A new recovery code: shown once; the workspace keeps `publicKey` and `sealed` (`keys/recovery`).
+/// A new recovery code or machine key: shown once; the workspace keeps `publicKey`, `sealed` and `vouch`.
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct NewLock {
@@ -471,6 +732,14 @@ pub struct NewLock {
     pub secret: String,
     pub public_key: String,
     pub sealed: Vec<Sealed>,
+    pub vouch: Vouch,
+}
+
+/// A key version this Mac just made, and its announcement for `keys/meta.checks`.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Announced {
+    pub kid: u32,
+    pub check: Check,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -478,14 +747,17 @@ struct Invite {
     v: u32,
     ws: String,
     keys: BTreeMap<String, String>,
+    /// v2: the signing key of the admin's Mac that copied the link (pinned when it's taken).
+    #[serde(default)]
+    signer: String,
 }
 
 pub struct WorkspaceKeys<S: SecretStore> {
     store: S,
     rings: Mutex<HashMap<String, Arc<Mutex<Ring>>>>,
-    devices: Mutex<HashMap<String, Zeroizing<[u8; 32]>>>,
-    /// The recovery code made last, for the recovery kit (until the dialog is done).
-    pending: Mutex<Option<(String, Zeroizing<String>)>>,
+    devices: Mutex<HashMap<String, Arc<DeviceSecrets>>>,
+    /// The recovery code made last, for the recovery kit (until the dialog is done, or a while).
+    pending: Mutex<Option<(String, Zeroizing<String>, Instant)>>,
 }
 
 impl<S: SecretStore> WorkspaceKeys<S> {
@@ -500,73 +772,124 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         Ok(())
     }
 
-    /// The ring for `ws`, read from the Keychain once per launch.
+    /// The ring for `ws`, read from the Keychain once per launch. The map stays locked from the
+    /// look-up to the insert, so two first calls at the same time share one ring.
     fn ring(&self, ws: &str) -> Result<Arc<Mutex<Ring>>, String> {
         Self::check_ws(ws)?;
-        if let Some(r) = self.rings.lock().unwrap().get(ws) {
+        let mut rings = self.rings.lock().unwrap();
+        if let Some(r) = rings.get(ws) {
             return Ok(Arc::clone(r));
         }
         let ring = match self.store.get(&format!("people:{ws}"))? {
-            Some(text) => Ring::from_json(&text)?,
+            Some(text) => Ring::from_json(&Zeroizing::new(text))?,
             None => Ring::default(),
         };
         let r = Arc::new(Mutex::new(ring));
-        self.rings.lock().unwrap().insert(ws.to_string(), Arc::clone(&r));
+        rings.insert(ws.to_string(), Arc::clone(&r));
         Ok(r)
     }
 
-    fn save(&self, ws: &str, ring: &Ring) -> Result<(), String> {
-        self.store.set(&format!("people:{ws}"), &ring.to_json())
-    }
-
-    /// Adds key versions; a version this Mac holds with another key is refused (never replaced).
-    fn add_keys(&self, ws: &str, keys: Vec<(u32, Key)>) -> Result<Vec<u32>, String> {
+    /// Changes the ring on a copy, saves the copy, and only then uses it: a failed Keychain write
+    /// leaves this Mac as it was, never using a key it won't have after a relaunch.
+    fn update_ring<T>(&self, ws: &str, f: impl FnOnce(&mut Ring) -> Result<(T, bool), String>) -> Result<T, String> {
         let r = self.ring(ws)?;
         let mut ring = r.lock().unwrap();
-        let mut changed = false;
-        for (kid, key) in keys {
-            if kid == 0 {
-                return Err("That key version isn't valid.".into());
-            }
-            match ring.keys.get(&kid) {
-                Some(have) if **have != *key => {
-                    return Err(format!("This Mac already holds another key {kid} for this workspace."))
-                }
-                Some(_) => {}
-                None => {
-                    ring.keys.insert(kid, key);
-                    changed = true;
-                }
-            }
-        }
+        let mut next = ring.clone();
+        let (out, changed) = f(&mut next)?;
         if changed {
-            self.save(ws, &ring)?;
+            self.store.set(&format!("people:{ws}"), &next.to_json())?;
+            *ring = next;
         }
-        Ok(ring.keys.keys().copied().collect())
+        Ok(out)
+    }
+
+    /// Adds key versions (and trusted signing keys); a version this Mac holds with another key is refused (never replaced).
+    fn add_keys(&self, ws: &str, keys: Vec<(u32, Key)>, pin: &[String]) -> Result<Vec<u32>, String> {
+        self.update_ring(ws, |ring| {
+            let mut changed = false;
+            for (kid, key) in keys {
+                if kid == 0 {
+                    return Err("That key version isn't valid.".into());
+                }
+                match ring.keys.get(&kid) {
+                    Some(have) if **have != *key => return Err(format!("This Mac already holds another key {kid} for this workspace.")),
+                    Some(_) => {}
+                    None => {
+                        ring.keys.insert(kid, key);
+                        changed = true;
+                    }
+                }
+            }
+            for p in pin {
+                changed |= ring.trusted.insert(p.clone());
+            }
+            Ok((ring.keys.keys().copied().collect(), changed))
+        })
     }
 
     pub fn status(&self, ws: &str) -> Result<Status, String> {
         let r = self.ring(ws)?;
         let ring = r.lock().unwrap();
-        Ok(Status { has_key: !ring.keys.is_empty(), current: ring.current(), kids: ring.keys.keys().copied().collect() })
+        Ok(Status { has_key: !ring.keys.is_empty(), current: ring.current(), kids: ring.keys.keys().copied().collect(), pinned: !ring.trusted.is_empty() })
+    }
+
+    /// The signing keys this Mac trusts for `ws`: its pins, its own, and those they endorse in `trust`.
+    fn trusted(&self, ws: &str, trust: &Trust, also: Option<&str>) -> Result<BTreeSet<String>, String> {
+        trust.checked()?;
+        let own = self.device_secrets(ws)?.signer();
+        let r = self.ring(ws)?;
+        let mut roots = r.lock().unwrap().trusted.clone();
+        roots.insert(own);
+        if let Some(a) = also {
+            roots.insert(a.to_string());
+        }
+        Ok(trust.trusted_from(ws, roots))
+    }
+
+    /// Whether this Mac trusts `signer` (directly, or through the workspace's endorsements).
+    pub fn signer_trusted(&self, ws: &str, signer: &str, trust: &Trust) -> Result<bool, String> {
+        Ok(self.trusted(ws, trust, None)?.contains(signer))
+    }
+
+    /// Pins an admin's signing key: the person checked that admin's four words.
+    pub fn trust(&self, ws: &str, signer: &str) -> Result<(), String> {
+        parse_signer(signer)?;
+        self.update_ring(ws, |ring| Ok(((), ring.trusted.insert(signer.to_string()))))
     }
 
     /// The first key of a workspace (its first admin's Mac): version 1, or `kid` when every copy of
     /// the key was lost and an admin starts again with the next version. Refused when this Mac holds one.
-    pub fn create(&self, ws: &str, kid: Option<u32>) -> Result<u32, String> {
+    /// Returns its announcement, signed by this Mac.
+    pub fn create(&self, ws: &str, kid: Option<u32>) -> Result<Announced, String> {
         if self.status(ws)?.has_key {
             return Err("This Mac already holds this workspace's key.".into());
         }
         let kid = kid.unwrap_or(1).max(1);
-        self.add_keys(ws, vec![(kid, Zeroizing::new(random()?))])?;
-        Ok(kid)
+        self.add_keys(ws, vec![(kid, Zeroizing::new(random()?))], &[])?;
+        self.announce(ws, kid)
     }
 
-    /// A new key version (after someone leaves). New content is sealed with it.
-    pub fn rotate(&self, ws: &str) -> Result<u32, String> {
+    /// A new key version (after someone leaves). New content is sealed with it. Returns its announcement.
+    pub fn rotate(&self, ws: &str) -> Result<Announced, String> {
         let next = self.status(ws)?.current.ok_or("This Mac doesn't hold this workspace's key.")? + 1;
-        self.add_keys(ws, vec![(next, Zeroizing::new(random()?))])?;
-        Ok(next)
+        self.add_keys(ws, vec![(next, Zeroizing::new(random()?))], &[])?;
+        self.announce(ws, next)
+    }
+
+    /// The announcement of key `kid` for `keys/meta.checks`: its commitment, signed by this Mac.
+    pub fn announce(&self, ws: &str, kid: u32) -> Result<Announced, String> {
+        let (kid, key) = self.key(ws, Some(kid))?;
+        let d = self.device_secrets(ws)?;
+        let check = key_check(&key, ws, kid);
+        let sig = d.sign(&key_msg(ws, kid, &check));
+        Ok(Announced { kid, check: Check { check, by: d.signer(), sig } })
+    }
+
+    /// Signs another admin's signing key, so the team's Macs trust what that admin's Mac signs.
+    pub fn endorse(&self, ws: &str, sign_key: &str) -> Result<Endorsement, String> {
+        parse_signer(sign_key)?;
+        let d = self.device_secrets(ws)?;
+        Ok(Endorsement { pk: sign_key.to_string(), by: d.signer(), sig: d.sign(&signer_msg(ws, sign_key)) })
     }
 
     fn key(&self, ws: &str, kid: Option<u32>) -> Result<(u32, Key), String> {
@@ -606,52 +929,123 @@ impl<S: SecretStore> WorkspaceKeys<S> {
             .collect())
     }
 
-    fn device_secret(&self, ws: &str) -> Result<StaticSecret, String> {
+    /// This Mac's device and signing secrets for `ws`, made the first time. The map stays locked
+    /// from the look-up to the insert, so two first calls never make two different keys; a secret
+    /// whose Keychain write failed isn't kept.
+    fn device_secrets(&self, ws: &str) -> Result<Arc<DeviceSecrets>, String> {
         Self::check_ws(ws)?;
-        if let Some(s) = self.devices.lock().unwrap().get(ws) {
-            return Ok(StaticSecret::from(**s));
+        let mut devices = self.devices.lock().unwrap();
+        if let Some(d) = devices.get(ws) {
+            return Ok(Arc::clone(d));
         }
         let entry = format!("device:{ws}");
-        let secret = match self.store.get(&entry)? {
-            Some(text) => key32(&text)?,
-            None => {
-                let k = Zeroizing::new(random()?);
-                self.store.set(&entry, &STANDARD.encode(&k[..]))?;
-                k
+        let damaged = || "This Mac's device key for the workspace is damaged.".to_string();
+        let stored = self.store.get(&entry)?.map(Zeroizing::new);
+        let (secrets, save) = match stored.as_deref() {
+            Some(text) if text.trim_start().starts_with('{') => {
+                let f: DeviceFile = serde_json::from_str(text).map_err(|_| damaged())?;
+                (DeviceSecrets { x: key32(&f.x).map_err(|_| damaged())?, ed: key32(&f.ed).map_err(|_| damaged())? }, false)
             }
+            // A device key from before signing keys: it keeps its id, and gets a signing key now.
+            Some(text) => (DeviceSecrets { x: key32(text)?, ed: Zeroizing::new(random()?) }, true),
+            None => (DeviceSecrets { x: Zeroizing::new(random()?), ed: Zeroizing::new(random()?) }, true),
         };
-        let s = StaticSecret::from(*secret);
-        self.devices.lock().unwrap().insert(ws.to_string(), secret);
-        Ok(s)
+        if save {
+            let f = Zeroizing::new(serde_json::to_string(&DeviceFile { v: 2, x: STANDARD.encode(&secrets.x[..]), ed: STANDARD.encode(&secrets.ed[..]) }).expect("serialises"));
+            self.store.set(&entry, &f)?;
+        }
+        let d = Arc::new(secrets);
+        devices.insert(ws.to_string(), Arc::clone(&d));
+        Ok(d)
     }
 
-    /// This Mac's device key for the workspace (made the first time).
+    /// This Mac's keys for the workspace (made the first time).
     pub fn device(&self, ws: &str) -> Result<Device, String> {
-        let pk = PublicKey::from(&self.device_secret(ws)?).to_bytes();
-        Ok(Device { id: device_id(&pk), public_key: STANDARD.encode(pk), fingerprint: fingerprint(&pk) })
+        let d = self.device_secrets(ws)?;
+        let pk = d.public();
+        let sign = SigningKey::from_bytes(&d.ed).verifying_key().to_bytes();
+        Ok(Device { id: device_id(&pk), public_key: STANDARD.encode(pk), sign_key: STANDARD.encode(sign), fingerprint: fingerprint(&pk, &sign) })
     }
 
     /// Every key version this Mac holds, sealed to `public_key` (a device being approved, the
-    /// recovery code's or the machine key's). `recipient`: the device id, `recovery` or `machine`.
+    /// recovery code's or the machine key's) and signed by this Mac. `recipient`: the device id,
+    /// `recovery` or `machine`.
     pub fn grant(&self, ws: &str, recipient: &str, public_key: &str) -> Result<Vec<Sealed>, String> {
         let pk = parse_public(public_key)?;
         if recipient != "recovery" && recipient != "machine" && recipient != device_id(&pk) {
             return Err("That device key doesn't belong to that device.".into());
         }
+        let d = self.device_secrets(ws)?;
         let r = self.ring(ws)?;
         let ring = r.lock().unwrap();
         if ring.keys.is_empty() {
             return Err("This Mac doesn't hold this workspace's key.".into());
         }
-        ring.keys.iter().map(|(kid, key)| seal_to(&pk, ws, recipient, *kid, key)).collect()
+        let by = d.signer();
+        ring.keys
+            .iter()
+            .map(|(kid, key)| {
+                let mut s = seal_to(&pk, ws, recipient, *kid, key)?;
+                s.by = by.clone();
+                s.sig = d.sign(&sealed_msg(ws, recipient, &s));
+                Ok(s)
+            })
+            .collect()
     }
 
-    /// Takes the key versions an admin sealed to this Mac.
-    pub fn accept(&self, ws: &str, sealed: &[Sealed]) -> Result<Vec<u32>, String> {
-        let secret = self.device_secret(ws)?;
-        let id = device_id(&PublicKey::from(&secret).to_bytes());
-        let keys = sealed.iter().map(|s| Ok((s.kid, open_sealed(&secret, ws, &id, s)?))).collect::<Result<Vec<_>, String>>()?;
-        self.add_keys(ws, keys)
+    /// Opens sealed copies after checking each is signed by a trusted admin and is the key announced.
+    fn take_sealed(&self, ws: &str, secret: &StaticSecret, recipient: &str, sealed: &[Sealed], trust: &Trust, root: Option<&str>) -> Result<Vec<u32>, String> {
+        if sealed.is_empty() || sealed.len() > 100 {
+            return Err("That key copy is empty.".into());
+        }
+        let trusted = self.trusted(ws, trust, root)?;
+        let mut keys = Vec::new();
+        for s in sealed {
+            check_sealed(ws, recipient, &trusted, s)?;
+            let key = open_sealed(secret, ws, recipient, s)?;
+            trust.check_key(ws, &trusted, s.kid, &key)?;
+            keys.push((s.kid, key));
+        }
+        let pin: Vec<String> = root.map(|r| vec![r.to_string()]).unwrap_or_default();
+        self.add_keys(ws, keys, &pin)
+    }
+
+    /// Takes the key versions an admin sealed to this Mac: only when an admin this Mac trusts signed
+    /// them, and each matches the version the workspace announced.
+    pub fn accept(&self, ws: &str, sealed: &[Sealed], trust: &Trust) -> Result<Vec<u32>, String> {
+        let d = self.device_secrets(ws)?;
+        self.take_sealed(ws, &d.x_secret(), &d.id(), sealed, trust, None)
+    }
+
+    /// This Mac's proof that it holds the newest key it has, for its device document.
+    pub fn prove(&self, ws: &str) -> Result<Proof, String> {
+        let (kid, key) = self.key(ws, None)?;
+        let d = self.device_secrets(ws)?;
+        Ok(Proof { kid, mac: STANDARD.encode(holds_mac(&key, ws, &d.id(), &d.signer())) })
+    }
+
+    /// An admin's Mac checks another device's proof (false when this Mac doesn't hold that key version).
+    pub fn check_proof(&self, ws: &str, device: &str, sign_key: &str, proof: &Proof) -> Result<bool, String> {
+        let r = self.ring(ws)?;
+        let ring = r.lock().unwrap();
+        let Some(key) = ring.keys.get(&proof.kid) else { return Ok(false) };
+        Ok(same_b64(&proof.mac, &holds_mac(key, ws, device, sign_key)))
+    }
+
+    fn vouch(&self, ws: &str, recipient: &str, secret: &[u8]) -> Result<Vouch, String> {
+        let by = self.device_secrets(ws)?.signer();
+        let mac = STANDARD.encode(vouch_mac(secret, ws, recipient, &by));
+        Ok(Vouch { by, mac })
+    }
+
+    /// The admin a recovery code's or machine key's copy vouches for (an error when it doesn't).
+    fn vouched(ws: &str, recipient: &str, secret: &[u8], vouch: &Vouch) -> Result<String, String> {
+        parse_signer(&vouch.by)?;
+        if !same_b64(&vouch.mac, &vouch_mac(secret, ws, recipient, &vouch.by)) {
+            return Err(format!("The workspace's {recipient} copy isn't one an admin made with this {}, so this Mac doesn't take it.",
+                if recipient == "recovery" { "recovery code" } else { "machine key" }));
+        }
+        Ok(vouch.by.clone())
     }
 
     /// A new recovery code, with every key version sealed to it. Kept for the recovery kit until `forget_pending`.
@@ -661,28 +1055,35 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         let secret = recovery_secret(&code, ws);
         let public_key = public_of(&secret);
         let sealed = self.grant(ws, "recovery", &public_key)?;
+        let vouch = self.vouch(ws, "recovery", &code[..])?;
         let text = recovery_code_text(&code);
-        *self.pending.lock().unwrap() = Some((ws.to_string(), Zeroizing::new(text.clone())));
-        Ok(NewLock { secret: text, public_key, sealed })
+        *self.pending.lock().unwrap() = Some((ws.to_string(), Zeroizing::new(text.clone()), Instant::now()));
+        Ok(NewLock { secret: text, public_key, sealed, vouch })
     }
 
     pub fn pending_code(&self, ws: &str) -> Option<Zeroizing<String>> {
-        self.pending.lock().unwrap().as_ref().filter(|(w, _)| w == ws).map(|(_, c)| c.clone())
+        let mut p = self.pending.lock().unwrap();
+        if p.as_ref().is_some_and(|(_, _, at)| at.elapsed() > PENDING_FOR) {
+            *p = None;
+        }
+        p.as_ref().filter(|(w, _, _)| w == ws).map(|(_, c, _)| c.clone())
     }
 
     pub fn forget_pending(&self) {
         *self.pending.lock().unwrap() = None;
     }
 
-    /// Opens `keys/recovery` with the recovery code the admin typed.
-    pub fn recover(&self, ws: &str, code: &str, public_key: &str, sealed: &[Sealed]) -> Result<Vec<u32>, String> {
+    /// Opens `keys/recovery` with the recovery code the admin typed: only a copy the code vouches for,
+    /// signed by that admin or one it endorsed.
+    pub fn recover(&self, ws: &str, code: &str, public_key: &str, sealed: &[Sealed], vouch: &Vouch, trust: &Trust) -> Result<Vec<u32>, String> {
         Self::check_ws(ws)?;
-        let secret = recovery_secret(&parse_recovery_code(code)?, ws);
+        let code = Zeroizing::new(parse_recovery_code(code)?);
+        let secret = recovery_secret(&code, ws);
         if public_of(&secret) != public_key.trim() {
             return Err("That recovery code isn't this workspace's, or a newer one was made since.".into());
         }
-        let keys = sealed.iter().map(|s| Ok((s.kid, open_sealed(&secret, ws, "recovery", s)?))).collect::<Result<Vec<_>, String>>()?;
-        self.add_keys(ws, keys)
+        let root = Self::vouched(ws, "recovery", &code[..], vouch)?;
+        self.take_sealed(ws, &secret, "recovery", sealed, trust, Some(&root))
     }
 
     /// A new machine key for the runner and CI, with every key version sealed to it (`keys/machine`).
@@ -692,39 +1093,43 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         let secret = machine_secret(&key, ws);
         let public_key = public_of(&secret);
         let sealed = self.grant(ws, "machine", &public_key)?;
-        Ok(NewLock { secret: machine_key_text(&key), public_key, sealed })
+        let vouch = self.vouch(ws, "machine", &key[..])?;
+        Ok(NewLock { secret: machine_key_text(&key), public_key, sealed, vouch })
     }
 
-    /// A runner Mac given the machine key: opens `keys/machine` with it.
-    pub fn machine_use(&self, ws: &str, machine_key: &str, public_key: &str, sealed: &[Sealed]) -> Result<Vec<u32>, String> {
+    /// A runner Mac given the machine key: opens `keys/machine` with it, as `recover` does.
+    pub fn machine_use(&self, ws: &str, machine_key: &str, public_key: &str, sealed: &[Sealed], vouch: &Vouch, trust: &Trust) -> Result<Vec<u32>, String> {
         Self::check_ws(ws)?;
         let key = parse_machine_key(machine_key)?;
         let secret = machine_secret(&key, ws);
         if public_of(&secret) != public_key.trim() {
             return Err("That machine key isn't this workspace's, or a newer one was made since.".into());
         }
-        let keys = sealed.iter().map(|s| Ok((s.kid, open_sealed(&secret, ws, "machine", s)?))).collect::<Result<Vec<_>, String>>()?;
-        self.add_keys(ws, keys)
+        let root = Self::vouched(ws, "machine", &key[..], vouch)?;
+        self.take_sealed(ws, &secret, "machine", sealed, trust, Some(&root))
     }
 
-    /// The `k=` part of an invite link: every key version, for this workspace only.
-    pub fn invite(&self, ws: &str) -> Result<String, String> {
+    /// The `k=` part of an invite link: every key version, for this workspace only, with this Mac's signing key.
+    pub fn invite(&self, ws: &str) -> Result<Zeroizing<String>, String> {
+        let signer = self.device_secrets(ws)?.signer();
         let r = self.ring(ws)?;
         let ring = r.lock().unwrap();
         if ring.keys.is_empty() {
             return Err("This Mac doesn't hold this workspace's key.".into());
         }
         let keys = ring.keys.iter().map(|(k, v)| (k.to_string(), URL_SAFE_NO_PAD.encode(&v[..]))).collect();
-        let json = Zeroizing::new(serde_json::to_string(&Invite { v: 1, ws: ws.to_string(), keys }).expect("invite serialises"));
-        Ok(URL_SAFE_NO_PAD.encode(json.as_bytes()))
+        let json = Zeroizing::new(serde_json::to_string(&Invite { v: 2, ws: ws.to_string(), keys, signer }).expect("invite serialises"));
+        Ok(Zeroizing::new(URL_SAFE_NO_PAD.encode(json.as_bytes())))
     }
 
-    /// Takes the keys from an invite link's `k=` part.
-    pub fn import_invite(&self, ws: &str, bundle: &str) -> Result<Vec<u32>, String> {
+    /// Takes the keys from an invite link's `k=` part, once the person accepted the workspace: each
+    /// must be the version the workspace announced, by the link's admin (pinned then, when this Mac
+    /// trusts nobody yet) or an admin this Mac already trusts.
+    pub fn import_invite(&self, ws: &str, bundle: &str, trust: &Trust) -> Result<Vec<u32>, String> {
         let bad = || "The key in the invite link is incomplete. Ask for a new link.".to_string();
         let raw = Zeroizing::new(URL_SAFE_NO_PAD.decode(bundle.trim()).map_err(|_| bad())?);
         let inv: Invite = serde_json::from_slice(&raw).map_err(|_| bad())?;
-        if inv.v != 1 {
+        if inv.v != 2 || parse_signer(&inv.signer).is_err() {
             return Err(bad());
         }
         if inv.ws != ws {
@@ -735,24 +1140,33 @@ impl<S: SecretStore> WorkspaceKeys<S> {
             .iter()
             .map(|(k, v)| Ok((k.parse::<u32>().map_err(|_| bad())?, key32(v).map_err(|_| bad())?)))
             .collect::<Result<Vec<_>, String>>()?;
-        self.add_keys(ws, keys)
+        if keys.is_empty() {
+            return Err(bad());
+        }
+        let pinned = self.status(ws)?.pinned;
+        let trusted = self.trusted(ws, trust, if pinned { None } else { Some(&inv.signer) })?;
+        if !trusted.contains(&inv.signer) {
+            return Err("The invite link wasn't made by an admin this Mac trusts. Ask an admin of the workspace for a new link.".into());
+        }
+        for (kid, key) in &keys {
+            trust.check_key(ws, &trusted, *kid, key)?;
+        }
+        self.add_keys(ws, keys, &[inv.signer])
     }
 
     /// Drops the key versions older than `keep`, once everything is sealed with `keep` (the reseal
     /// job finished for it). Refused unless this Mac holds `keep`, so it never ends up with no key.
     /// Returns the versions it still holds.
     pub fn retire(&self, ws: &str, keep: u32) -> Result<Vec<u32>, String> {
-        let r = self.ring(ws)?;
-        let mut ring = r.lock().unwrap();
-        if !ring.keys.contains_key(&keep) {
-            return Err(format!("This Mac doesn't hold key {keep} of this workspace."));
-        }
-        let before = ring.keys.len();
-        ring.keys.retain(|kid, _| *kid >= keep);
-        if ring.keys.len() != before {
-            self.save(ws, &ring)?;
-        }
-        Ok(ring.keys.keys().copied().collect())
+        self.update_ring(ws, |ring| {
+            if !ring.keys.contains_key(&keep) {
+                return Err(format!("This Mac doesn't hold key {keep} of this workspace."));
+            }
+            let before = ring.keys.len();
+            ring.keys.retain(|kid, _| *kid >= keep);
+            let changed = ring.keys.len() != before;
+            Ok((ring.keys.keys().copied().collect(), changed))
+        })
     }
 
     /// Forgets this workspace's keys on this Mac (after Disconnect this Mac).
@@ -785,15 +1199,51 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub async fn workspace_keys_create(k: State<'_, KeysState>, ws: String, kid: Option<u32>) -> Result<u32, String> {
+    pub async fn workspace_keys_create(k: State<'_, KeysState>, ws: String, kid: Option<u32>) -> Result<Announced, String> {
         let k = Arc::clone(&k);
         blocking(move || k.create(&ws, kid)).await
     }
 
     #[tauri::command]
-    pub async fn workspace_keys_rotate(k: State<'_, KeysState>, ws: String) -> Result<u32, String> {
+    pub async fn workspace_keys_rotate(k: State<'_, KeysState>, ws: String) -> Result<Announced, String> {
         let k = Arc::clone(&k);
         blocking(move || k.rotate(&ws)).await
+    }
+
+    #[tauri::command]
+    pub async fn workspace_keys_announce(k: State<'_, KeysState>, ws: String, kid: u32) -> Result<Announced, String> {
+        let k = Arc::clone(&k);
+        blocking(move || k.announce(&ws, kid)).await
+    }
+
+    #[tauri::command]
+    pub async fn workspace_keys_endorse(k: State<'_, KeysState>, ws: String, sign_key: String) -> Result<Endorsement, String> {
+        let k = Arc::clone(&k);
+        blocking(move || k.endorse(&ws, &sign_key)).await
+    }
+
+    #[tauri::command]
+    pub async fn workspace_keys_trust(k: State<'_, KeysState>, ws: String, signer: String) -> Result<(), String> {
+        let k = Arc::clone(&k);
+        blocking(move || k.trust(&ws, &signer)).await
+    }
+
+    #[tauri::command]
+    pub async fn workspace_keys_signer_trusted(k: State<'_, KeysState>, ws: String, signer: String, trust: Trust) -> Result<bool, String> {
+        let k = Arc::clone(&k);
+        blocking(move || k.signer_trusted(&ws, &signer, &trust)).await
+    }
+
+    #[tauri::command]
+    pub async fn workspace_keys_prove(k: State<'_, KeysState>, ws: String) -> Result<Proof, String> {
+        let k = Arc::clone(&k);
+        blocking(move || k.prove(&ws)).await
+    }
+
+    #[tauri::command]
+    pub async fn workspace_keys_check_proof(k: State<'_, KeysState>, ws: String, device: String, sign_key: String, proof: Proof) -> Result<bool, String> {
+        let k = Arc::clone(&k);
+        blocking(move || k.check_proof(&ws, &device, &sign_key, &proof)).await
     }
 
     #[tauri::command]
@@ -814,10 +1264,11 @@ pub mod commands {
         blocking(move || k.device(&ws)).await
     }
 
-    /// The four words for a device key (an admin checks them before approving).
+    /// The four words for a Mac's two keys (an admin checks them before approving; a new Mac checks
+    /// the admin's Mac that let it in).
     #[tauri::command]
-    pub fn workspace_keys_fingerprint(public_key: String) -> Result<String, String> {
-        Ok(fingerprint(&parse_public(&public_key)?))
+    pub fn workspace_keys_fingerprint(public_key: String, sign_key: String) -> Result<String, String> {
+        Ok(fingerprint(&parse_public(&public_key)?, &parse_signer(&sign_key)?.to_bytes()))
     }
 
     #[tauri::command]
@@ -827,9 +1278,9 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub async fn workspace_keys_accept(k: State<'_, KeysState>, ws: String, sealed: Vec<Sealed>) -> Result<Vec<u32>, String> {
+    pub async fn workspace_keys_accept(k: State<'_, KeysState>, ws: String, sealed: Vec<Sealed>, trust: Trust) -> Result<Vec<u32>, String> {
         let k = Arc::clone(&k);
-        blocking(move || k.accept(&ws, &sealed)).await
+        blocking(move || k.accept(&ws, &sealed, &trust)).await
     }
 
     #[tauri::command]
@@ -871,9 +1322,10 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub async fn workspace_keys_recover(k: State<'_, KeysState>, ws: String, code: String, public_key: String, sealed: Vec<Sealed>) -> Result<Vec<u32>, String> {
+    pub async fn workspace_keys_recover(k: State<'_, KeysState>, ws: String, code: String, public_key: String, sealed: Vec<Sealed>, vouch: Vouch, trust: Trust) -> Result<Vec<u32>, String> {
         let k = Arc::clone(&k);
-        blocking(move || k.recover(&ws, &code, &public_key, &sealed)).await
+        let code = Zeroizing::new(code);
+        blocking(move || k.recover(&ws, &code, &public_key, &sealed, &vouch, &trust)).await
     }
 
     #[tauri::command]
@@ -883,9 +1335,10 @@ pub mod commands {
     }
 
     #[tauri::command]
-    pub async fn workspace_keys_machine_use(k: State<'_, KeysState>, ws: String, machine_key: String, public_key: String, sealed: Vec<Sealed>) -> Result<Vec<u32>, String> {
+    pub async fn workspace_keys_machine_use(k: State<'_, KeysState>, ws: String, machine_key: String, public_key: String, sealed: Vec<Sealed>, vouch: Vouch, trust: Trust) -> Result<Vec<u32>, String> {
         let k = Arc::clone(&k);
-        blocking(move || k.machine_use(&ws, &machine_key, &public_key, &sealed)).await
+        let machine_key = Zeroizing::new(machine_key);
+        blocking(move || k.machine_use(&ws, &machine_key, &public_key, &sealed, &vouch, &trust)).await
     }
 
     /// Puts the invite link with the key in its fragment on the clipboard (the UI never holds it).
@@ -898,13 +1351,15 @@ pub mod commands {
         let k2 = Arc::clone(&k);
         let bundle = blocking(move || k2.invite(&ws)).await?;
         let sep = if link.contains('#') { '&' } else { '#' };
-        app.clipboard().write_text(format!("{link}{sep}k={bundle}")).map_err(|e| e.to_string())
+        let text = Zeroizing::new(format!("{link}{sep}k={}", bundle.as_str()));
+        app.clipboard().write_text(text.as_str()).map_err(|e| e.to_string())
     }
 
     #[tauri::command]
-    pub async fn workspace_keys_import_invite(k: State<'_, KeysState>, ws: String, bundle: String) -> Result<Vec<u32>, String> {
+    pub async fn workspace_keys_import_invite(k: State<'_, KeysState>, ws: String, bundle: String, trust: Trust) -> Result<Vec<u32>, String> {
         let k = Arc::clone(&k);
-        blocking(move || k.import_invite(&ws, &bundle)).await
+        let bundle = Zeroizing::new(bundle);
+        blocking(move || k.import_invite(&ws, &bundle, &trust)).await
     }
 
     #[tauri::command]
