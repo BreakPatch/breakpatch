@@ -32,10 +32,36 @@ def os_family() -> str:
     return platform.system() or "Unknown"
 
 
+WINDOWS_11_BUILD = 22000
+
+
+def windows_release() -> tuple[str, int]:
+    """("11", 22631) or ("10", 19045). Python 3.11's platform.release() says "10" on Windows 11
+    too (both are version 10.0), so the build number decides: 22000 and later is Windows 11."""
+    build = 0
+    get = getattr(sys, "getwindowsversion", None)
+    if get is not None:
+        try:
+            build = int(get().build)
+        except Exception:  # noqa: BLE001
+            build = 0
+    if not build:
+        parts = platform.version().split(".")
+        if len(parts) >= 3 and parts[2].isdigit():
+            build = int(parts[2])
+    release = platform.release() or ""
+    if release == "10" and build >= WINDOWS_11_BUILD:
+        release = "11"
+    return release, build
+
+
 def os_version() -> str:
-    """macOS 15.3 → "15.3"; Linux → the distribution's VERSION_ID ("24.04"), else the kernel."""
+    """macOS 15.3 → "15.3"; Linux → the distribution's VERSION_ID ("24.04"), else the kernel;
+    Windows → "11" or "10"."""
     if sys.platform == "darwin":
         return platform.mac_ver()[0] or ""
+    if sys.platform == "win32":
+        return windows_release()[0]
     if sys.platform.startswith("linux"):
         try:
             for line in Path("/etc/os-release").read_text().splitlines():

@@ -143,3 +143,11 @@ def test_sigterm_closes_the_browser_and_exits_0(sidecar, site):
     time.sleep(0.5)
     alive = [pid for pid in chrome if Path(f"/proc/{pid}").exists()]
     assert not alive, alive
+
+
+def test_engine_quit_stops_the_engine_with_stdin_still_open(sidecar):
+    # The Windows shell can't send SIGTERM or close only the sidecar's stdin: it sends engine.quit.
+    sidecar.send({"id": 1, "method": "engine.quit"})
+    _, reply, _ = sidecar.until(lambda m: m.get("id") == 1)
+    assert reply == {"id": 1, "result": {}}
+    assert sidecar.p.wait(timeout=20) == 0

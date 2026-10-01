@@ -33,7 +33,8 @@ Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`,
   `record.locate` can return `null` (also for an AI assistant box over more than 60% of the page:
   the model boxes the whole screen when what was described isn't there).
 - When stdin closes, requests still in flight get 3 s to answer, the rest are answered with
-  `stopped`, Chromium is closed and the process exits 0. SIGTERM and SIGINT do the same.
+  `stopped`, Chromium is closed and the process exits 0. SIGTERM and SIGINT do the same, and so
+  does `engine.quit` (for Windows, where the shell can't send a signal or close only stdin).
 
 ## Methods
 
@@ -46,6 +47,7 @@ Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`,
 | `setup.downloadModel` | `{ repo, revision }` | `{ path, sizeBytes }` — resumable; emits `setup.progress` with `task: "model"`. Only a model in the engine's table (below), at its revision; anything else is `bad_request` before anything is fetched |
 | `setup.pause` | `{ task }` | `{}` — pauses a download; calling the start method again resumes |
 | `setup.removeModel` | – | `{}` — `busy` while a run is going |
+| `engine.quit` | – | `{}` — then stops as when stdin closes: in-flight requests get 3 s, Chromium is closed, exit 0 |
 
 `setup.progress` data: `{ task, state: "busy"|"paused"|"done"|"failed", doneBytes?, totalBytes?, etaSeconds?, message? }`.
 
@@ -547,13 +549,14 @@ with `error` one of `invalid`, `refused`, `redirect`, `secret`, `unreachable`, `
 
 | Variable | Default | Use |
 |---|---|---|
-| `BP_HOME` | `~/Library/Application Support/Breakpatch` (Linux: `~/.local/share/Breakpatch`) | base folder |
+| `BP_HOME` | `~/Library/Application Support/Breakpatch` (Linux: `~/.local/share/Breakpatch`; Windows: `%LOCALAPPDATA%\Breakpatch`) | base folder |
 | `BP_MODELS_DIR` | `$BP_HOME/models` | model downloads |
 | `BP_BROWSERS_PATH` | `$PLAYWRIGHT_BROWSERS_PATH`, else `$BP_HOME/browsers` | Chromium |
 | `BP_SCREENSHOTS_DIR` | `$BP_HOME/screenshots` | failure/heal screenshots (`<runId>/<n>-<stepId>.png`) |
 | `BP_CHROMIUM` | – | explicit Chromium binary (development, CI images) |
 | `BP_HEADED` | – | `1` shows the browser window |
 | `BP_FAST` | – | `1` shortens every wait (tests) |
+| `BP_TIMINGS_SCALE` | `1` | a slow machine (a Raspberry Pi): multiplies the settle, pre-check, navigation and start-page waits by this number, from 1 to 10; the noise watch isn't stretched |
 | `BP_LOG` | `INFO` | log level (stderr) |
 | `HF_ENDPOINT`, `HF_TOKEN` | Hugging Face defaults | model download; development only, ignored by a release build (a packaged sidecar) |
 | `BP_NO_SANDBOX` | – | `1` turns Chromium's sandbox off; development only |

@@ -124,8 +124,10 @@ region with ignore zones painted grey; distance is the Hamming distance.
 Everything above is tested on Linux with headless Chromium, except:
 
 - **The AI assistant**: `MlxLocator` (mlx-vlm on Apple Silicon). Tests use a fake locator
-  behind the same interface. The prompt and the 0–1000 → pixel mapping match
-  `tools/model-test/model_test.py`; check real replies with the model test.
+  behind the same interface. `tools/model-test/model_test.py` imports the prompt and the
+  0–1000 → pixel mapping (`LOCATE_PROMPT`, `parse_bbox`, `map_box`) from `locator.py`, so it
+  can't drift from the engine (`tests/test_model_tool.py` checks it, against a stand-in
+  llama-server); check real replies with the model test.
 - **The signed PyInstaller build** for `aarch64-apple-darwin` (with mlx bundled) and its
   hardened-runtime entitlements; `system.info` chip/memory via `sysctl`.
 - **Real downloads**: the Chromium install (Playwright's CDN) and the model from Hugging Face.

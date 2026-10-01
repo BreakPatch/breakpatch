@@ -24,10 +24,11 @@ name: Release
 #               the real licence keys only, never the public test key.
 #   publish     needs build; the only job that can write (contents: write). It downloads the
 #               build's files, checks SHA256SUMS and creates the GitHub release. No checkout.
-#   ci-linux, ci-macos, publish-ci
+#   ci-linux, ci-macos, ci-linux-arm64, ci-windows-x64, publish-ci
 #               breakpatch-ci (Team, for CI machines), built and published after the app: they
 #               need publish, so the app and Community never wait for them, and a failure here
-#               leaves the app's release as it is. scripts/build-ci.sh builds the open engine
+#               leaves the app's release as it is. Tag runs only, like every job but test-build:
+#               nothing here runs on a push to a branch. scripts/build-ci.sh builds the open engine
 #               wheel (once, on Linux; the macOS job reuses it), the Team engine compiled with
 #               Nuitka --module into a wheel (the Team repo's engine/scripts/build_ci_wheel.sh,
 #               the real licence keys only) and breakpatch-ci-requirements-<platform>.txt, which
@@ -36,7 +37,15 @@ name: Release
 #               macos-15; both in the `release` environment for TEAM_REPO_TOKEN, installing their
 #               dependencies from the hashed locks first, with no secret in the environment.
 #               publish-ci adds the files to the release and their lines to SHA256SUMS; the
-#               macOS files only when ci-macos worked.
+#               macOS, arm64 and Windows files only when their job worked.
+#               The Linux jobs build inside a manylinux_2_28 container
+#               (scripts/build-manylinux.sh), so the Team wheel is tagged manylinux_2_28_<arch>
+#               and loads on glibc 2.28 and later (Debian 12, Raspberry Pi OS, Ubuntu 22.04):
+#               ci-linux on ubuntu-24.04, ci-linux-arm64 on ubuntu-24.04-arm (both previews).
+#               The repository variable CI_MANYLINUX=off builds ci-linux on the runner as before
+#               (tagged linux_x86_64: only for glibc 2.39 and later). ci-windows-x64 (a preview)
+#               builds under Git Bash on windows-latest (MSVC for Nuitka). The arm64 and Windows
+#               jobs reuse ci-linux's engine wheel, like ci-macos.
 #   test-build  manual runs (workflow_dispatch): an unsigned Community build on macOS, with no
 #               secrets at all (not even the Team repo token), kept as a workflow artifact for
 #               3 days. It tries the macOS build, the AI assistant bundle and the hardened
@@ -58,6 +67,10 @@ name: Release
 #              TEAM_REPO_TOKEN (fine-grained, breakpatch-team only, Contents read-only)
 #   vars (repository)  TEAM_REPO  the Team repo. Default BreakPatch/breakpatch-team
 #                      TEAM_REF   its branch or tag to build (default main)
+#                      MANYLINUX_X64_IMAGE, MANYLINUX_ARM64_IMAGE  the manylinux_2_28 images,
+#                                 pinned by digest (quay.io/pypa/manylinux_2_28_x86_64@sha256:…);
+#                                 without them the jobs use the moving tag and warn
+#                      CI_MANYLINUX  off: ci-linux builds on the runner, not in the container
 
 on:
   push:
@@ -270,13 +283,24 @@ jobs:
           persist-credentials: false
       # No caches on a tag build (security review S5).
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        if: vars.CI_MANYLINUX == 'off'
         with:
           python-version: "3.11"
+      # In the manylinux_2_28 container: both phases of build-ci.sh (the hashed locks and
+      # Nuitka's downloads first, then the build, which downloads nothing), no secret inside.
+      - name: Build breakpatch-ci (manylinux_2_28 container)
+        if: vars.CI_MANYLINUX != 'off'
+        env:
+          TEAM_DIR: breakpatch-team
+          MANYLINUX_IMAGE: ${{ vars.MANYLINUX_X64_IMAGE || 'quay.io/pypa/manylinux_2_28_x86_64' }}
+        run: bash breakpatch/scripts/build-manylinux.sh ci --release --out "$RUNNER_TEMP/ci"
       - name: Install dependencies (hashed locks, no secrets)
+        if: vars.CI_MANYLINUX == 'off'
         env:
           TEAM_DIR: breakpatch-team
         run: bash breakpatch/scripts/build-ci.sh --deps-only
       - name: Build breakpatch-ci
+        if: vars.CI_MANYLINUX == 'off'
         env:
           TEAM_DIR: breakpatch-team
         run: bash breakpatch/scripts/build-ci.sh --no-deps --release --out "$RUNNER_TEMP/ci"
@@ -332,10 +356,98 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+  ci-linux-arm64:
+    name: breakpatch-ci, Linux arm64 (preview; Raspberry Pi)
+    needs: ci-linux
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04-arm
+    environment: release
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: breakpatch
+          persist-credentials: false
+      - name: Check out the Team module
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ vars.TEAM_REPO || 'BreakPatch/breakpatch-team' }}
+          ref: ${{ vars.TEAM_REF || 'main' }}
+          token: ${{ secrets.TEAM_REPO_TOKEN }}
+          path: breakpatch-team
+          persist-credentials: false
+      # The Linux x86_64 job's engine wheel, so every requirements file names the same one.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: breakpatch-ci-linux-x86_64
+          path: ${{ runner.temp }}/linux
+      - name: Build breakpatch-ci (manylinux_2_28 container)
+        env:
+          TEAM_DIR: breakpatch-team
+          MANYLINUX_IMAGE: ${{ vars.MANYLINUX_ARM64_IMAGE || 'quay.io/pypa/manylinux_2_28_aarch64' }}
+        run: |
+          wheel=$(ls "$RUNNER_TEMP"/linux/breakpatch_engine-*.whl)
+          bash breakpatch/scripts/build-manylinux.sh ci --release --engine-wheel "$wheel" --out "$RUNNER_TEMP/ci"
+          rm "$RUNNER_TEMP"/ci/breakpatch_engine-*.whl     # published once, from the Linux x86_64 job
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: breakpatch-ci-linux-arm64
+          path: ${{ runner.temp }}/ci
+          if-no-files-found: error
+          retention-days: 3
+
+  ci-windows-x64:
+    name: breakpatch-ci, Windows x64 (preview)
+    needs: ci-linux
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    environment: release
+    defaults:
+      run:
+        shell: bash   # Git Bash: the same scripts as on Linux and macOS
+    env:
+      PYTHON: python  # setup-python's 3.11, for the build venv (engine/.venv/Scripts/python.exe)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: breakpatch
+          persist-credentials: false
+      - name: Check out the Team module
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ vars.TEAM_REPO || 'BreakPatch/breakpatch-team' }}
+          ref: ${{ vars.TEAM_REF || 'main' }}
+          token: ${{ secrets.TEAM_REPO_TOKEN }}
+          path: breakpatch-team
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: breakpatch-ci-linux-x86_64
+          path: ${{ runner.temp }}/linux
+      - name: Install dependencies (hashed locks, no secrets)
+        env:
+          TEAM_DIR: breakpatch-team
+        run: bash breakpatch/scripts/build-ci.sh --deps-only
+      - name: Build breakpatch-ci
+        env:
+          TEAM_DIR: breakpatch-team
+        run: |
+          wheel=$(ls "$RUNNER_TEMP"/linux/breakpatch_engine-*.whl)
+          bash breakpatch/scripts/build-ci.sh --no-deps --release --engine-wheel "$wheel" --out "$RUNNER_TEMP/ci"
+          rm "$RUNNER_TEMP"/ci/breakpatch_engine-*.whl     # published once, from the Linux x86_64 job
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: breakpatch-ci-windows-x86_64
+          path: ${{ runner.temp }}/ci
+          if-no-files-found: error
+          retention-days: 3
+
   publish-ci:
     name: Publish breakpatch-ci
-    needs: [ci-linux, ci-macos]
-    # The Linux files are enough to publish; the macOS ones are added when that job worked.
+    needs: [ci-linux, ci-macos, ci-linux-arm64, ci-windows-x64]
+    # The Linux x86_64 files are enough to publish; the others are added when their job worked.
     if: ${{ !cancelled() && needs.ci-linux.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
@@ -350,15 +462,31 @@ jobs:
         with:
           name: breakpatch-ci-macos-arm64
           path: ci
-      # SHA256SUMS gets a line per new file (the app's lines stay as they are), and every wheel a
-      # requirements file names must be here with the hash it gives.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: needs.ci-linux-arm64.result == 'success'
+        with:
+          name: breakpatch-ci-linux-arm64
+          path: ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: needs.ci-windows-x64.result == 'success'
+        with:
+          name: breakpatch-ci-windows-x86_64
+          path: ci
+      # SHA256SUMS: the release's own (the app's lines stay as they are) merged with a line per
+      # new file from every platform that was built; a name already in it fails the job. Every
+      # wheel a requirements file names must be here with the hash it gives.
       - name: Check and publish
         env:
           GH_TOKEN: ${{ github.token }}
+          MACOS: ${{ needs.ci-macos.result }}
+          ARM64: ${{ needs.ci-linux-arm64.result }}
+          WINDOWS: ${{ needs.ci-windows-x64.result }}
         run: |
-          if [ "${{ needs.ci-macos.result }}" != success ]; then
-            echo "::warning::breakpatch-ci for macOS wasn't built; only the Linux preview is published."
-          fi
+          for p in "macOS:$MACOS" "Linux arm64:$ARM64" "Windows x64:$WINDOWS"; do
+            if [ "${p##*:}" != success ]; then
+              echo "::warning::breakpatch-ci for ${p%:*} wasn't built (${p##*:}); it isn't in this release."
+            fi
+          done
           for req in ci/breakpatch-ci-requirements-*.txt; do
             sed -n 's#^\./\([^ ]*\.whl\) --hash=sha256:\([0-9a-f]\{64\}\)$#\2  \1#p' "$req" > expected.txt
             [ "$(wc -l < expected.txt)" -eq 2 ] || { echo "::error::$req doesn't name two wheels"; exit 1; }

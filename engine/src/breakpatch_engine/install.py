@@ -1,4 +1,4 @@
-"""Setup: this Mac's details, the pinned Chromium and the AI model (spec §7, §16)."""
+"""Setup: this machine's details, the pinned Chromium and the AI model (spec §7, §16)."""
 from __future__ import annotations
 
 import asyncio
@@ -23,19 +23,95 @@ Progress = Callable[[dict], None]
 MARKER = ".breakpatch-model.json"
 
 
-# ---------------------------------------------------------------- this Mac
+# ---------------------------------------------------------------- this machine
+
+CPUINFO = Path("/proc/cpuinfo")
+DEVICE_TREE_MODEL = Path("/proc/device-tree/model")     # a Raspberry Pi says what it is here
+WINDOWS_CPU_KEY = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+
 
 def memory_gb() -> float:
     try:
         total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    except (ValueError, OSError, AttributeError):
+    except (ValueError, OSError, AttributeError):    # Windows has no sysconf
         total = 0
     if sys.platform == "darwin":
         try:
             total = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5).stdout)
         except Exception:  # noqa: BLE001
             pass
+    elif sys.platform == "win32":
+        total = windows_memory_bytes() or total
     return round(total / 2**30)
+
+
+def _kernel32():
+    """kernel32 through ctypes, or None off Windows (tests put a fake one here)."""
+    import ctypes
+    windll = getattr(ctypes, "windll", None)
+    return windll.kernel32 if windll is not None else None
+
+
+def windows_memory_bytes() -> int:
+    """Physical memory from GlobalMemoryStatusEx, or 0."""
+    import ctypes
+
+    class MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_uint32), ("dwMemoryLoad", ctypes.c_uint32),
+                    ("ullTotalPhys", ctypes.c_uint64), ("ullAvailPhys", ctypes.c_uint64),
+                    ("ullTotalPageFile", ctypes.c_uint64), ("ullAvailPageFile", ctypes.c_uint64),
+                    ("ullTotalVirtual", ctypes.c_uint64), ("ullAvailVirtual", ctypes.c_uint64),
+                    ("ullAvailExtendedVirtual", ctypes.c_uint64)]
+
+    try:
+        k32 = _kernel32()
+        if k32 is None:
+            return 0
+        stat = MEMORYSTATUSEX()
+        stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if not k32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+            return 0
+        return int(stat.ullTotalPhys)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def windows_cpu_name() -> str:
+    """The processor's name from the registry (ProcessorNameString), or ""."""
+    try:
+        import winreg  # type: ignore[import-not-found]  # Windows only
+    except ImportError:
+        return ""
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, WINDOWS_CPU_KEY) as key:
+            value, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+        return " ".join(str(value).split())
+    except OSError:
+        return ""
+
+
+def linux_cpu_name() -> str:
+    """/proc/cpuinfo's "model name" (x86, most arm64); else the board's name (a Raspberry Pi has
+    no "model name": /proc/device-tree/model says "Raspberry Pi 4 Model B Rev 1.4"), else cpuinfo's
+    "Model" line, which the Pi kernel writes too."""
+    model = ""
+    try:
+        for line in CPUINFO.read_text(errors="replace").splitlines():
+            key, _, value = line.partition(":")
+            key = key.strip().lower()
+            if key == "model name" and value.strip():
+                return value.strip()
+            if key == "model" and value.strip() and not value.strip().isdigit():
+                model = model or value.strip()
+    except OSError:
+        pass
+    try:
+        board = DEVICE_TREE_MODEL.read_bytes().rstrip(b"\0").decode(errors="replace").strip()
+        if board:
+            return board
+    except OSError:
+        pass
+    return model
 
 
 def chip() -> str:
@@ -46,18 +122,24 @@ def chip() -> str:
                 return out.stdout.strip()
         except Exception:  # noqa: BLE001
             pass
-    try:
-        for line in Path("/proc/cpuinfo").read_text().splitlines():
-            if line.lower().startswith("model name"):
-                return line.split(":", 1)[1].strip()
-    except OSError:
-        pass
+    elif sys.platform == "win32":
+        name = windows_cpu_name()
+        if name:
+            return name
+    else:
+        name = linux_cpu_name()
+        if name:
+            return name
     return platform.processor() or platform.machine()
 
 
 def os_name() -> str:
     if sys.platform == "darwin":
         return f"macOS {platform.mac_ver()[0]}".strip()
+    if sys.platform == "win32":
+        from .systems import windows_release
+        release, build = windows_release()
+        return f"Windows {release} (build {build})" if build else f"Windows {release}"
     return f"{platform.system()} {platform.release()}"
 
 

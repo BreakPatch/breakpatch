@@ -30,18 +30,29 @@
 # real gate (docs/editions.md "Licence"). Set BP_NO_HARDEN=1 to skip it (a plain PyInstaller build
 # that ships the Team source; for local debugging only, never a release).
 #
+# Windows: run it under Git Bash (windows-latest has it, and MSVC for Nuitka). The venv's Python is
+# .venv/Scripts/python.exe, the sidecar breakpatch-engine-x86_64-pc-windows-msvc.exe, and the
+# compiled Team module a .pyd. Linux: build inside a manylinux_2_28 container
+# (scripts/build-manylinux.sh), so the sidecar runs on glibc 2.28 and later (Debian 12, Raspberry
+# Pi OS, Ubuntu 22.04), not only on the build machine's.
+#
 #   engine/scripts/build_sidecar.sh              # uses engine/.venv
 #   engine/scripts/build_sidecar.sh --out DIR    # write somewhere else (e.g. to try a build)
 #   engine/scripts/build_sidecar.sh --compiler nuitka
 #   PYTHON=/path/to/python engine/scripts/build_sidecar.sh
 #   SIDECAR_COMPILER=nuitka engine/scripts/build_sidecar.sh
+#   BP_TARGET_TRIPLE=aarch64-unknown-linux-gnu engine/scripts/build_sidecar.sh   # no rustc here
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 engine_dir=$(dirname "$here")
 repo_dir=$(dirname "$engine_dir")
 out_dir="$repo_dir/app/src-tauri/binaries"
-PYTHON=${PYTHON:-"$engine_dir/.venv/bin/python"}
+# shellcheck source-path=SCRIPTDIR/../.. source=scripts/platform.sh
+. "$repo_dir/scripts/platform.sh"
+PYTHON=${PYTHON:-$(venv_python "$engine_dir/.venv")}
+exe=""
+if is_windows; then exe=".exe"; fi
 compiler=${SIDECAR_COMPILER:-pyinstaller}
 
 while [ $# -gt 0 ]; do
@@ -57,17 +68,19 @@ case "$compiler" in
   *) echo "build_sidecar: --compiler must be pyinstaller or nuitka, not '$compiler'" >&2; exit 2 ;;
 esac
 
-triple=$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')
+# BP_TARGET_TRIPLE names it where there's no Rust (a manylinux container, scripts/build-manylinux.sh).
+triple=${BP_TARGET_TRIPLE:-$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')}
 if [ -z "$triple" ]; then
-  echo "build_sidecar: rustc not found; install Rust from https://rustup.rs" >&2
+  echo "build_sidecar: rustc not found; install Rust from https://rustup.rs (or set BP_TARGET_TRIPLE)" >&2
   exit 1
 fi
 if [ ! -x "$PYTHON" ]; then
-  echo "build_sidecar: $PYTHON not found. Create it: cd engine && python3.11 -m venv .venv && .venv/bin/pip install -e '.[dev]'" >&2
+  echo "build_sidecar: $PYTHON not found. Create it: cd engine && python3.11 -m venv .venv && $(venv_python .venv) -m pip install -e '.[dev]'" >&2
   exit 1
 fi
 
 name="breakpatch-engine-$triple"
+bin="$name$exe"      # Tauri's externalBin adds .exe on Windows
 work=$(mktemp -d "${TMPDIR:-/tmp}/bp-sidecar.XXXXXX")
 
 # Team hardening state (see harden_team_module): the compiled package swapped into the venv is
@@ -87,6 +100,11 @@ trap 'restore_team_module; rm -rf "$work"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# A path Python printed, as this shell writes it (C:\x on Windows is /c/x in Git Bash).
+posix_path() {
+  if is_windows && command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else printf '%s\n' "$1"; fi
+}
+
 team_installed() { "$PYTHON" -c "import breakpatch_team_engine" 2>/dev/null; }
 team_is_source() { "$PYTHON" -c "import breakpatch_team_engine as t, sys; sys.exit(0 if t.__file__.endswith('.py') else 1)" 2>/dev/null; }
 have_nuitka() { "$PYTHON" -c "import nuitka" 2>/dev/null; }
@@ -100,7 +118,7 @@ harden_team_module() {
     echo "build_sidecar: install it ($PYTHON -m pip install nuitka), or set BP_NO_HARDEN=1 to ship the Team source (debug only)." >&2
     exit 1
   }
-  team_pkg_dir=$("$PYTHON" -c "import breakpatch_team_engine as t, os; print(os.path.dirname(t.__file__))")
+  team_pkg_dir=$(posix_path "$("$PYTHON" -c "import breakpatch_team_engine as t, os; print(os.path.dirname(t.__file__))")")
   sp=$(dirname "$team_pkg_dir")
   echo "build_sidecar: compiling breakpatch_team_engine to native code (Nuitka --module)"
   # ccache, when present, is picked up by Nuitka automatically and makes re-builds much faster.
@@ -110,8 +128,12 @@ harden_team_module() {
   "$PYTHON" -m nuitka --module "$team_pkg_dir" --include-package=breakpatch_team_engine \
     --output-dir="$work/team-so" --remove-output </dev/null >"$work/team-nuitka.log" 2>&1 || {
       echo "build_sidecar: Nuitka couldn't compile breakpatch_team_engine:" >&2; tail -20 "$work/team-nuitka.log" >&2; exit 1; }
-  so=$(ls "$work"/team-so/breakpatch_team_engine*.so 2>/dev/null | head -1)
-  [ -n "$so" ] || { echo "build_sidecar: Nuitka didn't write a breakpatch_team_engine .so" >&2; exit 1; }
+  # .so on macOS and Linux, .pyd on Windows.
+  so=""
+  for f in "$work"/team-so/breakpatch_team_engine*.so "$work"/team-so/breakpatch_team_engine*.pyd; do
+    [ -f "$f" ] && so=$f && break
+  done
+  [ -n "$so" ] || { echo "build_sidecar: Nuitka didn't write a breakpatch_team_engine .so or .pyd" >&2; exit 1; }
   team_pkg_backup="$work/team-src-backup"
   mv "$team_pkg_dir" "$team_pkg_backup"
   team_pkg_so="$sp/$(basename "$so")"
@@ -158,7 +180,7 @@ if [ "$compiler" = nuitka ]; then
   ver=$("$PYTHON" -c "import breakpatch_engine as e; print(e.__version__)")
   # shellcheck disable=SC2086
   "$PYTHON" -m nuitka --standalone --onefile \
-    --output-dir="$work/nuitka" --output-filename="$name" \
+    --output-dir="$work/nuitka" --output-filename="$bin" \
     --onefile-tempdir-spec="{CACHE_DIR}/breakpatch-engine/$ver" \
     --include-package=breakpatch_team_engine \
     --include-package-data=breakpatch_engine \
@@ -170,10 +192,10 @@ if [ "$compiler" = nuitka ]; then
     $mlx_flags \
     "$work/entry.py"
   mkdir -p "$out_dir"
-  cp "$work/nuitka/$name" "$out_dir/$name"
-  chmod +x "$out_dir/$name"
-  "$out_dir/$name" --version >/dev/null
-  echo "build_sidecar: wrote $out_dir/$name ($(du -h "$out_dir/$name" | cut -f1), Nuitka)"
+  cp "$work/nuitka/$bin" "$out_dir/$bin"
+  chmod +x "$out_dir/$bin"
+  "$out_dir/$bin" --version >/dev/null
+  echo "build_sidecar: wrote $out_dir/$bin ($(du -h "$out_dir/$bin" | cut -f1), Nuitka)"
   exit 0
 fi
 
@@ -213,9 +235,9 @@ fi
   "$work/entry.py"
 
 mkdir -p "$out_dir"
-cp "$work/dist/$name" "$out_dir/$name"
-chmod +x "$out_dir/$name"
+cp "$work/dist/$bin" "$out_dir/$bin"
+chmod +x "$out_dir/$bin"
 
 # Smoke test: the binary starts and reports its version.
-"$out_dir/$name" --version >/dev/null
-echo "build_sidecar: wrote $out_dir/$name ($(du -h "$out_dir/$name" | cut -f1))"
+"$out_dir/$bin" --version >/dev/null
+echo "build_sidecar: wrote $out_dir/$bin ($(du -h "$out_dir/$bin" | cut -f1))"

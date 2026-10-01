@@ -683,8 +683,8 @@ To run a suite on the local runner Mac instead, add a [run request](#run-request
 **What you need**
 
 - A Breakpatch Team licence with a free **machine licence** for the CI machine. Machine licences count separately from people's seats.
-- A Mac with Apple Silicon and macOS 14 or later, for example GitHub's `macos-15` runners or a Codemagic Mac. Linux x86_64 works as a preview: it runs tests, but record them on a Mac.
-- Python 3.11 on that machine.
+- A Mac with Apple Silicon and macOS 14 or later, for example GitHub's `macos-15` runners or a Codemagic Mac. Linux (x86_64 and arm64, a Raspberry Pi too) and Windows x64 work as a preview: they run tests, but record them on a Mac. See [breakpatch-ci on Linux](#breakpatch-ci-on-linux), [breakpatch-ci on Windows](#breakpatch-ci-on-windows) and [Raspberry Pi runner](#raspberry-pi-runner).
+- Python 3.11 on that machine. When there's none, the install command downloads it.
 - One run at a time per machine licence. To run tests in parallel, give each parallel job its own machine licence and its own `BREAKPATCH_MACHINE_ID`.
 - The workspace's `.bpworkspace` file (Settings → Workspace → Invite teammates → **Save as file**), committed to your repo. It holds only the workspace's public details, never a password or key.
 - A **CI account**: a user such as `ci@yourcompany.com` with the *CI* role (see [Members and roles](#members-and-roles)). Have it sign in to Breakpatch once, then change its role in Settings → Members. Its email and password go in your CI's secrets.
@@ -869,6 +869,163 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 - **Exit code 2 with "would use the secret … which --secret … doesn't list"**: a test's start page, app address or set-up call is on a site you didn't give that secret. If the site is right, add it: `--secret NAME=https://site1,https://site2`. If not, someone changed the test: check its Version history.
 - **"Left out: no version is marked as released"**: open the test's Version history and **Mark as released** the version CI should run, or use `--version latest`.
 - **Checks fail in CI but pass in the app**: look for the line "this test was recorded on…" at the start of the log. Re-record the test on a machine like the CI machine, or run it on a Mac.
+
+### breakpatch-ci on Linux
+
+`breakpatch-ci` runs on 64-bit Linux, on x86_64 and on arm64 (a Raspberry Pi 4 or 5, or an arm server), as a preview: it runs tests there, and you record them on a Mac. It needs a system from the last few years (glibc 2.28 or later): Ubuntu 22.04 or later, Debian 12 or later, Raspberry Pi OS Bookworm (64-bit) or later, Fedora. A 32-bit system isn't supported, even on a 64-bit Raspberry Pi.
+
+The install command is the same. When the machine has no Python 3.11 (Ubuntu 24.04 and Raspberry Pi OS come with a newer one), it downloads Python 3.11 into `~/.breakpatch-ci` and checks it against the checksum written in the install command. To use your own, set `BREAKPATCH_PYTHON`.
+
+Chromium needs some system libraries. Install them once per machine, as an administrator:
+
+```sh
+sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
+```
+
+`breakpatch-ci setup` installs the test browser again if it's missing (it needs no licence) and prints that line too.
+
+On Linux, Chromium's own sandbox is off by default, because containers and most CI machines can't start it. On a machine that can (your own Linux server, a Raspberry Pi), turn it on with `BP_SANDBOX=1`.
+
+**GitHub Actions on Linux.** The same job as above, with `runs-on: ubuntu-24.04` (or `ubuntu-24.04-arm` for arm64). You don't need `actions/setup-python`. Add the libraries before the run:
+
+```yaml
+      - run: curl -fsSL https://breakpatch.dev/install-ci | sh
+      - run: sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
+```
+
+**GitLab CI**
+
+```yaml
+ui-tests:
+  image: ubuntu:24.04
+  resource_group: breakpatch-ci        # one run at a time per machine licence
+  variables:
+    BREAKPATCH_MACHINE_ID: gitlab-acme-web
+    BREAKPATCH_LICENCE_FILE: $CI_PROJECT_DIR/.breakpatch/licence.json
+  cache:
+    key: breakpatch-licence
+    paths: [.breakpatch]
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+    - curl -fsSL https://breakpatch.dev/install-ci | sh
+    - ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
+    - >-
+      ~/.local/bin/breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --version released
+      --label "GitLab · pipeline $CI_PIPELINE_ID" --secret STAGING_PASSWORD=https://staging.acme.com --screenshots shots
+  artifacts:
+    when: on_failure
+    paths: [shots]
+```
+
+Set `BREAKPATCH_LICENCE_KEY`, `BREAKPATCH_CI_EMAIL`, `BREAKPATCH_CI_PASSWORD` and `BP_SECRET_STAGING_PASSWORD` as masked CI/CD variables. The job runs as root in the container, which the install command allows.
+
+### breakpatch-ci on Windows
+
+`breakpatch-ci` runs on 64-bit Windows 10 and 11 on x64, as a preview: it runs tests there, and you record them on a Mac. Windows on arm isn't supported yet. Install it from PowerShell (no administrator rights needed):
+
+```powershell
+irm https://breakpatch.dev/install-ci.ps1 | iex
+```
+
+It works like the install command for Mac and Linux. It installs `breakpatch-ci` and the test browser into `%LOCALAPPDATA%\breakpatch-ci`, uses Python 3.11 if it's installed (or downloads it, checked, into that folder), and adds `%LOCALAPPDATA%\breakpatch-ci\bin` to your PATH. Open a new terminal afterwards. For a given version, set `$env:BREAKPATCH_VERSION = "1.2.3"` first. To remove it, set `$env:BREAKPATCH_UNINSTALL = "1"` and run the same command.
+
+**GitHub Actions on Windows**
+
+```yaml
+jobs:
+  ui-tests:
+    runs-on: windows-latest
+    concurrency: breakpatch-ci
+    env:
+      BREAKPATCH_LICENCE_KEY: ${{ secrets.BREAKPATCH_LICENCE_KEY }}
+      BREAKPATCH_MACHINE_ID: github-acme-web-windows
+      BREAKPATCH_LICENCE_FILE: ${{ github.workspace }}\.breakpatch\licence.json
+      BREAKPATCH_CI_EMAIL: ${{ secrets.BREAKPATCH_CI_EMAIL }}
+      BREAKPATCH_CI_PASSWORD: ${{ secrets.BREAKPATCH_CI_PASSWORD }}
+      BP_SECRET_STAGING_PASSWORD: ${{ secrets.STAGING_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .breakpatch
+          key: breakpatch-licence-${{ github.run_id }}
+          restore-keys: breakpatch-licence-
+      - run: irm https://breakpatch.dev/install-ci.ps1 | iex
+        shell: pwsh
+      - run: >-
+          breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --version released
+          --label "GitHub · build ${{ github.run_number }}" --secret STAGING_PASSWORD=https://staging.acme.com --screenshots shots
+```
+
+The install command adds its folder to `GITHUB_PATH`, so the next steps can run `breakpatch-ci`.
+
+**A Windows PC as a runner.** To run a suite on a schedule without the app, use Task Scheduler: a task that runs `breakpatch-ci run --workspace … --suite …` at the times you want, as a local account made for it, set to *Run whether user is logged on or not*. Give it the same variables as a CI job (System → Advanced system settings → Environment Variables, for that account only). Chromium runs without a desktop.
+
+### Raspberry Pi runner
+
+A Raspberry Pi makes a cheap, always-on machine that replays your workspace's suites on a schedule and reports into the workspace, like a CI job that never stops. It replays tests. It doesn't record them (record on a Mac) and doesn't fix moved buttons: the AI assistant takes minutes per look on a Pi, so leave `--auto-fix` off.
+
+**Which Pi**
+
+- **Raspberry Pi 4 with 8 GB:** fine for nightly and hourly replays of normal web pages. A 4 GB Pi 4 works for replays too, with less room.
+- **Raspberry Pi 5 with 8 GB:** about twice as fast, and the better buy if you're buying one now.
+- **A small x64 mini PC** (for example one with an Intel N100): faster again, and the best choice for Flutter apps (below). It uses the same Linux install as any CI machine.
+- Use an **SSD** over USB 3 (or NVMe on a Pi 5) rather than an SD card, which wears out with screenshots and logs. Give it cooling (a Pi 4 slows down at 80 °C) and the official power supply (27 W on a Pi 5).
+- Install a **64-bit** system: Raspberry Pi OS Bookworm (64-bit) or later, or Ubuntu 24.04 for arm64.
+- On a Pi 5, the standard kernel uses 16 KB memory pages. If Chromium misbehaves, add `kernel=kernel8.img` to `/boot/firmware/config.txt` and restart: that kernel uses 4 KB pages.
+
+**Flutter web apps.** Replay works, because it compares the screen and needs no AI assistant, but Flutter is the hardest case for a Pi:
+
+- Flutter draws everything with WebGL, and a Pi's headless Chromium draws it in software. The first load and each step's settling are slow: use the slow-machine setting (`BP_TIMINGS_SCALE`, below).
+- Software drawing on an arm Linux machine looks slightly different from a Mac. Re-record Flutter tests on the same kind of machine as the runner (or allow for small differences between systems, which `breakpatch-ci` does by default), and check the first runs.
+- There's no automatic fixing for Flutter buttons that moved: nothing can read inside a canvas, and the AI assistant is too slow on a Pi.
+
+A Pi 4 with 8 GB suits nightly Flutter runs, a Pi 5 is better, and an x64 mini PC is best.
+
+**Slow machines.** `BP_TIMINGS_SCALE=2` doubles how long a run waits for a page to settle, for a step's first check to match, for pages to load and for the start page. It doesn't stretch the watch for moving parts before each step. Use a number from 1 to 10: 2 for a Pi 5 or a Pi 4 with normal pages, 3 for a Pi 4 with Flutter. If steps fail with "didn't settle" or "not there yet", raise it.
+
+**Set it up**
+
+1. Make a user for the runner, and install `breakpatch-ci` as that user:
+
+   ```sh
+   sudo useradd --create-home --shell /usr/sbin/nologin breakpatch
+   sudo -H -u breakpatch sh -c 'curl -fsSL https://breakpatch.dev/install-ci | sh'
+   sudo /home/breakpatch/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
+   ```
+
+2. Give it a **machine licence**, the workspace and a **CI account**, as for any CI machine (see [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)). Keep the secrets in files only root can read:
+
+   ```sh
+   sudo install -d -m 700 /etc/breakpatch
+   sudo cp team.bpworkspace /etc/breakpatch/
+   sudo sh -c 'umask 077; printf %s "BP-XXXX-XXXX" > /etc/breakpatch/licence-key; printf %s "the CI account password" > /etc/breakpatch/ci-password'
+   ```
+
+   `/etc/breakpatch/breakpatch.env` holds the rest: `BREAKPATCH_CI_EMAIL`, a fixed `BREAKPATCH_MACHINE_ID` such as `pi-runner-1`, and the suite options, for example `BREAKPATCH_SUITE_OPTIONS=--version released --secret STAGING_PASSWORD=https://staging.acme.com`. A saved secret goes in its own file, `/etc/breakpatch/secret.STAGING_PASSWORD`, with a `LoadCredential=` line for it in the service.
+
+3. Install the service and its timer. The files are in the Breakpatch repository, in `docs/systemd/`: `breakpatch-suite@.service`, `breakpatch-suite@.timer`, `run-suite` and an example `breakpatch.env`.
+
+   ```sh
+   sudo install -D -m 755 run-suite /usr/local/lib/breakpatch/run-suite
+   sudo install -m 644 breakpatch-suite@.service breakpatch-suite@.timer /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl start breakpatch-suite@smoke-7f3a         # a first run, now
+   journalctl -u breakpatch-suite@smoke-7f3a                # its log and result
+   sudo systemctl enable --now breakpatch-suite@smoke-7f3a.timer
+   ```
+
+   The instance name (after the `@`) is the suite's ID or name. The timer runs it on weekdays at 06:00. To change that for one suite, run `sudo systemctl edit breakpatch-suite@smoke-7f3a.timer` and set your own `OnCalendar=` (an empty `OnCalendar=` line first clears the default). `systemctl list-timers 'breakpatch-*'` shows the next runs.
+
+The service passes the licence key, the CI account's password and saved secrets as systemd credentials: only the run can read them, and they never appear in `systemctl show` or the log. It turns on Chromium's sandbox (`BP_SANDBOX=1`) and sets `BP_TIMINGS_SCALE=2`. Failure screenshots go to `/home/breakpatch/breakpatch-shots`.
+
+**What's different from the app's local runner**
+
+- The schedule is the timer's. The days and times set on a suite in the app aren't used.
+- Runs show in the run history marked *CI*, not as the local runner's.
+- There's no **Run now** from the app, and the app shows the runner as offline.
+
+**Copying the SD card or SSD.** Each Pi needs its own machine ID. If you copy a system that has already started once, run `sudo rm /etc/machine-id && sudo systemd-machine-id-setup` on the copy, and give it its own `BREAKPATCH_MACHINE_ID`. Otherwise both Pis use one machine licence and push each other out.
 
 ## Result messages
 

@@ -1,0 +1,21 @@
+# /etc/systemd/system/breakpatch-suite@.timer
+#
+# When a suite runs: `sudo systemctl enable --now breakpatch-suite@smoke-7f3a.timer` starts
+# breakpatch-suite@smoke-7f3a.service on this schedule. Another schedule for one suite:
+# `sudo systemctl edit breakpatch-suite@nightly-2b9c.timer`, then
+#   [Timer]
+#   OnCalendar=
+#   OnCalendar=*-*-* 02:30
+# (the empty line clears the default). `systemctl list-timers 'breakpatch-*'` shows the next runs.
+# The schedule set on the suite in the app isn't used: this timer is the schedule.
+[Unit]
+Description=Breakpatch suite %i on a schedule
+
+[Timer]
+OnCalendar=Mon..Fri 06:00
+# Run a missed one after the Pi was off, and don't start every suite in the same second.
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target
