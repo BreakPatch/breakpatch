@@ -61,6 +61,10 @@
 .set-textlink-note { color: var(--text-faint); font-weight: 400; margin-left: 8px; font-size: 13px; }
 .set-footer { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--line); padding-top: 16px; margin-top: auto; }
 .set-footer .set-note { font-size: 12px; }
+/* A footer that stays with the text above it instead of going to the bottom (a section with more than one). */
+.set-footer.inline { margin-top: 0; }
+/* Several footers stay together at the bottom: only the first takes the free space above it. */
+.set-footer ~ .set-footer { margin-top: 0; }
 
 /* Switch rows */
 .set-toggle { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); }
