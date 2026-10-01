@@ -1,7 +1,7 @@
 // Choosing a tests folder: what's in it, setting it up, and opening it.
 import type { Person } from '../types';
 import { FORMAT, SCHEMA_VERSION, toFileText } from './format';
-import { FolderError, LocalBackend, parseMeta, readMeta, type FolderSnapshot } from './localBackend';
+import { FolderError, LocalBackend, parseMeta, readMeta, type AddressStore, type FolderSnapshot } from './localBackend';
 import { baseName, isTempName, join, MemoryStorage, tempName, type FolderStorage } from './storage';
 
 /**
@@ -76,12 +76,15 @@ export async function localPerson(): Promise<Person> {
   return { uid: 'local', name: name || FALLBACK_NAME, email: '' };
 }
 
-/** Opens a folder that has a breakpatch.json. */
-export async function openLocalFolder(path: string): Promise<LocalBackend> {
+/**
+ * Opens a folder that has a breakpatch.json. `addresses` is the edition's result address store
+ * (edition.resultAddresses: the Team edition keeps them apart from the folder; Community keeps
+ * none). The caller passes it, so this data layer doesn't import the edition (and its state): the
+ * back office type-checks the components that reach this file without the app's packages.
+ */
+export async function openLocalFolder(path: string, addresses?: AddressStore): Promise<LocalBackend> {
   const [storage, person] = await Promise.all([folderStorage(), localPerson()]);
-  // The Team edition keeps result addresses apart from the folder; Community keeps none.
-  const { edition } = await import('../../edition');
-  return LocalBackend.open({ storage, path, person, addresses: edition.resultAddresses });
+  return LocalBackend.open({ storage, path, person, addresses });
 }
 
 /**

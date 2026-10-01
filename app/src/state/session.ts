@@ -174,7 +174,7 @@ export const useSession = create<SessionState>((set, get) => ({
     persist();
   },
   async connectLocal(path) {
-    const backend = countUsage(await openLocalFolder(path));
+    const backend = countUsage(await openLocalFolder(path, edition.resultAddresses));
     closeBackend(get().backend, { signOut: false });
     connections.opened(folderConnection(backend.local.path, backend.name));
     set({ workspace: null, local: { path: backend.local.path }, localError: null, backend, user: backend.currentUser(), pendingWorkspace: null });
