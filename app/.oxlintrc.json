@@ -1,8 +1,64 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
+  "plugins": [
+    "react",
+    "typescript",
+    "oxc"
+  ],
   "rules": {
     "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+    "react/only-export-components": [
+      "warn",
+      {
+        "allowConstantExport": true
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/edition/team/data/**",
+        "src/edition/team/encryption/**"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "firebase/firestore",
+                "importNames": [
+                  "getDoc",
+                  "getDocs",
+                  "getDocFromCache",
+                  "getDocFromServer",
+                  "getDocsFromCache",
+                  "getDocsFromServer",
+                  "onSnapshot",
+                  "setDoc",
+                  "updateDoc",
+                  "addDoc",
+                  "writeBatch",
+                  "runTransaction"
+                ],
+                "message": "The Team module's encryption: import these from data/firebase/sealed.ts, which seals content under them. Only sealed.ts, maintenance.ts and workspaceEncryption.ts use Firestore's own."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": [
+        "src/edition/team/data/firebase/sealed.ts",
+        "src/edition/team/data/firebase/maintenance.ts",
+        "src/edition/team/encryption/workspaceEncryption.ts",
+        "src/edition/team/**/*.test.ts",
+        "src/edition/team/**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
 }
