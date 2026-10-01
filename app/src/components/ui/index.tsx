@@ -151,8 +151,10 @@ export function Tabs<T extends string>({ items, value, onChange, label }: { item
  * Modal dialog. Focus starts on the first field, or on `[data-autofocus]` when there is one: a
  * confirmation that deletes something marks its Cancel button so Enter never deletes by accident.
  */
-export function Dialog({ open, onClose, title, sub, children, actions, width = 520, contained, icon, iconColor, labelledBy }: {
-  open: boolean; onClose: () => void; title?: ReactNode; sub?: ReactNode; children?: ReactNode; actions?: ReactNode; width?: number; contained?: boolean; icon?: string; iconColor?: string; labelledBy?: string;
+/** `stays`: Esc and a click outside don't close it (a dialog whose closing loses something for good);
+ *  only its own buttons and ✕ (onClose) do. */
+export function Dialog({ open, onClose, title, sub, children, actions, width = 520, contained, icon, iconColor, labelledBy, stays }: {
+  open: boolean; onClose: () => void; title?: ReactNode; sub?: ReactNode; children?: ReactNode; actions?: ReactNode; width?: number; contained?: boolean; icon?: string; iconColor?: string; labelledBy?: string; stays?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const tid = useId();
@@ -164,7 +166,7 @@ export function Dialog({ open, onClose, title, sub, children, actions, width = 5
     const first = el?.querySelector<HTMLElement>('[data-autofocus]') ?? el?.querySelector<HTMLElement>('input, textarea, select, button:not([data-close])');
     (first ?? el)?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+      if (e.key === 'Escape') { e.stopPropagation(); if (!stays) onClose(); }
       if (e.key === 'Tab' && el) {
         const f = [...el.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')].filter(x => !x.hasAttribute('disabled'));
         if (!f.length) return;
@@ -175,11 +177,11 @@ export function Dialog({ open, onClose, title, sub, children, actions, width = 5
     };
     document.addEventListener('keydown', onKey, true);
     return () => { document.removeEventListener('keydown', onKey, true); prev?.focus?.(); };
-  }, [open, onClose]);
+  }, [open, onClose, stays]);
   if (!mounted) return null;
   const body = (
     <div className={cx('scrim', contained && 'contained', closing && 'closing')} aria-hidden={closing || undefined} inert={closing || undefined}
-      onMouseDown={e => { if (open && e.target === e.currentTarget) onClose(); }}>
+      onMouseDown={e => { if (open && !stays && e.target === e.currentTarget) onClose(); }}>
       <div ref={ref} className={cx('dialog', closing && 'closing')} role="dialog" aria-modal="true" aria-labelledby={labelledBy ?? (title ? tid : undefined)} style={{ width }} tabIndex={-1}>
         {title && (
           <div className="dialog-head">
