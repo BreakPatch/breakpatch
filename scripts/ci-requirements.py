@@ -10,7 +10,8 @@ The install command (https://breakpatch.dev/install-ci) installs from it with
 
 - every package the open engine needs to run (its dependencies, and theirs; on macOS with the
   `mlx` extra, the AI assistant's, so `--auto-fix` works on a self-hosted Mac where the app's
-  AI assistant is downloaded) for this platform, pinned and hashed exactly as in the engine's
+  AI assistant is downloaded) for this platform, and its `ci` extra (cryptography, for the Team
+  engine's encrypted workspaces, content_keys.py), pinned and hashed exactly as in the engine's
   lock (security review S3), and
 - the two wheels by file name (`./name.whl`, next to the file once downloaded) with their SHA-256.
 
@@ -34,6 +35,8 @@ except ImportError:                     # pip always carries a copy
 
 ENGINE = "breakpatch-engine"
 TEAM = "breakpatch-team-engine"
+# The engine's extras breakpatch-ci always needs, on every platform: cryptography (pyproject.toml).
+CI_EXTRAS = ("ci",)
 
 
 def norm(name: str) -> str:
@@ -102,7 +105,7 @@ def build(lock: Path, wheels: list[Path], platform: str, extras: tuple[str, ...]
     if names != {ENGINE, TEAM}:
         raise SystemExit(f"ci-requirements: needs the {ENGINE} and {TEAM} wheels, got {sorted(names)}")
     pinned = lock_entries(lock)
-    need = runtime_closure(ENGINE, extras)
+    need = runtime_closure(ENGINE, tuple(dict.fromkeys(CI_EXTRAS + tuple(extras))))
     missing = [n for n in need if n not in pinned]
     if missing:
         raise SystemExit(f"ci-requirements: {lock.name} has no pinned hashes for {', '.join(missing)}. Run scripts/lock-python.sh")
@@ -110,7 +113,7 @@ def build(lock: Path, wheels: list[Path], platform: str, extras: tuple[str, ...]
         f"# breakpatch-ci on {platform}: written by scripts/ci-requirements.py for the release.",
         "# Installed by https://breakpatch.dev/install-ci with:",
         "#   pip install --require-hashes --only-binary=:all: -r THIS_FILE   (from the folder holding the wheels)",
-        f"# The open engine's dependencies, pinned and hashed as in engine/locks/{lock.name}:",
+        f"# The open engine's dependencies (with its ci extra), pinned and hashed as in engine/locks/{lock.name}:",
     ]
     lines += [pinned[n] for n in need]
     lines.append("# The engine and the Team engine of this release:")

@@ -19,6 +19,8 @@
 #   linux-arm64.<extras>.txt             Linux on arm64 (Raspberry Pi, ubuntu-24.04-arm): dev,
 #                                        dev-hardening
 #   windows-x86_64.<extras>.txt          Windows x64: dev, dev-hardening
+# Every file also has the `ci` extra (cryptography, for breakpatch-ci's encrypted workspaces), so
+# the names don't list it; scripts/ci-requirements.py takes it from whichever lock it's given.
 # Platforms are named the same everywhere (build-release.sh, build-ci.sh, the release's
 # breakpatch-ci-requirements-<platform>.txt): <os>-<arch>, with arm64 and x86_64.
 # A lock file that doesn't exist yet starts from its sibling's pins (the linux-x86_64 file of the
@@ -43,7 +45,7 @@ mkdir -p "$locks"
 
 compile() {   # <output> <platform> <extras...>
   local out=$1 platform=$2; shift 2
-  local extra_args=() seed
+  local extra_args=(--extra ci) seed
   for e in "$@"; do extra_args+=(--extra "$e"); done
   seed="$locks/linux-x86_64.$(basename "$out" | cut -d. -f2-)"
   if [ ! -f "$out" ] && [ -f "$seed" ] && [ "$seed" != "$out" ]; then
