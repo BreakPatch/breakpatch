@@ -2,12 +2,9 @@
 // suite's runs) as the app stores them. breakpatch-ci builds the same view in Python (the open
 // engine's breakpatch_engine/report/view.py); both are checked against
 // engine/tests/fixtures/report/view-*.json, built from input.json. The words are the report's own
-// (screens/run/reasons.ts, lib/explain.ts), so view.py repeats them: change them together.
+// (lib/runWords.ts, lib/explain.ts), so view.py repeats them: change them together.
 import type { Explanation, Run, Step, StepRun } from '../../data/types';
-import { WHERE, runBy } from '../../components/common/runs';
-import { UNCHECKED_NOTE } from '../../components/steps/stepText';
-import { passNote, reasonAdvice, reasonText, reasonTitle, targetName } from '../../screens/run/reasons';
-import { tookText } from '../../screens/report/reportData';
+import { UNCHECKED_NOTE, WHERE, passNote, reasonAdvice, reasonText, reasonTitle, runBy, targetName, tookText } from '../runWords';
 import { CAUSE_TEXT, SUGGESTION_TEXT } from '../explain';
 
 /** A screenshot, as a WebP data: URI (the engine's `report.images`). */

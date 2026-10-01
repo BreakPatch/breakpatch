@@ -97,10 +97,4 @@ export function copyDetails(run: Run, step: Step | undefined, number: string, r:
   return lines.join('\n');
 }
 
-/** "51 s", "1 min 8 s", "12 min". */
-export function tookText(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  if (total < 60) return `${total} s`;
-  const m = Math.floor(total / 60), s = total % 60;
-  return s ? `${m} min ${s} s` : `${m} min`;
-}
+export { tookText } from '../../lib/runWords';
