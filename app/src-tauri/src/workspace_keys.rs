@@ -738,6 +738,23 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         self.add_keys(ws, keys)
     }
 
+    /// Drops the key versions older than `keep`, once everything is sealed with `keep` (the reseal
+    /// job finished for it). Refused unless this Mac holds `keep`, so it never ends up with no key.
+    /// Returns the versions it still holds.
+    pub fn retire(&self, ws: &str, keep: u32) -> Result<Vec<u32>, String> {
+        let r = self.ring(ws)?;
+        let mut ring = r.lock().unwrap();
+        if !ring.keys.contains_key(&keep) {
+            return Err(format!("This Mac doesn't hold key {keep} of this workspace."));
+        }
+        let before = ring.keys.len();
+        ring.keys.retain(|kid, _| *kid >= keep);
+        if ring.keys.len() != before {
+            self.save(ws, &ring)?;
+        }
+        Ok(ring.keys.keys().copied().collect())
+    }
+
     /// Forgets this workspace's keys on this Mac (after Disconnect this Mac).
     pub fn forget(&self, ws: &str) -> Result<(), String> {
         Self::check_ws(ws)?;
@@ -888,6 +905,12 @@ pub mod commands {
     pub async fn workspace_keys_import_invite(k: State<'_, KeysState>, ws: String, bundle: String) -> Result<Vec<u32>, String> {
         let k = Arc::clone(&k);
         blocking(move || k.import_invite(&ws, &bundle)).await
+    }
+
+    #[tauri::command]
+    pub async fn workspace_keys_retire(k: State<'_, KeysState>, ws: String, keep: u32) -> Result<Vec<u32>, String> {
+        let k = Arc::clone(&k);
+        blocking(move || k.retire(&ws, keep)).await
     }
 
     #[tauri::command]

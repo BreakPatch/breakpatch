@@ -232,6 +232,26 @@ fn the_first_mac_makes_the_key_and_new_versions_keep_old_content_readable() {
 }
 
 #[test]
+fn old_key_versions_go_once_everything_is_sealed_with_the_new_one() {
+    let a = mac();
+    assert!(a.retire(WS, 1).is_err(), "no key yet");
+    a.create(WS, None).unwrap();
+    let old = a.seal(WS, None, &[item("apps/a", "name", "\"Web\"")]).unwrap();
+    assert_eq!(a.rotate(WS).unwrap(), 2);
+    assert_eq!(a.rotate(WS).unwrap(), 3);
+    assert!(a.retire(WS, 4).is_err(), "never left without the key it keeps");
+    assert_eq!(a.retire(WS, 3).unwrap(), vec![3]);
+    assert_eq!(a.status(WS).unwrap(), Status { has_key: true, current: Some(3), kids: vec![3] });
+    assert_eq!(a.open(WS, &[open_item("apps/a", "name", &old[0])]).unwrap(), vec![None], "content sealed with key 1 no longer opens here");
+    // Kept so in the Keychain.
+    let text = a.store.get(&format!("people:{WS}")).unwrap().unwrap();
+    let b = WorkspaceKeys::new(MemStore::default());
+    b.store.set(&format!("people:{WS}"), &text).unwrap();
+    assert_eq!(b.status(WS).unwrap().kids, vec![3]);
+    assert_eq!(a.retire(WS, 3).unwrap(), vec![3], "again: nothing to drop");
+}
+
+#[test]
 fn an_admin_approves_a_new_mac_by_sealing_the_key_to_it() {
     let admin = mac();
     admin.create(WS, None).unwrap();

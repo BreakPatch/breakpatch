@@ -606,6 +606,7 @@ pub fn run() {
             workspace_keys::commands::workspace_keys_machine_use,
             workspace_keys::commands::workspace_keys_copy_invite,
             workspace_keys::commands::workspace_keys_import_invite,
+            workspace_keys::commands::workspace_keys_retire,
             workspace_keys::commands::workspace_keys_forget,
         ])
         .build(tauri::generate_context!())
