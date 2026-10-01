@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSystem } from '../state/system';
 import { listen } from '@tauri-apps/api/event';
 import type { Box, Explanation, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
+import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type ReportImageReply, type ReportImageRequest, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
 
 interface Wire { event: keyof EngineEvents; data: unknown }
 
@@ -65,6 +65,11 @@ export class SidecarEngine implements Engine {
   async explain(step: Step, stepRun: StepRun, viewport: Pick<Viewport, 'width' | 'height'>) {
     const { explanation: _cached, ...sr } = stepRun;
     return (await this.call<{ explanation: Explanation | null }>('run.explain', { step, stepRun: sr, viewport: { width: viewport.width, height: viewport.height } })).explanation ?? null;
+  }
+
+  async reportImages(items: ReportImageRequest[], viewportWidth?: number) {
+    if (!items.length) return [];
+    return (await this.call<{ images: (ReportImageReply | null)[] }>('report.images', { items, ...(viewportWidth ? { viewportWidth } : {}) })).images ?? [];
   }
 }
 

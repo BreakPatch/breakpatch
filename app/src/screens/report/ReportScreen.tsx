@@ -14,6 +14,10 @@ import { preorder, rowRefs } from '../run/resolve';
 import { reasonTitle, passNote, slowNote, UNCHECKED_NOTE } from '../run/reasons';
 import { focusStep } from '../run/runState';
 import { ReportDetail } from './ReportDetail';
+import { ExportDialog } from './ExportDialog';
+import { reportInput } from '../../lib/report/collect';
+import { removePrinted } from '../../lib/report/print';
+import { getEngine } from '../../engine';
 import { RunHistory } from './RunHistory';
 import { tookText } from './reportData';
 import { useReport } from './useReport';
@@ -39,6 +43,8 @@ export default function ReportScreen() {
   const focus = run && steps ? focusStep(run, flat) : undefined;
   const [sel, setSel] = useState<string | null>(null);
   useEffect(() => { setSel(null); }, [runId]);
+  const [exporting, setExporting] = useState(false);
+  useEffect(() => removePrinted, []);            // Export as PDF leaves the printed report in the page until here
   const selId = sel ?? focus?.stepId ?? null;
   const selStep = selId ? flat.find(s => s.id === selId) : undefined;
   const selRef = selId ? refs.get(selId) : undefined;
@@ -60,6 +66,7 @@ export default function ReportScreen() {
   const actions = run && (tab === 'history'
     ? <Button kind="primary" icon="play_arrow" onClick={runAgain} disabled={!test}>Run now</Button>
     : <>
+        <Button icon="download" onClick={() => setExporting(true)} disabled={!steps}>Export</Button>
         <Button icon="edit" onClick={openEditor} disabled={!test}>Open in editor</Button>
         <Button kind="primary" icon="replay" onClick={runAgain} disabled={!test}>Run again</Button>
       </>);
@@ -121,6 +128,13 @@ export default function ReportScreen() {
               : <div className="rp-detail"><Skeleton w={220} h={12} /><Skeleton w={360} h={24} /><Skeleton w="70%" h={14} /><Skeleton h={260} /></div>}
           </div>
         </div>
+      )}
+      {run && steps && (
+        <ExportDialog open={exporting} onClose={() => setExporting(false)} what="this run"
+          load={screenshots => reportInput({
+            kind: 'run', name: run.testName, screenshots, engine: getEngine(),
+            tests: [{ appName: app?.name ?? '', name: run.testName, steps, run, viewport: test?.viewport }],
+          })} />
       )}
     </AppFrame>
   );

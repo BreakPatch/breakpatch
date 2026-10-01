@@ -1,0 +1,135 @@
+{
+  "run": {
+    "kind": "run",
+    "name": "Create a project",
+    "appVersion": "0.1.0-beta.1",
+    "generatedAt": 1790259600000,
+    "tzOffsetMinutes": 60,
+    "screenshots": true,
+    "tests": [
+      {
+        "appName": "Web app",
+        "name": "Create a project",
+        "steps": [
+          { "id": "s1", "action": "navigate", "label": "Open the dashboard", "url": "https://app.example.com" },
+          { "id": "g1", "action": "group", "label": "Log in", "groupId": "login", "groupVersion": "latest", "steps": [
+            { "id": "g1a", "action": "write", "label": "Write email", "target": "Email field" },
+            { "id": "g1b", "action": "click", "label": "Click Next", "target": "Next button, bottom right" }
+          ] },
+          { "id": "l1", "action": "loop", "label": "Repeat 2 times", "count": 2, "steps": [
+            { "id": "l1a", "action": "click", "label": "Click Add row", "target": "Add row button" }
+          ] },
+          { "id": "s2", "action": "click", "label": "Click \"New project\"", "target": "New project button" },
+          { "id": "s3", "action": "write", "label": "Write <Q4> & friends", "target": "Name field" },
+          { "id": "s4", "action": "click", "label": "Click Done", "target": "Done button, bottom right of the Create project dialog" },
+          { "id": "s5", "action": "checkpoint", "label": "Check the project list" }
+        ],
+        "run": {
+          "id": "run_8f21c", "appId": "web-app", "testId": "create-project", "testName": "Create a project", "testVersion": 4,
+          "startedBy": { "uid": "u1", "name": "Maria López", "email": "maria@example.com" },
+          "machine": "Maria's MacBook Pro", "source": "desktop",
+          "startedAt": 1790258400000, "durationMs": 68250, "result": "fail", "healedCount": 1,
+          "systemMismatch": {
+            "recordedOn": { "os": "macOS", "osVersion": "15.6", "chromium": "140.0.7339.16" },
+            "ranOn": { "os": "Linux", "chromium": "140.0.7339.16" },
+            "differences": ["os"], "relaxed": true,
+            "message": "This test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks."
+          },
+          "steps": [
+            { "stepId": "s1", "result": "passed", "timings": { "preMs": 0, "actionMs": 812, "settleMs": 1450, "postMs": 38, "settled": true } },
+            { "stepId": "g1", "result": "passed" },
+            { "stepId": "g1a", "result": "passed", "passedBy": "note", "why": "Passed: the email field shows the address, as the note says.", "timings": { "actionMs": 250 } },
+            { "stepId": "g1b", "result": "healed", "oldAt": [1180, 812], "newAt": [1180, 760], "screenshotPath": "/tmp/shots/run_8f21c/004-g1b.png",
+              "image": { "src": "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAQAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA=", "width": 480, "height": 300 },
+              "timings": { "preMs": 3120, "actionMs": 95, "settleMs": 2210, "postMs": 44, "settled": false, "preTries": 3 } },
+            { "stepId": "l1", "result": "passed" },
+            { "stepId": "l1a", "result": "passed", "unchecked": ["post"] },
+            { "stepId": "s2", "result": "passed", "timings": { "preMs": 41, "actionMs": 60, "settleMs": 305, "postMs": 29 } },
+            { "stepId": "s3", "result": "passed" },
+            { "stepId": "s4", "result": "failed", "reason": "targetNotFound", "preDistance": 31, "screenshotPath": "/tmp/shots/run_8f21c/009-s4.png",
+              "image": { "src": "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAQAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA=", "width": 1440, "height": 900 },
+              "timings": { "preMs": 5003 },
+              "explanation": { "summary": "The Done button moved into a menu after the redesign.", "cause": "moved", "suggestion": "rerecord" } }
+          ]
+        }
+      }
+    ]
+  },
+  "suite": {
+    "kind": "suite",
+    "name": "Smoke",
+    "appVersion": "0.1.0-beta.1",
+    "generatedAt": 1790259600000,
+    "tzOffsetMinutes": 0,
+    "screenshots": false,
+    "suite": {
+      "result": "failed",
+      "counts": { "total": 4, "passed": 1, "fixed": 1, "failed": 2, "notRun": 0 },
+      "requestedBy": "Schedule",
+      "startedAt": 1790258400000,
+      "finishedAt": 1790258692000,
+      "note": "Nightly run before the 4.2 release"
+    },
+    "tests": [
+      {
+        "appName": "Web app",
+        "name": "Sign in",
+        "steps": [
+          { "id": "a1", "action": "write", "label": "Write email", "target": "Email field" },
+          { "id": "a2", "action": "write", "label": "Write password", "secretRef": "STAGING_PASSWORD", "masked": true },
+          { "id": "a3", "action": "click", "label": "Click Sign in", "target": "Sign in button" }
+        ],
+        "run": {
+          "id": "rn-1", "testName": "Sign in", "testVersion": 2, "startedBy": { "serviceAccount": "QA Mac mini" }, "machine": "QA Mac mini",
+          "source": "runner", "startedAt": 1790258400000, "durationMs": 21400, "result": "pass", "healedCount": 0,
+          "steps": [
+            { "stepId": "a1", "result": "passed", "timings": { "preMs": 120, "actionMs": 300, "settleMs": 450, "postMs": 30 } },
+            { "stepId": "a2", "result": "passed", "timings": { "preMs": 60, "actionMs": 280, "settleMs": 200, "postMs": 25 } },
+            { "stepId": "a3", "result": "passed", "timings": { "preMs": 45, "actionMs": 90, "settleMs": 1804, "postMs": 31 } }
+          ]
+        }
+      },
+      {
+        "appName": "Web app",
+        "name": "Invite a teammate",
+        "steps": [
+          { "id": "b1", "action": "click", "label": "Click Invite", "target": "Invite button" },
+          { "id": "b2", "action": "write", "label": "Write address", "target": "Email field" }
+        ],
+        "run": {
+          "id": "rn-2", "testName": "Invite a teammate", "testVersion": 7, "startedBy": { "serviceAccount": "QA Mac mini" }, "machine": "QA Mac mini",
+          "source": "runner", "startedAt": 1790258421400, "durationMs": 64000, "result": "pass", "healedCount": 1,
+          "steps": [
+            { "stepId": "b1", "result": "healed", "oldAt": [900, 40], "newAt": [860, 40], "screenshotPath": "/tmp/shots/rn-2/001-b1.png",
+              "image": { "src": "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAQAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA=", "width": 480, "height": 300 } },
+            { "stepId": "b2", "result": "passed" }
+          ]
+        }
+      },
+      {
+        "appName": "Billing",
+        "name": "Pay an invoice",
+        "steps": [
+          { "id": "c1", "action": "click", "label": "Click Pay", "target": "Pay button" },
+          { "id": "c2", "action": "waitUntil", "label": "Wait for the receipt", "region": [0, 0, 400, 200], "hash": "ff00", "tolerance": 6 }
+        ],
+        "run": {
+          "id": "rn-3", "testName": "Pay an invoice", "testVersion": 1, "startedBy": { "serviceAccount": "QA Mac mini" }, "machine": "QA Mac mini",
+          "source": "runner", "startedAt": 1790258485400, "durationMs": 45000, "result": "fail", "healedCount": 0,
+          "steps": [
+            { "stepId": "c1", "result": "passed" },
+            { "stepId": "c2", "result": "failed", "reason": "timeout", "screenshotPath": "/tmp/shots/rn-3/002-c2.png",
+              "image": { "src": "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAQAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA=", "width": 1440, "height": 900 } }
+          ]
+        }
+      },
+      {
+        "appName": "Billing",
+        "name": "Refund",
+        "steps": [],
+        "run": null,
+        "note": "Couldn't run: it was deleted"
+      }
+    ]
+  }
+}

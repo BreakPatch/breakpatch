@@ -234,6 +234,16 @@ Every error has **Copy**, with two choices: **Plain text**, to paste into a mess
 
 In Team, a failed step also has **Why did this fail?**: the AI assistant says in plain words what changed on the screen. See [Why did this fail?](#why-did-this-fail).
 
+### Export a report
+
+**Export** on a run's report saves it for people who don't have Breakpatch. A finished suite run, and **Run all**, have **Export** too: one report with every test in it.
+
+- **Web page (HTML).** One file that opens in any browser, offline, without Breakpatch or a sign-in. Attach it to a ticket or an email, or drop it in a chat. It has the summary, every step with its result, the reason and where the time went, and the AI assistant's explanation when there is one. Steps open and close with a click, the one that failed is open, and it follows the reader's light or dark setting (**Theme** switches it). It never loads anything from the internet.
+- **PDF.** Opens the print dialog with the same report, every step open. Choose **PDF → Save as PDF**. A saved web page prints the same way from any browser.
+- **JUnit XML.** For CI dashboards: GitHub, GitLab and Jenkins read it. One test case per test, with the failed step and why.
+
+**Screenshots.** The web page and the PDF include the screenshots the run took: full size for the step that failed, small for the others (steps that were fixed automatically). A 30-step run stays under about 5 MB. Screenshots can show personal data, like names, email addresses or account details on the page, so the dialog says so: turn off **Include screenshots** when the report goes to people who shouldn't see that. A run from another Mac has no screenshots on this one, so its report goes without them.
+
 ### Recorded on another system
 
 Screen checks compare the page with how it looked when the step was recorded. Another system, or another version of the test browser, can draw the same text a pixel off or a little smoother, so record and run a test on the same kind of machine when you can.
@@ -590,6 +600,8 @@ It uses the Standard AI assistant, like every Mac. With 32 GB of memory or more 
 
 **Record and run on the same kind of machine.** Tests pass most reliably on the runner when they're recorded on a Mac like it, with the same version of Breakpatch. A test recorded with another version of the test browser runs with **Allow for small differences between systems** (Settings → Screen checks, on unless you turn it off) on the runner Mac, and its report says so when a check fails. See [Recorded on another system](#recorded-on-another-system).
 
+**HTML reports.** Settings → Local runner → **Save an HTML report of every suite run** saves each suite run as the same web page as [Export](#export-a-report), in a folder you choose on the runner Mac (named after the suite, the day and the time). Turn off **Include screenshots** there if others can open the folder who shouldn't see them. If the folder is also on a web server, or a shared drive with web links, enter its **web address**: the Slack and Teams [result messages](#result-messages) then have an **Open the HTML report** button, and the JSON has `htmlReportUrl`. Without one, the report is only saved: a file on the runner Mac isn't something others can open from a message. If a report can't be saved, the runner's status says so.
+
 Anyone can press **Run on runner** on a suite. If the runner is offline, the request waits until it's back. The runner tells the workspace it's there every 90 seconds, and whenever what it's doing changes; after 5 minutes without that, the other Macs show it as offline.
 
 **Queue rules**
@@ -740,6 +752,12 @@ Shared steps are read from `apps/<app>/shared/` next to `tests/`. The run isn't 
 | `3` | There's no usable licence, or it's for another workspace. The JSON and the log say why. |
 
 If a run can't be saved in the workspace (for example the security rules are out of date), the log says so and the JSON has `"saved": false`. The exit code is still the test's result.
+
+**Reports for your CI.** Add `--junit results.xml` to write the result as JUnit XML, which GitHub, GitLab and Jenkins show as test results, and `--html report.html` for the same report as the app's [Export](#export-a-report), screenshots included, to keep as a build artifact. `--html-no-screenshots` leaves the screenshots out (they can show personal data). Both work for a suite, a workspace test and a test file. The folder must exist; a file that can't be written is said in the log and doesn't change the exit code.
+
+```sh
+breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --junit results.xml --html report.html
+```
 
 **The machine licence.** Set these in the CI job's environment:
 
@@ -893,7 +911,7 @@ If the address doesn't answer, the runner tries 3 times over 5 minutes. If Slack
 }
 ```
 
-`result` is one of `passed`, `passed_with_fixes`, `failed` or `replaced`. `reportLink` opens the report in Breakpatch on a Mac, and `reportUrl` does the same from anywhere (both are empty when there's no run to open). A failure can also have `explanation`, the AI assistant's sentence on why, and the message `imageUrl`, the screenshot, when the suite includes one. Use `text` as it is, or build your own message. Any relay works: n8n, Zapier, an email service. Discord and Google Chat take it through such a relay.
+`result` is one of `passed`, `passed_with_fixes`, `failed` or `replaced`. `reportLink` opens the report in Breakpatch on a Mac, and `reportUrl` does the same from anywhere (both are empty when there's no run to open). A failure can also have `explanation`, the AI assistant's sentence on why, and the message `imageUrl`, the screenshot, when the suite includes one, and `htmlReportUrl`, the runner's saved [HTML report](#the-local-runner), when its folder has a web address. Use `text` as it is, or build your own message. Any relay works: n8n, Zapier, an email service. Discord and Google Chat take it through such a relay.
 
 [breakpatch-ci](#from-ci-with-breakpatch-ci) sends the same messages with `--notify-url`.
 

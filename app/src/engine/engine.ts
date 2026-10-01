@@ -178,7 +178,17 @@ export interface Engine {
    * the licence feature or without the AI assistant; `not_found` when the screenshot isn't on this Mac.
    */
   explain(step: Step, stepRun: StepRun, viewport: Pick<Viewport, 'width' | 'height'>): Promise<Explanation | null>;
+
+  /**
+   * Screenshots for an exported report (engine `report.images`): each as a WebP data: URI, "full"
+   * at the viewport's width or "small", in order; null for one that isn't in the engine's
+   * screenshots folder or can't be read. Absent on an engine that can't (then the report goes without).
+   */
+  reportImages?(items: ReportImageRequest[], viewportWidth?: number): Promise<(ReportImageReply | null)[]>;
 }
+
+export interface ReportImageRequest { path: string; size: 'full' | 'small' }
+export interface ReportImageReply { src: string; width: number; height: number; bytes: number }
 
 /**
  * Model repositories (spec §7). The engine only downloads what its own table allows
