@@ -429,9 +429,11 @@ This Mac stays signed in to your Breakpatch account, so next time the list opens
 
 ### Create the hosted workspace
 
-A licence's admin does this once, after buying Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name and press **Create workspace**. You're its first admin, and the licence's other admins are invited.
+A licence's admin does this once, after buying Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name, choose the country your company is in and press **Create workspace**. You're its first admin, and the licence's other admins are invited.
 
-There's no licence key to enter: Breakpatch gives everyone in the workspace their seat. Runs are kept for 90 days (365 with the longer history on Business), then deleted.
+Creating it turns on [encryption](#encryption-and-the-recovery-code): the workspace's key is made on your Mac, and Breakpatch never has it. Straight away, Breakpatch shows the workspace's **recovery code**: save it (**Save recovery kit (PDF)** or **Copy code**) and type back the 4 characters it asks for. Without the code, losing every Mac that has the key means losing the tests.
+
+There's no licence key to enter: Breakpatch gives everyone in the workspace their seat, the runner Mac too. Runs are kept for 90 days (365 with the longer history on Business), then deleted.
 
 ### Invite people
 
@@ -447,7 +449,7 @@ Settings → **Members** → **Invite people**: type their email addresses, choo
 A runner Mac and CI sign in with a token instead of an email. An admin makes one in Settings → **Local runner**:
 
 - **Set up a runner Mac**: name it, press **Make the token** and copy it. It's shown only this once. On the runner Mac choose **Connect a team workspace** → **Hosted by Breakpatch** → **This is a runner Mac**, and paste it. That Mac becomes the workspace's [local runner](#the-local-runner).
-- **Add a CI token**: for [breakpatch-ci](#from-ci-with-breakpatch-ci), with `BREAKPATCH_WORKSPACE=hosted:<workspace>` and the token in the secret `BREAKPATCH_WORKSPACE_TOKEN`. breakpatch-ci signs in with it in a coming update.
+- **Add a CI token**: for [breakpatch-ci](#from-ci-with-breakpatch-ci). In CI, set `BREAKPATCH_WORKSPACE=hosted:<workspace>`, and the secrets `BREAKPATCH_WORKSPACE_TOKEN` (the token) and `BREAKPATCH_MACHINE_KEY` (the workspace's [machine key](#encryption-and-the-recovery-code)). There's no `.bpworkspace` file or CI account: `breakpatch-ci run --suite smoke-7f3a` signs in with the token.
 - The trash button next to a token stops it working at once. A workspace holds its machine licences plus 2 tokens.
 
 ### Plan, region and usage
@@ -688,6 +690,7 @@ To run a suite on the local runner Mac instead, add a [run request](#run-request
 - One run at a time per machine licence. To run tests in parallel, give each parallel job its own machine licence and its own `BREAKPATCH_MACHINE_ID`.
 - The workspace's `.bpworkspace` file (Settings → Workspace → Invite teammates → **Save as file**), committed to your repo. It holds only the workspace's public details, never a password or key.
 - A **CI account**: a user such as `ci@yourcompany.com` with the *CI* role (see [Members and roles](#members-and-roles)). Have it sign in to Breakpatch once, then change its role in Settings → Members. Its email and password go in your CI's secrets.
+- [Hosted by Breakpatch](#a-runner-mac-and-ci) needs neither: a **CI token** and `BREAKPATCH_WORKSPACE=hosted:<workspace>` instead, with the machine key, since hosted workspaces are encrypted.
 - The workspace's latest [security rules](#security-rules): they let the CI account read tests and add its runs. After updating Breakpatch, an admin publishes them again (Settings → Workspace → **Copy security rules**).
 
 **Install**
@@ -1180,6 +1183,6 @@ Until then, that Mac shows names as *Locked* and can't save.
 
 **The local runner and CI** use the **machine key** (`bpmk1_…`): **Make one** under **Machine key**, then enter it on the runner Mac (Settings → Workspace → Encryption) and save it as `BREAKPATCH_MACHINE_KEY` in CI ([From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)). A new machine key stops the old one working.
 
-**A new key.** After someone leaves the team, Breakpatch offers **Make a new key** (it's also in Settings → Workspace → Encryption). Every Mac still in the team gets it, the recovery code and machine key keep working, and what's in the workspace is encrypted again with it in the background. Anyone who had access may have kept copies of what they could read.
+**A new key.** After someone leaves the team, Breakpatch offers **Make a new key** (it's also in Settings → Workspace → Encryption). Every Mac still in the team gets it, the recovery code and machine key keep working, and what's in the workspace is encrypted again with it in the background. Once that's done, each Mac deletes the older keys from its Keychain, so a copy of an old key opens nothing new. Anyone who had access may have kept copies of what they could read.
 
 **Turning it on**, or a new key, encrypts what's already there in the background: keep working, and if you close the app, it carries on the next time an admin opens the workspace. Breakpatch versions from before encryption can't save to an encrypted workspace, so update everyone first.
