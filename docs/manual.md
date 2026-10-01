@@ -240,9 +240,11 @@ In Team, a failed step also has **Why did this fail?**: the AI assistant says in
 
 - **Web page (HTML).** One file that opens in any browser, offline, without Breakpatch or a sign-in. Attach it to a ticket or an email, or drop it in a chat. It has the summary, every step with its result, the reason and where the time went, and the AI assistant's explanation when there is one. Steps open and close with a click, the one that failed is open, and it follows the reader's light or dark setting (**Theme** switches it). It never loads anything from the internet.
 - **PDF.** Opens the print dialog with the same report, every step open. Choose **PDF → Save as PDF**. A saved web page prints the same way from any browser.
-- **JUnit XML.** For CI dashboards: GitHub, GitLab and Jenkins read it. One test case per test, with the failed step and why.
+- **JUnit XML.** For CI dashboards: GitHub, GitLab and Jenkins read it. One test case per test, with the failed step and why. It has no screenshots.
 
-**Screenshots.** The web page and the PDF include the screenshots the run took: full size for the step that failed, small for the others (steps that were fixed automatically). A 30-step run stays under about 5 MB. Screenshots can show personal data, like names, email addresses or account details on the page, so the dialog says so: turn off **Include screenshots** when the report goes to people who shouldn't see that. A run from another Mac has no screenshots on this one, so its report goes without them.
+A suite's report starts with the tests that didn't pass, each a link to it; tests that passed start closed (**Open all steps** opens everything).
+
+**Screenshots.** The web page and the PDF include the screenshots the run took: full size for the step that failed, small for the others (steps that were fixed automatically). A 30-step run stays under about 5 MB. Screenshots can show personal data, like names, email addresses or account details on the page, so the dialog says so while they're included: turn off **Include screenshots** when the report goes to people who shouldn't see that. A run from another Mac has no screenshots on this one, so its report goes without them.
 
 ### Recorded on another system
 
@@ -423,17 +425,17 @@ The easy way to a Team or Business workspace: Breakpatch keeps it for you, in Eu
 
 ### Sign in
 
-**Connect a team workspace** → **Hosted by Breakpatch**. Type your work email and choose **Email me a code**. Enter the 6 digits from the email (it comes from signin@breakpatch.dev and works for 10 minutes). Breakpatch then lists your workspaces and your invitations: **Open** one, or **Join** one you're invited to.
+**Connect a team workspace** → **Hosted by Breakpatch**. Type your work email and choose **Email me a code**. Enter the 6 digits from the email (it comes from signin@breakpatch.dev and works for 10 minutes). Breakpatch then lists your workspaces and your invitations: click a workspace to open it, or **Join** one you're invited to.
 
-This Mac stays signed in to your Breakpatch account, so next time the list opens straight away. **Use another address** signs it out. If a workspace asks you to sign in again, choose **Continue as** your address, or get a new code.
+This Mac stays signed in to your Breakpatch account, so next time the list opens straight away. **Use another address** signs it out. If a workspace asks you to sign in again, it shows **Open** *the workspace* with the address you're signed in as: choose **Continue**, or get a new code.
 
 ### Create the hosted workspace
 
-A licence's admin does this once, after buying Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name, choose the country your company is in and press **Create workspace**. You're its first admin, and the licence's other admins are invited.
+A licence's admin does this once, after buying Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name, choose the country your company is in and press **Create workspace**. You're its first admin, and the licence's other admins are invited. Your data is stored in Europe. Hosting by Breakpatch for companies in the EU and the EEA is coming soon: those countries say *(coming soon)* in the list, and choosing one offers **Host it yourself** instead.
 
-Creating it turns on [encryption](#encryption-and-the-recovery-code): the workspace's key is made on your Mac, and Breakpatch never has it. Straight away, Breakpatch shows the workspace's **recovery code**: save it (**Save recovery kit (PDF)** or **Copy code**) and type back the 4 characters it asks for. Without the code, losing every Mac that has the key means losing the tests.
+Creating it turns on [encryption](#encryption-and-the-recovery-code): the workspace's key is made on your Mac, and Breakpatch never has it. Straight away, Breakpatch shows the workspace's **recovery code**: save it (**Save recovery kit (PDF)** or **Copy code**) and type back the 4 characters it asks for. The window stays open until you do, or until you choose **Skip, I'll make a new one later** and confirm. Without the code, losing every Mac that has the key means losing the tests.
 
-There's no licence key to enter: Breakpatch gives everyone in the workspace their seat, the runner Mac too. Runs are kept for 90 days (365 with the longer history on Business), then deleted.
+There's no licence key to enter: Breakpatch gives everyone in the workspace their seat, the runner Mac too. Runs are kept for 90 days (365 with the longer history on Business), then deleted; the Create screen says which.
 
 ### Invite people
 
@@ -448,13 +450,15 @@ Settings → **Members** → **Invite people**: type their email addresses, choo
 
 A runner Mac and CI sign in with a token instead of an email. An admin makes one in Settings → **Local runner**:
 
-- **Set up a runner Mac**: name it, press **Make the token** and copy it. It's shown only this once. On the runner Mac choose **Connect a team workspace** → **Hosted by Breakpatch** → **This is a runner Mac**, and paste it. That Mac becomes the workspace's [local runner](#the-local-runner).
-- **Add a CI token**: for [breakpatch-ci](#from-ci-with-breakpatch-ci). In CI, set `BREAKPATCH_WORKSPACE=hosted:<workspace>`, and the secrets `BREAKPATCH_WORKSPACE_TOKEN` (the token) and `BREAKPATCH_MACHINE_KEY` (the workspace's [machine key](#encryption-and-the-recovery-code)). There's no `.bpworkspace` file or CI account: `breakpatch-ci run --suite smoke-7f3a` signs in with the token.
+- **Set up a runner Mac**: name it, press **Make the token** and copy it. It's shown only this once. On the runner Mac choose **Connect a team workspace** → **Hosted by Breakpatch** → **This is a runner Mac**, and paste it. That Mac becomes the workspace's [local runner](#the-local-runner), and its runs show under its name. The runner's checklist in Settings → Local runner has the same **Set up a runner Mac** button.
+- **Add a CI token**: for [breakpatch-ci](#from-ci-with-breakpatch-ci). The window lists what CI needs, each with its own **Copy**. In CI, set `BREAKPATCH_WORKSPACE=hosted:<workspace>`, and the secrets `BREAKPATCH_WORKSPACE_TOKEN` (the token) and `BREAKPATCH_MACHINE_KEY` (the workspace's [machine key](#encryption-and-the-recovery-code)). There's no `.bpworkspace` file or CI account: `breakpatch-ci run --suite smoke-7f3a` signs in with the token.
 - The trash button next to a token stops it working at once. A workspace holds its machine licences plus 2 tokens.
 
 ### Plan, region and usage
 
-Settings → **Workspace** shows the plan and seats, where the workspace is kept, how long runs are kept, and how many tests and how much storage it uses against its allowance (counted once a day). When the licence ends, the workspace becomes read-only for 30 days, so you can still open and export your tests, and then it's deleted. Renewing makes it active again. **Remove from this Mac** signs you out here; the workspace and its tests stay.
+Settings → **Workspace** shows the plan and seats, where the workspace is kept, how long runs are kept, and how many tests and how much storage it uses against its allowance (counted once a day). From 80 % the storage bar says **Nearly full**; when it's full, runs keep working and are saved, but new tests, new versions and screenshots wait until there's room. To add 10 GB for $5 a month ($48 a year), write to [support@breakpatch.dev](mailto:support@breakpatch.dev), or delete tests and apps you no longer need. The emails and the account page say the same.
+
+**Download export** (admins) makes a zip of the workspace's tests, versions, runs and suites and opens the download in your browser; the link works for 7 days. The account page has the same **Download export**. When the licence ends, the workspace becomes read-only for 30 days, so you can still open and export your tests, and then it's deleted: Settings → Workspace shows the date first. Renewing makes it active again. **Remove from this Mac** signs you out here; the workspace and its tests stay.
 
 ## Host it yourself
 
@@ -518,7 +522,7 @@ Clicking it opens a page with **Open in Breakpatch** and **Install Breakpatch**.
 
 Teammates can also paste the link on the connect screen: **Host it yourself** → *Got a link or a .bpworkspace file?* → **Or paste the link here**.
 
-In an encrypted workspace, **Copy link with the key** gives the same link with the key that opens the tests in its `#` part, so a teammate's Mac reads them at once. Send it only to teammates. Without the key, an admin lets each new Mac in: see [Encryption and the recovery code](#encryption-and-the-recovery-code).
+In an encrypted workspace, **Copy link with the key** gives the same link with the key that opens the tests in its `#` part, so a teammate's Mac reads them at once; it's the one to send, and **Copy link without the key** gives the plain one. Send it only to teammates. The teammate's Mac takes the key only once they choose to join the workspace. Without the key, an admin lets each new Mac in: see [Encryption and the recovery code](#encryption-and-the-recovery-code).
 
 ## Members and roles
 
@@ -602,7 +606,7 @@ It uses the Standard AI assistant, like every Mac. With 32 GB of memory or more 
 
 **Record and run on the same kind of machine.** Tests pass most reliably on the runner when they're recorded on a Mac like it, with the same version of Breakpatch. A test recorded with another version of the test browser runs with **Allow for small differences between systems** (Settings → Screen checks, on unless you turn it off) on the runner Mac, and its report says so when a check fails. See [Recorded on another system](#recorded-on-another-system).
 
-**HTML reports.** Settings → Local runner → **Save an HTML report of every suite run** saves each suite run as the same web page as [Export](#export-a-report), in a folder you choose on the runner Mac (named after the suite, the day and the time). Turn off **Include screenshots** there if others can open the folder who shouldn't see them. If the folder is also on a web server, or a shared drive with web links, enter its **web address**: the Slack and Teams [result messages](#result-messages) then have an **Open the HTML report** button, and the JSON has `htmlReportUrl`. Without one, the report is only saved: a file on the runner Mac isn't something others can open from a message. If a report can't be saved, the runner's status says so.
+**HTML reports.** Settings → Local runner → **Save an HTML report of every suite run** saves each suite run as the same web page as [Export](#export-a-report), in a folder you choose on the runner Mac (named after the suite, the day and the time). Turn off **Include screenshots** there if others can open the folder who shouldn't see them. If the folder is also on a web server, or a shared drive with web links, enter its **web address** (`https://` is added if you leave it out; it's saved when you leave the field): the Slack and Teams [result messages](#result-messages) then have an **Open the HTML report** button, and the JSON has `htmlReportUrl`. Without one, the report is only saved: a file on the runner Mac isn't something others can open from a message. If a report can't be saved, the runner's status says so.
 
 Anyone can press **Run on runner** on a suite. If the runner is offline, the request waits until it's back. The runner tells the workspace it's there every 90 seconds, and whenever what it's doing changes; after 5 minutes without that, the other Macs show it as offline.
 
@@ -1136,7 +1140,7 @@ A Team licence has **seats** for people and **machine licences** for the local r
 
 Without a licence, Breakpatch keeps working as Community (tests, recording and running on this Mac) and Team features are off. A quiet banner under the title bar says why: "Breakpatch Team needs a licence. Your admin enters the key once in Settings → Licence, then everyone gets a seat when they sign in.", "Your team is out of seats. Ask your admin to add one.", "Reconnect to check your licence." (after 30 days offline) or "Your licence has expired." A runner with no machine licence left gets "Your team has no machine licences left. Ask your admin to add one."
 
-With Solo, the messages are for one person: "This Solo licence is in use on another Mac. Free it at account.breakpatch.dev, then try again.", "Your Solo licence has expired. Renew it at account.breakpatch.dev." or "This Solo licence is already used by someone else. Solo is for one person: for more people, choose Team." The banner then has a button to open account.breakpatch.dev.
+With Solo, the messages are for one person: "This Solo licence is in use on another Mac. Free it at account.breakpatch.dev, then try again.", "Your Solo licence has expired. Renew it at account.breakpatch.dev." or "This Solo licence is already used by someone else. Solo is for one person: for more people, choose Team." The banner then has a button for what to do there, such as **Free the other Mac** or **Renew**, and Home doesn't offer Upgrade to Team while it shows.
 
 Other messages you may see:
 
@@ -1171,15 +1175,15 @@ Breakpatch can encrypt a workspace's tests on your Macs, so the workspace's data
 **The key.** Each workspace has one key, made on the first admin's Mac and kept in its Keychain. It never leaves your Macs unencrypted, and Breakpatch never has it. A teammate's Mac gets it one of two ways:
 
 - **An invite link with the key**: Settings → Workspace → **Copy link with the key**. The key is in the part after `#`, which browsers never send to a server. Send it only to teammates.
-- **An admin lets the Mac in**: a Mac without the key shows *This Mac can't read the workspace's tests yet* with four words, for example *otter maple tulip quartz*. The admin sees it under **Macs waiting to be let in**, checks the words with its owner, and presses **Let in**.
+- **An admin lets the Mac in**: a Mac without the key shows *This Mac can't read the workspace's tests yet* with four words, for example *otter maple tulip quartz*. The admin sees it under **Macs waiting to be let in**, checks the words with its owner, and presses **Let in**. If this Mac doesn't know that admin yet, it then shows *An admin let this Mac in. Check it was them.* with the admin's Mac's words: compare them with the ones in their Settings → Workspace → Encryption and confirm. A Mac takes a key only from an admin it trusts (from the invite link, or one you confirmed, or one a trusted admin vouched for); anything else is refused and said, for example *The words didn't match, so this Mac didn't take the key.*
 
-Until then, that Mac shows names as *Locked* and can't save.
+Until then, that Mac shows names as *Locked* and can't save. Once encryption is on, content that isn't encrypted (saved by an older Breakpatch, for example) shows as *Locked* too and isn't saved that way again; the workspace's rules and breakpatch-ci refuse it as well.
 
-**The recovery code.** When encryption is turned on, the admin sees a recovery code once, like `BPR1-50M6-HA79-55MT-KTHA-DANE-PAVB-NFH`. Save it with **Save recovery kit (PDF)** or **Copy code**, keep it in your password manager or with your company's papers, then type back the 4 characters Breakpatch asks for. Until you do, admins see *Save the workspace's recovery code* under the title bar. Breakpatch never sees the code and can't make it again.
+**The recovery code.** When encryption is turned on, the admin sees a recovery code once, like `BPR1-50M6-HA79-55MT-KTHA-DANE-PAVB-NFH`. Save it with **Save recovery kit (PDF)** or **Copy code**, keep it in your password manager or with your company's papers, then type back the 4 characters Breakpatch asks for. Until you do, admins see *Save the workspace's recovery code* under the title bar. The window doesn't close with Esc or a click outside it; **Skip, I'll make a new one later** asks first, because the code isn't shown again. Breakpatch never sees the code and can't make it again. A recovery code (`BPR1-…`) pasted where a licence key goes is refused, and never sent.
 
 - **I lost access to the key**: on a new Mac, sign in as an admin and open **Settings → Workspace → Encryption → I lost access to the key**, then type the recovery code. Any Mac that still has the key can also let the new one in.
 - **Make a new recovery code** stops the old one working. Save the new one straight away.
-- **If every Mac with the key is lost and nobody has the recovery code, the tests saved so far can't be read again**, by you or by Breakpatch. An admin can **Start again with a new key**: new tests and runs are encrypted with it, and older ones stay locked.
+- **If every Mac with the key is lost and nobody has the recovery code, the tests saved so far can't be read again**, by you or by Breakpatch. An admin can **Start again with a new key** (under the help text in **I lost access to the key**, and it asks first): new tests and runs are encrypted with it, and older ones stay locked.
 
 **The local runner and CI** use the **machine key** (`bpmk1_…`): **Make one** under **Machine key**, then enter it on the runner Mac (Settings → Workspace → Encryption) and save it as `BREAKPATCH_MACHINE_KEY` in CI ([From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)). A new machine key stops the old one working.
 
