@@ -97,6 +97,7 @@ describe('the dialog', () => {
     const { load, onClose } = open();
     expect(screen.getByRole('note').textContent).toMatch(/personal data/);
     fireEvent.click(screen.getByRole('switch', { name: 'Include screenshots' }));
+    expect(screen.queryByRole('note')).toBeNull();                 // only while they're included
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(load).toHaveBeenCalledWith(false);
@@ -107,7 +108,10 @@ describe('the dialog', () => {
   it('saves JUnit XML without asking about screenshots', async () => {
     const { load, onClose } = open();
     fireEvent.click(screen.getByLabelText(/JUnit XML/));
-    expect(screen.queryByRole('switch', { name: 'Include screenshots' })).toBeNull();
+    // The switch stays, turned off, so the dialog keeps its height.
+    expect(screen.getByRole('switch', { name: 'Include screenshots' })).toBeDisabled();
+    expect(screen.getByText('JUnit XML has no screenshots.')).toBeInTheDocument();
+    expect(screen.queryByRole('note')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Export' }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(load).toHaveBeenCalledWith(false);

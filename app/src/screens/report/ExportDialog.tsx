@@ -58,18 +58,17 @@ export function ExportDialog({ open, onClose, what, load }: {
             </label>
           ))}
         </div>
-        {withShots && (
-          <div className="rpx-shots">
-            <label className="rpx-shots-row">
-              <span className="grow col">
-                <span className="rpx-format-t">Include screenshots</span>
-                <span className="rpx-format-d">Full size for the step that failed, small for the others.</span>
-              </span>
-              <Switch checked={shots} onChange={setShots} label="Include screenshots" />
-            </label>
-            <div className="rpx-note" role="note"><Icon name="privacy" size={18} />Screenshots can show personal data, like names, email addresses or account details on the page. Leave them out if the report goes to people who shouldn't see that.</div>
-          </div>
-        )}
+        {/* Always there, so the dialog keeps its height; JUnit turns it off (DES3-14). */}
+        <div className="rpx-shots">
+          <label className="rpx-shots-row">
+            <span className="grow col">
+              <span className="rpx-format-t">Include screenshots</span>
+              <span className="rpx-format-d">{withShots ? 'Full size for the step that failed, small for the others.' : 'JUnit XML has no screenshots.'}</span>
+            </span>
+            <Switch checked={withShots && shots} onChange={setShots} label="Include screenshots" disabled={!withShots} />
+          </label>
+          {withShots && shots && <div className="rpx-note" role="note"><Icon name="privacy" size={18} />Screenshots can show personal data, like names, email addresses or account details on the page. Leave them out if the report goes to people who shouldn't see that.</div>}
+        </div>
       </div>
     </Dialog>
   );
