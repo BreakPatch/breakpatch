@@ -374,7 +374,7 @@ fn a_grant_the_admin_didnt_make_is_refused() {
     // Whoever can write the workspace seals a key of their own to Ana's device key (it's public)…
     let theirs: [u8; 32] = seq(0x33);
     let unsigned = seal_to(&pk, WS, &dev.id, 3, &theirs).unwrap();
-    assert!(ana.accept(WS, &[unsigned.clone()], &docs.0).unwrap_err().contains("isn't signed"));
+    assert!(ana.accept(WS, std::slice::from_ref(&unsigned), &docs.0).unwrap_err().contains("isn't signed"));
     // …signs it with a Mac of their own, and announces it as key 3.
     let server = mac();
     let s3 = server.device(WS).unwrap().sign_key;
