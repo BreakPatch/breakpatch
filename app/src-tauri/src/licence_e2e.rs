@@ -49,6 +49,7 @@ fn person(key: &str, subject: &str) -> ActivateRequest {
     ActivateRequest {
         ws_key: None,
         key: key.into(),
+        key_from: None,
         workspace_project_id: "acme-breakpatch".into(),
         subject: Some(subject.into()),
         kind: "person".into(),
@@ -59,6 +60,7 @@ fn machine(key: &str) -> ActivateRequest {
     ActivateRequest {
         ws_key: None,
         key: key.into(),
+        key_from: None,
         workspace_project_id: "acme-breakpatch".into(),
         subject: None,
         kind: "machine".into(),

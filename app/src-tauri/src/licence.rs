@@ -26,6 +26,17 @@
 //! licence belongs to a Team workspace. The single `licence` entry of earlier versions moves to
 //! the workspace it was activated for the first time that workspace is selected.
 //!
+//! Solo (the Team repo's issues #26 and #36): a Solo licence works with no workspace, on a tests
+//! folder. Its entry is the folder's own (`licence:local:<hash>`, the UI's connectionIds.ts); it
+//! activates with an empty `workspaceProjectId` and always with this Mac's deviceId, and its token
+//! says `"tier": "solo"`, `"workspaceProjectId": ""` and `parallelRuns` (one run at a time). The
+//! UI asks about a folder with the workspace `""`, so only a token with no workspace unlocks it.
+//! The same person (the purchase email) connecting a workspace later reuses the seat: an empty key
+//! activates with the key stored for another connection (`key_from`), so the UI never holds it.
+//! A refusal the service words for Solo keeps its words, and the stored tier gives Solo's words to
+//! the states worked out here. A key that takes a connection over from another licence (Solo to
+//! Team) gives the old licence's seat back.
+//!
 //! Each refresh also carries this Mac's usage counts (usage.rs: numbers only), which are cleared
 //! only when the service answers `usageAccepted: true`.
 //!
@@ -183,6 +194,10 @@ pub struct Claims {
     /// activation, see [`device_hash`]. Older tokens don't have it.
     #[serde(default)]
     pub dev: Option<String>,
+    /// Solo only: test runs at once on this activation (this Mac, or this machine licence). The
+    /// service says 1; tokens of other tiers don't have it.
+    #[serde(default)]
+    pub parallel_runs: Option<u32>,
 }
 
 /// The token's `dev` for `device` on `activation_id`, as the back office works it out
@@ -294,6 +309,10 @@ struct Stored {
     /// The clock was found set back: invalid until an online refresh works.
     #[serde(default)]
     clock_back: bool,
+    /// The tier of the last token taken (or "solo" when the service's refusal said so), so a
+    /// refusal kept without a token still gets its tier's words.
+    #[serde(default)]
+    tier: Option<String>,
 }
 
 impl Stored {
@@ -320,6 +339,10 @@ pub struct Status {
     /// Unlocked features: the token's while `active` or `grace`, else none.
     pub features: Vec<String>,
     pub tier: Option<String>,
+    /// The licence the token is for, so the UI can tell two connections hold the same one.
+    pub licence_id: Option<String>,
+    /// Solo: test runs at once on this activation (the token's `parallelRuns`).
+    pub parallel_runs: Option<u32>,
     pub seats: Option<u32>,
     pub seats_used: Option<u32>,
     pub machines: Option<u32>,
@@ -346,6 +369,8 @@ impl Status {
             state,
             features: Vec::new(),
             tier: None,
+            licence_id: None,
+            parallel_runs: None,
             seats: None,
             seats_used: None,
             machines: None,
@@ -363,10 +388,44 @@ impl Status {
         }
     }
     fn with_code(mut self, code: &str) -> Self {
-        self.message = Some(message_for(code, None));
+        let solo = self.tier.as_deref() == Some(SOLO);
+        self.message = Some(message_for_tier(code, None, solo));
         self.code = Some(code.to_string());
         self
     }
+}
+
+/// The tier with no workspace needed and one person on one Mac (the back office's tiers.ts).
+pub const SOLO: &str = "solo";
+/// Where a Solo customer frees their Mac or renews (the back office's account page).
+pub const ACCOUNT_SITE: &str = "account.breakpatch.dev";
+
+/// Whether a service message is one of Solo's own (licensing.ts words them "…Solo…").
+fn names_solo(service_message: Option<&str>) -> bool {
+    service_message.is_some_and(|m| m.contains("Solo"))
+}
+
+/// [`message_for`], in Solo's words when `solo`: one person on one Mac, nobody to ask, and the
+/// account page to free the Mac or renew. A Solo refusal's own message from the service is kept.
+pub fn message_for_tier(code: &str, service_message: Option<&str>, solo: bool) -> String {
+    if !solo {
+        return message_for(code, service_message);
+    }
+    let m = match code {
+        "revoked" => "This Solo licence is no longer active. Contact Breakpatch at support@breakpatch.dev.",
+        "expired" => "Your Solo licence has expired. Renew it at account.breakpatch.dev.",
+        "out_of_seats" => "This Solo licence is already used by someone else. Solo is for one person: for more people, choose Team.",
+        "out_of_machines" => "This Solo licence's machine licence is in use. Free it at account.breakpatch.dev, then try again.",
+        "released" => "This Mac's Solo seat was freed. Activate again to use Solo here.",
+        "over_seats" => "This Mac's Solo seat was freed. Activate again to use Solo here.",
+        "too_many_devices" => "This Solo licence is in use on another Mac. Free it at account.breakpatch.dev, then try again.",
+        "other_device" => "This Solo licence was activated on another Mac. Free it at account.breakpatch.dev, then activate it here.",
+        "grace" => "Breakpatch couldn't check your Solo licence lately. Reconnect soon to keep Solo features.",
+        "invalid_token" => "This Solo licence couldn't be checked. Activate it again.",
+        _ if names_solo(service_message) => return service_message.unwrap_or_default().to_string(),
+        _ => return message_for(code, service_message),
+    };
+    m.to_string()
 }
 
 /// Plain words for each code. Service codes first (they never change; new ones may be added),
@@ -392,6 +451,8 @@ pub fn message_for(code: &str, service_message: Option<&str>) -> String {
         "other_device" => "This licence was activated on another Mac. Sign in again on this one.",
         "clock_back" => "This Mac's clock is behind. Set the right date and time, then reconnect to check your licence.",
         "unavailable" => "Licences aren't available in this edition of Breakpatch.",
+        "needs_workspace" => "This is a Team licence key. Team licences are used in a workspace: connect or create one, then enter the key there.",
+        "no_device" => "Breakpatch couldn't tell which Mac this is, so a Solo licence can't be activated here.",
         _ => return service_message.map(str::to_string).unwrap_or_else(|| "The licence couldn't be checked.".into()),
     };
     m.to_string()
@@ -419,6 +480,7 @@ fn evaluate(
     st.seats_used = s.seats_used;
     st.machines_used = s.machines_used;
     st.customer_name = s.customer_name.clone();
+    st.tier = s.tier.clone();
     let Some(token) = &s.token else {
         return match &s.error {
             Some(code) => st.with_code(code),
@@ -433,6 +495,8 @@ fn evaluate(
         }
     };
     st.tier = Some(c.tier.clone());
+    st.licence_id = Some(c.licence_id.clone());
+    st.parallel_runs = c.parallel_runs;
     st.seats = Some(c.seats);
     st.machines = Some(c.machines);
     st.workspace_project_id = Some(c.workspace_project_id.clone());
@@ -484,6 +548,10 @@ pub struct Failure {
 impl Failure {
     fn new(code: &str, service_message: Option<&str>) -> Self {
         Self { code: code.into(), message: message_for(code, service_message) }
+    }
+    /// In Solo's words when the licence is a Solo (the stored tier, or the service's message says so).
+    fn for_tier(code: &str, service_message: Option<&str>, solo: bool) -> Self {
+        Self { code: code.into(), message: message_for_tier(code, service_message, solo || names_solo(service_message)) }
     }
 }
 
@@ -544,7 +612,14 @@ pub struct ActivateRequest {
     /// The connection whose licence this is (the UI names it, so a switch while the call is out
     /// can't store it under another one). None: the selected one.
     pub ws_key: Option<String>,
+    /// The licence key. Empty: the key already stored for `key_from` (or, without it, for this
+    /// connection), which the UI never sees: taking the seat again on a tests folder, or bringing
+    /// a Solo licence from the tests folder into a workspace.
     pub key: String,
+    /// The connection whose stored key an empty `key` means. None: this one.
+    pub key_from: Option<String>,
+    /// The workspace's project id; empty for a tests folder (Solo), which then always sends this
+    /// Mac's deviceId.
     pub workspace_project_id: String,
     /// The signed-in email (person); empty for a machine, which uses this Mac's own id.
     pub subject: Option<String>,
@@ -926,16 +1001,32 @@ impl<S: SecretStore> Licensing<S> {
             (Kind::Person, Some(s)) if !s.is_empty() => (s.to_string(), None),
             (Kind::Person, _) => return Err(Failure { code: "bad_request".into(), message: "Sign in first.".into() }),
         };
-        let key = req.key.trim().to_string();
         let ws = req.workspace_project_id.trim().to_string();
-        if key.is_empty() || ws.is_empty() {
-            return Err(Failure::new("bad_request", None));
-        }
         let Some(ws_key) = self.target(req.ws_key.as_deref()) else {
             return Err(Failure { code: "bad_request".into(), message: "Open a workspace first.".into() });
         };
+        // No workspace (Solo on a tests folder): the seat is tied to this Mac, so the service
+        // needs its deviceId.
+        if ws.is_empty() && self.device_id().is_none() {
+            return Err(Failure::new("no_device", None));
+        }
         let _g = self.busy.lock().await;
         let prev = self.load_for(&ws_key);
+        let key = match req.key.trim() {
+            "" => {
+                let from = match req.key_from.as_deref().map(str::trim).filter(|k| !k.is_empty()) {
+                    Some(k) if valid_ws_key(k) => Some(k.to_string()),
+                    Some(_) => None,
+                    None => Some(ws_key.clone()),
+                };
+                let stored = from.and_then(|f| if f == ws_key { prev.clone() } else { self.load_for(&f) });
+                match stored.map(|s| s.key).filter(|k| !k.is_empty()) {
+                    Some(k) => k,
+                    None => return Err(Failure { code: "bad_request".into(), message: "Enter the licence key.".into() }),
+                }
+            }
+            k => k.to_string(),
+        };
         // Moving to another person, machine or workspace: give the old seat back first.
         if let Some(p) = &prev {
             if let (Some(token), false) = (&p.token, p.same_holder(&subject, kind, &ws)) {
@@ -955,8 +1046,22 @@ impl<S: SecretStore> Licensing<S> {
             error: None,
             seen_at: prev.as_ref().and_then(|p| p.seen_at),
             clock_back: prev.as_ref().is_some_and(|p| p.clock_back),
+            tier: None,
         };
-        self.activate_as(&ws_key, next, prev).await
+        let swapped = prev
+            .as_ref()
+            .filter(|p| p.key != next.key && p.same_holder(&next.subject, next.kind, &next.workspace_project_id))
+            .and_then(|p| p.token.clone());
+        let st = self.activate_as(&ws_key, next, prev).await?;
+        // Another key took this connection's seat (Solo to Team, say): the old licence's seat,
+        // when it's another licence's, goes back. The same licence with a new key is the same seat.
+        if let Some(old) = swapped {
+            let old_licence = verify(&old, &self.keys).ok().map(|c| c.licence_id);
+            if old_licence.is_some() && old_licence != st.licence_id {
+                self.release_token(&old).await;
+            }
+        }
+        Ok(st)
     }
 
     async fn activate_as(&self, ws_key: &str, mut next: Stored, prev: Option<Stored>) -> Result<Status, Failure> {
@@ -977,6 +1082,18 @@ impl<S: SecretStore> Licensing<S> {
                 Ok(self.status_for(Some(ws_key), None))
             }
             Err(CallError::Refused { code, message }) => {
+                let solo = names_solo(message.as_deref()) || prev.as_ref().and_then(|p| p.tier.as_deref()) == Some(SOLO);
+                // A Team or Business key on a tests folder: it belongs in a workspace. Nothing
+                // is kept for the folder.
+                if next.workspace_project_id.is_empty()
+                    && code == "bad_request"
+                    && message.as_deref().is_some_and(|m| m.contains("workspaceProjectId"))
+                {
+                    return Err(Failure::new("needs_workspace", None));
+                }
+                if solo {
+                    next.tier = Some(SOLO.into());
+                }
                 // A licence that still works here stays when someone tries another key.
                 let now = (self.now)();
                 let device = self.device_id();
@@ -992,7 +1109,7 @@ impl<S: SecretStore> Licensing<S> {
                     next.error = Some(code.clone());
                     self.save_for(ws_key, Some(next));
                 }
-                Err(Failure::new(&code, message.as_deref()))
+                Err(Failure::for_tier(&code, message.as_deref(), solo))
             }
             Err(CallError::Unreachable) => Err(Failure::new("offline", None)),
         }
@@ -1012,6 +1129,7 @@ impl<S: SecretStore> Licensing<S> {
         }
         s.clock_back = false;
         s.seen_at = Some((self.now)());
+        s.tier = Some(claims.tier.clone());
         let lic = v.get("licence");
         let num = |k: &str| lic.and_then(|l| l.get(k)).and_then(Value::as_u64).map(|n| n as u32);
         s.token = Some(token.to_string());

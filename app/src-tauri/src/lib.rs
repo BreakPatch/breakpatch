@@ -9,6 +9,7 @@ mod engine;
 mod folder;
 mod licence;
 mod migration;
+mod results;
 mod runner;
 mod secrets;
 mod trackers;
@@ -34,6 +35,8 @@ type SecretsState = Arc<Secrets<KeyringStore>>;
 type LicenceState = Arc<Licensing<KeyringStore>>;
 type UsageState = Arc<UsageStore>;
 type TrackersState = Arc<trackers::Trackers<KeyringStore>>;
+/// Result addresses of suites in a tests folder (results.rs).
+type ResultsState = Arc<results::ResultAddresses<KeyringStore>>;
 
 // ---- Engine ----------------------------------------------------------------------------
 
@@ -116,6 +119,27 @@ async fn secrets_resolve(s: State<'_, SecretsState>, names: Vec<String>) -> Resu
     blocking(move || s.resolve(&names)).await
 }
 
+// ---- Result addresses of suites in a tests folder (Solo; results.rs) ----------------------
+
+/// A folder suite's result address, from the Keychain (None: none saved).
+#[tauri::command]
+async fn result_address_get(r: State<'_, ResultsState>, ws_key: String, suite_id: String) -> Result<Option<String>, String> {
+    let r = Arc::clone(&r);
+    blocking(move || r.get(&ws_key, &suite_id)).await
+}
+
+/// Saves a folder suite's result address in the Keychain (None: forgets it).
+#[tauri::command]
+async fn result_address_set(
+    r: State<'_, ResultsState>,
+    ws_key: String,
+    suite_id: String,
+    url: Option<String>,
+) -> Result<(), String> {
+    let r = Arc::clone(&r);
+    blocking(move || r.set(&ws_key, &suite_id, url.as_deref())).await
+}
+
 // ---- Licence (Team; "not available in this edition" without built-in keys) ----------------
 
 /// The stored licence, checked on this Mac without the network. `workspaceProjectId`: the open
@@ -155,19 +179,23 @@ async fn licence_select(
 }
 
 /// Takes a seat for `wsKey`'s connection (None: the selected one): `kind` "person" (subject: the
-/// signed-in email) or "machine" (this Mac's id). Rejects with `{code, message}`.
+/// signed-in email, or a Solo licence's purchase email) or "machine" (this Mac's id). An empty
+/// `workspaceProjectId` is a tests folder (Solo). An empty `key` uses the key stored for `keyFrom`
+/// (None: this connection). Rejects with `{code, message}`.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn licence_activate(
     l: State<'_, LicenceState>,
     host: State<'_, Arc<EngineHost>>,
     ws_key: Option<String>,
     key: String,
+    key_from: Option<String>,
     workspace_project_id: String,
     subject: Option<String>,
     kind: String,
 ) -> Result<licence::Status, Failure> {
     let l = Arc::clone(&l);
-    let out = l.activate(ActivateRequest { ws_key, key, workspace_project_id, subject, kind }).await;
+    let out = l.activate(ActivateRequest { ws_key, key, key_from, workspace_project_id, subject, kind }).await;
     sync_engine_licence(&l, &host).await;
     out
 }
@@ -511,6 +539,7 @@ pub fn run() {
             app.manage::<workspace_keys::commands::KeysState>(Arc::new(workspace_keys::WorkspaceKeys::new(
                 KeyringStore::new(workspace_keys::SERVICE),
             )));
+            app.manage::<ResultsState>(Arc::new(results::ResultAddresses::new(KeyringStore::new(results::SERVICE))));
             app.manage::<TrackersState>(Arc::new(trackers::Trackers::new(
                 KeyringStore::new(trackers::SERVICE),
                 data_dir.join("trackers.json"),
@@ -576,6 +605,8 @@ pub fn run() {
             trackers_save,
             trackers_forget,
             trackers_create_issue,
+            result_address_get,
+            result_address_set,
             licence_status,
             licence_select,
             licence_activate,
