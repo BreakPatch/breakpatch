@@ -59,22 +59,22 @@ class FakeKernel32:
 def test_memory_on_windows_comes_from_global_memory_status_ex(monkeypatch):
     k32 = FakeKernel32(16 * 2**30)
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(install, "_kernel32", lambda: k32)
+    monkeypatch.setattr(systems, "_kernel32", lambda: k32)
     assert install.memory_gb() == 16
     assert k32.lengths == [64]             # dwLength = sizeof(MEMORYSTATUSEX), as Windows requires
 
 
 def test_memory_on_windows_when_the_call_fails(monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(install, "_kernel32", lambda: FakeKernel32(8 * 2**30, ok=False))
+    monkeypatch.setattr(systems, "_kernel32", lambda: FakeKernel32(8 * 2**30, ok=False))
     monkeypatch.setattr(os, "sysconf", lambda name: (_ for _ in ()).throw(AttributeError(name)), raising=False)
     assert install.memory_gb() == 0
 
 
 def test_kernel32_is_none_off_windows():
     assert not hasattr(ctypes, "windll")
-    assert install._kernel32() is None
-    assert install.windows_memory_bytes() == 0
+    assert systems._kernel32() is None
+    assert systems.windows_memory_bytes() == 0
 
 
 # ---------------------------------------------------------------- processor name
@@ -117,7 +117,7 @@ def test_chip_on_windows_reads_processor_name_string(monkeypatch):
 def test_chip_on_windows_without_the_value_falls_back(monkeypatch):
     monkeypatch.setitem(sys.modules, "winreg", FakeWinreg({}))
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(install.platform, "processor", lambda: "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel")
+    monkeypatch.setattr(systems.platform, "processor", lambda: "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel")
     assert install.chip() == "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel"
 
 
@@ -143,16 +143,16 @@ def test_chip_on_a_raspberry_pi_reads_the_device_tree(monkeypatch, tmp_path):
     (tmp_path / "cpuinfo").write_text(PI4_CPUINFO)
     (tmp_path / "model").write_bytes(b"Raspberry Pi 4 Model B Rev 1.4\x00")
     monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setattr(install, "CPUINFO", tmp_path / "cpuinfo")
-    monkeypatch.setattr(install, "DEVICE_TREE_MODEL", tmp_path / "model")
+    monkeypatch.setattr(systems, "CPUINFO", tmp_path / "cpuinfo")
+    monkeypatch.setattr(systems, "DEVICE_TREE_MODEL", tmp_path / "model")
     assert install.chip() == "Raspberry Pi 4 Model B Rev 1.4"
 
 
 def test_chip_on_a_pi_without_a_device_tree_uses_cpuinfo_model(monkeypatch, tmp_path):
     (tmp_path / "cpuinfo").write_text(PI4_CPUINFO)
     monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setattr(install, "CPUINFO", tmp_path / "cpuinfo")
-    monkeypatch.setattr(install, "DEVICE_TREE_MODEL", tmp_path / "no-such-file")
+    monkeypatch.setattr(systems, "CPUINFO", tmp_path / "cpuinfo")
+    monkeypatch.setattr(systems, "DEVICE_TREE_MODEL", tmp_path / "no-such-file")
     assert install.chip() == "Raspberry Pi 4 Model B Rev 1.4"
 
 
@@ -160,8 +160,8 @@ def test_chip_on_x86_linux_prefers_model_name(monkeypatch, tmp_path):
     (tmp_path / "cpuinfo").write_text("processor\t: 0\nmodel\t\t: 85\nmodel name\t: Intel(R) N100\n")
     (tmp_path / "model").write_bytes(b"Some Board\x00")
     monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setattr(install, "CPUINFO", tmp_path / "cpuinfo")
-    monkeypatch.setattr(install, "DEVICE_TREE_MODEL", tmp_path / "model")
+    monkeypatch.setattr(systems, "CPUINFO", tmp_path / "cpuinfo")
+    monkeypatch.setattr(systems, "DEVICE_TREE_MODEL", tmp_path / "model")
     assert install.chip() == "Intel(R) N100"
 
 

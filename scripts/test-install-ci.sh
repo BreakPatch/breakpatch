@@ -51,6 +51,47 @@ fi
 echo "shellcheck site/install-ci"
 shellcheck "$script"
 
+# ---------------------------------------------------------------- platform names
+
+# site/install-ci carries its own copy of scripts/platform.sh's names (it's downloaded on its
+# own). Its check_platform must give the platform bp_platform gives for every uname pair the
+# build scripts know, and refuse the rest; the extra checks it makes (Rosetta, a 32-bit system,
+# the macOS version) are on top. Windows goes to install-ci.ps1, whose one platform is checked too.
+echo "platform names: site/install-ci and scripts/platform.sh"
+current="platform names"
+# shellcheck source=platform.sh
+. "$repo/scripts/platform.sh"
+ci_platform_fns=$(awk '/^fail\(\) /{ print } /^check_platform\(\) \{/{ on = 1 } on { print } on && /^}/{ exit }' "$script")
+# ci_platform: install-ci's platform for OS_ and ARCH_, or "refused: <its words>".
+ci_platform() {
+  # shellcheck disable=SC2016
+  sh -c "$ci_platform_fns"'
+    uname() { case "$1" in -s) echo "$OS_" ;; -m) echo "$ARCH_" ;; esac; }
+    sw_vers() { echo 15.1; }
+    sysctl() { echo "${TRANSLATED_:-0}"; }
+    getconf() { echo 64; }
+    check_platform && echo "$platform"' > "$work/platform.out" 2>&1 || true
+  sed '2,$d; /^[a-z]*-[a-z0-9_]*$/!s/^/refused: /' "$work/platform.out"
+}
+for pair in Linux:x86_64 Linux:amd64 Linux:aarch64 Linux:arm64 Darwin:arm64 Darwin:x86_64 \
+  Linux:armv7l Linux:i686 Darwin:i386 FreeBSD:amd64 MINGW64_NT-10.0:x86_64 MSYS_NT-10.0:x86_64 CYGWIN_NT-10.0:x86_64; do
+  os=${pair%%:*} arch=${pair#*:}
+  want=$(bp_platform "$os" "$arch" || echo none)
+  got=$(OS_=$os ARCH_=$arch ci_platform)
+  case "$want" in
+    windows-*) if [ "$got" = "refused: On Windows, install breakpatch-ci from PowerShell: irm https://breakpatch.dev/install-ci.ps1 | iex" ]; then
+                 ok "$os $arch: to install-ci.ps1 ($want)"; else bad "$os $arch: install-ci says '$got', not the PowerShell command"; fi ;;
+    none) case "$got" in refused:*) ok "$os $arch: neither builds for it" ;; *) bad "$os $arch: install-ci says $got, platform.sh has no platform" ;; esac ;;
+    *) if [ "$got" = "$want" ]; then ok "$os $arch: $want"; else bad "$os $arch: install-ci says '$got', platform.sh $want"; fi ;;
+  esac
+done
+# Under Rosetta a Terminal says x86_64 on Apple Silicon: that's still the Mac's own platform.
+got=$(OS_=Darwin ARCH_=x86_64 TRANSLATED_=1 ci_platform)
+if [ "$got" = "$(bp_platform Darwin arm64)" ]; then ok "Darwin x86_64 under Rosetta: $got"; else bad "under Rosetta install-ci says '$got'"; fi
+if grep -q "\$Platform = '$(bp_platform MINGW64_NT-10.0 x86_64)'" "$repo/site/install-ci.ps1"; then
+  ok "install-ci.ps1 installs $(bp_platform MINGW64_NT-10.0 x86_64)"
+else bad "install-ci.ps1's \$Platform isn't platform.sh's Windows name"; fi
+
 # ---------------------------------------------------------------- fake releases
 
 free_port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
