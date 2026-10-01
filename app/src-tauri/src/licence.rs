@@ -33,7 +33,7 @@
 //! UI asks about a folder with the workspace `""`, so only a token with no workspace unlocks it.
 //! The same person (the purchase email) connecting a workspace later reuses the seat: an empty key
 //! activates with the key stored for another connection (`key_from`), so the UI never holds it.
-//! A refusal the service words for Solo keeps its words, and the stored tier gives Solo's words to
+//! A Solo refusal (the service's `solo_*` codes, or `tier: "solo"` in the failure) keeps its words, and the stored tier gives Solo's words to
 //! the states worked out here. A key that takes a connection over from another licence (Solo to
 //! Team) gives the old licence's seat back.
 //!
@@ -398,11 +398,6 @@ impl Status {
 /// The tier with no workspace needed and one person on one Mac (the back office's tiers.ts).
 pub const SOLO: &str = "solo";
 
-/// Whether a service message is one of Solo's own (licensing.ts words them "…Solo…").
-fn names_solo(service_message: Option<&str>) -> bool {
-    service_message.is_some_and(|m| m.contains("Solo"))
-}
-
 /// [`message_for`], in Solo's words when `solo`: one person on one Mac, nobody to ask, and the
 /// account page to free the Mac or renew. A Solo refusal's own message from the service is kept.
 pub fn message_for_tier(code: &str, service_message: Option<&str>, solo: bool) -> String {
@@ -420,7 +415,7 @@ pub fn message_for_tier(code: &str, service_message: Option<&str>, solo: bool) -
         "other_device" => "This Solo licence was activated on another Mac. Free it at account.breakpatch.dev, then activate it here.",
         "grace" => "Breakpatch couldn't check your Solo licence lately. Reconnect soon to keep Solo features.",
         "invalid_token" => "This Solo licence couldn't be checked. Activate it again.",
-        _ if names_solo(service_message) => return service_message.unwrap_or_default().to_string(),
+        // Solo's other refusals (solo_no_members, solo_needs_update): the service's own words.
         _ => return message_for(code, service_message),
     };
     m.to_string()
@@ -541,23 +536,26 @@ fn key_hint(key: &str) -> Option<String> {
 pub struct Failure {
     pub code: String,
     pub message: String,
+    /// The licence's tier when the service said it ("solo"): the app words and branches on it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
 }
 
 impl Failure {
     fn new(code: &str, service_message: Option<&str>) -> Self {
-        Self { code: code.into(), message: message_for(code, service_message) }
+        Self { code: code.into(), message: message_for(code, service_message), tier: None }
     }
-    /// In Solo's words when the licence is a Solo (the stored tier, or the service's message says so).
+    /// In Solo's words when the licence is a Solo (the stored tier, or the service said so).
     fn for_tier(code: &str, service_message: Option<&str>, solo: bool) -> Self {
-        Self { code: code.into(), message: message_for_tier(code, service_message, solo || names_solo(service_message)) }
+        Self { code: code.into(), message: message_for_tier(code, service_message, solo), tier: solo.then(|| SOLO.to_string()) }
     }
 }
 
 enum CallError {
     /// No answer, or the service is having trouble (5xx, rate limited): nothing is decided.
     Unreachable,
-    /// The service decided (`code` from its table).
-    Refused { code: String, message: Option<String> },
+    /// The service decided (`code` from its table, its `solo_` prefix taken off into `tier`).
+    Refused { code: String, message: Option<String>, tier: Option<String> },
 }
 
 struct Service {
@@ -594,12 +592,18 @@ impl Service {
         log::info!("licence {endpoint}: HTTP {} {}", status.as_u16(), code.unwrap_or("-"));
         match code {
             Some("rate_limited" | "internal") => Err(CallError::Unreachable),
-            Some(code) => Err(CallError::Refused {
-                code: code.to_string(),
-                message: json.pointer("/error/message").and_then(Value::as_str).map(str::to_string),
-            }),
+            Some(code) => {
+                // Solo's refusals come as solo_<code> with tier "solo" (the back office's errors.ts):
+                // the code says it, never the words.
+                let tier = json.pointer("/error/tier").and_then(Value::as_str).map(str::to_string);
+                let (code, tier) = match code.strip_prefix("solo_") {
+                    Some(base) => (base.to_string(), Some(SOLO.to_string())),
+                    None => (code.to_string(), tier),
+                };
+                Err(CallError::Refused { code, message: json.pointer("/error/message").and_then(Value::as_str).map(str::to_string), tier })
+            }
             None if status.is_server_error() || status.as_u16() == 429 => Err(CallError::Unreachable),
-            None => Err(CallError::Refused { code: "internal".into(), message: None }),
+            None => Err(CallError::Refused { code: "internal".into(), message: None, tier: None }),
         }
     }
 }
@@ -997,11 +1001,11 @@ impl<S: SecretStore> Licensing<S> {
             (Kind::Machine, None | Some("")) => (self.machine)(),
             (Kind::Machine, Some(s)) => (s.to_string(), (self.machine)().1),
             (Kind::Person, Some(s)) if !s.is_empty() => (s.to_string(), None),
-            (Kind::Person, _) => return Err(Failure { code: "bad_request".into(), message: "Sign in first.".into() }),
+            (Kind::Person, _) => return Err(Failure { code: "bad_request".into(), message: "Sign in first.".into(), tier: None }),
         };
         let ws = req.workspace_project_id.trim().to_string();
         let Some(ws_key) = self.target(req.ws_key.as_deref()) else {
-            return Err(Failure { code: "bad_request".into(), message: "Open a workspace first.".into() });
+            return Err(Failure { code: "bad_request".into(), message: "Open a workspace first.".into(), tier: None });
         };
         // No workspace (Solo on a tests folder): the seat is tied to this Mac, so the service
         // needs its deviceId.
@@ -1020,10 +1024,16 @@ impl<S: SecretStore> Licensing<S> {
                 let stored = from.and_then(|f| if f == ws_key { prev.clone() } else { self.load_for(&f) });
                 match stored.map(|s| s.key).filter(|k| !k.is_empty()) {
                     Some(k) => k,
-                    None => return Err(Failure { code: "bad_request".into(), message: "Enter the licence key.".into() }),
+                    None => return Err(Failure { code: "bad_request".into(), message: "Enter the licence key.".into(), tier: None }),
                 }
             }
-            k => k.to_string(),
+            k => {
+                // The workspace's recovery code or machine key pasted as a licence key: never sent.
+                if let Some(msg) = not_a_licence_key(k) {
+                    return Err(Failure { code: "bad_request".into(), message: msg.into(), tier: None });
+                }
+                k.to_string()
+            }
         };
         // Moving to another person, machine or workspace: give the old seat back first.
         if let Some(p) = &prev {
@@ -1079,14 +1089,11 @@ impl<S: SecretStore> Licensing<S> {
                 self.save_for(ws_key, Some(next));
                 Ok(self.status_for(Some(ws_key), None))
             }
-            Err(CallError::Refused { code, message }) => {
-                let solo = names_solo(message.as_deref()) || prev.as_ref().and_then(|p| p.tier.as_deref()) == Some(SOLO);
+            Err(CallError::Refused { code, message, tier }) => {
+                let solo = tier.as_deref() == Some(SOLO) || prev.as_ref().and_then(|p| p.tier.as_deref()) == Some(SOLO);
                 // A Team or Business key on a tests folder: it belongs in a workspace. Nothing
                 // is kept for the folder.
-                if next.workspace_project_id.is_empty()
-                    && code == "bad_request"
-                    && message.as_deref().is_some_and(|m| m.contains("workspaceProjectId"))
-                {
+                if code == "needs_workspace" {
                     return Err(Failure::new("needs_workspace", None));
                 }
                 if solo {
@@ -1310,6 +1317,22 @@ fn machine_name() -> Option<String> {
     {
         std::env::var("HOSTNAME").ok().filter(|n| !n.is_empty()).map(|n| n.chars().take(80).collect())
     }
+}
+
+/// What a secret that isn't a licence key, typed where one goes, is: the recovery code (`BPR1-…`,
+/// workspace_keys.rs) and the machine key (`bpmk1_…`) must never reach the licence service. The
+/// machine pass (`BPM1-…`) and seat pass (`BPS1-…`) are licence credentials and go through.
+pub fn not_a_licence_key(k: &str) -> Option<&'static str> {
+    let t = k.trim();
+    if t.to_ascii_lowercase().starts_with("bpmk1_") {
+        return Some("That's the workspace's machine key (bpmk1_…), for the runner and breakpatch-ci. It isn't a licence key.");
+    }
+    let alnum: String = t.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_uppercase();
+    let upper = t.to_ascii_uppercase();
+    if upper.starts_with("BPR1-") || upper.starts_with("BPR1 ") || (alnum.starts_with("BPR1") && alnum.len() >= 24) {
+        return Some("That's the workspace's recovery code, not a licence key. Keep it to yourself: it's only ever typed in \"I lost access to the key\".");
+    }
+    None
 }
 
 #[cfg(test)]

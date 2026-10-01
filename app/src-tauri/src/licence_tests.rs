@@ -461,7 +461,8 @@ async fn out_of_seats_is_remembered_with_its_message() {
         f,
         Failure {
             code: "out_of_seats".into(),
-            message: "Your team is out of seats. Ask your admin to add one.".into()
+            message: "Your team is out of seats. Ask your admin to add one.".into(),
+            tier: None,
         }
     );
     let st = l.status(None);
@@ -1144,7 +1145,7 @@ async fn solo_activates_on_a_tests_folder_with_an_empty_workspace_and_this_mac()
 
 #[tokio::test]
 async fn a_team_key_on_a_tests_folder_says_it_belongs_in_a_workspace() {
-    let refused = json!({ "ok": false, "error": { "code": "bad_request", "message": "Missing workspaceProjectId." } });
+    let refused = json!({ "ok": false, "error": { "code": "needs_workspace", "message": "Words the app doesn't read.", "tier": "team" } });
     let (url, _) = canned(vec![(400, refused)]).await;
     let store = MemStore::default();
     let l = unselected(store.clone(), &url, Arc::new(AtomicI64::new(IAT)));
@@ -1157,12 +1158,12 @@ async fn a_team_key_on_a_tests_folder_says_it_belongs_in_a_workspace() {
 #[tokio::test]
 async fn solo_refusals_keep_the_services_solo_words() {
     let msg = "This Solo licence is in use on another Mac. Free it at account.breakpatch.dev, then try again.";
-    let refused = json!({ "ok": false, "error": { "code": "too_many_devices", "message": msg } });
+    let refused = json!({ "ok": false, "error": { "code": "solo_too_many_devices", "message": "Words the app doesn't read.", "tier": "solo" } });
     let (url, _) = canned(vec![(409, refused)]).await;
     let l = unselected(MemStore::default(), &url, Arc::new(AtomicI64::new(IAT)));
     l.select(Some(FOLDER), None).unwrap();
     let f = l.activate(in_folder("BP-K", "sam@initech.com")).await.unwrap_err();
-    assert_eq!((f.code.as_str(), f.message.as_str()), ("too_many_devices", msg));
+    assert_eq!((f.code.as_str(), f.message.as_str(), f.tier.as_deref()), ("too_many_devices", msg, Some("solo")));
     // Kept with the tier, so the status says it in Solo's words too.
     let st = l.status_for(Some(FOLDER), Some(""));
     assert_eq!((st.tier.as_deref(), st.message.as_deref()), (Some("solo"), Some(msg)));
@@ -1269,3 +1270,39 @@ async fn without_a_device_id_a_folder_cant_activate() {
         .with_hardware(Box::new(|| None));
     assert_eq!(l.activate(in_folder("BP-K", "sam@initech.com")).await.unwrap_err().code, "no_device");
 }
+
+#[tokio::test]
+async fn solo_is_told_by_the_code_and_tier_never_by_the_words() {
+    // A Team refusal whose words happen to say "Solo" stays Team's.
+    let (url, _) = canned(vec![(409, json!({ "ok": false, "error": { "code": "out_of_seats", "message": "Solo-ish words", "tier": "team" } }))]).await;
+    let l = licensing(MemStore::default(), &url, Arc::new(AtomicI64::new(IAT)));
+    let f = l.activate(person("BP-K", "bo@acme.com")).await.unwrap_err();
+    assert_eq!((f.code.as_str(), f.tier.as_deref()), ("out_of_seats", None));
+    assert_eq!(f.message, message_for("out_of_seats", None));
+    // tier "solo" on a plain code: Solo's words.
+    let (url, _) = canned(vec![(409, json!({ "ok": false, "error": { "code": "out_of_seats", "message": "x", "tier": "solo" } }))]).await;
+    let l = licensing(MemStore::default(), &url, Arc::new(AtomicI64::new(IAT)));
+    let f = l.activate(person("BP-K", "bo@acme.com")).await.unwrap_err();
+    assert_eq!(f.tier.as_deref(), Some("solo"));
+    assert!(f.message.contains("Solo is for one person"));
+    // A Solo refusal the app has no words for (solo_needs_update): the service's.
+    let (url, _) = canned(vec![(400, json!({ "ok": false, "error": { "code": "solo_needs_update", "message": "Update Breakpatch to use a Solo licence.", "tier": "solo" } }))]).await;
+    let l = licensing(MemStore::default(), &url, Arc::new(AtomicI64::new(IAT)));
+    let f = l.activate(person("BP-K", "bo@acme.com")).await.unwrap_err();
+    assert_eq!((f.code.as_str(), f.message.as_str()), ("needs_update", "Update Breakpatch to use a Solo licence."));
+}
+
+#[tokio::test]
+async fn a_recovery_code_or_machine_key_typed_as_a_licence_key_is_never_sent() {
+    // Nothing listens there: a call would answer "offline".
+    let l = licensing(MemStore::default(), "http://127.0.0.1:9", Arc::new(AtomicI64::new(IAT)));
+    for k in ["BPR1-50M6-HA79-55MT-KTHA-DANE-PAVB-NFH", "bpr1 50m6 ha79 55mt ktha dane pavb nfh", "bpmk1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"] {
+        let f = l.activate(person(k, "bo@acme.com")).await.unwrap_err();
+        assert_eq!(f.code, "bad_request", "{k}");
+        assert!(f.message.contains("recovery code") || f.message.contains("machine key"), "{k}: {}", f.message);
+    }
+    // A licence key that happens to start with BP-R1 is one.
+    assert_eq!(not_a_licence_key("BP-R1AB-CDEF-GH12-3456"), None);
+    assert_eq!(not_a_licence_key("BPM1-0123456789abcdef0123456789abcdef-00"), None, "the machine pass is a licence credential");
+}
+
