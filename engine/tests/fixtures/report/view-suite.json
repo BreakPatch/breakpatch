@@ -27,6 +27,21 @@
   "note": "Nightly run before the 4.2 release",
   "screenshotsLeftOut": true,
   "multi": true,
+  "failed": {
+    "label": "2 tests didn't pass:",
+    "items": [
+      {
+        "anchor": "test-3",
+        "name": "Pay an invoice",
+        "resultText": "Failed"
+      },
+      {
+        "anchor": "test-4",
+        "name": "Refund",
+        "resultText": "Couldn't run"
+      }
+    ]
+  },
   "tests": [
     {
       "anchor": "test-1",
@@ -130,7 +145,8 @@
         "type": "",
         "message": "",
         "text": ""
-      }
+      },
+      "stepsOpen": false
     },
     {
       "anchor": "test-2",
@@ -216,7 +232,8 @@
         "type": "",
         "message": "",
         "text": ""
-      }
+      },
+      "stepsOpen": false
     },
     {
       "anchor": "test-3",
@@ -302,7 +319,8 @@
         "type": "timeout",
         "message": "Step 2: Wait for the receipt: Waited too long for the page",
         "text": "Step 2: Wait for the receipt\nWaited too long for the page\nWhat this step waits for never appeared. The run stopped here.\nWhat to try: If the app was slow this time, run again. If it always takes longer now, re-record this step."
-      }
+      },
+      "stepsOpen": true
     },
     {
       "anchor": "test-4",
@@ -322,7 +340,8 @@
         "type": "notRun",
         "message": "Couldn't run: it was deleted",
         "text": "Couldn't run: it was deleted"
-      }
+      },
+      "stepsOpen": true
     }
   ],
   "footer": "Made with Breakpatch 0.1.0-beta.1 on 24 Sep 2026, 14:20 UTC.",

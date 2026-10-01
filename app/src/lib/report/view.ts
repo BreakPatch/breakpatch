@@ -49,10 +49,14 @@ export interface JunitCase { seconds: string; timestamp: string; status: 'passed
 export interface TestView {
   anchor: string; name: string; appName: string; multi: boolean; result: StepState; resultText: string;
   meta: Meta[]; testNote: string; stepsText: string; steps: StepView[]; junit: JunitCase;
+  /** In a suite, a test that passed starts closed: what didn't pass is what's read first. */
+  stepsOpen: boolean;
 }
 export interface ReportView {
   title: string; generator: string; kindLabel: string; heading: string; result: StepState; resultText: string;
   countsText: string; summary: Meta[]; note: string; screenshotsLeftOut: boolean; multi: boolean;
+  /** A suite's tests that didn't pass, listed first, each linking to its test; null when all passed. */
+  failed: { label: string; items: { anchor: string; name: string; resultText: string }[] } | null;
   tests: TestView[]; footer: string;
   junit: { name: string; tests: number; failures: number; skipped: number; seconds: string; timestamp: string };
 }
@@ -243,6 +247,7 @@ function testView(t: ReportTestInput, index: number, offset: number, screenshots
     anchor: `test-${index + 1}`, name: String(t.name || run?.testName || 'Test'), appName: String(t.appName ?? ''), multi,
     result: state, resultText: run ? RUN_TEXT[state] : "Couldn't run", meta: run ? runMeta(run, offset) : [],
     testNote: run ? '' : String(t.note || "It couldn't run."), stepsText: plural(steps.length, 'step'), steps, junit,
+    stepsOpen: state !== 'passed' && state !== 'fixed',
   };
 }
 
@@ -284,10 +289,14 @@ export function buildView(inp: ReportInput): ReportView {
     const run = inp.tests?.[0]?.run;
     totalMs = int(run?.durationMs); stamp = run ? isoText(run.startedAt) : '';
   }
+  const notPassed = suite ? tests.filter(t => t.result !== 'passed' && t.result !== 'fixed') : [];
+  const failed = notPassed.length
+    ? { label: `${plural(notPassed.length, 'test')} didn't pass:`, items: notPassed.map(t => ({ anchor: t.anchor, name: t.name, resultText: t.resultText })) }
+    : null;
   return {
     title: `${heading} · ${resultText} · Breakpatch`, generator: `Breakpatch${version ? ` ${version}` : ''}`,
     kindLabel, heading, result, resultText, countsText: counts, summary: summary.filter(m => m.v), note,
-    screenshotsLeftOut: !shots, multi: suite, tests, footer,
+    screenshotsLeftOut: !shots, multi: suite, failed, tests, footer,
     junit: {
       name: heading, tests: tests.length, failures: tests.filter(t => t.junit.status === 'failed').length,
       skipped: tests.filter(t => t.junit.status === 'skipped').length, seconds: seconds(totalMs), timestamp: stamp,
@@ -297,5 +306,5 @@ export function buildView(inp: ReportInput): ReportView {
 
 /** The same view with every step open: for printing, where a closed step would print closed. */
 export function allOpen(view: ReportView): ReportView {
-  return { ...view, tests: view.tests.map(t => ({ ...t, steps: t.steps.map(s => ({ ...s, open: s.hasDetail })) })) };
+  return { ...view, tests: view.tests.map(t => ({ ...t, stepsOpen: true, steps: t.steps.map(s => ({ ...s, open: s.hasDetail })) })) };
 }

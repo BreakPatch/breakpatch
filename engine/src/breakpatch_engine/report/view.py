@@ -322,6 +322,8 @@ def test_view(t: dict, index: int, offset: int, screenshots: bool, multi: bool) 
         "result": state, "resultText": RUN_TEXT[state] if run else "Couldn't run", "meta": run_meta(run, offset) if run else [],
         "testNote": "" if run else str(t.get("note") or "It couldn't run."),
         "stepsText": plural(len(views), "step"), "steps": views, "junit": j,
+        # In a suite, a test that passed starts closed: what didn't pass is what's read first.
+        "stepsOpen": state not in ("passed", "fixed"),
     }
 
 
@@ -393,16 +395,20 @@ def build(inp: dict) -> dict:
         heading, kind, counts, note = (t["name"] if t else str(inp.get("name") or "Test")), "Run report", "", ""
         run = (inp.get("tests") or [{}])[0].get("run") or {}
         total_ms, stamp = _int(run.get("durationMs")), iso_text(run.get("startedAt")) if run else ""
+    # A suite leads with what didn't pass, each linking to its test.
+    not_passed = [t for t in tests if t["result"] not in ("passed", "fixed")] if suite else []
+    failed = {"label": f"{plural(len(not_passed), 'test')} didn't pass:",
+              "items": [{"anchor": t["anchor"], "name": t["name"], "resultText": t["resultText"]} for t in not_passed]} if not_passed else None
     junit = {"name": heading, "tests": len(tests), "failures": sum(1 for t in tests if t["junit"]["status"] == "failed"),
              "skipped": sum(1 for t in tests if t["junit"]["status"] == "skipped"), "seconds": seconds(total_ms), "timestamp": stamp}
     return {
         "title": f"{heading} · {result_text} · Breakpatch", "generator": f"Breakpatch{' ' + version if version else ''}",
         "kindLabel": kind, "heading": heading, "result": result, "resultText": result_text, "countsText": counts,
-        "summary": [m for m in summary if m["v"]], "note": note, "screenshotsLeftOut": not shots, "multi": suite,
+        "summary": [m for m in summary if m["v"]], "note": note, "screenshotsLeftOut": not shots, "multi": suite, "failed": failed,
         "tests": tests, "footer": footer, "junit": junit,
     }
 
 
 def all_open(view: dict) -> dict:
     """The same view with every step open: for printing, where a closed step would print closed."""
-    return {**view, "tests": [{**t, "steps": [{**s, "open": s["hasDetail"]} for s in t["steps"]]} for t in view["tests"]]}
+    return {**view, "tests": [{**t, "stepsOpen": True, "steps": [{**s, "open": s["hasDetail"]} for s in t["steps"]]} for t in view["tests"]]}

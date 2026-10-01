@@ -58,6 +58,11 @@ body.bpr-page { margin: 0; }
   background: var(--bpr-surface); color: var(--bpr-text); cursor: pointer; }
 .bpr-tools button:hover { border-color: var(--bpr-faint); }
 .bpr-test { margin-top: 28px; }
+.bpr-notpassed { margin: 12px 0 0; padding: 12px 14px; border: 1px solid var(--bpr-failed); border-radius: 10px; }
+.bpr-notpassed p { margin: 0 0 6px; font-weight: 600; }
+.bpr-notpassed ul { margin: 0; padding-left: 18px; }
+.bpr-notpassed a { color: inherit; }
+.bpr-test-steps > summary { cursor: pointer; color: var(--bpr-faint); font-size: 13px; margin-bottom: 8px; }
 .bpr-test-head { display: grid; gap: 8px; margin-bottom: 12px; }
 .bpr-test-head .bpr-app { color: var(--bpr-faint); font-size: 13px; }
 .bpr-steps { list-style: none; padding: 0; display: grid; gap: 6px; }
@@ -123,6 +128,7 @@ body.bpr-page { margin: 0; }
 <h1>Smoke</h1>
 <div class="bpr-pill bpr-failed">Failed</div>
 <p class="bpr-counts">2 of 4 tests passed, 2 failed</p>
+<nav class="bpr-notpassed" aria-label="Tests that didn't pass"><p>2 tests didn&#39;t pass:</p><ul><li><a href="#test-3">Pay an invoice</a> <span class="bpr-muted">Failed</span></li><li><a href="#test-4">Refund</a> <span class="bpr-muted">Couldn&#39;t run</span></li></ul></nav>
 <dl class="bpr-meta"><div><dt>Tests</dt><dd>4 tests</dd></div><div><dt>Took</dt><dd>4 min 52 s</dd></div><div><dt>Asked by</dt><dd>Schedule</dd></div><div><dt>When</dt><dd>24 Sep 2026, 14:00 UTC</dd></div></dl>
 <p class="bpr-callout">Nightly run before the 4.2 release</p>
 <p class="bpr-muted bpr-small">Screenshots were left out of this report.</p>
@@ -135,6 +141,7 @@ body.bpr-page { margin: 0; }
 <div class="bpr-pill bpr-passed">Passed</div>
 <dl class="bpr-meta"><div><dt>Took</dt><dd>21 s</dd></div><div><dt>Run by</dt><dd>QA Mac mini</dd></div><div><dt>Where</dt><dd>Local runner</dd></div><div><dt>Machine</dt><dd>QA Mac mini</dd></div><div><dt>When</dt><dd>24 Sep 2026, 14:00 UTC</dd></div><div><dt>Version</dt><dd>2</dd></div><div><dt>Run ID</dt><dd>rn-1</dd></div></dl>
 </div>
+<details class="bpr-test-steps"><summary>3 steps</summary>
 <ol class="bpr-steps">
 <li class="bpr-step bpr-passed bpr-d0"><details><summary><span class="bpr-no">1</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Write email</span><span class="bpr-status">Passed</span><span class="bpr-took">900 ms</span></summary>
 <div class="bpr-detail">
@@ -152,6 +159,7 @@ body.bpr-page { margin: 0; }
 </div>
 </details></li>
 </ol>
+</details>
 </section>
 <section class="bpr-test" id="test-2" aria-label="Invite a teammate">
 <div class="bpr-test-head">
@@ -160,6 +168,7 @@ body.bpr-page { margin: 0; }
 <div class="bpr-pill bpr-fixed">Passed with fixes</div>
 <dl class="bpr-meta"><div><dt>Took</dt><dd>1 min 4 s</dd></div><div><dt>Run by</dt><dd>QA Mac mini</dd></div><div><dt>Where</dt><dd>Local runner</dd></div><div><dt>Machine</dt><dd>QA Mac mini</dd></div><div><dt>When</dt><dd>24 Sep 2026, 14:00 UTC</dd></div><div><dt>Version</dt><dd>7</dd></div><div><dt>Run ID</dt><dd>rn-2</dd></div></dl>
 </div>
+<details class="bpr-test-steps"><summary>2 steps</summary>
 <ol class="bpr-steps">
 <li class="bpr-step bpr-fixed bpr-d0"><details><summary><span class="bpr-no">1</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Click Invite</span><span class="bpr-status">Fixed automatically</span></summary>
 <div class="bpr-detail">
@@ -169,6 +178,7 @@ body.bpr-page { margin: 0; }
 </details></li>
 <li class="bpr-step bpr-passed bpr-d0"><div class="bpr-row"><span class="bpr-no">2</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Write address</span><span class="bpr-status">Passed</span></div></li>
 </ol>
+</details>
 </section>
 <section class="bpr-test" id="test-3" aria-label="Pay an invoice">
 <div class="bpr-test-head">
@@ -177,6 +187,7 @@ body.bpr-page { margin: 0; }
 <div class="bpr-pill bpr-failed">Failed</div>
 <dl class="bpr-meta"><div><dt>Took</dt><dd>45 s</dd></div><div><dt>Run by</dt><dd>QA Mac mini</dd></div><div><dt>Where</dt><dd>Local runner</dd></div><div><dt>Machine</dt><dd>QA Mac mini</dd></div><div><dt>When</dt><dd>24 Sep 2026, 14:01 UTC</dd></div><div><dt>Version</dt><dd>1</dd></div><div><dt>Run ID</dt><dd>rn-3</dd></div></dl>
 </div>
+<details class="bpr-test-steps" open><summary>2 steps</summary>
 <ol class="bpr-steps">
 <li class="bpr-step bpr-passed bpr-d0"><div class="bpr-row"><span class="bpr-no">1</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Click Pay</span><span class="bpr-status">Passed</span></div></li>
 <li class="bpr-step bpr-failed bpr-d0"><details open><summary><span class="bpr-no">2</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Wait for the receipt</span><span class="bpr-status">Failed</span></summary>
@@ -187,6 +198,7 @@ body.bpr-page { margin: 0; }
 </div>
 </details></li>
 </ol>
+</details>
 </section>
 <section class="bpr-test" id="test-4" aria-label="Refund">
 <div class="bpr-test-head">
@@ -196,8 +208,10 @@ body.bpr-page { margin: 0; }
 <dl class="bpr-meta"></dl>
 </div>
 <p class="bpr-callout">Couldn&#39;t run: it was deleted</p>
+<details class="bpr-test-steps" open><summary>0 steps</summary>
 <ol class="bpr-steps">
 </ol>
+</details>
 </section>
 <footer class="bpr-foot">Made with Breakpatch 0.1.0-beta.1 on 24 Sep 2026, 14:20 UTC.</footer>
 </div>

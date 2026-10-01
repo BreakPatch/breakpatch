@@ -39,6 +39,18 @@ describe('the report', () => {
     expect(steps.map(s => s.number)).toEqual(['1', '2', '2.1', '2.2', '3', '4', '5', '6', '7', '8']);
   });
 
+  it('leads a suite with what didn’t pass, and starts the tests that passed closed', () => {
+    const v = buildView(INPUT.suite);
+    expect(v.failed).toEqual({ label: "2 tests didn't pass:", items: [
+      { anchor: 'test-3', name: 'Pay an invoice', resultText: 'Failed' }, { anchor: 'test-4', name: 'Refund', resultText: "Couldn't run" },
+    ] });
+    expect(v.tests.map(t => t.stepsOpen)).toEqual([false, false, true, true]);
+    expect(allOpen(v).tests.every(t => t.stepsOpen)).toBe(true);
+    const html = reportHtml(v);
+    expect(html.indexOf('href="#test-3"')).toBeLessThan(html.indexOf('id="test-1"'));
+    expect(buildView(INPUT.run).failed).toBeNull();              // a single run says it in its heading
+  });
+
   it('leaves the screenshots out when asked', () => {
     const view = buildView({ ...INPUT.run, screenshots: false });
     expect(view.tests[0].steps.every(s => s.image === null)).toBe(true);

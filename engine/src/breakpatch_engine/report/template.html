@@ -66,6 +66,11 @@ body.bpr-page { margin: 0; }
   background: var(--bpr-surface); color: var(--bpr-text); cursor: pointer; }
 .bpr-tools button:hover { border-color: var(--bpr-faint); }
 .bpr-test { margin-top: 28px; }
+.bpr-notpassed { margin: 12px 0 0; padding: 12px 14px; border: 1px solid var(--bpr-failed); border-radius: 10px; }
+.bpr-notpassed p { margin: 0 0 6px; font-weight: 600; }
+.bpr-notpassed ul { margin: 0; padding-left: 18px; }
+.bpr-notpassed a { color: inherit; }
+.bpr-test-steps > summary { cursor: pointer; color: var(--bpr-faint); font-size: 13px; margin-bottom: 8px; }
 .bpr-test-head { display: grid; gap: 8px; margin-bottom: 12px; }
 .bpr-test-head .bpr-app { color: var(--bpr-faint); font-size: 13px; }
 .bpr-steps { list-style: none; padding: 0; display: grid; gap: 6px; }
@@ -131,7 +136,8 @@ body.bpr-page { margin: 0; }
 <h1>{{heading}}</h1>
 <div class="bpr-pill bpr-{{result}}">{{resultText}}</div>
 {{#countsText}}<p class="bpr-counts">{{countsText}}</p>
-{{/countsText}}<dl class="bpr-meta">{{#summary}}<div><dt>{{k}}</dt><dd>{{v}}</dd></div>{{/summary}}</dl>
+{{/countsText}}{{#failed}}<nav class="bpr-notpassed" aria-label="Tests that didn't pass"><p>{{label}}</p><ul>{{#items}}<li><a href="#{{anchor}}">{{name}}</a> <span class="bpr-muted">{{resultText}}</span></li>{{/items}}</ul></nav>
+{{/failed}}<dl class="bpr-meta">{{#summary}}<div><dt>{{k}}</dt><dd>{{v}}</dd></div>{{/summary}}</dl>
 {{#note}}<p class="bpr-callout">{{note}}</p>
 {{/note}}{{#screenshotsLeftOut}}<p class="bpr-muted bpr-small">Screenshots were left out of this report.</p>
 {{/screenshotsLeftOut}}<div class="bpr-tools" hidden><button type="button" data-bpr="open">Open all steps</button><button type="button" data-bpr="close">Close all steps</button><button type="button" data-bpr="theme">Theme: automatic</button></div>
@@ -144,7 +150,8 @@ body.bpr-page { margin: 0; }
 <dl class="bpr-meta">{{#meta}}<div><dt>{{k}}</dt><dd>{{v}}</dd></div>{{/meta}}</dl>
 </div>
 {{/multi}}{{#testNote}}<p class="bpr-callout">{{testNote}}</p>
-{{/testNote}}<ol class="bpr-steps">
+{{/testNote}}{{#multi}}<details class="bpr-test-steps"{{#stepsOpen}} open{{/stepsOpen}}><summary>{{stepsText}}</summary>
+{{/multi}}<ol class="bpr-steps">
 {{#steps}}<li class="bpr-step bpr-{{result}} bpr-d{{depth}}">{{#hasDetail}}<details{{#open}} open{{/open}}><summary><span class="bpr-no">{{number}}</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">{{label}}</span><span class="bpr-status">{{resultText}}</span>{{#took}}<span class="bpr-took">{{took}}</span>{{/took}}</summary>
 <div class="bpr-detail">
 {{#headline}}<p class="bpr-headline">{{headline}}</p>
@@ -158,7 +165,8 @@ body.bpr-page { margin: 0; }
 {{/image}}</div>
 </details>{{/hasDetail}}{{^hasDetail}}<div class="bpr-row"><span class="bpr-no">{{number}}</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">{{label}}</span><span class="bpr-status">{{resultText}}</span>{{#took}}<span class="bpr-took">{{took}}</span>{{/took}}</div>{{/hasDetail}}</li>
 {{/steps}}</ol>
-</section>
+{{#multi}}</details>
+{{/multi}}</section>
 {{/tests}}<footer class="bpr-foot">{{footer}}</footer>
 </div>
 <!--/bpr-body-->

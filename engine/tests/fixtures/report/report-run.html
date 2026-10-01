@@ -58,6 +58,11 @@ body.bpr-page { margin: 0; }
   background: var(--bpr-surface); color: var(--bpr-text); cursor: pointer; }
 .bpr-tools button:hover { border-color: var(--bpr-faint); }
 .bpr-test { margin-top: 28px; }
+.bpr-notpassed { margin: 12px 0 0; padding: 12px 14px; border: 1px solid var(--bpr-failed); border-radius: 10px; }
+.bpr-notpassed p { margin: 0 0 6px; font-weight: 600; }
+.bpr-notpassed ul { margin: 0; padding-left: 18px; }
+.bpr-notpassed a { color: inherit; }
+.bpr-test-steps > summary { cursor: pointer; color: var(--bpr-faint); font-size: 13px; margin-bottom: 8px; }
 .bpr-test-head { display: grid; gap: 8px; margin-bottom: 12px; }
 .bpr-test-head .bpr-app { color: var(--bpr-faint); font-size: 13px; }
 .bpr-steps { list-style: none; padding: 0; display: grid; gap: 6px; }
