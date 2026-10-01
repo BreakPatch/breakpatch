@@ -67,12 +67,60 @@ def claim_stdout() -> BinaryIO:
     return out
 
 
+LIMIT = 64 * 1024 * 1024   # a line can hold a screenshot
+
+
+async def open_reader(stream: BinaryIO) -> asyncio.StreamReader:
+    """An asyncio reader over stdin. On Windows the shell's stdin is an anonymous pipe, which the
+    Proactor loop can't read without overlapped I/O, so a thread reads it there (and anywhere
+    `connect_read_pipe` refuses the stream)."""
+    loop = asyncio.get_running_loop()
+    reader = asyncio.StreamReader(limit=LIMIT)
+    if sys.platform != "win32":
+        try:
+            await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), stream)
+            return reader
+        except (NotImplementedError, OSError, ValueError) as e:
+            log.info("stdin can't be read asynchronously (%s); reading it in a thread", e)
+
+    def pump() -> None:
+        try:
+            while True:
+                chunk = stream.readline()
+                if not chunk:
+                    break
+                loop.call_soon_threadsafe(reader.feed_data, chunk)
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                loop.call_soon_threadsafe(reader.feed_eof)
+            except RuntimeError:        # the loop is closed: nobody is reading any more
+                pass
+
+    threading.Thread(target=pump, name="stdin", daemon=True).start()
+    return reader
+
+
 class Server:
     def __init__(self, handlers: dict[str, Handler], writer: Writer, grace: float = 3.0):
-        self.handlers = handlers
+        # `engine.quit` (the shell's way to stop the engine where it can't send a signal or close
+        # stdin, i.e. Windows): answers {}, then stops as when stdin closes.
+        self.handlers = {"engine.quit": self._quit_handler, **handlers}
         self.grace = grace
         self.writer = writer
         self._tasks: set[asyncio.Task] = set()
+        self._quit: asyncio.Event | None = None
+
+    async def _quit_handler(self, params: dict) -> None:
+        self.quit()
+        return None
+
+    def quit(self) -> None:
+        """Stop reading requests; in-flight ones get the same grace as when stdin closes."""
+        if self._quit is None:
+            self._quit = asyncio.Event()
+        self._quit.set()
 
     def emit(self, event: str, data: dict) -> None:
         self.writer.write({"event": event, "data": data})
@@ -122,14 +170,23 @@ class Server:
                 f"{type(e).__name__}: {e}\n{traceback.format_exc()}").to_json()})
 
     async def serve(self, stdin: BinaryIO | None = None) -> None:
-        loop = asyncio.get_running_loop()
-        reader = asyncio.StreamReader(limit=64 * 1024 * 1024)
-        await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), stdin or sys.stdin.buffer)
-        while True:
-            line = await reader.readline()
-            if not line:
-                break
-            await self.handle_line(line)
+        reader = await open_reader(stdin or sys.stdin.buffer)
+        if self._quit is None:
+            self._quit = asyncio.Event()
+        quitting = asyncio.ensure_future(self._quit.wait())
+        try:
+            while not self._quit.is_set():
+                read = asyncio.ensure_future(reader.readline())
+                await asyncio.wait({read, quitting}, return_when=asyncio.FIRST_COMPLETED)
+                if not read.done():
+                    read.cancel()
+                    break
+                line = read.result()
+                if not line:
+                    break
+                await self.handle_line(line)
+        finally:
+            quitting.cancel()
         # stdin closed: the shell went away. Give quick in-flight requests a moment to answer, then
         # cancel the rest (long runs and downloads) so the process can exit.
         if self._tasks:

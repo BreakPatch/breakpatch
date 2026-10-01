@@ -13,6 +13,12 @@
 # can say it's another version or an Apple Silicon build. The installer runs with /bin/sh and with
 # bash --posix, and is linted with shellcheck. Needs python3.11, curl, openssl and sha256sum.
 #
+# site/install-ci.ps1 (Windows) runs against the same fake releases with PowerShell 7 (pwsh, or
+# PWSH=/path/to/pwsh) when there is one, on this Linux machine: OS=Windows_NT and
+# PROCESSOR_ARCHITECTURE say it's Windows, and it finds bin/ where Windows has Scripts\. Without
+# pwsh those cases are skipped, and say so. The token cases and the .cmd command itself need a
+# real Windows machine.
+#
 # The private beta (BREAKPATCH_GITHUB_TOKEN) runs against the same stand-in for api.github.com and
 # objects.githubusercontent.com as scripts/test-install.sh, reached through connect-to lines in the
 # test home's .curlrc, and checks the token only ever goes to api.github.com.
@@ -44,6 +50,47 @@ if ! command -v shellcheck >/dev/null; then
 fi
 echo "shellcheck site/install-ci"
 shellcheck "$script"
+
+# ---------------------------------------------------------------- platform names
+
+# site/install-ci carries its own copy of scripts/platform.sh's names (it's downloaded on its
+# own). Its check_platform must give the platform bp_platform gives for every uname pair the
+# build scripts know, and refuse the rest; the extra checks it makes (Rosetta, a 32-bit system,
+# the macOS version) are on top. Windows goes to install-ci.ps1, whose one platform is checked too.
+echo "platform names: site/install-ci and scripts/platform.sh"
+current="platform names"
+# shellcheck source=platform.sh
+. "$repo/scripts/platform.sh"
+ci_platform_fns=$(awk '/^fail\(\) /{ print } /^check_platform\(\) \{/{ on = 1 } on { print } on && /^}/{ exit }' "$script")
+# ci_platform: install-ci's platform for OS_ and ARCH_, or "refused: <its words>".
+ci_platform() {
+  # shellcheck disable=SC2016
+  sh -c "$ci_platform_fns"'
+    uname() { case "$1" in -s) echo "$OS_" ;; -m) echo "$ARCH_" ;; esac; }
+    sw_vers() { echo 15.1; }
+    sysctl() { echo "${TRANSLATED_:-0}"; }
+    getconf() { echo 64; }
+    check_platform && echo "$platform"' > "$work/platform.out" 2>&1 || true
+  sed '2,$d; /^[a-z]*-[a-z0-9_]*$/!s/^/refused: /' "$work/platform.out"
+}
+for pair in Linux:x86_64 Linux:amd64 Linux:aarch64 Linux:arm64 Darwin:arm64 Darwin:x86_64 \
+  Linux:armv7l Linux:i686 Darwin:i386 FreeBSD:amd64 MINGW64_NT-10.0:x86_64 MSYS_NT-10.0:x86_64 CYGWIN_NT-10.0:x86_64; do
+  os=${pair%%:*} arch=${pair#*:}
+  want=$(bp_platform "$os" "$arch" || echo none)
+  got=$(OS_=$os ARCH_=$arch ci_platform)
+  case "$want" in
+    windows-*) if [ "$got" = "refused: On Windows, install breakpatch-ci from PowerShell: irm https://breakpatch.dev/install-ci.ps1 | iex" ]; then
+                 ok "$os $arch: to install-ci.ps1 ($want)"; else bad "$os $arch: install-ci says '$got', not the PowerShell command"; fi ;;
+    none) case "$got" in refused:*) ok "$os $arch: neither builds for it" ;; *) bad "$os $arch: install-ci says $got, platform.sh has no platform" ;; esac ;;
+    *) if [ "$got" = "$want" ]; then ok "$os $arch: $want"; else bad "$os $arch: install-ci says '$got', platform.sh $want"; fi ;;
+  esac
+done
+# Under Rosetta a Terminal says x86_64 on Apple Silicon: that's still the Mac's own platform.
+got=$(OS_=Darwin ARCH_=x86_64 TRANSLATED_=1 ci_platform)
+if [ "$got" = "$(bp_platform Darwin arm64)" ]; then ok "Darwin x86_64 under Rosetta: $got"; else bad "under Rosetta install-ci says '$got'"; fi
+if grep -q "\$Platform = '$(bp_platform MINGW64_NT-10.0 x86_64)'" "$repo/site/install-ci.ps1"; then
+  ok "install-ci.ps1 installs $(bp_platform MINGW64_NT-10.0 x86_64)"
+else bad "install-ci.ps1's \$Platform isn't platform.sh's Windows name"; fi
 
 # ---------------------------------------------------------------- fake releases
 
@@ -109,7 +156,7 @@ extra = wheel("sneaky", {"sneaky/__init__.py": ""}) if "extra" in opts else None
 def sha(p):
     return hashlib.sha256(open(p, "rb").read()).hexdigest()
 
-for platform in ("linux-x86_64", "macos-arm64"):
+for platform in ("linux-x86_64", "linux-arm64", "macos-arm64", "windows-x86_64"):
     lines = ["# breakpatch-ci on " + platform, "# a comment with ./not-a-wheel.whl in it"]
     if "url" in opts:
         lines.append("evil @ https://example.com/evil-1.0-py3-none-any.whl --hash=sha256:" + "0" * 64)
@@ -228,6 +275,18 @@ make_private_release breakpatch 0.0.9 latest
 make_private_release breakpatch 0.1.0-beta.1 prerelease
 make_private_release httpredirect 0.3.0 latest
 
+# ---- a stand-in python-build-standalone download: python/bin/python3.11 is this machine's 3.11
+# (a link), so the environment made from it works offline. Its SHA-256 goes to the installer in
+# BREAKPATCH_PYTHON_SHA256, with BREAKPATCH_PYTHON_DOWNLOADS pointing here.
+pbs_release=$(sed -n 's/^PBS_RELEASE=//p' "$script")
+pbs_version=$(sed -n 's/^PBS_VERSION=//p' "$script")
+mkdir -p "$work/pbs-stage/python/bin" "$srv/pbs/$pbs_release"
+ln -s "$py311" "$work/pbs-stage/python/bin/python3.11"
+for triple in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu aarch64-apple-darwin x86_64-pc-windows-msvc; do
+  tar -czf "$srv/pbs/$pbs_release/cpython-$pbs_version+$pbs_release-$triple-install_only_stripped.tar.gz" -C "$work/pbs-stage" python
+done
+pbs_sha=$(sha256sum "$srv/pbs/$pbs_release/cpython-$pbs_version+$pbs_release-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz" | awk '{ print $1 }')
+
 # The same files over https (what the installer uses) and plain http (which it must refuse).
 # The GitHub stand-in answers by Host and logs "host path auth=<Authorization or ->" to gh.log
 # (the same server as scripts/test-install.sh).
@@ -323,6 +382,10 @@ cat > "$shims/sysctl" <<'SH'
 #!/bin/sh
 echo "${FAKE_TRANSLATED:-0}"
 SH
+cat > "$shims/getconf" <<'SH'
+#!/bin/sh
+[ "$1" = LONG_BIT ] && echo "${FAKE_LONG_BIT:-64}"
+SH
 # A Python 3.11 that says it's FAKE_PY_VERSION (e.g. 3.12) or built for FAKE_PY_ARCH (arm64).
 pyshims="$work/py-shims"
 mkdir -p "$pyshims"
@@ -359,6 +422,15 @@ for f in /usr/local/bin/* /usr/bin/* /bin/*; do
   case "$n" in python*) continue ;; esac
   [ -e "$nopy/$n" ] || ln -s "$f" "$nopy/$n"
 done
+# A PATH whose only python3 is a 3.12 (Raspberry Pi OS Trixie, Ubuntu 24.04).
+py312="$work/python-3.12"
+mkdir -p "$py312"
+cat > "$py312/python3" <<SH
+#!/bin/sh
+case "\$*" in *'sys.version_info[:2]'*) echo 3.12; exit 0 ;; esac
+exec $py311 "\$@"
+SH
+chmod +x "$py312/python3"
 
 # ---------------------------------------------------------------- helpers
 
@@ -440,7 +512,9 @@ expect_token_hidden() {
 
 # ---------------------------------------------------------------- the cases
 
+# ONLY=pwsh runs the install-ci.ps1 cases alone.
 for sh_name in "sh" "bash --posix"; do
+  [ "${ONLY:-}" != pwsh ] || break
   read -r -a shell_cmd <<< "$sh_name"
 
   new_case fresh-install-linux
@@ -461,6 +535,7 @@ for sh_name in "sh" "bash --posix"; do
   marker="$home/current/breakpatch-ci.json"
   if grep -q '"version": "1.1.0"' "$marker" && grep -q '"browsers": "../browsers"' "$marker"; then ok "breakpatch-ci.json points at the browsers"; else bad "breakpatch-ci.json: $(cat "$marker" 2>/dev/null)"; fi
   if [ "$(readlink "$bin/breakpatch-ci")" = "$home/current/bin/breakpatch-ci" ]; then ok "the command links to current"; else bad "the link is $(readlink "$bin/breakpatch-ci")"; fi
+  if [ ! -e "$home/python" ]; then ok "no Python was downloaded (this machine has 3.11)"; else bad "a Python was downloaded"; fi
   if [ "$("$home/current/bin/python" -c 'import sys; print("%d.%d" % sys.version_info[:2])')" = 3.11 ]; then ok "the environment is Python 3.11"; else bad "the environment isn't Python 3.11"; fi
   expect_clean
 
@@ -509,20 +584,37 @@ for sh_name in "sh" "bash --posix"; do
   expect_code 0
   expect_out "Reinstalling breakpatch-ci 1.1.0…"
 
+  new_case linux-arm64
+  run FAKE_ARCH=aarch64 BREAKPATCH_PYTHON="$pyshims/python-as" FAKE_PY_ARCH=aarch64
+  expect_code 0
+  expect_out "Installing breakpatch-ci 1.1.0…"
+  expect_out "Linux is a preview: breakpatch-ci runs tests there, and they're recorded on a Mac."
+  expect_out "install the libraries it needs: sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium"
+  expect_version 1.1.0
+  run FAKE_ARCH=aarch64 BREAKPATCH_PYTHON="$pyshims/python-as" FAKE_PY_ARCH=x86_64
+  expect_code 1
+  expect_out "is for x86_64, not this machine."
+  run FAKE_ARCH=aarch64 FAKE_LONG_BIT=32
+  expect_code 1
+  expect_out "This Raspberry Pi or arm computer runs a 32-bit system. Install a 64-bit one"
+  run BREAKPATCH_API="$base/apponly" BREAKPATCH_DOWNLOADS="$base/apponly/download/" FAKE_ARCH=aarch64 BREAKPATCH_PYTHON="$pyshims/python-as" FAKE_PY_ARCH=aarch64
+  expect_code 1
+  expect_out "Breakpatch 1.4.0 has no breakpatch-ci for Linux arm64."
+
   new_case unsupported-machines
-  need="breakpatch-ci runs on a Mac with Apple Silicon (M1 or later) and macOS 14 or later, or on Linux x86_64 as a preview."
+  need="breakpatch-ci runs on a Mac with Apple Silicon (M1 or later) and macOS 14 or later, or on 64-bit Linux (x86_64 or arm64) as a preview."
   run FAKE_OS=Darwin FAKE_ARCH=x86_64
   expect_code 1
   expect_out "$need This Mac has an Intel processor."
   run FAKE_OS=Darwin FAKE_ARCH=arm64 FAKE_MACOS=13.6.1
   expect_code 1
   expect_out "$need This Mac has macOS 13.6.1."
-  run FAKE_OS=Linux FAKE_ARCH=aarch64
+  run FAKE_OS=Linux FAKE_ARCH=armv7l
   expect_code 1
-  expect_out "$need This machine is Linux on aarch64."
+  expect_out "$need This machine is Linux on armv7l."
   run FAKE_OS=MINGW64_NT-10.0 FAKE_ARCH=x86_64
   expect_code 1
-  expect_out "$need This machine is MINGW64_NT-10.0 on x86_64."
+  expect_out "On Windows, install breakpatch-ci from PowerShell: irm https://breakpatch.dev/install-ci.ps1 | iex"
   run FAKE_OS=Darwin FAKE_ARCH=arm64 BREAKPATCH_PYTHON="$pyshims/python-as" FAKE_PY_ARCH=x86_64
   expect_code 1
   expect_out "is a Python for Intel Macs (x86_64). breakpatch-ci needs a Python 3.11 for Apple Silicon (arm64)."
@@ -540,10 +632,51 @@ for sh_name in "sh" "bash --posix"; do
   run BREAKPATCH_PYTHON="$pyshims/python-broken"
   expect_code 1
   expect_out "Couldn't run $pyshims/python-broken."
-  run BREAKPATCH_PYTHON= PATH="$shims:$nopy"
+  run BREAKPATCH_PYTHON= PATH="$shims:$nopy" BREAKPATCH_PYTHON_DOWNLOAD=0
   expect_code 1
   expect_out "breakpatch-ci needs Python 3.11, and this machine has no python3."
+  run BREAKPATCH_PYTHON= PATH="$py312:$shims:$nopy" BREAKPATCH_PYTHON_DOWNLOAD=0
+  expect_code 1
+  expect_out "breakpatch-ci needs Python 3.11, and python3 is Python 3.12."
   expect_none
+
+  new_case python-download
+  pbs_dir="$home/python/cpython-$pbs_version+$pbs_release"
+  pbs_vars=(BREAKPATCH_PYTHON= BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$pbs_sha")
+  run "${pbs_vars[@]}" PATH="$shims:$nopy"
+  expect_code 0
+  expect_out "This machine has no Python 3.11 that breakpatch-ci can use: downloading Python $pbs_version (python-build-standalone $pbs_release)…"
+  expect_out "Python $pbs_version is in ~/.breakpatch-ci/python/cpython-$pbs_version+$pbs_release."
+  expect_version 1.1.0
+  if [ "$("$home/current/bin/python" -c 'import sys; print(sys.base_prefix != sys.prefix)')" = True ] \
+    && [ "$(readlink "$home/current/bin/python3.11")" = "$pbs_dir/bin/python3.11" ]; then ok "the environment is made from the downloaded Python"; else bad "the environment isn't from $pbs_dir"; fi
+  expect_clean
+  run "${pbs_vars[@]}" PATH="$py312:$shims:$nopy"
+  expect_code 0
+  expect_out "Using Python $pbs_version from ~/.breakpatch-ci/python/cpython-$pbs_version+$pbs_release."
+  expect_no_out "downloading Python"
+  expect_envs 1
+  run
+  expect_code 0
+  if [ ! -e "$home/python" ]; then ok "the downloaded Python goes once nothing uses it"; else bad "$home/python is still there"; fi
+
+  new_case python-download-checked
+  run BREAKPATCH_PYTHON= PATH="$shims:$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$(printf '%064d' 0)"
+  expect_code 1
+  expect_out "The download of Python 3.11 doesn't match its checksum, so nothing was installed."
+  expect_none
+  run BREAKPATCH_PYTHON= PATH="$shims:$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/"
+  expect_code 1
+  expect_out "There's no checksum for the Python download for this machine, so nothing was installed."
+  run BREAKPATCH_PYTHON= PATH="$shims:$nopy" BREAKPATCH_PYTHON_DOWNLOADS="http://127.0.0.1:$http_port/pbs/" BREAKPATCH_PYTHON_SHA256="$pbs_sha"
+  expect_code 1
+  expect_out "BREAKPATCH_PYTHON_DOWNLOADS must start with https:// and end with /."
+  run BREAKPATCH_PYTHON= PATH="$shims:$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/no-such-pbs/" BREAKPATCH_PYTHON_SHA256="$pbs_sha"
+  expect_code 1
+  expect_out "Couldn't download Python 3.11."
+  if [ ! -e "$home/python" ] || [ -z "$(ls -A "$home/python")" ]; then ok "no half-unpacked Python left"; else bad "left in python/: $(ls -A "$home/python")"; fi
+  expect_none
+  expect_clean
 
   new_case missing-or-old-releases
   run BREAKPATCH_API="$base/apponly" BREAKPATCH_DOWNLOADS="$base/apponly/download/"
@@ -706,6 +839,154 @@ for sh_name in "sh" "bash --posix"; do
   expect_none
   expect_no_out "Installing"
 done
+
+# ---------------------------------------------------------------- install-ci.ps1 (Windows)
+
+ps1="$repo/site/install-ci.ps1"
+pwsh=${PWSH:-$(command -v pwsh || true)}
+if [ -z "$pwsh" ]; then
+  echo "install-ci.ps1: SKIPPED, no pwsh (PowerShell 7) on this machine; set PWSH to one"
+else
+  sh_name=pwsh
+  ps_case() {
+    new_case "$1"
+    home="$c/home/breakpatch-ci"
+    bin="$home/bin"
+  }
+  # ps_run [VAR=value…]: install-ci.ps1 with -File (a CI step: a failure exits 1).
+  ps_run() {
+    set +e
+    out=$(env -u GITHUB_PATH HOME="$c/home" TMPDIR="$c/tmp" PATH="$PATH" FAKE_STATE="$c/state" PIP_NO_INDEX=1 \
+          OS=Windows_NT PROCESSOR_ARCHITECTURE=AMD64 SSL_CERT_FILE="$tls/cert.pem" BREAKPATCH_CI_HOME="$home" \
+          BREAKPATCH_API="$base/good" BREAKPATCH_DOWNLOADS="$base/good/download/" BREAKPATCH_PYTHON="$py311" \
+          "$@" "$pwsh" -NoProfile -NonInteractive -File "$ps1" 2>&1)
+    code=$?
+    set -e
+  }
+  ps_version() {
+    local v; v=$("$home/$(head -n 1 "$home/current.txt" 2>/dev/null | tr -d '\r')/bin/breakpatch-ci" --version 2>/dev/null || true)
+    if [ "$v" = "$1" ]; then ok "breakpatch-ci $1 is installed"; else bad "breakpatch-ci says '${v:-nothing}', expected $1"; fi
+  }
+  ps_envs() { local n; n=$(find "$home" -maxdepth 1 -name 'env-*' 2>/dev/null | wc -l | tr -d ' '); if [ "$n" -eq "$1" ]; then ok "$1 environment(s)"; else bad "$n environments, expected $1"; fi; }
+  ps_none() { if [ ! -e "$home/current.txt" ] && [ ! -e "$bin/breakpatch-ci.cmd" ]; then ok "nothing installed"; else bad "something was installed"; fi; }
+
+  # shellcheck disable=SC2016  # PowerShell's $, not the shell's
+  echo "pwsh $("$pwsh" -NoProfile -Command '$PSVersionTable.PSVersion.ToString()')"
+
+  ps_case fresh-install-windows
+  : > "$c/state/github-path"
+  ps_run GITHUB_PATH="$c/state/github-path"
+  expect_code 0
+  expect_out "Installing breakpatch-ci 1.1.0..."
+  expect_out "Windows is a preview: breakpatch-ci runs tests there, and they're recorded on a Mac."
+  expect_out "Installing the Python packages (checked against their hashes)..."
+  expect_out "breakpatch-ci 1.1.0 is in"
+  expect_out "to GITHUB_PATH: the next steps of this job can run breakpatch-ci."
+  ps_version 1.1.0
+  ps_envs 1
+  if [ "$(cat "$c/state/github-path")" = "$bin" ]; then ok "GITHUB_PATH has the folder"; else bad "GITHUB_PATH has: $(cat "$c/state/github-path")"; fi
+  if grep -qx "install chromium --no-shell | $home/browsers" "$c/state/playwright"; then ok "Chromium went into the install folder's browsers"; else bad "playwright was run as: $(cat "$c/state/playwright" 2>/dev/null)"; fi
+  envdir="$home/$(head -n 1 "$home/current.txt" | tr -d '\r')"
+  if grep -q '"version": "1.1.0"' "$envdir/breakpatch-ci.json" && grep -q '"browsers": "../browsers"' "$envdir/breakpatch-ci.json"; then ok "breakpatch-ci.json points at the browsers"; else bad "breakpatch-ci.json: $(cat "$envdir/breakpatch-ci.json" 2>/dev/null)"; fi
+  if grep -q 'breakpatch-ci installer' "$bin/breakpatch-ci.cmd" && grep -q 'Scripts\\breakpatch-ci.exe" %\*' "$bin/breakpatch-ci.cmd" \
+    && grep -q '^setlocal' "$bin/breakpatch-ci.cmd"; then ok "bin\\breakpatch-ci.cmd starts the environment in current.txt"; else bad "the .cmd is: $(cat "$bin/breakpatch-ci.cmd" 2>/dev/null)"; fi
+  if [ ! -e "$home/python" ]; then ok "no Python was downloaded (this machine has 3.11)"; else bad "a Python was downloaded"; fi
+  if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
+
+  ps_case update-windows
+  ps_run BREAKPATCH_VERSION=1.0.0
+  expect_code 0
+  first=$(head -n 1 "$home/current.txt" | tr -d '\r')
+  ps_run
+  expect_code 0
+  expect_out "Updating breakpatch-ci 1.0.0 to 1.1.0..."
+  ps_version 1.1.0
+  ps_envs 1
+  if [ ! -e "$home/$first" ]; then ok "the old environment is gone"; else bad "the old environment is still there"; fi
+  ps_run
+  expect_out "Reinstalling breakpatch-ci 1.1.0..."
+  ps_run BREAKPATCH_CHANNEL=beta
+  expect_code 0
+  expect_out "Updating breakpatch-ci 1.1.0 to 1.2.0-beta.1..."
+
+  ps_case windows-only
+  ps_run OS=
+  expect_code 1
+  expect_out "This isn't Windows: use https://breakpatch.dev/install-ci there."
+  ps_run PROCESSOR_ARCHITECTURE=ARM64
+  expect_code 1
+  expect_out "Windows on arm isn't supported yet."
+  ps_run PROCESSOR_ARCHITECTURE=x86 PROCESSOR_ARCHITEW6432=AMD64 BREAKPATCH_API="$base/apponly" BREAKPATCH_DOWNLOADS="$base/apponly/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.4.0 has no breakpatch-ci for Windows."
+  ps_run BREAKPATCH_PYTHON="$pyshims/python-as" FAKE_PY_VERSION=3.12
+  expect_code 1
+  expect_out "breakpatch-ci needs Python 3.11, and $pyshims/python-as is Python 3.12."
+  ps_none
+
+  ps_case windows-checks
+  ps_run BREAKPATCH_API="$base/badsum" BREAKPATCH_DOWNLOADS="$base/badsum/download/"
+  expect_code 1
+  expect_out "The download of breakpatch_team_engine-1.5.0-py3-none-any.whl doesn't match its checksum, so nothing was installed."
+  ps_run BREAKPATCH_API="$base/url" BREAKPATCH_DOWNLOADS="$base/url/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.9.0's breakpatch-ci files can't be read, so nothing was installed."
+  ps_run BREAKPATCH_API="$base/extra" BREAKPATCH_DOWNLOADS="$base/extra/download/"
+  expect_code 1
+  expect_out "Breakpatch 2.0.0's breakpatch-ci files can't be read"
+  ps_run BREAKPATCH_API="$base/foreign" BREAKPATCH_DOWNLOADS="$base/foreign/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.7.0 lists a file that isn't from Breakpatch's releases, so nothing was installed."
+  ps_run BREAKPATCH_API="$base/badhash" BREAKPATCH_DOWNLOADS="$base/badhash/download/"
+  expect_code 1
+  expect_out "Couldn't install breakpatch-ci's Python packages."
+  ps_run BREAKPATCH_VERSION=9.9.9
+  expect_code 1
+  expect_out "There's no Breakpatch 9.9.9."
+  ps_run BREAKPATCH_API="http://127.0.0.1:$http_port/good"
+  expect_code 1
+  expect_out "Couldn't reach GitHub to find Breakpatch."
+  ps_run BREAKPATCH_GITHUB_TOKEN="$token"
+  expect_code 1
+  expect_out "BREAKPATCH_GITHUB_TOKEN is only ever sent to https://api.github.com/, and BREAKPATCH_API isn't there."
+  expect_no_out "$token"
+  ps_none
+  if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
+
+  ps_case windows-python-download
+  ps_run BREAKPATCH_PYTHON= PATH="$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$(printf '%064d' 0)"
+  expect_code 1
+  expect_out "The download of Python 3.11 doesn't match its checksum, so nothing was installed."
+  ps_none
+  win_sha=$(sha256sum "$srv/pbs/$pbs_release/cpython-$pbs_version+$pbs_release-x86_64-pc-windows-msvc-install_only_stripped.tar.gz" | awk '{ print $1 }')
+  ps_run BREAKPATCH_PYTHON= PATH="$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$win_sha"
+  expect_code 0
+  expect_out "This PC has no Python 3.11 that breakpatch-ci can use: downloading Python $pbs_version (python-build-standalone $pbs_release)..."
+  ps_version 1.1.0
+  if [ -d "$home/python/cpython-$pbs_version+$pbs_release" ]; then ok "the downloaded Python is kept in the install folder"; else bad "no downloaded Python"; fi
+  ps_run BREAKPATCH_PYTHON= PATH="$nopy" BREAKPATCH_PYTHON_DOWNLOAD=0
+  expect_code 1
+  expect_out "breakpatch-ci needs Python 3.11, and this PC has none."
+  ps_run
+  expect_code 0
+  if [ ! -e "$home/python" ]; then ok "the downloaded Python goes once nothing uses it"; else bad "$home/python is still there"; fi
+
+  ps_case windows-uninstall-and-iex
+  ps_run
+  expect_code 0
+  ps_run BREAKPATCH_UNINSTALL=1
+  expect_code 0
+  expect_out "Removed breakpatch-ci and its browser from"
+  if [ ! -e "$home" ]; then ok "the install folder is gone"; else bad "something is left: $(ls -A "$home")"; fi
+  ps_run BREAKPATCH_UNINSTALL=1
+  expect_out "Nothing to remove."
+  # irm … | iex: a failure is printed, and doesn't close the window (no exit).
+  set +e
+  out=$(env HOME="$c/home" OS= "$pwsh" -NoProfile -NonInteractive -Command "iex (Get-Content -Raw '$ps1'); 'still here'" 2>&1)
+  set -e
+  expect_out "This isn't Windows"
+  expect_out "still here"
+fi
 
 echo
 if [ ${#failures[@]} -eq 0 ]; then

@@ -14,7 +14,20 @@ export interface Workspace {
   logo?: string;                 // data URL or https URL
   config: FirebaseWebConfig;
   database: string;              // named Firestore database, default "breakpatch"
-  domain: string;                // allowed email domain, e.g. "example.com"
+  domain: string;                // allowed email domain, e.g. "example.com"; '' for a hosted workspace
+  /**
+   * Hosted by Breakpatch (Breakpatch Cloud): the workspace's tenant id. Its documents are under
+   * workspaces/<tenant>/ in the shared project, and its connection id is `hosted:<tenant>`.
+   * Unset for a workspace in the team's own Firebase.
+   */
+  tenant?: string;
+  /**
+   * Legacy, a starting value only: how many days runs are kept, as a saved hosted connection
+   * remembered it. The Team backend reads the real number from the person's member document (the
+   * cloud keeps it there) and uses this only until that's read; nothing else decides by it (not
+   * whether a workspace is hosted: that's `tenant`). Unset for a team's own Firebase (90 days).
+   */
+  historyDays?: number;
 }
 
 export interface FirebaseWebConfig {
@@ -141,7 +154,8 @@ export interface Version {
   recordedOn?: RecordedOn;
   /**
    * Tests only: the start address this version starts at. Versions saved before it existed have
-   * none; they start at the test's.
+   * none, and the local backend never sets it (it keeps only the latest version): they start at
+   * the test's. Read it with startUrlOf (backend.ts).
    */
   startUrl?: string;
 }
@@ -184,6 +198,20 @@ export interface StepRun {
   timings?: StepTimings;
   /** Checks that had nothing left to compare (their ignore zones cover them), so they were skipped. */
   unchecked?: string[];
+  /** A failed step: the AI assistant's "Why did this fail?" (Team, engine run.explain), once asked. */
+  explanation?: Explanation;
+}
+
+/**
+ * Why a step failed, in plain words, from the AI assistant (engine/PROTOCOL.md "Why did this
+ * fail?"). Always shown as the AI assistant's. Unknown `cause` or `suggestion` values (a newer
+ * engine) are shown without their words.
+ */
+export interface Explanation {
+  /** One or two plain sentences: "The Save button now reads “Save changes”." */
+  summary: string;
+  cause: 'moved' | 'textChanged' | 'pageChanged' | 'slowLoad' | 'errorPage' | 'realBug';
+  suggestion: 'rerecord' | 'acceptChange' | 'raiseWait' | 'reportBug';
 }
 
 /** A step's phases in a run, in ms: the check before it, the action, waiting for the page to settle, the check after. */
@@ -215,7 +243,13 @@ export interface Run {
   healedCount: number;
   steps: StepRun[];
   systemMismatch?: SystemMismatch;
+  /** The issue made from this run with Create issue (Team), so the report offers Open issue next time. */
+  issue?: RunIssue;
 }
+
+export type IssueProvider = 'github' | 'linear' | 'jira';
+/** An issue in a tracker made from a failed run: its provider, key ("acme/web#12", "ENG-42") and web address. */
+export interface RunIssue { provider: IssueProvider; key: string; url: string }
 
 export interface RunSummary { result: 'pass' | 'fail' | 'healed'; at: Millis; by: string }
 
@@ -228,13 +262,46 @@ export interface Suite {
   name: string;
   tests: { appId: string; testId: string }[];
   schedule: null | { days: Weekday[]; time: string };
+  /** Before `notify`: a plain JSON result address on the suite itself. Read as `notify` kind "webhook", every run. */
   resultUrl?: string;
+  /** Where the runner sends the result (Team). The address itself is kept apart (see SuiteNotify). */
+  notify?: SuiteNotify;
   lastRun?: { result: SuiteResult; at: Millis; by: string };
   createdBy: Person; createdAt: Millis;
   updatedBy: Person; updatedAt: Millis;
 }
 
 export type SuiteResult = 'passed' | 'passed_with_fixes' | 'failed' | 'replaced';
+
+/** A result message's format: plain JSON (any tool), a Slack incoming webhook, a Teams Workflows webhook. */
+export type NotifyKind = 'webhook' | 'slack' | 'teams';
+/** Every run, failed runs only, or the first failure and the first pass after it. */
+export type NotifyWhen = 'every' | 'failures' | 'changes';
+
+/**
+ * Where a suite's result goes, as the suite keeps it and everyone reads it. Never the address: that
+ * is a secret (anyone with it can post), which a workspace keeps where only admins and the runner
+ * can read it (Backend.notify).
+ */
+export interface SuiteNotify {
+  kind: NotifyKind;
+  when: NotifyWhen;
+  /** Put the failed step's screenshot in the message (uploaded so Slack or Teams can show it). Off by default. */
+  screenshot?: boolean;
+}
+
+/**
+ * What an admin's save sends: the public part, and `url` when a new address was pasted (it's saved
+ * apart from the suite). Only the save path takes this type; the suite never holds it.
+ */
+export type NotifyInput = SuiteNotify & { url?: string | null };
+
+/** Where Create issue sends issues (Team, workspace/trackers): set by admins, used by everyone with their own token. */
+export interface TrackerSettings {
+  github?: { repo: string; labels?: string[] };
+  linear?: { team: string };
+  jira?: { site: string; project: string; issueType?: string; labels?: string[] };
+}
 
 export interface RunnerStatus {
   name: string;

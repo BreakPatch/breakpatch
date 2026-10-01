@@ -1,0 +1,13 @@
+file,reason,target,at_x,at_y,expected_cause,visible_where_it_was,page
+# "Why did this fail?" cases (roadmap #7), scored by explain_test.py. One row per failed step.
+# file: the failure screenshot (1440 x 900) in screenshots/. reason: the step's FailReason.
+# target and at_x,at_y: the step as recorded (what it acts on, and where it was).
+# expected_cause: moved, textChanged, pageChanged, slowLoad, errorPage or realBug.
+# visible_where_it_was: yes when the target is on the screenshot at its old spot (then an answer that says it moved or went is made up).
+# page: optional, a page read saved next to the screenshot (<file>.page.json), to score the fast path too.
+# At least one of each: moved, renamed, removed, covered by a dialog, the page didn't change.
+explain-moved.png,targetNotFound,"Save button, bottom right of the Edit profile dialog",1300,820,moved,no,
+explain-renamed.png,targetNotFound,"Save button, bottom right of the Edit profile dialog",1300,820,textChanged,yes,
+explain-removed.png,targetNotFound,"Export link, top right of the page",1350,40,realBug,no,
+explain-dialog.png,targetNotFound,"New project button, top left of the page",120,90,pageChanged,no,
+explain-nochange.png,noChange,"Next button, bottom of the form",720,780,realBug,yes,

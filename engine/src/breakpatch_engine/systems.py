@@ -15,7 +15,9 @@ Tests without `recordedOn` (recorded before it existed) never mismatch.
 """
 from __future__ import annotations
 
+import os
 import platform
+import subprocess
 import sys
 from pathlib import Path
 
@@ -32,10 +34,36 @@ def os_family() -> str:
     return platform.system() or "Unknown"
 
 
+WINDOWS_11_BUILD = 22000
+
+
+def windows_release() -> tuple[str, int]:
+    """("11", 22631) or ("10", 19045). Python 3.11's platform.release() says "10" on Windows 11
+    too (both are version 10.0), so the build number decides: 22000 and later is Windows 11."""
+    build = 0
+    get = getattr(sys, "getwindowsversion", None)
+    if get is not None:
+        try:
+            build = int(get().build)
+        except Exception:  # noqa: BLE001
+            build = 0
+    if not build:
+        parts = platform.version().split(".")
+        if len(parts) >= 3 and parts[2].isdigit():
+            build = int(parts[2])
+    release = platform.release() or ""
+    if release == "10" and build >= WINDOWS_11_BUILD:
+        release = "11"
+    return release, build
+
+
 def os_version() -> str:
-    """macOS 15.3 → "15.3"; Linux → the distribution's VERSION_ID ("24.04"), else the kernel."""
+    """macOS 15.3 → "15.3"; Linux → the distribution's VERSION_ID ("24.04"), else the kernel;
+    Windows → "11" or "10"."""
     if sys.platform == "darwin":
         return platform.mac_ver()[0] or ""
+    if sys.platform == "win32":
+        return windows_release()[0]
     if sys.platform.startswith("linux"):
         try:
             for line in Path("/etc/os-release").read_text().splitlines():
@@ -133,3 +161,122 @@ def mismatch(recorded_raw, ran: dict, relaxed: bool) -> dict | None:
     return {"recordedOn": recorded, "ranOn": ran, "differences": diff, "relaxed": relaxed,
             "message": explain(recorded, ran, diff)}
 
+
+# ---------------------------------------------------------------- this machine, in words
+# (install.system_info and the app's setup screen). All OS detection is in this module.
+
+CPUINFO = Path("/proc/cpuinfo")
+DEVICE_TREE_MODEL = Path("/proc/device-tree/model")     # a Raspberry Pi says what it is here
+WINDOWS_CPU_KEY = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+
+
+def memory_gb() -> float:
+    try:
+        total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError, AttributeError):    # Windows has no sysconf
+        total = 0
+    if sys.platform == "darwin":
+        try:
+            total = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5).stdout)
+        except Exception:  # noqa: BLE001
+            pass
+    elif sys.platform == "win32":
+        total = windows_memory_bytes() or total
+    return round(total / 2**30)
+
+
+def _kernel32():
+    """kernel32 through ctypes, or None off Windows (tests put a fake one here)."""
+    import ctypes
+    windll = getattr(ctypes, "windll", None)
+    return windll.kernel32 if windll is not None else None
+
+
+def windows_memory_bytes() -> int:
+    """Physical memory from GlobalMemoryStatusEx, or 0."""
+    import ctypes
+
+    class MEMORYSTATUSEX(ctypes.Structure):
+        _fields_ = [("dwLength", ctypes.c_uint32), ("dwMemoryLoad", ctypes.c_uint32),
+                    ("ullTotalPhys", ctypes.c_uint64), ("ullAvailPhys", ctypes.c_uint64),
+                    ("ullTotalPageFile", ctypes.c_uint64), ("ullAvailPageFile", ctypes.c_uint64),
+                    ("ullTotalVirtual", ctypes.c_uint64), ("ullAvailVirtual", ctypes.c_uint64),
+                    ("ullAvailExtendedVirtual", ctypes.c_uint64)]
+
+    try:
+        k32 = _kernel32()
+        if k32 is None:
+            return 0
+        stat = MEMORYSTATUSEX()
+        stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
+        if not k32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+            return 0
+        return int(stat.ullTotalPhys)
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def windows_cpu_name() -> str:
+    """The processor's name from the registry (ProcessorNameString), or ""."""
+    try:
+        import winreg  # type: ignore[import-not-found]  # Windows only
+    except ImportError:
+        return ""
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, WINDOWS_CPU_KEY) as key:
+            value, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+        return " ".join(str(value).split())
+    except OSError:
+        return ""
+
+
+def linux_cpu_name() -> str:
+    """/proc/cpuinfo's "model name" (x86, most arm64); else the board's name (a Raspberry Pi has
+    no "model name": /proc/device-tree/model says "Raspberry Pi 4 Model B Rev 1.4"), else cpuinfo's
+    "Model" line, which the Pi kernel writes too."""
+    model = ""
+    try:
+        for line in CPUINFO.read_text(errors="replace").splitlines():
+            key, _, value = line.partition(":")
+            key = key.strip().lower()
+            if key == "model name" and value.strip():
+                return value.strip()
+            if key == "model" and value.strip() and not value.strip().isdigit():
+                model = model or value.strip()
+    except OSError:
+        pass
+    try:
+        board = DEVICE_TREE_MODEL.read_bytes().rstrip(b"\0").decode(errors="replace").strip()
+        if board:
+            return board
+    except OSError:
+        pass
+    return model
+
+
+def chip() -> str:
+    if sys.platform == "darwin":
+        try:
+            out = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True, timeout=5)
+            if out.stdout.strip():
+                return out.stdout.strip()
+        except Exception:  # noqa: BLE001
+            pass
+    elif sys.platform == "win32":
+        name = windows_cpu_name()
+        if name:
+            return name
+    else:
+        name = linux_cpu_name()
+        if name:
+            return name
+    return platform.processor() or platform.machine()
+
+
+def os_name() -> str:
+    if sys.platform == "darwin":
+        return f"macOS {platform.mac_ver()[0]}".strip()
+    if sys.platform == "win32":
+        release, build = windows_release()
+        return f"Windows {release} (build {build})" if build else f"Windows {release}"
+    return f"{platform.system()} {platform.release()}"

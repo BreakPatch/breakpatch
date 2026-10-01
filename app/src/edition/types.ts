@@ -5,7 +5,7 @@
 // imports Team code, only this contract.
 import type { ComponentType, LazyExoticComponent, ReactNode } from 'react';
 import type { Backend } from '../data/backend';
-import type { Person, Run, Step, StepRun, Suite, Test, Workspace } from '../data/types';
+import type { NotifyInput, Person, Run, Step, StepRun, Suite, Test, Workspace } from '../data/types';
 import type { MenuItem } from '../components/ui';
 import type { Connection } from '../state/connections';
 
@@ -27,11 +27,15 @@ export interface Features {
   /** Headless command line for CI. */
   ci: boolean;
   modelOverride: boolean;
+  /** "Why did this fail?": the AI assistant explains a failed step in the report (engine run.explain). */
+  explain: boolean;
+  /** Create issue in GitHub, Linear or Jira from a failed run. */
+  integrations: boolean;
 }
 
 export const NO_FEATURES: Features = {
   collaboration: false, versions: false, autoFix: false, calibration: false,
-  schedules: false, runner: false, ci: false, modelOverride: false,
+  schedules: false, runner: false, ci: false, modelOverride: false, explain: false, integrations: false,
 };
 
 type Screen = ComponentType | LazyExoticComponent<ComponentType>;
@@ -71,7 +75,11 @@ export interface GateState {
 }
 
 /** Suite editor fields that only an edition's panel edits (schedule, result address). */
-export interface SuiteExtras { schedule: Suite['schedule']; resultUrl?: string }
+export interface SuiteExtras {
+  schedule: Suite['schedule']; resultUrl?: string;
+  /** Where the result goes; `url` only when the panel changed the address. null: nowhere. */
+  notify?: NotifyInput | null;
+}
 
 export interface SuiteEditorPanelProps {
   /** The saved suite, or undefined while it's new or loading. */
@@ -96,6 +104,14 @@ export interface ReportFixProps {
   test: Test | undefined;
 }
 
+export interface ReportFailProps extends ReportFixProps {
+  /** Steps as the run tested them (shared steps resolved). */
+  steps: Step[];
+  /** "6", or "2.3" inside a shared-steps card. */
+  number: string;
+  appName: string;
+}
+
 /** Places in open screens where the Team edition adds its own pieces. */
 export interface Slots {
   /** Suites list: extra columns after Name, before (default) or after "Last run", e.g. Schedule and "Result goes to". */
@@ -116,6 +132,8 @@ export interface Slots {
   homeBanner?: ComponentType;
   /** Report, a step fixed automatically: e.g. "Accept new position" and Dismiss. */
   reportFixActions?: ComponentType<ReportFixProps>;
+  /** Report, a failed step: e.g. Create issue (GitHub, Linear, Jira) or Open issue. */
+  reportFailActions?: ComponentType<ReportFailProps>;
   /** Under the title bar, after the system banners, e.g. "Breakpatch Team needs a licence." */
   banner?: ComponentType;
   /**
@@ -145,13 +163,18 @@ export interface Edition {
   slots: Slots;
   /**
    * First-launch gate before Setup: the path to show, or null when the person may go on.
+   * `pathname` is the screen showing now, so the check can let it stay when it may show instead of
+   * the one it would ask for (Team: Welcome, to start on this Mac from the connect screen).
    * `paths` are the screens only the gate shows (left for the app once it says null).
-   * `also`: screens that may show instead of the one it asks for (Team: Welcome, to start on this
-   * Mac from the connect screen).
    */
-  gate: { check(s: GateState): string | null; paths: string[]; also?: string[] };
+  gate: { check(s: GateState, pathname: string): string | null; paths: string[] };
   /** Where the app opens after the gate, e.g. runner mode on the runner Mac. Default "/". */
   startPath?(): string;
+  /**
+   * Where a tests folder's suite result addresses are kept, apart from the folder (the Team
+   * edition's Solo plan: the Keychain). Community has none, so its folder backend keeps none.
+   */
+  resultAddresses?: import('../data/local/localBackend').AddressStore;
   /** Opens a connected workspace. Community has none: it opens the demo and local tests folders. */
   openWorkspace?(ws: Workspace): Promise<Backend>;
   /** Wraps the app, e.g. for licence checks and workspace links. */

@@ -36,6 +36,7 @@
 .srun-t.running { background: var(--running-tint); border-color: var(--running); }
 .srun-t.failed, .srun-t.missing { background: var(--failed-tint); }
 .srun-t > .icon { font-size: 18px; flex: none; }
+.srun-t.draft { opacity: .6; }
 .srun-t-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .srun-t-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .srun-t.waiting .srun-t-name, .srun-t.notRun .srun-t-name { color: var(--text-faint); }

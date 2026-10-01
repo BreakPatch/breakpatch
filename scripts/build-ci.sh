@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds what https://breakpatch.dev/install-ci installs: breakpatch-ci, the Team command line for
-# CI, for this machine (macOS arm64, or Linux x86_64 as a preview). The release workflow
+# CI, for this machine (macOS arm64; Linux x86_64 and arm64, and Windows x64, as previews). The release workflow
 # (.github/workflows/release.yml, after the app) and CI (.github/workflows/ci.yml, with a
 # throwaway key) run this script; so can you, with the Team checkout next to this repo.
 #
@@ -23,8 +23,14 @@
 #                                                    (scripts/ci-requirements.py). On macOS with
 #                                                    the AI assistant's (the mlx extra), so
 #                                                    --auto-fix works on a self-hosted Mac
-# One engine wheel serves both platforms: the macOS release job passes the Linux job's with
-# --engine-wheel, so both requirements files name the same file and hash.
+# One engine wheel serves every platform: the other release jobs pass the Linux x86_64 job's with
+# --engine-wheel, so every requirements file names the same file and hash.
+#
+# Linux: run it inside a manylinux_2_28 container (scripts/build-manylinux.sh does), so the Team
+# wheel's native module needs glibc 2.28 at most and the wheel is tagged manylinux_2_28_<arch>
+# (the Team repo's make_wheel.py reads AUDITWHEEL_PLAT, which the container sets). Built straight
+# on a newer Linux it's tagged linux_<arch> and only promises to run where it was built.
+# Windows: run it under Git Bash; the venv's Python is Scripts/python.exe.
 #
 # Two phases, like scripts/build-release.sh (security review S2):
 #   --deps-only   the build venv (VENV, default engine/.venv) from the hashed locks:
@@ -71,16 +77,19 @@ while [ $# -gt 0 ]; do
 done
 [ "$release" -eq 0 ] || [ -z "$keys_file" ] || die "--keys-file is for test builds; a --release has the real keys only"
 
-case "$(uname -s)-$(uname -m)" in
-  Darwin-arm64) platform=macos-arm64; lock_extras=dev-hardening-mlx; extras=(--extra mlx) ;;
-  Linux-x86_64) platform=linux-x86_64; lock_extras=dev-hardening; extras=() ;;
-  *) die "breakpatch-ci is built for macOS on Apple Silicon and Linux x86_64 only, not $(uname -s) $(uname -m)" ;;
+# shellcheck source=scripts/platform.sh
+. "$repo/scripts/platform.sh"
+platform=$(bp_platform "$(uname -s)" "$(uname -m)") \
+  || die "breakpatch-ci is built for macOS on Apple Silicon, Linux x86_64 and arm64, and Windows x64 only, not $(uname -s) $(uname -m)"
+case "$platform" in
+  macos-arm64) lock_extras=dev-hardening-mlx; extras=(--extra mlx) ;;
+  *) lock_extras=dev-hardening; extras=() ;;
 esac
 lock="$engine/locks/$platform.$lock_extras.txt"
 [ -f "$lock" ] || die "no hashed lock ${lock#"$repo"/}; run scripts/lock-python.sh"
 
 VENV=${VENV:-"$engine/.venv"}
-py="$VENV/bin/python"
+py=$(venv_python "$VENV")
 work=$(mktemp -d "${TMPDIR:-/tmp}/bp-build-ci.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 trap 'exit 130' INT

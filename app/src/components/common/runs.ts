@@ -1,17 +1,10 @@
 // Plain words for run fields, shared by lists, reports and suites.
-import type { Run, RunSource, RunSummary } from '../../data/types';
+import type { Run, RunSummary } from '../../data/types';
 import type { Status } from '../ui';
 
-export const WHERE: Record<RunSource, { label: string; icon: string }> = {
-  desktop: { label: 'This Mac', icon: 'laptop_mac' },
-  ci: { label: 'CI', icon: 'cloud' },
-  runner: { label: 'Local runner', icon: 'dns' },
-};
+// WHERE and runBy are the report's words too (lib/runWords.ts).
+export { WHERE, runBy } from '../../lib/runWords';
 
-/** Who started a run: a person's name or the service account ("Nightly suite"). */
-export function runBy(r: Pick<Run, 'startedBy'>): string {
-  return 'name' in r.startedBy ? r.startedBy.name : r.startedBy.serviceAccount;
-}
 
 /** A whole run: Passed, Passed with fixes, Failed. */
 export function runStatus(r: Pick<Run, 'result' | 'healedCount'>): Status {

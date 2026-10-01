@@ -8,8 +8,10 @@ site/
   404.html              page not found (Firebase serves it for any missing path)
   install               the install command's script (served as text/plain, see firebase.json)
   install-ci            breakpatch-ci's install command (Team, for CI machines; text/plain too)
+  install-ci.ps1        the same for Windows, in PowerShell (irm … | iex; text/plain too)
   manual/index.html     the full manual (built from docs/manual.md)
   connect/index.html    Team invite link page
+  report/index.html     run report links from Slack, Teams and issues (opens the report in the app)
   pricing/index.html    pricing and the Team checkout (Paddle.js overlay)
   thanks/index.html     after checkout: where the licence key is
   terms/ privacy/ refunds/   legal pages (drafts; Paddle's website review needs them)
@@ -17,6 +19,7 @@ site/
   assets/pricing.js, pricing.css   the plan picker and checkout, and these pages' styles
   assets/get-json.js    the one GET helper for the back office (founding places, Solo domain, test runs)
   assets/runs-count.js  the home page's "12,300 tests run with Breakpatch" line
+  assets/report-link.js the report page's link check (report-link.test.mjs)
   robots.txt, sitemap.xml, favicon.ico, apple-touch-icon.png
   assets/site.css       styles (dark, follows light mode automatically)
   assets/site.js        GitHub links, copy buttons, contents highlighting
@@ -32,7 +35,7 @@ The pricing, thanks and legal pages (`pricing/`, `thanks/`, `terms/`, `privacy/`
 
 - **GitHub links.** Every GitHub link is `<a data-gh="/path">`, and `assets/site.js` points them all at `GITHUB` (one line at its top). The HTML also has the full address in `href` for browsers without JavaScript. The repository is private, so these 404 for visitors until it's public.
 - **Pre-launch notes.** While a page's `<html>` has `data-prelaunch`, it shows its `.prelaunch` notes ("Public release coming soon. Join the list") and `.prelaunch-text` words (Home's install answer, Pricing's "or email support@breakpatch.dev"). The pages that have it: `index.html`, `pricing/`, `connect/`, and the manual through `build-manual.mjs`. On launch day, delete the attribute from each (`grep -rl data-prelaunch site`), then run `node site/build-manual.mjs`. The manual's notes are the paragraphs starting with `<!-- prelaunch -->` in `docs/manual.md`: delete those too.
-- **Solo.** To put Solo on sale, set `soloOnSale: true` in `assets/paddle-config.js` (after the Solo prices are in it and the back office's `SOLO_ON_SALE` is on: its README, "Solo"). That one line shows everything else. While it's `false`, `<html>` has no `data-solo`, and `site.css` hides every `.solo-only` element (the Solo cards on Home and Pricing, the Solo column in Home's table, and the words about Solo in Home's and Pricing's text and questions), shows the `.solo-off` ones in their place, and shows the manual's `.solo-soon` notes ("Coming soon", the paragraphs starting with `<!-- solo-soon -->` in `docs/manual.md`, styled like the pre-launch notes). `pricing.js` then doesn't set up the Solo card at all, so the domain check is never called. `paddle-config.js` sets `data-solo` from `<head>` on Home, Pricing and the manual, so the page never moves. The terms, refunds and privacy pages mention Solo as "when offered" either way. Anything new about Solo on those pages gets `class="solo-only"`.
+- **Solo.** Solo goes on sale on the site when the back office's `SOLO_ON_SALE` is on (its README, "Solo"): `assets/paddle-config.js` asks its `GET /api/solo-domain`, which answers 404 until then, and sets `soloOnSale` from the answer (remembered on each browser, so a later visit is drawn right at once). There's no switch on the site to flip with it; put the Solo prices in `paddle-config.js` first. While Solo isn't on sale, `<html>` has no `data-solo`, and `site.css` hides every `.solo-only` element (the Solo cards on Home and Pricing, the Solo column in Home's table, and the words about Solo in Home's and Pricing's text and questions), shows the `.solo-off` ones in their place, and shows the manual's `.solo-soon` notes ("Coming soon", the paragraphs starting with `<!-- solo-soon -->` in `docs/manual.md`, styled like the pre-launch notes). `pricing.js` then doesn't set up the Solo card at all, so the domain check is never called. `paddle-config.js` sets `data-solo` from `<head>` on Home, Pricing and the manual, so the page never moves. The terms, refunds and privacy pages mention Solo as "when offered" either way. Anything new about Solo on those pages gets `class="solo-only"`.
 
 ## Private beta
 
@@ -42,7 +45,7 @@ The pricing, thanks and legal pages (`pricing/`, `thanks/`, `terms/`, `privacy/`
 curl -fsSL https://breakpatch.dev/install | BREAKPATCH_GITHUB_TOKEN=<token> BREAKPATCH_CHANNEL=beta sh
 ```
 
-`install-ci` takes the same `BREAKPATCH_GITHUB_TOKEN` and `BREAKPATCH_CHANNEL`. It's tested like `install`, by `scripts/test-install-ci.sh`.
+`install-ci` takes the same `BREAKPATCH_GITHUB_TOKEN` and `BREAKPATCH_CHANNEL`. It's tested like `install`, by `scripts/test-install-ci.sh`, which also runs `install-ci.ps1` with PowerShell 7 (`pwsh`) on Linux when it's installed. `install-ci.ps1` takes the same variables (as `$env:NAME` before `irm … | iex`); its token path and the `.cmd` it writes need a check on a real Windows machine.
 
 The token is a fine-grained personal access token for `BreakPatch/breakpatch` only, Contents read-only, expiring in 7 days. The script sends it to `https://api.github.com` only, never prints it or puts it on a command line, and downloads through the API's asset addresses. `BREAKPATCH_CHANNEL=beta` picks the newest release, prereleases included (GitHub's `releases/latest` skips them). The main README's "Private beta" section has the details. Once the repository is public the token isn't needed: the plain command works, and the token mode can go.
 
@@ -114,12 +117,20 @@ https://breakpatch.dev/connect#c=<base64url(JSON)>
 JSON: `{ "name", "logo"?, "config": { …Firebase web config… }, "database": "breakpatch", "domain": "example.com" }`.
 The page decodes it in the browser only, shows the workspace, then opens `breakpatch://connect#c=…`. If the app doesn't open within 2.5 s it shows "Didn't open?". Non-Mac devices get "Open this link on your Mac". Invite links come from a Breakpatch Team workspace.
 
+## Report link format
+
+```
+https://breakpatch.dev/report#r=<appId>/<runId>
+```
+
+Result messages to Slack and Teams and issues made with **Create issue** (Team) link here, since a `breakpatch://` link doesn't open from Slack on the web or a phone. On a Mac the page opens `breakpatch://report/<appId>/<runId>` at once (and offers "Didn't open?" after 2.5 s, as the invite page). Other devices get "Open this link on your Mac". Ids are letters, digits, `-` and `_` only (`assets/report-link.js`); anything else shows "This link doesn't work". Test it with `node --test site/report-link.test.mjs`.
+
 ## Checkout (Paddle)
 
 `/pricing` sells Team through [Paddle Billing](https://developer.paddle.com) (Paddle is the merchant of record). Paddle.js v2 is loaded from `cdn.paddle.com` only when someone presses **Buy Team**, or opens a Paddle payment link (`/pricing/?_ptxn=txn_…`, which Paddle uses for invoices and payment method updates). The checkout takes the people (at least 3) and extra machine licences, prefills the email, and passes `{ company, email }` as custom data; afterwards Paddle sends the buyer to `/thanks/`.
 
 Paste the ids into `assets/paddle-config.js`: the client-side token (Paddle → Developer tools → Authentication) and the four Team price ids, for sandbox and live, and set `env`. None of them is a secret. Until the token and ids are there, the button reads "Join the free beta" and opens an email to support@breakpatch.dev with the people, machines and billing period picked; Work email, Company and "Tax is added at checkout" are hidden. Business is sold by email (Contact us).
 
-Solo shows only once `soloOnSale` is `true` (Launch day, above). It has its own two price ids (`soloMonthly`, `soloYearly`, quantity 1) and the same behaviour: without them the Solo card invites people to the beta. Before its checkout opens, the card sends the email's domain (never the address) to `soloDomainUrl`, the back office's `GET /api/solo-domain`; when another Solo at that company is live, it shows Team instead ("one Solo per company"). If the check can't be reached, checkout goes ahead and the back office flags a second Solo for the owner.
+Solo shows only once the back office's Solo switch is on (Launch day, above). It has its own two price ids (`soloMonthly`, `soloYearly`, quantity 1) and the same behaviour: without them the Solo card invites people to the beta. Before its checkout opens, the card sends the email's domain (never the address) to `soloDomainUrl`, the back office's `GET /api/solo-domain`; when another Solo at that company is live, it shows Team instead ("one Solo per company"). If the check can't be reached, checkout goes ahead and the back office flags a second Solo for the owner.
 
 The licence itself is made by the back office from Paddle's webhook: the private repo's `backoffice/README.md`, "Payments (Paddle)", has the owner's steps (products, prices, the notification destination, secrets). The legal pages are drafts marked "Draft", with `[Legal name]` to fill in; keep the privacy page in step with the manual's Privacy section.

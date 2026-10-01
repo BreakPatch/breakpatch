@@ -32,18 +32,21 @@ export async function readClipboard(): Promise<string | null> {
   try { return await navigator.clipboard.readText(); } catch { return null; }
 }
 
-/** Saves text to a file the user picks (desktop) or downloads it (browser). */
-export async function saveTextFile(defaultName: string, contents: string): Promise<boolean> {
+/**
+ * Saves text to a file the user picks (desktop) or downloads it (browser). `type` is the
+ * download's media type (default JSON), `filters` the save dialog's kinds of file.
+ */
+export async function saveTextFile(defaultName: string, contents: string, opts: { type?: string; filters?: { name: string; extensions: string[] }[] } = {}): Promise<boolean> {
   if (isTauri()) {
     const { save } = await import('@tauri-apps/plugin-dialog');
-    const path = await save({ defaultPath: defaultName });
+    const path = await save({ defaultPath: defaultName, ...(opts.filters ? { filters: opts.filters } : {}) });
     if (!path) return false;
     const { writeTextFile } = await import('@tauri-apps/plugin-fs');
     await writeTextFile(path, contents);
     return true;
   }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([contents], { type: 'application/json' }));
+  a.href = URL.createObjectURL(new Blob([contents], { type: opts.type ?? 'application/json' }));
   a.download = defaultName; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   return true;
@@ -113,6 +116,24 @@ export const secrets = {
 };
 
 export type { SecretInfo, SecretPolicy };
+
+// ---- Result addresses of suites in a tests folder: macOS Keychain on desktop, memory in the browser ----
+// Where a folder suite's result message goes (Solo, the Team edition). Anyone with the address can
+// post to it, so it stays out of the folder, which may be shared through Git (src-tauri results.rs).
+const memAddresses = new Map<string, string>();
+
+export const resultAddresses = {
+  /** The address saved for this suite of this connection (`local:<hash>`), or null. */
+  async get(wsKey: string, suiteId: string): Promise<string | null> {
+    if (isTauri()) return (await tauriInvoke<string | null>('result_address_get', { wsKey, suiteId })) ?? null;
+    return memAddresses.get(`${wsKey}/${suiteId}`) ?? null;
+  },
+  /** Saves it (null: forgets it). */
+  async set(wsKey: string, suiteId: string, url: string | null): Promise<void> {
+    if (isTauri()) return tauriInvoke('result_address_set', { wsKey, suiteId, url });
+    if (url) memAddresses.set(`${wsKey}/${suiteId}`, url); else memAddresses.delete(`${wsKey}/${suiteId}`);
+  },
+};
 
 /** Listens for breakpatch://connect#c=… links and opened .bpworkspace files. */
 export async function onWorkspaceLink(cb: (payload: string) => void): Promise<() => void> {

@@ -2,7 +2,9 @@
 
 Fallback healing of moved targets (spec §11.2, the AI assistant finds the step's target) is a
 Breakpatch Team feature: it plugs in as `healer` (see plugins.py). Without one, a failed
-pre-check fails the step with `targetNotFound`, whatever `autoFix` says.
+pre-check fails the step with `targetNotFound`, whatever `autoFix` says. So does the explainer
+(explain.py): when one is registered and wants it, a failed step's page is read once, briefly,
+for `run.explain` to use later; nothing is explained during the run.
 """
 from __future__ import annotations
 
@@ -15,7 +17,7 @@ from typing import Awaitable, Callable, Iterator, Protocol
 
 import numpy as np
 
-from . import calls, checks, config, imaging, systems
+from . import calls, checks, config, explain, imaging, systems
 from .actions import ActionFailed, Context, Secret, parse_secrets, perform, secret_refs
 from .sites import origin_of
 from .browser import BrowserSession
@@ -77,13 +79,15 @@ class StepFailed(Exception):
 
 class Runner:
     def __init__(self, browser: BrowserSession, locator_fn: Callable[[], Locator], timings: config.Timings,
-                 emit: Emit, screenshots: Path | None = None, healer: Healer | None = None):
+                 emit: Emit, screenshots: Path | None = None, healer: Healer | None = None,
+                 explainer: "explain.Explainer | None" = None):
         self.b = browser
         self.locator_fn = locator_fn
         self.t = timings
         self.emit = emit
         self.screenshots = screenshots or config.screenshots_dir()
         self.healer = healer                  # None: no healing (Community), see plugins.py
+        self.explainer = explainer            # None: no page read after a failure (Community)
         self.locator: Locator | None = None   # for the healer: loaded lazily on the first failed pre-check
         self._passed_by: str | None = None
         self._tries = 0
@@ -281,6 +285,7 @@ class Runner:
                                    details=f"{type(e).__name__}: {e}")
                 if e.reason not in ("stopped", "secretMissing"):
                     e.extra.setdefault("screenshotPath", await self._keep_screenshot(step))
+                    await self._keep_page(e)
                 self._fail(step, e, iteration)
                 return False
             rec = {k: v for k, v in rec.items() if v is not None}
@@ -369,6 +374,23 @@ class Runner:
         except Exception as e:  # noqa: BLE001
             log.info("couldn't keep screenshot: %s", e)
             return None
+
+    async def _keep_page(self, err: StepFailed) -> None:
+        """For `run.explain` later: the controls and short texts on screen at a failure, kept next
+        to its screenshot. Only when an explainer is registered and wants it (Team, with the
+        licence feature), for the reasons it explains, and never longer than PAGE_READ_S."""
+        shot = err.extra.get("screenshotPath")
+        if not shot or err.reason not in explain.EXPLAINED or self.explainer is None or not self.b.is_open:
+            return
+        try:
+            if not self.explainer.wants_page():
+                return
+            from .dom.extract import extract
+            ex = await asyncio.wait_for(
+                extract(await self.b.live(), (self.b.width, self.b.height), texts=True), explain.PAGE_READ_S)
+            await asyncio.to_thread(explain.save_page, shot, explain.page_record(ex.candidates, ex.texts))
+        except Exception as e:  # noqa: BLE001 - a page that can't be read is explained from the screenshot
+            log.info("couldn't read the page for an explanation: %s", e)
 
     # ------------------------------------------------------------------ one step (spec §11.1)
 

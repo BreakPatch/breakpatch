@@ -2,8 +2,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useSystem } from '../state/system';
 import { listen } from '@tauri-apps/api/event';
-import type { Box, HttpCall, Point, Step, Viewport } from '../data/types';
-import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
+import type { Box, Explanation, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
+import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type ReportImageReply, type ReportImageRequest, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
 
 interface Wire { event: keyof EngineEvents; data: unknown }
 
@@ -53,6 +53,7 @@ export class SidecarEngine implements Engine {
   async input(i: HandInput) { await this.call('browser.input', i); }
   async handChooseFile(choice: FileChoice) { await this.call('browser.chooseFile', choice); }
   propose(at: Point, opts: { name?: boolean } = {}) { return this.call<Proposal>('record.propose', { at, ...(opts.name === false ? { name: false } : {}) }); }
+  focused() { return this.call<{ box: Box | null; name: string | null }>('record.focused'); }
   async recordCheckpoint(region: Box, frame?: number) { return (await this.call<{ step: Step }>('record.checkpoint', { region, frame })).step; }
 
   async startRun(r: RunStart) { await this.call('run.start', r); }
@@ -60,6 +61,16 @@ export class SidecarEngine implements Engine {
 
   /** Through the engine, not the webview's fetch: the release CSP blocks that, and the engine keeps to the same rules as a run. */
   tryCall(call: HttpCall, appUrl: string, secrets: Record<string, string> = {}) { return this.call<CallReply>('call.try', { call, appUrl, secrets }); }
+
+  async explain(step: Step, stepRun: StepRun, viewport: Pick<Viewport, 'width' | 'height'>) {
+    const { explanation: _cached, ...sr } = stepRun;
+    return (await this.call<{ explanation: Explanation | null }>('run.explain', { step, stepRun: sr, viewport: { width: viewport.width, height: viewport.height } })).explanation ?? null;
+  }
+
+  async reportImages(items: ReportImageRequest[], viewportWidth?: number) {
+    if (!items.length) return [];
+    return (await this.call<{ images: (ReportImageReply | null)[] }>('report.images', { items, ...(viewportWidth ? { viewportWidth } : {}) })).images ?? [];
+  }
 }
 
 function safeParse(s: string): unknown { try { return JSON.parse(s); } catch { return { message: s }; } }

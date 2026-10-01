@@ -1,6 +1,7 @@
 """Paths and timings. Every path can be overridden with an environment variable (tests do)."""
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from dataclasses import dataclass, fields, replace
@@ -27,6 +28,11 @@ def app_home() -> Path:
         return Path(env).expanduser()
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Breakpatch"
+    if sys.platform == "win32":
+        # Local, not Roaming, AppData: the browser and the model are big and belong to this PC
+        # (the shell's `$LOCALDATA` / local_data_dir() is the same folder).
+        local = os.environ.get("LOCALAPPDATA")
+        return (Path(local) if local else Path.home() / "AppData" / "Local") / "Breakpatch"
     return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "Breakpatch"
 
 
@@ -70,6 +76,31 @@ def apply_browser_env() -> None:
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers_dir())
 
 
+# BP_TIMINGS_SCALE (a Raspberry Pi or another slow machine, docs/manual.md "Raspberry Pi runner"):
+# these waits are multiplied by it. They're the ones a slow machine runs out of: a page that takes
+# longer to settle, a pre-check that needs more tries, a slower start page. The noise watch and
+# the frame spacing aren't: they're sample counts and intervals, and stretching them only makes
+# every step slower without making a check more likely to pass.
+SCALED_TIMINGS = ("settle_timeout", "pre_wait", "navigate_timeout", "start_timeout")
+MAX_TIMINGS_SCALE = 10.0
+
+
+def timings_scale(env=None) -> float:
+    """BP_TIMINGS_SCALE as a number from 1 to 10 (default 1). Anything else is ignored, with a warning."""
+    raw = (os.environ if env is None else env).get("BP_TIMINGS_SCALE", "").strip()
+    if not raw:
+        return 1.0
+    try:
+        value = float(raw)
+    except ValueError:
+        value = float("nan")
+    if not 1.0 <= value <= MAX_TIMINGS_SCALE:     # also false for nan
+        logging.getLogger("breakpatch.config").warning(
+            "BP_TIMINGS_SCALE=%r ignored: it's a number from 1 to %g", raw, MAX_TIMINGS_SCALE)
+        return 1.0
+    return value
+
+
 @dataclass(frozen=True)
 class Timings:
     """All waits in seconds. The app chooses them (spec §5.7); tests shrink them."""
@@ -95,7 +126,13 @@ class Timings:
     @classmethod
     def from_env(cls) -> "Timings":
         t = cls.fast() if os.environ.get("BP_FAST") == "1" else cls()
-        return t
+        return t.scaled(timings_scale())
+
+    def scaled(self, factor: float) -> "Timings":
+        """The waits a slow machine needs longer for (SCALED_TIMINGS), times `factor`."""
+        if factor == 1:
+            return self
+        return replace(self, **{k: getattr(self, k) * factor for k in SCALED_TIMINGS})
 
     @classmethod
     def fast(cls) -> "Timings":

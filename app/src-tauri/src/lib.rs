@@ -1,16 +1,21 @@
 //! Breakpatch desktop shell: window, engine sidecar, Keychain secrets, tests folder, file association,
 //! deep links, updater, runner-mode helpers, the Team licence check (licence.rs), the usage counts
-//! (usage.rs) and the last step of Upgrade to Team (migration.rs). The UI calls these through
+//! (usage.rs), the last step of Upgrade to Team (migration.rs), result messages (runner.rs),
+//! the issue trackers for Create issue (trackers.rs) and the workspace keys that seal test content
+//! (workspace_keys.rs). The UI calls these through
 //! `platform.ts`, `lib/usage.ts`, `engine/sidecarEngine.ts` and `lib/updates.ts`.
 
 mod engine;
 mod folder;
 mod licence;
 mod migration;
+mod results;
 mod runner;
 mod secrets;
+mod trackers;
 mod usage;
 mod workspace;
+mod workspace_keys;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -29,6 +34,9 @@ use workspace::WorkspaceInbox;
 type SecretsState = Arc<Secrets<KeyringStore>>;
 type LicenceState = Arc<Licensing<KeyringStore>>;
 type UsageState = Arc<UsageStore>;
+type TrackersState = Arc<trackers::Trackers<KeyringStore>>;
+/// Result addresses of suites in a tests folder (results.rs).
+type ResultsState = Arc<results::ResultAddresses<KeyringStore>>;
 
 // ---- Engine ----------------------------------------------------------------------------
 
@@ -111,6 +119,27 @@ async fn secrets_resolve(s: State<'_, SecretsState>, names: Vec<String>) -> Resu
     blocking(move || s.resolve(&names)).await
 }
 
+// ---- Result addresses of suites in a tests folder (Solo; results.rs) ----------------------
+
+/// A folder suite's result address, from the Keychain (None: none saved).
+#[tauri::command]
+async fn result_address_get(r: State<'_, ResultsState>, ws_key: String, suite_id: String) -> Result<Option<String>, String> {
+    let r = Arc::clone(&r);
+    blocking(move || r.get(&ws_key, &suite_id)).await
+}
+
+/// Saves a folder suite's result address in the Keychain (None: forgets it).
+#[tauri::command]
+async fn result_address_set(
+    r: State<'_, ResultsState>,
+    ws_key: String,
+    suite_id: String,
+    url: Option<String>,
+) -> Result<(), String> {
+    let r = Arc::clone(&r);
+    blocking(move || r.set(&ws_key, &suite_id, url.as_deref())).await
+}
+
 // ---- Licence (Team; "not available in this edition" without built-in keys) ----------------
 
 /// The stored licence, checked on this Mac without the network. `workspaceProjectId`: the open
@@ -150,19 +179,23 @@ async fn licence_select(
 }
 
 /// Takes a seat for `wsKey`'s connection (None: the selected one): `kind` "person" (subject: the
-/// signed-in email) or "machine" (this Mac's id). Rejects with `{code, message}`.
+/// signed-in email, or a Solo licence's purchase email) or "machine" (this Mac's id). An empty
+/// `workspaceProjectId` is a tests folder (Solo). An empty `key` uses the key stored for `keyFrom`
+/// (None: this connection). Rejects with `{code, message}`.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn licence_activate(
     l: State<'_, LicenceState>,
     host: State<'_, Arc<EngineHost>>,
     ws_key: Option<String>,
     key: String,
+    key_from: Option<String>,
     workspace_project_id: String,
     subject: Option<String>,
     kind: String,
 ) -> Result<licence::Status, Failure> {
     let l = Arc::clone(&l);
-    let out = l.activate(ActivateRequest { ws_key, key, workspace_project_id, subject, kind }).await;
+    let out = l.activate(ActivateRequest { ws_key, key, key_from, workspace_project_id, subject, kind }).await;
     sync_engine_licence(&l, &host).await;
     out
 }
@@ -390,6 +423,81 @@ async fn runner_post_result(url: String, body: Value) -> Result<u16, String> {
     runner::post_result(&url, &body).await
 }
 
+/// POSTs a result message (JSON, Slack or Teams) and answers the status with the start of the
+/// reply, for "Send a test message" and the runner's messages.
+#[tauri::command]
+async fn runner_post_message(url: String, body: Value) -> Result<runner::PostReply, String> {
+    runner::post_message(&url, &body).await
+}
+
+/// A failure screenshot's bytes (only from the engine's screenshots folder), for a result
+/// message's picture or an issue. The webview can't fetch asset URLs (connect-src).
+#[tauri::command]
+async fn screenshot_read(app: tauri::AppHandle, path: String) -> Result<tauri::ipc::Response, String> {
+    let base = screenshots_dir(&app)?;
+    blocking(move || runner::read_screenshot(&base, &path)).await.map(tauri::ipc::Response::new)
+}
+
+// ---- Issue trackers (Team, Create issue; trackers.rs) ------------------------------------
+
+/// The trackers set up on this Mac and as whom (never a token).
+#[tauri::command]
+async fn trackers_status(t: State<'_, TrackersState>) -> Result<Vec<trackers::TrackerStatus>, String> {
+    let t = Arc::clone(&t);
+    blocking(move || Ok(t.status())).await
+}
+
+/// Checks a personal token with the tracker, then keeps it in the Keychain. Jira also needs the
+/// email and the site.
+#[tauri::command]
+async fn trackers_save(
+    t: State<'_, TrackersState>,
+    provider: String,
+    token: String,
+    email: Option<String>,
+    site: Option<String>,
+) -> Result<trackers::TrackerStatus, String> {
+    let p = trackers::Provider::parse(&provider)?;
+    let t = Arc::clone(&t);
+    // The same checks as trackers::save (tested there); only the Keychain part runs in blocking.
+    let who = trackers::checked(&trackers::client()?, &trackers::Endpoints::production(), p, &token, email, site).await?;
+    blocking(move || {
+        t.put(who.clone(), &token)?;
+        Ok(who)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn trackers_forget(t: State<'_, TrackersState>, provider: String) -> Result<(), String> {
+    let p = trackers::Provider::parse(&provider)?;
+    let t = Arc::clone(&t);
+    blocking(move || t.forget(p)).await
+}
+
+/// Makes the issue with this Mac's token, attaching the failure screenshot where the tracker
+/// can take it (Jira, Linear). The token never leaves the shell.
+#[tauri::command]
+async fn trackers_create_issue(
+    app: tauri::AppHandle,
+    t: State<'_, TrackersState>,
+    provider: String,
+    request: trackers::IssueRequest,
+) -> Result<trackers::CreatedIssue, String> {
+    let p = trackers::Provider::parse(&provider)?;
+    let t = Arc::clone(&t);
+    let (token, who) = blocking(move || t.get(p)).await?;
+    let shot = match (&request.screenshot_path, p) {
+        (Some(path), trackers::Provider::Jira | trackers::Provider::Linear) => {
+            let base = screenshots_dir(&app)?;
+            let path = path.clone();
+            blocking(move || Ok(runner::read_screenshot(&base, &path).ok())).await?
+        }
+        _ => None,
+    };
+    trackers::create_issue(&trackers::client()?, &trackers::Endpoints::production(), p, &token, &who, &request, shot).await
+}
+
 // ---- App -----------------------------------------------------------------------------------
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -427,6 +535,15 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             let index = SecretsIndex::new(data_dir.join("secrets-index.json"));
             app.manage::<SecretsState>(Arc::new(Secrets::new(KeyringStore::default(), index)));
+            // Workspace keys (workspace_keys.rs): test content sealed on this Mac.
+            app.manage::<workspace_keys::commands::KeysState>(Arc::new(workspace_keys::WorkspaceKeys::new(
+                KeyringStore::new(workspace_keys::SERVICE),
+            )));
+            app.manage::<ResultsState>(Arc::new(results::ResultAddresses::new(KeyringStore::new(results::SERVICE))));
+            app.manage::<TrackersState>(Arc::new(trackers::Trackers::new(
+                KeyringStore::new(trackers::SERVICE),
+                data_dir.join("trackers.json"),
+            )));
             let machine_dir = data_dir.clone();
             let keys = KeyTable::compiled();
             let edition = if keys.is_empty() { usage::Edition::Community } else { usage::Edition::Team };
@@ -482,6 +599,14 @@ pub fn run() {
             runner_open_at_login_enabled,
             system_memory_gb,
             runner_post_result,
+            runner_post_message,
+            screenshot_read,
+            trackers_status,
+            trackers_save,
+            trackers_forget,
+            trackers_create_issue,
+            result_address_get,
+            result_address_set,
             licence_status,
             licence_select,
             licence_activate,
@@ -495,6 +620,31 @@ pub fn run() {
             screenshots_folder,
             git_repo_of,
             migration_report_save,
+            workspace_keys::commands::workspace_keys_status,
+            workspace_keys::commands::workspace_keys_create,
+            workspace_keys::commands::workspace_keys_rotate,
+            workspace_keys::commands::workspace_keys_announce,
+            workspace_keys::commands::workspace_keys_endorse,
+            workspace_keys::commands::workspace_keys_trust,
+            workspace_keys::commands::workspace_keys_signer_trusted,
+            workspace_keys::commands::workspace_keys_prove,
+            workspace_keys::commands::workspace_keys_check_proof,
+            workspace_keys::commands::workspace_keys_seal,
+            workspace_keys::commands::workspace_keys_open,
+            workspace_keys::commands::workspace_keys_device,
+            workspace_keys::commands::workspace_keys_fingerprint,
+            workspace_keys::commands::workspace_keys_grant,
+            workspace_keys::commands::workspace_keys_accept,
+            workspace_keys::commands::workspace_keys_recovery_new,
+            workspace_keys::commands::workspace_keys_recovery_kit,
+            workspace_keys::commands::workspace_keys_recovery_done,
+            workspace_keys::commands::workspace_keys_recover,
+            workspace_keys::commands::workspace_keys_machine_new,
+            workspace_keys::commands::workspace_keys_machine_use,
+            workspace_keys::commands::workspace_keys_copy_invite,
+            workspace_keys::commands::workspace_keys_import_invite,
+            workspace_keys::commands::workspace_keys_retire,
+            workspace_keys::commands::workspace_keys_forget,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Breakpatch");
@@ -548,6 +698,14 @@ mod config_tests {
             .filter(|p| p.starts_with("clipboard-manager:"))
             .collect();
         assert_eq!(clip, ["clipboard-manager:allow-read-text"]);
+    }
+
+    /// Export as PDF prints the report (lib/report/print.ts): on macOS window.print() goes through
+    /// the shell's webview print, which opens the print dialog with Save as PDF.
+    #[test]
+    fn the_ui_may_print() {
+        let caps: Value = serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        assert!(caps["permissions"].as_array().unwrap().iter().any(|p| p == "core:webview:allow-print"));
     }
 
     /// The local backend checks a test file's size before reading it (localBackend.ts).

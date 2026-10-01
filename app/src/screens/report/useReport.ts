@@ -2,7 +2,7 @@
 // it tested (shared steps resolved), and the test's other runs for Run history.
 import { useEffect, useState } from 'react';
 import type { App, Run, Step, Test } from '../../data/types';
-import { useBackend, useLive } from '../../data/hooks';
+import { useBackend, useLive, usePagedLive } from '../../data/hooks';
 import { backendGroupLoader, resolveSteps } from '../run/resolve';
 
 export function useReport(appId: string, runId: string) {
@@ -16,9 +16,11 @@ export function useReport(appId: string, runId: string) {
   }, [backend, appId, runId]);
 
   const testId = fetched?.testId ?? '';
-  const runs = useLive<Run[]>((b, l) => (testId ? b.testRuns(appId, testId, l) : () => {}), [appId, testId]).data;
+  const history = usePagedLive<Run>((b, l, limit) => (testId ? b.testRuns(appId, testId, l, limit) : () => {}), [appId, testId]);
+  const runs = history.data;
   const test = useLive<Test | null>((b, l) => (testId ? b.test(appId, testId, l) : () => {}), [appId, testId]).data;
   const apps = useLive<App[]>((b, l) => b.apps(l), []).data;
+  // The live list's copy (it has what was added to the run later, on any Mac: Backend.runNotes), else the one read by id.
   const run = runs?.find(r => r.id === runId) ?? fetched;
 
   const [steps, setSteps] = useState<Step[] | null>(null);
@@ -37,5 +39,5 @@ export function useReport(appId: string, runId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backend, appId, testId, version, current, test === undefined]);
 
-  return { run, runs, test, steps, app: apps?.find(a => a.id === appId), missing: fetched === null };
+  return { run, runs, moreRuns: history.hasMore ? history.more : undefined, test, steps, app: apps?.find(a => a.id === appId), missing: fetched === null };
 }

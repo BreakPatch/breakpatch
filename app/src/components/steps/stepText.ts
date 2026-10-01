@@ -26,8 +26,8 @@ export function stepIcon(s: Pick<Step, 'action' | 'nav' | 'secretRef'>): string 
   return actionInfo(s.action)?.icon ?? 'radio_button_checked';
 }
 
-/** A step whose check covered nothing (it compares nothing): shown on the step, in amber. */
-export const UNCHECKED_NOTE = "This step's check covers nothing. Re-record it.";
+export { UNCHECKED_NOTE } from '../../lib/runWords';
+import { UNCHECKED_NOTE } from '../../lib/runWords';
 
 /**
  * What a closed row shows of a long note, so it fits on one line (DES-04): "Slow: 5.2 s waiting

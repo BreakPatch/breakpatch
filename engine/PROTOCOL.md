@@ -33,7 +33,8 @@ Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`,
   `record.locate` can return `null` (also for an AI assistant box over more than 60% of the page:
   the model boxes the whole screen when what was described isn't there).
 - When stdin closes, requests still in flight get 3 s to answer, the rest are answered with
-  `stopped`, Chromium is closed and the process exits 0. SIGTERM and SIGINT do the same.
+  `stopped`, Chromium is closed and the process exits 0. SIGTERM and SIGINT do the same, and so
+  does `engine.quit` (for Windows, where the shell can't send a signal or close only stdin).
 
 ## Methods
 
@@ -46,6 +47,7 @@ Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`,
 | `setup.downloadModel` | `{ repo, revision }` | `{ path, sizeBytes }` — resumable; emits `setup.progress` with `task: "model"`. Only a model in the engine's table (below), at its revision; anything else is `bad_request` before anything is fetched |
 | `setup.pause` | `{ task }` | `{}` — pauses a download; calling the start method again resumes |
 | `setup.removeModel` | – | `{}` — `busy` while a run is going |
+| `engine.quit` | – | `{}` — then stops as when stdin closes: in-flight requests get 3 s, Chromium is closed, exit 0 |
 
 `setup.progress` data: `{ task, state: "busy"|"paused"|"done"|"failed", doneBytes?, totalBytes?, etaSeconds?, message? }`.
 
@@ -76,7 +78,7 @@ Until the owner pins the models (the `TODO(owner)` in models.py) the table holds
 LFS hashes, still without code files; `scripts/build-release.sh --release` refuses to build.
 
 `edition` is `"team"` when the Breakpatch Team engine (`breakpatch_team_engine`) is installed and
-registered itself through `plugins.py` (healing on), otherwise `"community"`. The app compares it
+registered itself through `plugins.py` (healing and `run.explain` on), otherwise `"community"`. The app compares it
 with its own edition and warns in Settings → About when they differ.
 
 ### Licence
@@ -104,7 +106,8 @@ message.
 | `none` | no token |
 | `unavailable` | Community (no Team engine), or a Team engine without keys built in (a source checkout) |
 
-`features` is the token's list while `active` or `grace`, else `[]`. Healing needs `autoFix` in it.
+`features` is the token's list while `active` or `grace`, else `[]`. Healing needs `autoFix` in it;
+`run.explain` (and the page read after a failure) needs `explain`.
 The engine doesn't compare `workspaceProjectId` with the open workspace (it doesn't know it); the
 app does that for its own screens.
 
@@ -158,9 +161,11 @@ The browser methods answer `busy` during a run.
 |---|---|---|
 | `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
 | `record.locate` | `{ description, absence?, near? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below) |
-| `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell |
+| `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell. An empty sentence is `bad_request`; only its first 300 characters are read |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
 | `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
+| `record.focused` | `{}` | `{ box, name }` — the field that has the keyboard focus (its label, aria-label, placeholder or name; nulls when nothing that takes typing has it), for the confirm bar of a described typing step; nothing is done to the page |
+| `record.chooseFile` | `{ sample }` \| `{ file, path }` \| `{ cancel: true }` | `{}` — the answer to a `record.fileChooser` event: the file for a click that opened the page's file picker (below) |
 
 Nothing the user does on the live view reaches the page by itself: the app turns a click, drag or
 scroll into a proposed step ("Click Next button?"), using `record.propose` for the element's box
@@ -293,8 +298,10 @@ then uses the AI assistant when that isn't enough (`engine/src/breakpatch_engine
 action from the action the user has chosen: the sentence decides it, with what to act on and how
 many times ("add 2 people": click the "+" next to "People", twice). The app reads the sentence
 itself first (`app/src/screens/recorder/intent.ts`: verbs such as click, type … into …, scroll
-up/down/to, wait N seconds, hover, check that; "N times" and number words; "add/increase N
-<thing>" and "remove/decrease N <thing>" as the "+" or "−" next to it). Only when the sentence
+up/down/to, wait N seconds, go to <address>, hover, check that; "N times" and number words;
+"add/increase N <thing>" and "remove/decrease N <thing>" as the "+" or "−" next to it, while "add a
+new item" stays a click; a sentence asking for what a step can't do yet, such as "wait for the
+spinner to go away", gets a plain message and nothing is looked for). Only when the sentence
 starts with words it can't place does it send `record.intent`: the AI assistant reads the
 sentence with a screenshot of the page and answers `action` (`click`, `doubleClick`, `rightClick`,
 `longClick`, `hover`, `write`, `scroll`, `waitFor` or `checkpoint`), `repeat` (1 to 20), and
@@ -307,14 +314,16 @@ repeat, that many steps one after another) through `record.point` only when the 
 **The "+" or "−" next to something (`record.locate` `near`).** `near: { control: "increase", of:
 "People" }` finds a stepper's control from the page's structure (`dom/near.py`) instead of S0,
 which folds punctuation away and can't tell "+" from "−". Controls that increase are named,
-labelled or read "+" (or an arrow up), a single word such as "plus", "add", "increase" or "more",
+labelled or read "+" (or an arrow up), on its own or before one word at most ("+ New project" and
+"-20% off" aren't steppers), a single word such as "plus", "add", "increase" or "more",
 or a short name starting with "add" or "increase" that names the thing ("Add adult"); those that
 decrease, the same with "−", "-", "minus", "remove", "decrease", "less". The one whose own name
 names the thing comes first; else the one nearest (edge to edge, a line apart counting twice) to
 a control or a short text on screen that matches `of`, within 320 px. When there is none, or the
 page is Visual, the AI assistant looks for `description` as usual (path `"fast-visual"` or
 `"visual"`), so the app sends a plain description too (`the "+" button next to "People"`).
-Without `near`, `record.locate` is unchanged.
+Without `near`, `record.locate` is unchanged, and the short text runs on screen aren't collected
+at all (they're read only for a locate with `near`).
 
 ### Replay
 | Method | Params | Result |
@@ -322,6 +331,8 @@ Without `near`, `record.locate` is unchanged.
 | `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix, allowSystemDifferences? }, secrets: {NAME: Secret}, runner?, recordedOn?: RecordedOn }` | `{}` — returns at once, then events |
 | `run.stop` | `{ runId }` | `{}` — stops after the current step |
 | `call.try` | `{ call: Call, appUrl, secrets? }` | `{ ok, status?, ms?, error?, message? }` — "Try it": one request under the same rules as a run |
+| `run.explain` | `{ step: Step, stepRun: StepRun, viewport? }` | `{ explanation: Explanation \| null }` — "Why did this fail?" for one failed step of a finished run (Breakpatch Team, see below) |
+| `report.images` | `{ items: [{ path, size: "full"\|"small" }], viewportWidth? }` | `{ images: [{ src, width, height, bytes } \| null] }` — screenshots for an exported report, as WebP `data:` URIs (see Export a report) |
 
 Each step's `run.step` events and its entry in `run.ended` `steps` carry `timings` `{ preMs, actionMs,
 settleMs, postMs, settled, preTries, postTries }`: where its time went. Settling waits until three
@@ -394,6 +405,62 @@ Loops and shared steps are nested, as stored (spec §12.1): a `loop` step carrie
 `count` and child `steps`; a `group` step carries `groupId`, `groupVersion` and the child
 `steps` the UI resolved from that version before starting. The engine runs children in order.
 `{i}` in `text` (and `url`) is the 1-based repeat number; `{time}` is HH:MM and `{date}` is YYYY-MM-DD at run time.
+
+**Why did this fail? (`run.explain`).** Breakpatch Team explains a failed step in plain words,
+when the report asks (roadmap #7). Nothing about it happens during the steps of a run, and
+`run.step` and `run.ended` are unchanged: the report asks after the run, for the step the person
+is looking at.
+
+- Params: the step as the run tested it (`target`, `at`/`from`, `action`, `pre`, `post`…), its
+  `StepRun` from `run.ended.steps` (`result: "failed"`, `reason`, `screenshotPath`, and
+  `preDistance`, `postDistance`, `timings`, `oldAt`/`newAt` when it has them) and the test's
+  `viewport` (a Retina screenshot is scaled to it).
+- Only `targetNotFound`, `healFailed`, `noChange`, `unexpectedScreen` and `timeout` are explained;
+  other reasons are `bad_request` (they say it all already). `screenshotPath` must be a PNG inside
+  the engine's screenshots folder (`BP_SCREENSHOTS_DIR`), else `not_found` "The screenshot of this
+  failure isn't on this Mac…" (a run from another Mac, or a folder cleared since).
+- `Explanation`: `{ summary, cause, suggestion }`. `summary` is one or two plain sentences, at most
+  300 characters ("The Save button now reads “Save changes”."). `cause` is `moved`,
+  `textChanged`, `pageChanged`, `slowLoad`, `errorPage` or `realBug` ("looks like a real bug");
+  `suggestion` is `rerecord`, `acceptChange`, `raiseWait` or `reportBug`. Both lists may grow:
+  treat an unknown value like a missing one.
+- The app keeps an answer on the saved run, as the failed `StepRun`'s `explanation` (the same
+  object), so the report, result messages and new issues can show it without asking again.
+- `explanation: null`: it couldn't tell, or took longer than 10 s. Asking again tries again. An
+  answer is cached per failure screenshot while the engine runs, so asking again is instant. An
+  answer that took too long isn't cut short (the AI assistant's work can't be): it finishes in the
+  background, and a `run.start` sent meanwhile starts its steps once it has (30 s at most), so
+  the run doesn't wait on the AI assistant mid-run. `run.start` still answers at once.
+- `not_ready`: Community (no explainer registered), no licence with the `explain` feature (see
+  Licence), or no AI assistant downloaded. `busy` while a run is going: its own use of the AI
+  assistant (healing, a step's note) is never slowed.
+
+How it's worked out (the Team engine): the sentence always comes from templates; the facts come
+from, fastest first, the page's own structure (the fast locator's controls and short texts:
+what is at the step's old spot now, whether its `target` is on screen and where, an error page,
+a dialog over it, a page still loading) and otherwise the AI assistant on the failure screenshot
+(`describe` at the old spot, `locate` of the target). A target found where it was is never said
+to have moved or gone.
+
+The page read: only when the Team engine's explainer is registered **and** the licence has
+`explain`, the runner reads the page's controls once after a step fails with one of the reasons
+above, capped at 0.75 s, and keeps them next to the failure screenshot as
+`<screenshot>.page.json` (roles, names, short texts and boxes; no attributes, no passwords). In
+Community, or without the feature, nothing is read or written and a run is exactly as before.
+
+### Export a report
+
+The app's Export (issue #43) saves a run's report, or a suite run's, as one self-contained HTML file
+(which also prints to PDF) or as JUnit XML. The files are made from `breakpatch_engine/report/`:
+`template.html` (the one template), filled by the app (`app/src/lib/report/`) and by
+`breakpatch-ci --junit/--html` in the same way, checked by both against the golden files in
+`engine/tests/fixtures/report/`.
+
+`report.images` gives the screenshots for it: each item's `path` is a `screenshotPath` from
+`run.ended.steps`; `"full"` is the test's `viewportWidth` wide (at most 1600, a Retina screenshot
+scaled down), `"small"` 480 wide, both WebP (quality 72 and 60). Like `run.explain`, only PNGs inside
+the engine's screenshots folder are read: any other path, or one that can't be read, is `null`. At
+most 200 items; more is `bad_request`. Community and Team alike; it doesn't wait for a run.
 
 ### Where a test was recorded
 
@@ -482,13 +549,14 @@ with `error` one of `invalid`, `refused`, `redirect`, `secret`, `unreachable`, `
 
 | Variable | Default | Use |
 |---|---|---|
-| `BP_HOME` | `~/Library/Application Support/Breakpatch` (Linux: `~/.local/share/Breakpatch`) | base folder |
+| `BP_HOME` | `~/Library/Application Support/Breakpatch` (Linux: `~/.local/share/Breakpatch`; Windows: `%LOCALAPPDATA%\Breakpatch`) | base folder |
 | `BP_MODELS_DIR` | `$BP_HOME/models` | model downloads |
 | `BP_BROWSERS_PATH` | `$PLAYWRIGHT_BROWSERS_PATH`, else `$BP_HOME/browsers` | Chromium |
 | `BP_SCREENSHOTS_DIR` | `$BP_HOME/screenshots` | failure/heal screenshots (`<runId>/<n>-<stepId>.png`) |
 | `BP_CHROMIUM` | – | explicit Chromium binary (development, CI images) |
 | `BP_HEADED` | – | `1` shows the browser window |
 | `BP_FAST` | – | `1` shortens every wait (tests) |
+| `BP_TIMINGS_SCALE` | `1` | a slow machine (a Raspberry Pi): multiplies the settle, pre-check, navigation and start-page waits by this number, from 1 to 10; the noise watch isn't stretched |
 | `BP_LOG` | `INFO` | log level (stderr) |
 | `HF_ENDPOINT`, `HF_TOKEN` | Hugging Face defaults | model download; development only, ignored by a release build (a packaged sidecar) |
 | `BP_NO_SANDBOX` | – | `1` turns Chromium's sandbox off; development only |
@@ -503,6 +571,9 @@ read or its shared steps can't be found, 3 = no usable licence. Like the app, it
 `group` step's children before the run (the pinned version or the latest, nested groups too), from
 `apps/<appId>/shared/` next to the test's `tests/` folder. This engine's own command line is `serve` (the sidecar) and `info`;
 `breakpatch-engine run` exits 2 and points at `breakpatch-ci`.
+`--junit FILE` and `--html FILE` (any `run`) also write the result as JUnit XML and as the app's HTML
+report (see Export a report); `--html-no-screenshots` leaves the screenshots out of it. The JSON result
+then has `report: { junit?, html?, junitError?, htmlError? }`.
 
 **From the workspace.** `breakpatch-ci run --workspace FILE.bpworkspace --suite <id|name>` (or
 `--test <testId|appId/testId>`, `--version latest|released|N`, `--label TEXT`) reads the tests

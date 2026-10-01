@@ -517,6 +517,23 @@ class BrowserSession:
                 except Exception:  # noqa: BLE001
                     pass
 
+    async def focused(self) -> dict:
+        """The field that has the keyboard focus now, for "Write … into Email?" before a step is
+        recorded: its box (viewport px) and what it's called (its label, aria-label, placeholder or
+        name). Nulls when nothing that takes typing has the focus. Only a hint for the person
+        recording: nothing is typed or decided by it."""
+        page = await self.live()
+        try:
+            got = await page.evaluate(_FOCUSED_JS)
+        except Exception as e:  # noqa: BLE001
+            log.debug("couldn't read the focused field: %s", e)
+            got = None
+        if not isinstance(got, dict) or not isinstance(got.get("box"), list) or len(got["box"]) != 4:
+            return {"box": None, "name": None}
+        box = imaging.clamp_box([int(round(float(v))) for v in got["box"]], self.width, self.height)
+        name = got.get("name") if isinstance(got.get("name"), str) and got["name"].strip() else None
+        return {"box": box if imaging.box_area(box) else None, "name": name[:80] if name else None}
+
     async def element_name(self, at: Sequence[float]) -> dict | None:
         """What the page itself calls the element at `at` (its accessible name and role, read through
         the DevTools protocol), e.g. {"name": "Sign in", "role": "button"}; None when it has none."""
@@ -827,3 +844,22 @@ async def _node_at(cdp, at: Sequence[float]) -> dict:
     x = float(at[0]) + float(view.get("pageX") or 0)
     y = float(at[1]) + float(view.get("pageY") or 0)
     return await cdp.send("DOM.getNodeForLocation", {"x": int(x), "y": int(y), "includeUserAgentShadowDOM": False})
+
+# What has the keyboard focus (BrowserSession.focused): a field that takes typing, its box and name.
+_FOCUSED_JS = r"""() => {
+  const el = document.activeElement;
+  if (!el || el === document.body || el === document.documentElement) return null;
+  const tag = el.tagName.toLowerCase();
+  const type = (el.getAttribute('type') || '').toLowerCase();
+  const noText = ['button', 'submit', 'reset', 'checkbox', 'radio', 'file', 'image', 'range', 'color', 'hidden'];
+  const typing = el.isContentEditable || tag === 'textarea' || tag === 'iframe' || (tag === 'input' && !noText.includes(type));
+  if (!typing) return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  const text = v => (v || '').replace(/\s+/g, ' ').trim();
+  const forId = el.id ? document.querySelector('label[for="' + CSS.escape(el.id) + '"]') : null;
+  const wrap = el.closest('label');
+  const name = tag === 'iframe' ? '' : text(el.getAttribute('aria-label')) || text(forId && forId.textContent)
+    || text(wrap && wrap.textContent) || text(el.getAttribute('placeholder')) || text(el.getAttribute('name'));
+  return { box: [r.left, r.top, r.right, r.bottom], name };
+}"""

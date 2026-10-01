@@ -1,10 +1,11 @@
 // In-memory backend for development, the browser preview and tests.
 // Behaves like the Firebase backend: live subscriptions, immutable versions, audit fields.
 import { edition } from '../../edition';
-import { AuthError, cleanDetails, startUrlNote, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
+import { AuthError, cleanDetails, detailsDiff, startUrlNote, upTo, type Backend, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type RunNotes, type TestDetails, type TrackerStore, type Unsubscribe } from '../backend';
 import type {
-  App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Workspace,
+  App, Explanation, Member, Person, QueueItem, RecordedOn, Role, Run, RunIssue, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Workspace,
 } from '../types';
+import { applyRunnerPreview, runnerPreviewFlag, type RunnerPreview } from './preview';
 import { communityDemo, people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
 
 export const DEMO_WORKSPACE: Workspace = {
@@ -104,7 +105,7 @@ export class DemoBackend implements Backend {
     this.mutate(s => { s.tests.push(test); s.versions[`${n.appId}/${test.id}`] = []; });
     return this.wait(test);
   }
-  versions(appId: string, testId: string, l: Listener<Version[]>) { return this.watch(() => [...(this.st.versions[`${appId}/${testId}`] ?? [])].reverse(), l); }
+  versions(appId: string, testId: string, l: Listener<Version[]>, limit?: Limit) { return this.watch(() => upTo([...(this.st.versions[`${appId}/${testId}`] ?? [])].reverse(), limit), l); }
   async version(appId: string, testId: string, n: number) { return this.wait(this.st.versions[`${appId}/${testId}`]?.find(v => v.number === n) ?? null); }
   async saveTest(appId: string, testId: string, steps: Step[], note?: string, recordedOn?: RecordedOn) {
     const me = this.me(); const key = `${appId}/${testId}`;
@@ -124,8 +125,8 @@ export class DemoBackend implements Backend {
     const t = this.st.tests.find(x => x.appId === appId && x.id === testId);
     if (!t) throw new Error('This test was deleted.');
     const d = cleanDetails(details);
-    const moved = d.startUrl !== t.startUrl;
-    if (!moved && d.name === t.name && d.description === (t.description || undefined)) return this.wait(null);
+    const { moved, changed } = detailsDiff(t, d);
+    if (!changed) return this.wait(null);
     this.patchTest(appId, testId, { name: d.name, description: d.description, startUrl: d.startUrl });
     const last = moved && t.currentVersion > 0 ? this.st.versions[`${appId}/${testId}`]?.at(-1) : undefined;
     // The same steps as a new version that starts at the new address, like the Firebase backend.
@@ -147,7 +148,7 @@ export class DemoBackend implements Backend {
 
   // ---- shared steps ----
   stepGroups(appId: string, l: Listener<StepGroup[]>) { return this.watch(() => this.st.groups.filter(g => g.appId === appId), l); }
-  groupVersions(appId: string, groupId: string, l: Listener<Version[]>) { return this.watch(() => [...(this.st.groupVersions[`${appId}/${groupId}`] ?? [])].reverse(), l); }
+  groupVersions(appId: string, groupId: string, l: Listener<Version[]>, limit?: Limit) { return this.watch(() => upTo([...(this.st.groupVersions[`${appId}/${groupId}`] ?? [])].reverse(), limit), l); }
   async groupVersion(appId: string, groupId: string, n: number) { return this.wait(this.st.groupVersions[`${appId}/${groupId}`]?.find(v => v.number === n) ?? null); }
   async createGroup(appId: string, name: string, description: string, steps: Step[]) {
     const me = this.me(); const now = Date.now();
@@ -167,8 +168,8 @@ export class DemoBackend implements Backend {
   }
 
   // ---- runs ----
-  runs(appId: string, l: Listener<Run[]>) { return this.watch(() => this.st.runs.filter(r => r.appId === appId).sort((a, b) => b.startedAt - a.startedAt), l); }
-  testRuns(appId: string, testId: string, l: Listener<Run[]>) { return this.watch(() => this.st.runs.filter(r => r.appId === appId && r.testId === testId).sort((a, b) => b.startedAt - a.startedAt), l); }
+  runs(appId: string, l: Listener<Run[]>, limit?: Limit) { return this.watch(() => upTo(this.st.runs.filter(r => r.appId === appId).sort((a, b) => b.startedAt - a.startedAt), limit), l); }
+  testRuns(appId: string, testId: string, l: Listener<Run[]>, limit?: Limit) { return this.watch(() => upTo(this.st.runs.filter(r => r.appId === appId && r.testId === testId).sort((a, b) => b.startedAt - a.startedAt), limit), l); }
   async run(appId: string, runId: string) { return this.wait(this.st.runs.find(r => r.appId === appId && r.id === runId) ?? null); }
   async addRun(r: Omit<Run, 'id'>) {
     const run: Run = { ...r, id: newId('run') };
@@ -179,25 +180,61 @@ export class DemoBackend implements Backend {
     });
     return this.wait(run);
   }
+  /** Explanations and issues are kept on the sample runs themselves (in memory). */
+  readonly runNotes: RunNotes = {
+    saveExplanation: async (appId, runId, stepId, e: Explanation) => {
+      this.mutate(s => {
+        s.runs = s.runs.map(r => r.appId === appId && r.id === runId
+          ? { ...r, steps: r.steps.map(sr => sr.stepId === stepId && sr.result === 'failed' ? { ...sr, explanation: e } : sr) } : r);
+      });
+    },
+    setIssue: async (appId, runId, issue: RunIssue) => {
+      this.mutate(s => { s.runs = s.runs.map(r => (r.appId === appId && r.id === runId ? { ...r, issue } : r)); });
+    },
+  };
 
   // ---- suites and runner ----
   suites(l: Listener<Suite[]>) { return this.watch(() => [...this.st.suites], l); }
   async saveSuite(id: string | null, n: NewSuite) {
     const me = this.me(); const now = Date.now();
+    // The address of a result message is kept apart from the suite, as in a workspace.
+    const { notify, ...rest } = n;
+    const pub = notify ? { kind: notify.kind, when: notify.when, ...(notify.screenshot ? { screenshot: true } : {}) } : undefined;
     let out: Suite;
     if (id) {
-      out = { ...this.st.suites.find(x => x.id === id)!, ...n, updatedBy: me, updatedAt: now };
+      const before = this.st.suites.find(x => x.id === id)!;
+      out = { ...before, ...rest, updatedBy: me, updatedAt: now };
+      if (notify === null) delete out.notify; else if (pub) out.notify = pub;
       this.mutate(s => { s.suites = s.suites.map(x => x.id === id ? out : x); });
     } else {
-      out = { id: slug(n.name) + '-' + Math.random().toString(16).slice(2, 6), ...n, createdBy: me, createdAt: now, updatedBy: me, updatedAt: now };
+      out = { id: slug(n.name) + '-' + Math.random().toString(16).slice(2, 6), ...rest, ...(pub ? { notify: pub } : {}), createdBy: me, createdAt: now, updatedBy: me, updatedAt: now };
       this.mutate(s => { s.suites.push(out); });
     }
+    if (notify === null) this.addresses.delete(out.id);
+    else if (notify?.url) this.addresses.set(out.id, notify.url);
     return this.wait(out);
   }
+  private addresses = new Map<string, string>();
+  /** Result messages: the addresses in memory, and a test message is never really posted (the sample workspace). */
+  readonly notify: NotifyStore = {
+    address: async suiteId => this.addresses.get(suiteId) ?? this.st.suites.find(x => x.id === suiteId)?.resultUrl ?? null,
+    post: () => new Promise(res => setTimeout(() => res({ ok: true, status: 200 }), 700)),
+  };
+  /** Issue trackers: the sample workspace's settings, in memory (tokens are the shell's, on a Mac). */
+  private trackerSettings: TrackerSettings = { github: { repo: 'acme/web', labels: ['bug'] } };
+  private trackerListeners = new Set<Listener<TrackerSettings>>();
+  readonly trackers: TrackerStore = {
+    settings: l => { this.trackerListeners.add(l); l(this.trackerSettings); return () => { this.trackerListeners.delete(l); }; },
+    save: async t => { this.trackerSettings = t; this.trackerListeners.forEach(l => l(t)); },
+  };
   async deleteSuite(id: string) { this.mutate(s => { s.suites = s.suites.filter(x => x.id !== id); }); }
-  runner(l: Listener<RunnerStatus | null>) { return this.watch(() => this.st.runner && { ...this.st.runner, lastSeen: this.st.runner.status === 'paused' ? this.st.runner.lastSeen : Date.now() }, l); }
+  runner(l: Listener<RunnerStatus | null>) {
+    return this.watch(() => applyRunnerPreview(this.st.runner && { ...this.st.runner, lastSeen: this.st.runner.status === 'paused' ? this.st.runner.lastSeen : Date.now() }, this.runnerPreview()), l);
+  }
+  /** The address's ?runner= preview (preview.ts), for screenshots of the runner's states. */
+  runnerPreview(): RunnerPreview | null { return runnerPreviewFlag(); }
   queue(l: Listener<QueueItem[]>) { return this.watch(() => [...this.st.queue], l); }
-  suiteRuns(l: Listener<SuiteRun[]>) { return this.watch(() => [...this.st.suiteRuns], l); }
+  suiteRuns(l: Listener<SuiteRun[]>, limit?: Limit) { return this.watch(() => upTo([...this.st.suiteRuns], limit), l); }
   async requestSuiteRun(suiteId: string, note?: string) {
     const suite = this.st.suites.find(x => x.id === suiteId);
     if (!suite) throw new Error('Suite not found');

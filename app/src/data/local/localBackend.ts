@@ -12,10 +12,11 @@
 // The text of every file as last read or written is the source of truth; the model is parsed
 // from it. Saving the same thing writes nothing; outside edits (a `git pull`) are picked up on
 // window focus, through the storage's watcher, or by a light poll.
-import { cleanDetails, type Backend, type Listener, type NewApp, type NewSuite, type NewTest, type TestDetails, type Unsubscribe } from '../backend';
+import { cleanDetails, detailsDiff, upTo, type Backend, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type TestDetails, type Unsubscribe } from '../backend';
 import type {
-  App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, Version, Viewport,
+  App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
 } from '../types';
+import { folderConnectionId } from '../../state/connectionIds';
 import { FORMAT, SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
 
@@ -67,8 +68,19 @@ export interface FolderSnapshot {
   files: Record<string, string>;
 }
 
+/**
+ * Where a folder suite's result address is kept, apart from the folder (the Team edition's Solo
+ * plan: the Keychain, platform.ts resultAddresses). Community has none: it never saves one.
+ */
+export interface AddressStore {
+  get(wsKey: string, suiteId: string): Promise<string | null>;
+  set(wsKey: string, suiteId: string, url: string | null): Promise<void>;
+}
+
 export interface LocalOptions {
   storage: FolderStorage;
+  /** The edition's address store (edition.resultAddresses); none: addresses aren't kept. */
+  addresses?: AddressStore;
   /** The folder, absolute. */
   path: string;
   person: Person;
@@ -102,6 +114,25 @@ export function recordedOnIn(v: unknown): RecordedOn | undefined {
   const out: RecordedOn = { os: v.os.slice(0, 40) };
   for (const k of ['osVersion', 'arch', 'chromium'] as const) if (typeof v[k] === 'string' && v[k]) out[k] = (v[k] as string).slice(0, 40);
   return out;
+}
+
+const WEEKDAYS: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+
+/**
+ * A suite file's `schedule` (the Team edition's Solo plan runs it on this Mac): the days and a
+ * 24-hour time, else none. Community never writes one.
+ */
+export function scheduleIn(v: unknown): Suite['schedule'] {
+  if (!isObj(v) || !Array.isArray(v.days) || typeof v.time !== 'string' || !/^\d{1,2}:\d{2}$/.test(v.time)) return null;
+  const days = WEEKDAYS.filter(d => (v.days as unknown[]).includes(d));
+  return days.length ? { days, time: v.time } : null;
+}
+
+/** A suite file's `notify`: where its result goes and when, never the address (that's in the Keychain). */
+export function notifyIn(v: unknown): SuiteNotify | undefined {
+  if (!isObj(v) || !['webhook', 'slack', 'teams'].includes(v.kind as string)) return undefined;
+  const when = ['every', 'failures', 'changes'].includes(v.when as string) ? v.when as SuiteNotify['when'] : 'every';
+  return { kind: v.kind as SuiteNotify['kind'], when, ...(v.screenshot === true ? { screenshot: true } : {}) };
 }
 
 /** Steps as saved: no UI-only markers, no undefined fields, children cleaned too. */
@@ -167,7 +198,10 @@ export class LocalBackend implements Backend {
   private stops: (() => void)[] = [];
   private closed = false;
 
+  private readonly addresses: AddressStore | null;
+
   private constructor(o: LocalOptions) {
+    this.addresses = o.addresses ?? null;
     this.st = o.storage; this.root = o.path.replace(/\/+$/, '') || '/'; this.me = o.person;
     this.local = { path: this.root };
   }
@@ -327,7 +361,8 @@ export class LocalBackend implements Backend {
       if (s) {
         const v = parse(rel); if (!v) continue;
         if (typeof v.name !== 'string' || !Array.isArray(v.tests)) { bad(rel, 'not a suite, skipped'); continue; }
-        suites.set(s[1], { id: s[1], name: v.name, tests: (v.tests as Suite['tests']).filter(t => isObj(t) && typeof t.appId === 'string' && typeof t.testId === 'string'), schedule: null, resultUrl: typeof v.resultUrl === 'string' ? v.resultUrl : undefined, createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) });
+        const notify = notifyIn(v.notify);
+        suites.set(s[1], { id: s[1], name: v.name, tests: (v.tests as Suite['tests']).filter(t => isObj(t) && typeof t.appId === 'string' && typeof t.testId === 'string'), schedule: scheduleIn(v.schedule), ...(notify ? { notify } : {}), resultUrl: typeof v.resultUrl === 'string' ? v.resultUrl : undefined, createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) });
       }
     }
 
@@ -521,8 +556,8 @@ export class LocalBackend implements Backend {
     return this.write(async (): Promise<Version | null> => {
       const r = this.testRec(appId, testId);
       const d = cleanDetails(details);
-      const moved = d.startUrl !== r.test.startUrl;
-      if (!moved && d.name === r.test.name && d.description === (r.test.description || undefined)) return null;
+      const { moved, changed } = detailsDiff(r.test, d);
+      if (!changed) return null;
       const bump = moved && r.test.currentVersion > 0;
       const next: TestRec = { ...r, test: { ...r.test, name: d.name, description: d.description, startUrl: d.startUrl,
         currentVersion: r.test.currentVersion + (bump ? 1 : 0), updatedBy: this.me, updatedAt: Date.now() } };
@@ -586,10 +621,10 @@ export class LocalBackend implements Backend {
   }
 
   // ---- runs: the last one per test ----
-  runs(appId: string, l: Listener<Run[]>) {
+  runs(appId: string, l: Listener<Run[]>, limit?: Limit) {
     return this.watch(() => {
       const a = this.model.apps.get(appId);
-      return a ? [...a.runs].map(([t, r]) => this.runOut(appId, t, r)).sort((x, y) => y.startedAt - x.startedAt) : [];
+      return a ? upTo([...a.runs].map(([t, r]) => this.runOut(appId, t, r)).sort((x, y) => y.startedAt - x.startedAt), limit) : [];
     }, l);
   }
   testRuns(appId: string, testId: string, l: Listener<Run[]>) {
@@ -621,15 +656,30 @@ export class LocalBackend implements Backend {
       if (id && !old) throw new Error('Suite not found');
       const sid = id ?? uniqueSlug(n.name, x => this.model.suites.has(x));
       const rel = `suites/${sid}.json`;
-      const file = { name: n.name, tests: n.tests.map(t => ({ appId: t.appId, testId: t.testId })), resultUrl: n.resultUrl || undefined, createdBy: old?.createdBy ?? this.me, createdAt: old?.createdAt ?? now };
+      // Schedule and where the result goes: the Team edition's Solo plan on this Mac. The address
+      // itself goes in the edition's address store (the Keychain), never in the folder.
+      const schedule = scheduleIn(n.schedule);
+      const notify = n.notify === null ? undefined : n.notify ? notifyIn(n.notify) : old?.notify;
+      if (this.addresses && n.notify !== undefined && (n.notify === null || n.notify.url)) await this.addresses.set(this.connectionId, sid, n.notify?.url ?? null);
+      const file = { name: n.name, tests: n.tests.map(t => ({ appId: t.appId, testId: t.testId })), ...(schedule ? { schedule } : {}), ...(notify ? { notify } : {}), resultUrl: n.resultUrl || undefined, createdBy: old?.createdBy ?? this.me, createdAt: old?.createdAt ?? now };
       // Saved again unchanged: keep the file (and its updatedAt) as it is.
       const same = !!old && this.texts.get(rel) === toFileText({ ...file, updatedBy: old.updatedBy, updatedAt: old.updatedAt });
       const stamped = same ? { ...file, updatedBy: old!.updatedBy, updatedAt: old!.updatedAt } : { ...file, updatedBy: this.me, updatedAt: now };
       if (!same) await this.put(rel, stamped);
-      return clone({ ...stamped, id: sid, schedule: null, lastRun: this.suiteLast.get(sid) });
+      return clone({ ...stamped, id: sid, schedule, lastRun: this.suiteLast.get(sid) });
     });
   }
-  deleteSuite(id: string) { return this.write(async () => { await this.drop(`suites/${id}.json`); this.suiteLast.delete(id); }); }
+  deleteSuite(id: string) {
+    return this.write(async () => {
+      const had = !!this.model.suites.get(id)?.notify;
+      await this.drop(`suites/${id}.json`); this.suiteLast.delete(id);
+      if (had && this.addresses) await this.addresses.set(this.connectionId, id, null).catch(() => {});
+    });
+  }
+  /** Where a suite's result goes: its address, from this Mac's Keychain (the folder never holds it). */
+  readonly notify: NotifyStore = { address: async suiteId => (this.addresses ? this.addresses.get(this.connectionId, suiteId) : null) };
+  /** This folder's connection id (state/connectionIds.ts), which names its Keychain entries. */
+  private get connectionId() { return folderConnectionId(this.root); }
   /** No suite run history in Community: the result shows on the suite until the app closes. */
   async addSuiteRun(r: Omit<SuiteRun, 'id'>): Promise<SuiteRun> {
     this.suiteLast.set(r.suiteId, { result: r.result, at: r.startedAt, by: r.requestedBy });

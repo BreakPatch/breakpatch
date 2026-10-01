@@ -231,3 +231,22 @@ async def test_overlapping_reads_on_one_extractor_don_t_mix():
     finally:
         await b.close()
         stop()
+
+
+async def test_short_text_runs_only_when_asked_for():
+    """near.py's short text runs cost a pass over every element: only a locate with `near` asks."""
+    base, stop = domsite.serve()
+    b = BrowserSession(Timings.fast())
+    try:
+        await b.open(base + "fx01_plain/index.html", domsite.VIEWPORT)
+        ex = await Extractor(b.page, (1440, 900)).open()
+        try:
+            plain, with_texts = await ex.extract(), await ex.extract(texts=True)
+            assert plain.texts == []
+            assert with_texts.texts and all(len(t["text"]) <= 60 and len(t["box"]) == 4 for t in with_texts.texts)
+            assert plain.list_hash == with_texts.list_hash                # the same controls either way
+        finally:
+            await ex.close()
+    finally:
+        await b.close()
+        stop()

@@ -218,7 +218,7 @@ async def test_a_fast_page_it_can_t_read_this_time_is_never_not_found(site, monk
     try:
         assert (await hx.locate("the Sign in button"))["path"] == "fast"
 
-        async def unreadable():
+        async def unreadable(texts=False):
             return None
         monkeypatch.setattr(hx.engine.recorder.finder, "_extract", unreadable)
         got = await hx.locate("the purple elephant", absence=True)
@@ -276,9 +276,9 @@ async def test_a_failed_first_read_isn_t_kept(site, monkeypatch):
         finder = hx.engine.recorder.finder
         real, calls = finder._extract, []
 
-        async def first_fails():
+        async def first_fails(texts=False):
             calls.append(1)
-            return None if len(calls) == 1 else await real()
+            return None if len(calls) == 1 else await real(texts)
         monkeypatch.setattr(finder, "_extract", first_fails)
         assert (await hx.locate("the Sign in button"))["path"] == "visual"     # nothing to read: the model
         assert finder.route is None

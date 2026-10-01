@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="../assets/site.css">
 <link rel="stylesheet" href="../assets/pricing.css">
-<!-- In <head>: it sets <html data-solo> while Solo is on sale (soloOnSale), before the page is drawn. -->
+<!-- In <head>: it sets <html data-solo> while Solo is on sale (the back office says so; its last answer before the page is drawn). -->
 <script src="../assets/paddle-config.js"></script>
 </head>
 <body>
@@ -34,12 +34,13 @@
         <li>Record by clicking, or describe a step and let the AI assistant find it</li>
         <li>Run tests and suites by hand, with a clear report when something breaks</li>
         <li>Tests saved as files in a folder you pick</li>
+        <li>Copy a failed step as Markdown, for any tracker</li>
         <li>Help through GitHub issues<span class="prelaunch-text">, or email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a> until the public release</span></li>
       </ul>
       <a class="btn ghost plan-cta" href="../#install">Install Breakpatch</a>
     </article>
 
-    <!-- Solo shows only while it is on sale (assets/paddle-config.js soloOnSale). -->
+    <!-- Solo shows only while it is on sale (assets/paddle-config.js asks the back office). -->
     <article class="edition plan-solo solo-only" aria-labelledby="solo-title">
       <div class="edition-head"><h2 id="solo-title">Solo</h2><span class="price">1 person</span></div>
       <div class="period" role="group" aria-label="Solo billing period">
@@ -51,6 +52,7 @@
       <ul>
         <li>Everything in Community, plus:</li>
         <li>Fixed automatically: the AI assistant finds buttons that moved</li>
+        <li>Why did this fail?: the AI assistant explains a failed step in plain words</li>
         <li>Schedules on your Mac, with notifications and result messages</li>
         <li>The CI command line, with 1 machine licence: one test run at a time</li>
         <li>Your tests stay in your folder or in Git. Connecting your own workspace is optional</li>
@@ -89,6 +91,8 @@
         <li>A shared workspace in your company's own Google Firebase project (<a href="../manual/#create-a-workspace">how it's set up</a>), joined with an invite link</li>
         <li>Version history for every test, and the full run history</li>
         <li>Fixed automatically: the AI assistant finds buttons that moved</li>
+        <li>Why did this fail?: the AI assistant explains a failed step, and Create issue sends it to GitHub, Linear or Jira</li>
+        <li>Result messages to Slack, Microsoft Teams or any web address</li>
         <li>Schedules on your local runner Mac, and 1 machine licence: one test run at a time, on a local runner or a CI machine</li>
         <li>Email support, answered within 2 business days</li>
       </ul>

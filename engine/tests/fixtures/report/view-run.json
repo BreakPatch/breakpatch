@@ -1,0 +1,307 @@
+{
+  "title": "Create a project · Failed · Breakpatch",
+  "generator": "Breakpatch 0.1.0-beta.1",
+  "kindLabel": "Run report",
+  "heading": "Create a project",
+  "result": "failed",
+  "resultText": "Failed",
+  "countsText": "",
+  "summary": [
+    {
+      "k": "App",
+      "v": "Web app"
+    },
+    {
+      "k": "Took",
+      "v": "1 min 8 s"
+    },
+    {
+      "k": "Run by",
+      "v": "Maria López"
+    },
+    {
+      "k": "Where",
+      "v": "This Mac"
+    },
+    {
+      "k": "Machine",
+      "v": "Maria's MacBook Pro"
+    },
+    {
+      "k": "When",
+      "v": "24 Sep 2026, 15:00 UTC+1"
+    },
+    {
+      "k": "Version",
+      "v": "4"
+    },
+    {
+      "k": "Run ID",
+      "v": "run_8f21c"
+    }
+  ],
+  "note": "",
+  "screenshotsLeftOut": false,
+  "multi": false,
+  "failed": null,
+  "tests": [
+    {
+      "anchor": "test-1",
+      "name": "Create a project",
+      "appName": "Web app",
+      "multi": false,
+      "result": "failed",
+      "resultText": "Failed",
+      "meta": [
+        {
+          "k": "Took",
+          "v": "1 min 8 s"
+        },
+        {
+          "k": "Run by",
+          "v": "Maria López"
+        },
+        {
+          "k": "Where",
+          "v": "This Mac"
+        },
+        {
+          "k": "Machine",
+          "v": "Maria's MacBook Pro"
+        },
+        {
+          "k": "When",
+          "v": "24 Sep 2026, 15:00 UTC+1"
+        },
+        {
+          "k": "Version",
+          "v": "4"
+        },
+        {
+          "k": "Run ID",
+          "v": "run_8f21c"
+        }
+      ],
+      "testNote": "",
+      "stepsText": "10 steps",
+      "steps": [
+        {
+          "number": "1",
+          "depth": 0,
+          "label": "Open the dashboard",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "2.3 s",
+          "phases": "doing the step 812 ms · waiting for the page to settle 1.5 s · check after 38 ms",
+          "image": null,
+          "open": false,
+          "hasDetail": true
+        },
+        {
+          "number": "2",
+          "depth": 0,
+          "label": "Log in",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": false
+        },
+        {
+          "number": "2.1",
+          "depth": 1,
+          "label": "Write email",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "Passed: the email field shows the address, as the note says.",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "250 ms",
+          "phases": "doing the step 250 ms",
+          "image": null,
+          "open": false,
+          "hasDetail": true
+        },
+        {
+          "number": "2.2",
+          "depth": 1,
+          "label": "Click Next",
+          "result": "fixed",
+          "resultText": "Fixed automatically",
+          "headline": "The Next button had moved. The AI assistant found it.",
+          "body": "It was used in the new position and the screen afterwards looked right.",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "5.5 s",
+          "phases": "check before 3.1 s · doing the step 95 ms · waiting for the page, which never settled 2.2 s · check after 44 ms",
+          "image": {
+            "src": "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAQAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA=",
+            "width": 480,
+            "height": 300,
+            "size": "small",
+            "alt": "Screenshot: step 2.2, Click Next",
+            "caption": "Where the AI assistant found it"
+          },
+          "open": false,
+          "hasDetail": true
+        },
+        {
+          "number": "3",
+          "depth": 0,
+          "label": "Repeat 2 times",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": false
+        },
+        {
+          "number": "4",
+          "depth": 1,
+          "label": "Click Add row",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "This step's check covers nothing. Re-record it.",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": true
+        },
+        {
+          "number": "5",
+          "depth": 0,
+          "label": "Click \"New project\"",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "435 ms",
+          "phases": "check before 41 ms · doing the step 60 ms · waiting for the page to settle 305 ms · check after 29 ms",
+          "image": null,
+          "open": false,
+          "hasDetail": true
+        },
+        {
+          "number": "6",
+          "depth": 0,
+          "label": "Write <Q4> & friends",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": false
+        },
+        {
+          "number": "7",
+          "depth": 0,
+          "label": "Click Done",
+          "result": "failed",
+          "resultText": "Failed",
+          "headline": "Couldn't find the Done button",
+          "body": "It wasn't where it was when this step was recorded, so there was nothing to click. The run stopped here.",
+          "stepNote": "",
+          "system": "This test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks.",
+          "explanation": {
+            "summary": "The Done button moved into a menu after the redesign.",
+            "cause": "It moved",
+            "suggestion": "Re-record this step."
+          },
+          "advice": "If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer.",
+          "took": "5.0 s",
+          "phases": "check before 5.0 s",
+          "image": {
+            "src": "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAQAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA=",
+            "width": 1440,
+            "height": 900,
+            "size": "full",
+            "alt": "Screenshot: step 7, Click Done",
+            "caption": "What was on screen when the step failed"
+          },
+          "open": true,
+          "hasDetail": true
+        },
+        {
+          "number": "8",
+          "depth": 0,
+          "label": "Check the project list",
+          "result": "notRun",
+          "resultText": "Not run",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": false
+        }
+      ],
+      "junit": {
+        "seconds": "68.250",
+        "timestamp": "2026-09-24T14:00:00",
+        "status": "failed",
+        "type": "targetNotFound",
+        "message": "Step 7: Click Done: Couldn't find the Done button",
+        "text": "Step 7: Click Done\nCouldn't find the Done button\nIt wasn't where it was when this step was recorded, so there was nothing to click. The run stopped here.\nAI assistant: The Done button moved into a menu after the redesign.\nLikely cause: It moved.\nSuggested: Re-record this step.\nThis test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks.\nWhat to try: If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer."
+      },
+      "stepsOpen": true
+    }
+  ],
+  "footer": "Made with Breakpatch 0.1.0-beta.1 on 24 Sep 2026, 15:20 UTC+1.",
+  "junit": {
+    "name": "Create a project",
+    "tests": 1,
+    "failures": 1,
+    "skipped": 0,
+    "seconds": "68.250",
+    "timestamp": "2026-09-24T14:00:00"
+  }
+}

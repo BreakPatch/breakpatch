@@ -1,0 +1,356 @@
+{
+  "title": "Smoke · Failed · Breakpatch",
+  "generator": "Breakpatch 0.1.0-beta.1",
+  "kindLabel": "Suite report",
+  "heading": "Smoke",
+  "result": "failed",
+  "resultText": "Failed",
+  "countsText": "2 of 4 tests passed, 2 failed",
+  "summary": [
+    {
+      "k": "Tests",
+      "v": "4 tests"
+    },
+    {
+      "k": "Took",
+      "v": "4 min 52 s"
+    },
+    {
+      "k": "Asked by",
+      "v": "Schedule"
+    },
+    {
+      "k": "When",
+      "v": "24 Sep 2026, 14:00 UTC"
+    }
+  ],
+  "note": "Nightly run before the 4.2 release",
+  "screenshotsLeftOut": true,
+  "multi": true,
+  "failed": {
+    "label": "2 tests didn't pass:",
+    "items": [
+      {
+        "anchor": "test-3",
+        "name": "Pay an invoice",
+        "resultText": "Failed"
+      },
+      {
+        "anchor": "test-4",
+        "name": "Refund",
+        "resultText": "Couldn't run"
+      }
+    ]
+  },
+  "tests": [
+    {
+      "anchor": "test-1",
+      "name": "Sign in",
+      "appName": "Web app",
+      "multi": true,
+      "result": "passed",
+      "resultText": "Passed",
+      "meta": [
+        {
+          "k": "Took",
+          "v": "21 s"
+        },
+        {
+          "k": "Run by",
+          "v": "QA Mac mini"
+        },
+        {
+          "k": "Where",
+          "v": "Local runner"
+        },
+        {
+          "k": "Machine",
+          "v": "QA Mac mini"
+        },
+        {
+          "k": "When",
+          "v": "24 Sep 2026, 14:00 UTC"
+        },
+        {
+          "k": "Version",
+          "v": "2"
+        },
+        {
+          "k": "Run ID",
+          "v": "rn-1"
+        }
+      ],
+      "testNote": "",
+      "stepsText": "3 steps",
+      "steps": [
+        {
+          "number": "1",
+          "depth": 0,
+          "label": "Write email",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "900 ms",
+          "phases": "check before 120 ms · doing the step 300 ms · waiting for the page to settle 450 ms · check after 30 ms",
+          "image": null,
+          "open": false,
+          "hasDetail": true
+        },
+        {
+          "number": "2",
+          "depth": 0,
+          "label": "Write password",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "565 ms",
+          "phases": "check before 60 ms · doing the step 280 ms · waiting for the page to settle 200 ms · check after 25 ms",
+          "image": null,
+          "open": false,
+          "hasDetail": true
+        },
+        {
+          "number": "3",
+          "depth": 0,
+          "label": "Click Sign in",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "2.0 s",
+          "phases": "check before 45 ms · doing the step 90 ms · waiting for the page to settle 1.8 s · check after 31 ms",
+          "image": null,
+          "open": false,
+          "hasDetail": true
+        }
+      ],
+      "junit": {
+        "seconds": "21.400",
+        "timestamp": "2026-09-24T14:00:00",
+        "status": "passed",
+        "type": "",
+        "message": "",
+        "text": ""
+      },
+      "stepsOpen": false
+    },
+    {
+      "anchor": "test-2",
+      "name": "Invite a teammate",
+      "appName": "Web app",
+      "multi": true,
+      "result": "fixed",
+      "resultText": "Passed with fixes",
+      "meta": [
+        {
+          "k": "Took",
+          "v": "1 min 4 s"
+        },
+        {
+          "k": "Run by",
+          "v": "QA Mac mini"
+        },
+        {
+          "k": "Where",
+          "v": "Local runner"
+        },
+        {
+          "k": "Machine",
+          "v": "QA Mac mini"
+        },
+        {
+          "k": "When",
+          "v": "24 Sep 2026, 14:00 UTC"
+        },
+        {
+          "k": "Version",
+          "v": "7"
+        },
+        {
+          "k": "Run ID",
+          "v": "rn-2"
+        }
+      ],
+      "testNote": "",
+      "stepsText": "2 steps",
+      "steps": [
+        {
+          "number": "1",
+          "depth": 0,
+          "label": "Click Invite",
+          "result": "fixed",
+          "resultText": "Fixed automatically",
+          "headline": "The Invite button had moved. The AI assistant found it.",
+          "body": "It was used in the new position and the screen afterwards looked right.",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": true
+        },
+        {
+          "number": "2",
+          "depth": 0,
+          "label": "Write address",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": false
+        }
+      ],
+      "junit": {
+        "seconds": "64.000",
+        "timestamp": "2026-09-24T14:00:21",
+        "status": "passed",
+        "type": "",
+        "message": "",
+        "text": ""
+      },
+      "stepsOpen": false
+    },
+    {
+      "anchor": "test-3",
+      "name": "Pay an invoice",
+      "appName": "Billing",
+      "multi": true,
+      "result": "failed",
+      "resultText": "Failed",
+      "meta": [
+        {
+          "k": "Took",
+          "v": "45 s"
+        },
+        {
+          "k": "Run by",
+          "v": "QA Mac mini"
+        },
+        {
+          "k": "Where",
+          "v": "Local runner"
+        },
+        {
+          "k": "Machine",
+          "v": "QA Mac mini"
+        },
+        {
+          "k": "When",
+          "v": "24 Sep 2026, 14:01 UTC"
+        },
+        {
+          "k": "Version",
+          "v": "1"
+        },
+        {
+          "k": "Run ID",
+          "v": "rn-3"
+        }
+      ],
+      "testNote": "",
+      "stepsText": "2 steps",
+      "steps": [
+        {
+          "number": "1",
+          "depth": 0,
+          "label": "Click Pay",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": false
+        },
+        {
+          "number": "2",
+          "depth": 0,
+          "label": "Wait for the receipt",
+          "result": "failed",
+          "resultText": "Failed",
+          "headline": "Waited too long for the page",
+          "body": "What this step waits for never appeared. The run stopped here.",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "If the app was slow this time, run again. If it always takes longer now, re-record this step.",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": true,
+          "hasDetail": true
+        }
+      ],
+      "junit": {
+        "seconds": "45.000",
+        "timestamp": "2026-09-24T14:01:25",
+        "status": "failed",
+        "type": "timeout",
+        "message": "Step 2: Wait for the receipt: Waited too long for the page",
+        "text": "Step 2: Wait for the receipt\nWaited too long for the page\nWhat this step waits for never appeared. The run stopped here.\nWhat to try: If the app was slow this time, run again. If it always takes longer now, re-record this step."
+      },
+      "stepsOpen": true
+    },
+    {
+      "anchor": "test-4",
+      "name": "Refund",
+      "appName": "Billing",
+      "multi": true,
+      "result": "failed",
+      "resultText": "Couldn't run",
+      "meta": [],
+      "testNote": "Couldn't run: it was deleted",
+      "stepsText": "0 steps",
+      "steps": [],
+      "junit": {
+        "seconds": "0.000",
+        "timestamp": "",
+        "status": "failed",
+        "type": "notRun",
+        "message": "Couldn't run: it was deleted",
+        "text": "Couldn't run: it was deleted"
+      },
+      "stepsOpen": true
+    }
+  ],
+  "footer": "Made with Breakpatch 0.1.0-beta.1 on 24 Sep 2026, 14:20 UTC.",
+  "junit": {
+    "name": "Smoke",
+    "tests": 4,
+    "failures": 2,
+    "skipped": 0,
+    "seconds": "292.000",
+    "timestamp": "2026-09-24T14:00:00"
+  }
+}

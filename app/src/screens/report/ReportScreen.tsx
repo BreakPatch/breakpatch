@@ -14,6 +14,10 @@ import { preorder, rowRefs } from '../run/resolve';
 import { reasonTitle, passNote, slowNote, UNCHECKED_NOTE } from '../run/reasons';
 import { focusStep } from '../run/runState';
 import { ReportDetail } from './ReportDetail';
+import { ExportDialog } from './ExportDialog';
+import { reportInput } from '../../lib/report/collect';
+import { removePrinted } from '../../lib/report/print';
+import { getEngine } from '../../engine';
 import { RunHistory } from './RunHistory';
 import { tookText } from './reportData';
 import { useReport } from './useReport';
@@ -27,7 +31,7 @@ export default function ReportScreen() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { run, runs, test, steps, app, missing } = useReport(appId, runId);
+  const { run, runs, moreRuns, test, steps, app, missing } = useReport(appId, runId);
 
   const showHistory = hasFeature('versions') || (runs?.length ?? 0) > 1;
   const tab = params.get('tab') === 'history' && showHistory ? 'history' : 'run';
@@ -39,6 +43,8 @@ export default function ReportScreen() {
   const focus = run && steps ? focusStep(run, flat) : undefined;
   const [sel, setSel] = useState<string | null>(null);
   useEffect(() => { setSel(null); }, [runId]);
+  const [exporting, setExporting] = useState(false);
+  useEffect(() => removePrinted, []);            // Export as PDF leaves the printed report in the page until here
   const selId = sel ?? focus?.stepId ?? null;
   const selStep = selId ? flat.find(s => s.id === selId) : undefined;
   const selRef = selId ? refs.get(selId) : undefined;
@@ -60,6 +66,7 @@ export default function ReportScreen() {
   const actions = run && (tab === 'history'
     ? <Button kind="primary" icon="play_arrow" onClick={runAgain} disabled={!test}>Run now</Button>
     : <>
+        <Button icon="download" onClick={() => setExporting(true)} disabled={!steps}>Export</Button>
         <Button icon="edit" onClick={openEditor} disabled={!test}>Open in editor</Button>
         <Button kind="primary" icon="replay" onClick={runAgain} disabled={!test}>Run again</Button>
       </>);
@@ -84,14 +91,14 @@ export default function ReportScreen() {
               <div key={m.k} className="rp-meta"><div className="rp-meta-k">{m.k}</div><div className="rp-meta-v ellipsis" title={m.v}>{m.v}</div></div>
             )) : [0, 1, 2, 3].map(i => <div key={i} className="rp-meta"><Skeleton w={40} h={11} /><Skeleton w={90} h={14} /></div>)}
           </>
-        ) : <div className="rp-count">{runs ? plural(runs.length, 'run') : ' '}</div>}
+        ) : <div className="rp-count">{runs ? (moreRuns ? `Latest ${plural(runs.length, 'run')}` : plural(runs.length, 'run')) : ' '}</div>}
         <div className="grow" />
         {showHistory && <Segmented<'run' | 'history'> label="Report" value={tab} onChange={setTab} items={[{ value: 'run', label: 'This run' }, { value: 'history', label: 'Run history' }]} />}
       </div>
 
       {tab === 'history' ? (
         <div className="rp-history-wrap">
-          {runs ? <RunHistory runs={runs} currentId={runId} onOpen={r => navigate(`/apps/${appId}/runs/${r.id}`)} /> : <Skeleton h={200} />}
+          {runs ? <RunHistory runs={runs} currentId={runId} onOpen={r => navigate(`/apps/${appId}/runs/${r.id}`)} more={moreRuns} /> : <Skeleton h={200} />}
         </div>
       ) : (
         <div className="rp-body-wrap">
@@ -121,6 +128,13 @@ export default function ReportScreen() {
               : <div className="rp-detail"><Skeleton w={220} h={12} /><Skeleton w={360} h={24} /><Skeleton w="70%" h={14} /><Skeleton h={260} /></div>}
           </div>
         </div>
+      )}
+      {run && steps && (
+        <ExportDialog open={exporting} onClose={() => setExporting(false)} what="this run"
+          load={screenshots => reportInput({
+            kind: 'run', name: run.testName, screenshots, engine: getEngine(),
+            tests: [{ appName: app?.name ?? '', name: run.testName, steps, run, viewport: test?.viewport }],
+          })} />
       )}
     </AppFrame>
   );

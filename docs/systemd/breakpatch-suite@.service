@@ -1,0 +1,44 @@
+# /etc/systemd/system/breakpatch-suite@.service
+#
+# Runs one suite of a Breakpatch Team workspace with breakpatch-ci, as the `breakpatch` user: the
+# instance name is the suite's ID or name (breakpatch-suite@smoke-7f3a.service). Started by
+# breakpatch-suite@<suite>.timer, or by hand: sudo systemctl start breakpatch-suite@smoke-7f3a.
+# The manual's "Raspberry Pi runner" section (docs/manual.md) has the whole set-up.
+#
+# Secrets come in as systemd credentials, never as Environment= lines: they're readable by this
+# service only, and `systemctl show` doesn't print them. run-suite turns them into the variables
+# breakpatch-ci reads. On a machine with a TPM, LoadCredentialEncrypted= (systemd-creds encrypt)
+# keeps them encrypted on disk as well.
+[Unit]
+Description=Breakpatch suite %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=breakpatch
+Group=breakpatch
+WorkingDirectory=/home/breakpatch
+# BP_SANDBOX=1: Chromium's own sandbox (Raspberry Pi OS and Debian allow the user namespaces it
+# needs). BP_TIMINGS_SCALE=2: a Pi is slower than the Mac the tests were recorded on; see the manual.
+Environment=BP_SANDBOX=1 BP_TIMINGS_SCALE=2
+# BREAKPATCH_CI_EMAIL, BREAKPATCH_MACHINE_ID, BREAKPATCH_WORKSPACE_FILE, BREAKPATCH_SUITE_OPTIONS:
+# not secret, one file for every suite.
+EnvironmentFile=/etc/breakpatch/breakpatch.env
+LoadCredential=licence-key:/etc/breakpatch/licence-key
+LoadCredential=ci-password:/etc/breakpatch/ci-password
+# One per saved secret the suite uses: secret.NAME becomes BP_SECRET_NAME.
+#LoadCredential=secret.STAGING_PASSWORD:/etc/breakpatch/secret.STAGING_PASSWORD
+ExecStart=/usr/local/lib/breakpatch/run-suite %i
+# A oneshot unit otherwise gets 90 seconds; a suite on a Pi takes minutes.
+TimeoutStartSec=3h
+# breakpatch-ci's exit codes: 0 passed, 1 a test failed, 2 nothing (or not all) ran, 3 no
+# licence. Anything but 0 shows the unit as failed (systemctl --failed, OnFailure=).
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/home/breakpatch
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

@@ -5,6 +5,7 @@ import { around, lockBox } from '../../components/live';
 import { formatDateTime, formatDuration } from '../../components/common/format';
 import { runBy, WHERE } from '../../components/common/runs';
 import { reasonText, reasonTitle, targetName } from '../run/reasons';
+import { explanationText } from '../../lib/explain';
 
 export type DetailKind = 'failed' | 'fixed' | 'passed' | 'notRun' | 'stopped';
 
@@ -89,16 +90,11 @@ export function copyDetails(run: Run, step: Step | undefined, number: string, r:
     if (r.preDistance !== undefined) lines.push(`Before-step match distance: ${r.preDistance}`);
     if (r.postDistance !== undefined) lines.push(`After-step match distance: ${r.postDistance}`);
     if (r.screenshotPath) lines.push(`Screenshot: ${r.screenshotPath}`);
+    if (r.result === 'failed' && r.explanation) lines.push(explanationText(r.explanation));
     const note = systemNote(run, r);
     if (note) lines.push(note);
   }
   return lines.join('\n');
 }
 
-/** "51 s", "1 min 8 s", "12 min". */
-export function tookText(ms: number): string {
-  const total = Math.max(0, Math.round(ms / 1000));
-  if (total < 60) return `${total} s`;
-  const m = Math.floor(total / 60), s = total % 60;
-  return s ? `${m} min ${s} s` : `${m} min`;
-}
+export { tookText } from '../../lib/runWords';

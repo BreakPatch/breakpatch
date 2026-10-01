@@ -44,7 +44,7 @@ export default function SuiteEditorScreen() {
     if (!suite || loaded.current === suite.id) return;
     loaded.current = suite.id;
     setName(suite.name); setPicked(suite.tests);
-    setExtras({ schedule: suite.schedule, ...(suite.resultUrl ? { resultUrl: suite.resultUrl } : {}) });
+    setExtras({ schedule: suite.schedule, ...(suite.resultUrl ? { resultUrl: suite.resultUrl } : {}), ...(suite.notify ? { notify: suite.notify } : {}) });
     setDirty(false);
   }, [isNew, suite]);
 
@@ -77,7 +77,7 @@ export default function SuiteEditorScreen() {
     setSaving(true);
     try {
       const url = extras.resultUrl?.trim();
-      const out = await backend.saveSuite(suiteId ?? null, { name: name.trim(), tests: present, schedule: extras.schedule, ...(url ? { resultUrl: url } : {}) });
+      const out = await backend.saveSuite(suiteId ?? null, { name: name.trim(), tests: present, schedule: extras.schedule, ...(url ? { resultUrl: url } : {}), ...(extras.notify !== undefined ? { notify: extras.notify } : {}) });
       setDirty(false);
       toast(isNew ? `${out.name} created.` : 'Suite saved.');
       if (isNew) { loaded.current = out.id; navigate(`/suites/${out.id}`, { replace: true }); }
@@ -151,7 +151,7 @@ export default function SuiteEditorScreen() {
                   const n = order.get(key(r));
                   return (
                     <div key={t.id} className={`se-test${n ? ' on' : ''}`} onClick={() => toggle(r)}>
-                      <span onClick={e => e.stopPropagation()} style={{ display: 'flex' }}><Checkbox checked={!!n} onChange={() => toggle(r)} label={t.name} /></span>
+                      <span onClick={e => e.stopPropagation()} style={{ display: 'flex' }}><Checkbox checked={!!n} onChange={() => toggle(r)} label={t.name} hideLabel /></span>
                       <div className="se-test-name ellipsis">{t.name}</div>
                       {n && <span className="se-order-no" aria-label={`Runs number ${n}`}>{n}</span>}
                       <div className="se-test-steps">{plural(t.stepCount, 'step')}</div>

@@ -302,6 +302,39 @@ describe('LocalBackend', () => {
     expect(await first(l => b.suites(l))).toEqual([]);
   });
 
+  it('keeps a schedule and where the result goes in the suite, and the address only on this Mac', async () => {
+    const { st } = await setup();
+    const { resultAddresses } = await import('../../platform');
+    const b = await LocalBackend.open({ storage: st, path: ROOT, person: ana, live: false, addresses: resultAddresses });
+    opened.push(b);
+    const { app, test } = await appWithTest(b);
+    const url = 'https://hooks.slack.com/services/T0/B0/secret';
+    const s = await b.saveSuite(null, {
+      name: 'Nightly', tests: [{ appId: app.id, testId: test.id }], schedule: { days: ['fri', 'mon', 'xyz' as never], time: '06:00' },
+      notify: { kind: 'slack', when: 'failures', url },
+    });
+    expect(s.schedule).toEqual({ days: ['mon', 'fri'], time: '06:00' });
+    const text = (await read(st, 'suites/nightly.json'))!;
+    expect(fromFileText<Record<string, unknown>>(text)).toMatchObject({ schedule: { days: ['mon', 'fri'], time: '06:00' }, notify: { kind: 'slack', when: 'failures' } });
+    expect(text).not.toContain('hooks.slack.com');
+    expect(await b.notify.address('nightly')).toBe(url);
+    const [back] = await first<{ schedule: unknown; notify?: unknown }[]>(l => b.suites(l));
+    expect(back).toMatchObject({ schedule: { days: ['mon', 'fri'], time: '06:00' }, notify: { kind: 'slack', when: 'failures' } });
+    // Saved again without a new address: the address stays; nowhere: it goes.
+    await b.saveSuite('nightly', { name: 'Nightly', tests: s.tests, schedule: null, notify: { kind: 'slack', when: 'every' } });
+    expect(await b.notify.address('nightly')).toBe(url);
+    await b.saveSuite('nightly', { name: 'Nightly', tests: s.tests, schedule: null, notify: null });
+    expect(await b.notify.address('nightly')).toBeNull();
+    expect(await read(st, 'suites/nightly.json')).not.toContain('notify');
+  });
+
+  it('keeps no address at all without the edition’s store (Community)', async () => {
+    const { b } = await setup();
+    const { app, test } = await appWithTest(b);
+    await b.saveSuite(null, { name: 'Nightly', tests: [{ appId: app.id, testId: test.id }], schedule: null, notify: { kind: 'slack', when: 'every', url: 'https://hooks.slack.com/services/T/B/x' } });
+    expect(await b.notify.address('nightly')).toBeNull();
+  });
+
   it('comes back the same after reopening the folder', async () => {
     const { st, b } = await setup();
     const { app, test } = await appWithTest(b);

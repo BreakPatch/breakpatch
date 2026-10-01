@@ -8,6 +8,9 @@
 //                                 with a letter, so none is "-default-")
 //   local:<hash of the path>      a tests folder
 //   demo                          the demo workspace
+//   hosted:<workspaceId>          a workspace in Breakpatch Cloud (Hosted by Breakpatch): many in one
+//                                 Firebase project, so the id names the workspace (its tenant id,
+//                                 28 characters of [a-z0-9]), never the project
 import type { Workspace } from '../data/types';
 
 /** FNV-1a, 32 bits, twice: a short stable id for a path. Not for secrets. */
@@ -21,8 +24,12 @@ export function isDemoConnection(ws: Workspace) { return ws.config.apiKey === 'd
 /** A database ID as it goes in an id or a path: "(default)" is "-default-" (as in Firebase console links). */
 export function databaseToken(database: string): string { return database === '(default)' ? '-default-' : database; }
 
+/** A hosted workspace's id: `hosted:` and its tenant id. */
+export function hostedConnectionId(tenant: string): string { return `hosted:${tenant}`; }
+
 export function workspaceConnectionId(ws: Workspace): string {
-  return isDemoConnection(ws) ? 'demo' : `team:${ws.config.projectId}/${databaseToken(ws.database)}`;
+  if (isDemoConnection(ws)) return 'demo';
+  return ws.tenant ? hostedConnectionId(ws.tenant) : `team:${ws.config.projectId}/${databaseToken(ws.database)}`;
 }
 
 /** A trailing slash doesn't make it another folder. */

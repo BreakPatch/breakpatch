@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from . import calls, config, install, plugins
+from . import calls, config, explain, install, plugins
 from .actions import parse_secrets
 from .browser import BrowserSession
 from .locator import Locator, MlxLocator, NoLocator
@@ -20,6 +20,11 @@ Emit = Callable[[str, dict], None]
 
 TRY_TIMEOUT = 15.0        # seconds; the UI says "No reply after 15 s"
 _TEAM_HEALER = object()   # default: whatever plugins.py found (the Team engine's healer, or none)
+_TEAM_EXPLAINER = object()   # the same for the explainer
+EXPLAIN_CACHE = 64        # explanations kept in memory (per failure screenshot)
+# A run asked for while an explanation is still being worked out waits for it this long at most
+# (its model call can't be cut short: it holds the model), so the run's own AI use isn't slowed.
+EXPLAIN_DRAIN_S = 30.0
 
 
 def default_locator_factory() -> Callable[[], Locator]:
@@ -52,10 +57,17 @@ def near_param(v) -> dict | None:
 class Engine:
     def __init__(self, emit: Emit, timings: config.Timings | None = None,
                  locator_fn: Callable[[], Locator] | None = None, headless: bool | None = None,
-                 healer: Healer | None | object = _TEAM_HEALER):
+                 healer: Healer | None | object = _TEAM_HEALER,
+                 explainer: "explain.Explainer | None | object" = _TEAM_EXPLAINER):
         self.emit = emit
         # Fallback healing is Team-only (plugins.py); None runs moved targets as targetNotFound.
         self.healer: Healer | None = plugins.healer() if healer is _TEAM_HEALER else healer  # type: ignore[assignment]
+        # So is "Why did this fail?" (explain.py); None answers run.explain with not_ready.
+        self.explainer: explain.Explainer | None = (plugins.explainer() if explainer is _TEAM_EXPLAINER
+                                                    else explainer)  # type: ignore[assignment]
+        self._explained: dict[tuple, asyncio.Future] = {}
+        # Explanations still working, including ones whose answer came too late for the report.
+        self._explaining: set[asyncio.Task] = set()
         self.timings = timings or config.Timings.from_env()
         self.locator_fn = locator_fn or default_locator_factory()
         self.browser = BrowserSession(self.timings, on_frame=lambda d: emit("frame", d), headless=headless)
@@ -87,10 +99,13 @@ class Engine:
             "record.locate": self.record_locate,
             "record.checkpoint": self.record_checkpoint,
             "record.propose": self.record_propose,
+            "record.focused": self.record_focused,
             "record.intent": self.record_intent,
             "record.chooseFile": lambda p: self._sync(self.recorder.choose_file(p)),
             "run.start": self.run_start,
             "run.stop": self.run_stop,
+            "run.explain": self.run_explain,
+            "report.images": self.report_images,
             "call.try": self.call_try,
         }
 
@@ -290,6 +305,13 @@ class Engine:
             raise EngineError("busy", "The engine is still checking the last step.")
         return await self.recorder.propose(p)
 
+    async def record_focused(self, p: dict):
+        """The field that has the keyboard focus: `{box, name}` (nulls when none). For the confirm
+        bar of a described "type …" step, before anything is typed."""
+        self._not_during_run()
+        self.browser.require()
+        return await self.browser.focused()
+
     async def record_locate(self, p: dict):
         self._not_during_run()
         self.browser.require()
@@ -326,10 +348,12 @@ class Engine:
             raise EngineError("not_ready", "The browser isn't open.")
         stop = asyncio.Event()
         self._activity = "run"
-        runner = Runner(self.browser, self.locator_fn, self.timings, self.emit, healer=self.healer)
+        runner = Runner(self.browser, self.locator_fn, self.timings, self.emit, healer=self.healer,
+                        explainer=self.explainer)
 
         async def go():
             try:
+                await self._drain_explanations()
                 ended = await runner.run(p, stop)
             except Exception as e:  # noqa: BLE001
                 log.exception("run crashed")
@@ -348,6 +372,97 @@ class Engine:
         if self._run and (not p.get("runId") or str(p["runId"]) == self._run[0]):
             self._run[2].set()
         return {}
+
+    async def run_explain(self, p: dict) -> dict:
+        """"Why did this fail?" for one failed step of a finished run (explain.py): `{ explanation:
+        {summary, cause, suggestion} | null }`. Asked by the report on demand, never during a run:
+        the run has ended, and a run going now gets `busy`. An answer that takes longer than
+        explain.TIMEOUT_S comes back null (and isn't cached, so asking again tries again), but its
+        model call can't be cut short and goes on in the background; a run started meanwhile waits
+        for it first (at most EXPLAIN_DRAIN_S), so the run's own use of the model isn't slowed."""
+        ex = self.explainer
+        if ex is None:
+            raise EngineError("not_ready", "Explaining failures is part of Breakpatch Team.")
+        if self._activity == "run":
+            raise EngineError("busy", "A test is running. Ask again when it has finished.")
+        step, sr = p.get("step"), p.get("stepRun")
+        if not isinstance(step, dict) or not isinstance(sr, dict):
+            raise EngineError("bad_request", "There's no failed step to explain.")
+        reason = sr.get("reason")
+        if sr.get("result", "failed") != "failed" or reason not in explain.EXPLAINED:
+            raise EngineError("bad_request", "This step's failure can't be explained any further.", str(reason)[:40])
+        shot = explain.in_screenshots(sr.get("screenshotPath") or "")
+        if shot is None:
+            raise EngineError("not_found", "The screenshot of this failure isn't on this Mac, so it can't be explained here.")
+        key = (str(shot), str(step.get("id")), reason)
+        got = self._explained.get(key)
+        if got is None or (got.done() and (got.cancelled() or got.exception() or got.result() is None)):
+            got = asyncio.ensure_future(self._explain(ex, step, sr, reason, shot, p.get("viewport")))
+            self._explained[key] = got
+            while len(self._explained) > EXPLAIN_CACHE:
+                self._explained.pop(next(iter(self._explained)))
+        return {"explanation": await asyncio.shield(got)}
+
+    async def report_images(self, p: dict) -> dict:
+        """Screenshots for an exported report (report/images.py): `{ images: [{src, width, height,
+        bytes} | null] }`, one per item in order. Only PNGs in the screenshots folder, as run.explain;
+        any other path, or one that can't be read, is null."""
+        from .report import images as report_images
+        items = p.get("items")
+        if not isinstance(items, list) or len(items) > report_images.MAX_ITEMS:
+            raise EngineError("bad_request", "There are no screenshots to add to the report.")
+        vw = p.get("viewportWidth")
+        width = int(vw) if isinstance(vw, (int, float)) and not isinstance(vw, bool) and vw > 0 else None
+
+        def one(item):
+            path = explain.in_screenshots(item.get("path") or "") if isinstance(item, dict) else None
+            if path is None:
+                return None
+            try:
+                return report_images.webp_data_uri(path, "small" if item.get("size") == "small" else "full", width)
+            except (OSError, ValueError):
+                return None
+        return {"images": [await asyncio.to_thread(one, i) for i in items]}
+
+    async def _explain(self, ex, step: dict, sr: dict, reason: str, shot: Path, viewport) -> dict | None:
+        def load():
+            from PIL import Image
+            with Image.open(shot) as im:
+                return im.convert("RGB"), explain.read_page(shot)
+
+        image, page = await asyncio.to_thread(load)
+        vw = viewport.get("width") if isinstance(viewport, dict) else None
+        vh = viewport.get("height") if isinstance(viewport, dict) else None
+        size = (int(vw), int(vh)) if isinstance(vw, (int, float)) and isinstance(vh, (int, float)) and vw > 0 and vh > 0 \
+            else image.size
+        if image.size != size:
+            image = image.resize(size)       # a Retina screenshot: boxes are viewport pixels
+        num = lambda v: int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None  # noqa: E731
+        failure = explain.Failure(
+            step=step, reason=reason, viewport=size, image=image, page=page,
+            message=sr.get("message") if isinstance(sr.get("message"), str) else None,
+            pre_distance=num(sr.get("preDistance")), post_distance=num(sr.get("postDistance")),
+            timings=sr.get("timings") if isinstance(sr.get("timings"), dict) else {},
+            old_at=sr.get("oldAt") if isinstance(sr.get("oldAt"), list) else None,
+            new_at=sr.get("newAt") if isinstance(sr.get("newAt"), list) else None)
+        work = asyncio.ensure_future(ex.explain(failure, self.locator_fn))
+        self._explaining.add(work)
+        work.add_done_callback(lambda t: (self._explaining.discard(t), t.cancelled() or t.exception()))   # a late error is logged, not raised
+        # Not wait_for: cancelling the coroutine wouldn't stop the model's thread, only hide it.
+        done, _ = await asyncio.wait({work}, timeout=explain.TIMEOUT_S)
+        if not done:
+            log.info("no explanation within %.0f s (it goes on in the background)", explain.TIMEOUT_S)
+            return None
+        return explain.clean(work.result())
+
+    async def _drain_explanations(self) -> None:
+        """Before a run: let any explanation still working finish, so the run doesn't wait on the model."""
+        if not self._explaining:
+            return
+        log.info("a run waits for %d explanation(s) to finish", len(self._explaining))
+        _, late = await asyncio.wait(set(self._explaining), timeout=EXPLAIN_DRAIN_S)
+        if late:
+            log.warning("starting the run with an explanation still working")
 
     # ---------------------------------------------------------------- set-up and clean-up calls
 

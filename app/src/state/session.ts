@@ -57,8 +57,9 @@ interface SessionState {
   disconnect(): void;
   /**
    * Switch workspace on the sign-in screen: leaves the open workspace without forgetting it, and
-   * opens this Mac's tests folder when the list has one. `folder`: it opened; `none`: nothing is
-   * open (the app shows Welcome), with the folder's problem in `localError` if it couldn't open.
+   * opens this Mac's tests folder when the list has one (as switchTo, without signing out).
+   * `folder`: it opened; `none`: nothing is open (the app shows Welcome), the person is signed out,
+   * and the folder's problem is in `localError` if it couldn't open.
    */
   leaveWorkspace(): Promise<'folder' | 'none'>;
   /**
@@ -139,6 +140,17 @@ function followUser(b: Backend | null) {
   userOff = b.onUser(u => { if (useSession.getState().backend === b) useSession.getState().setUser(u); });
 }
 
+/**
+ * Closes the open backend, and its read-only state and warnings stop reaching the session. With
+ * `signOut` (disconnect, leaveWorkspace) the person is signed out first; not when another opens
+ * (connect, connectLocal, so switchTo): switching back finds the person still signed in.
+ */
+function closeBackend(b: Backend | null, o: { signOut: boolean }) {
+  if (o.signOut) b?.signOut().catch(() => {});
+  b?.close?.();
+  watchBackend(null);
+}
+
 const saved = load();
 
 export const useSession = create<SessionState>((set, get) => ({
@@ -155,7 +167,7 @@ export const useSession = create<SessionState>((set, get) => ({
   async connect(ws, o = {}) {
     // Tests created and runs are counted where they're saved (data/countUsage.ts); the demo isn't.
     const backend = countUsage(await makeBackend(ws));
-    get().backend?.close?.();
+    closeBackend(get().backend, { signOut: false });
     if (o.remember !== false) connections.opened(workspaceConnection(ws));
     set({ workspace: ws, local: null, localError: null, backend, user: backend.currentUser(), pendingWorkspace: null });
     watchBackend(backend);
@@ -163,7 +175,7 @@ export const useSession = create<SessionState>((set, get) => ({
   },
   async connectLocal(path) {
     const backend = countUsage(await openLocalFolder(path));
-    get().backend?.close?.();
+    closeBackend(get().backend, { signOut: false });
     connections.opened(folderConnection(backend.local.path, backend.name));
     set({ workspace: null, local: { path: backend.local.path }, localError: null, backend, user: backend.currentUser(), pendingWorkspace: null });
     watchBackend(backend);
@@ -171,10 +183,7 @@ export const useSession = create<SessionState>((set, get) => ({
     persist();
   },
   disconnect() {
-    const b = get().backend;
-    b?.signOut().catch(() => {});
-    b?.close?.();
-    watchBackend(null);
+    closeBackend(get().backend, { signOut: true });
     const { activeId } = useConnections.getState();
     if (activeId) connections.remove(activeId);
     set({ workspace: null, local: null, backend: null, user: null, setupDone: false });
@@ -186,10 +195,7 @@ export const useSession = create<SessionState>((set, get) => ({
       try { await get().switchTo(folder); return 'folder'; }
       catch (e) { set({ localError: `${folder.local!.path}: ${e instanceof Error ? e.message : String(e)}` }); }
     }
-    const b = get().backend;
-    b?.signOut().catch(() => {});
-    b?.close?.();
-    watchBackend(null);
+    closeBackend(get().backend, { signOut: true });
     connections.deactivate();
     set({ workspace: null, local: null, backend: null, user: null, pendingWorkspace: null });
     persist();
@@ -197,7 +203,7 @@ export const useSession = create<SessionState>((set, get) => ({
   },
   async switchTo(c) {
     if (c.kind === 'local' && c.local) await get().connectLocal(c.local.path);
-    else if ((c.kind === 'team' || c.kind === 'demo') && c.team) {
+    else if ((c.kind === 'team' || c.kind === 'demo' || (c.kind === 'hosted' && c.team?.workspace.tenant)) && c.team) {
       await get().connect(c.team.workspace);
       // The saved sign-in comes back with the backend (bootSession does the same on launch).
       followUser(get().backend);

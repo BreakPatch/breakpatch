@@ -22,10 +22,13 @@ export type AiState =
   | { state: 'result'; text: string; what: string; box: Box; at: Point; target: string; frame?: number; intent: Intent }
   | { state: 'notfound'; text: string; what: string }
   /**
-   * A click, drag or scroll on the live view: nothing reached the page. The bar asks "Click Next
-   * button?" and the step is done and recorded only on Confirm (Enter, or the same spot again).
+   * A click, drag or scroll on the live view, or a described step with nothing to look for
+   * ("scroll down", "type hello", "go to example.com"): nothing reached the page. The bar asks
+   * "Click Next button?" and the step is done and recorded only on Confirm (Enter, or the same spot
+   * again). `box`: where on the page; none for typing into the focused field or going to an address.
    */
-  | { state: 'proposal'; params: RecordParams; frame?: number; box: Box; label: string; target?: string; named: boolean; repeat?: number };
+  /** `said`: the sentence it came from, for a described step with no spot on the page (typing, an address, a scroll). */
+  | { state: 'proposal'; params: RecordParams; frame?: number; box?: Box; label: string; target?: string; named: boolean; repeat?: number; said?: string; note?: string };
 
 export interface ActionOptions {
   writeSource: 'typed' | 'secret' | 'generated';
@@ -198,11 +201,13 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
 
   const afterAdd = (kind: ActionKind) => { if (!STICKY.has(kind)) setAction('click'); };
 
-  /** Records one step with the engine: the row appears at once, the disc pulses while the screen is checked. */
-  async function record(params: RecordParams, extra: Extra = {}): Promise<boolean> {
+  /**
+   * Records one step with the engine: the row appears at once, the disc pulses while the screen is
+   * checked. `rr`: the step this re-records (by default the one being re-recorded now); null adds one.
+   */
+  async function record(params: RecordParams, extra: Extra = {}, rr: string | null = rerecordId): Promise<boolean> {
     if (busyRef.current) return false;
     busyRef.current = true;
-    const rr = rerecordId;
     const tempId = localId('pending-');
     const prevInsert = insertRef.current;
     const guess = extra.label ?? guessLabel(params, sample);
@@ -248,12 +253,21 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   /**
    * The same step `n` times, one after another, each recorded and checked on its own ("add 2
    * people": two clicks on the +). Only the first is held to the frame it was found on: the page
-   * moves on after each. Stops at the first that fails.
+   * moves on after each. Stops at the first that fails. While re-recording, only the first
+   * re-records the step; the others are new steps right after it.
    */
   async function recordTimes(params: RecordParams, extra: Extra, n: number) {
-    for (let i = 0; i < n; i++) {
-      const { frame: _f, ...later } = extra;
-      if (!await record(params, i === 0 ? extra : later)) return;
+    const rr = rerecordId;
+    const { frame: _f, ...later } = extra;
+    if (!await record(params, extra, rr) || n < 2) return;
+    // Re-recording: the rest go after the re-recorded step (each moves the point on), then the
+    // point goes back to where it was.
+    const before = insertRef.current;
+    if (rr) insertRef.current = rr;
+    try {
+      for (let i = 1; i < n; i++) if (!await record(params, later, null)) return;
+    } finally {
+      if (rr) setInsertAfter(before && findStep(stepsRef.current, before) ? before : null);
     }
   }
 
@@ -276,13 +290,18 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   /**
    * The describe box: the sentence says what to do (intent.ts), what to do it to and how many
    * times; the chosen action only counts when it names none. Then what it names is looked for
-   * (record.locate) and shown for Confirm. Nothing reaches the page before that, except a wait or
-   * typing into the field that has the focus, which the Wait and Write actions do at once too.
+   * (record.locate) and shown for Confirm. A step with nothing to look for (a scroll of the page,
+   * typing into the field that has the focus, going to an address) is shown for Confirm too.
+   * Nothing reaches the page before Confirm, except a wait for a set time.
    */
   async function describe(t: string) {
     const token = ++aiToken.current;
     const read = readIntent(t);
     let it: Intent;
+    setRetryNote(false);
+    // A sentence this can't do: said next to the box (until it's edited), not in a toast that goes.
+    if (read.kind === 'unhandled') { setAi({ state: 'idle' }); setText(t); setUnhandled(read.message); return; }
+    setUnhandled(null);
     if (read.kind === 'intent') it = read.intent;
     else {
       setAi({ state: 'thinking', text: t, what: read.target });
@@ -292,7 +311,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
       if (token !== aiToken.current) return;
       it = got ?? chosenIntent(read.target, action, options);
     }
-    if (!it.target) { act(it, token); return; }
+    if (!it.target) { act(it, token, t); return; }
     const what = it.target;
     setAi({ state: 'thinking', text: t, what });
     let res = null;
@@ -301,21 +320,39 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     if (res) setAi({ state: 'result', text: t, what, box: res.box, at: res.at, target: res.target, frame: res.frame, intent: it });
     else { setAi({ state: 'notfound', text: t, what }); setText(t); }
   }
-  /** A described step with nothing to look for: a scroll of the page is shown for Confirm; the rest is done. */
-  function act(it: Intent, token: number) {
+  /**
+   * A described step with nothing to look for. A scroll of the page, typing into the field that has
+   * the focus and going to an address are shown for Confirm ("Write "the password" into the field
+   * that has the focus?"), so a misread sentence never reaches the page. A wait is done at once.
+   */
+  function act(it: Intent, token: number, said: string) {
     if (token !== aiToken.current) return;
     setAi({ state: 'idle' });
+    const times = it.repeat > 1 ? `, ${it.repeat} times` : '';
+    const ask = (params: RecordParams, label: string, box?: Box) => {
+      aiToken.current++;
+      setAi({ state: 'proposal', params, box, label: label + times, named: true, repeat: it.repeat, said });
+    };
     switch (it.action) {
       case 'scroll': case 'swipe': {
         const params: RecordParams = { action: it.action, from: [Math.round(viewport.width / 2), Math.round(viewport.height / 2)], direction: it.direction ?? 'down', distance: it.distance ?? options.distance };
-        aiToken.current++;
-        const times = it.repeat > 1 ? `, ${it.repeat} times` : '';
-        setAi({ state: 'proposal', params, box: around(params.from!, 24), label: `${defaultLabel(params)} ${params.distance} px${times}`, named: true, repeat: it.repeat });
+        ask(params, `${defaultLabel(params)} ${params.distance} px`, around(params.from!, 24));
         return;
       }
       case 'waitFor': void record({ action: 'waitFor', durationMs: Math.max(1, it.seconds ?? options.seconds) * 1000 }); return;
-      case 'write': if (it.text) void record({ action: 'write', text: it.text }); return;
-      case 'navigate': if (it.url) void record({ action: 'navigate', nav: 'url', url: it.url }); return;
+      case 'write': if (it.text) {
+        const params: RecordParams = { action: 'write', text: it.text };
+        ask(params, `${defaultLabel(params)} into the field that has the focus`);
+        // Where it will type: the focused field outlined and named, or a word that there's none.
+        const asked = aiToken.current;
+        void engine.focused().then(f => {
+          if (asked !== aiToken.current) return;
+          setAi(a => a.state !== 'proposal' ? a : f.box
+            ? { ...a, box: f.box, label: `${defaultLabel(params)} into ${f.name ?? 'the field that has the focus'}${times}` }
+            : { ...a, label: `${defaultLabel(params)}${times}`, note: 'No field is selected: click the field first.' });
+        }).catch(() => undefined);
+      } return;
+      case 'navigate': if (it.url) { const params: RecordParams = { action: 'navigate', nav: 'url', url: it.url }; ask(params, defaultLabel(params)); } return;
       default: return;
     }
   }
@@ -343,10 +380,18 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     void recordTimes(a.params, extra, a.repeat ?? 1);
   }
   const retryAi = () => {
+    // Described, with no spot on the page: the sentence goes back in the box to change, not "click the page".
+    if (ai.state === 'proposal' && ai.said !== undefined) { const t = ai.said; cancelAi(); setText(t); setRefocus(n => n + 1); return; }
     if (ai.state === 'proposal') { cancelAi(); setRetryNote(true); return; }     // pick again on the page
     if (ai.state === 'result' || ai.state === 'notfound') void describe(ai.text);
   };
   const [retryNote, setRetryNote] = useState(false);
+  /** Bumped when the describe box should take the focus again (Try again on a described step). */
+  const [refocus, setRefocus] = useState(0);
+  /** What the describe box said it can't do, shown by the box until the sentence changes. */
+  const [unhandled, setUnhandled] = useState<string | null>(null);
+  // "Click the page again" is for the proposal it was about: gone once anything else is asked.
+  useEffect(() => { if (ai.state !== 'idle') setRetryNote(false); }, [ai.state]);
   function confirmAi() {
     if (ai.state === 'proposal') { confirmProposal(); return; }
     if (ai.state !== 'result') return;
@@ -358,7 +403,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     if (kind === 'checkpoint') void record({ action: 'checkpoint' }, { ...x, checkpoint: a.box, label: checkpointLabel(it.from === 'words' ? it.target ?? a.text : a.text) });
     else if (kind === 'waitUntil') void record({ action: 'waitUntil', region: a.box, timeoutMs: options.maxWait * 1000 }, x);
     else if (kind === 'swipe' || kind === 'scroll') void recordTimes({ action: kind, from: a.at, direction: it.direction ?? options.direction, distance: it.distance ?? options.distance }, x, it.repeat);
-    else if (kind === 'write') void record({ action: 'write', at: a.at, text: it.text ?? '' }, x);
+    else if (kind === 'write') void recordTimes({ action: 'write', at: a.at, text: it.text ?? '' }, x, it.repeat);
     else {
       const k = POINT_KINDS.has(kind) ? kind : 'click';
       void recordTimes({ action: k, at: a.at, ...(k === 'upload' ? { sample: options.sample } : {}) }, x, it.repeat);
@@ -374,7 +419,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     if (pageBusy()) return;
     setRetryNote(false);
     // The same spot again confirms.
-    if (ai.state === 'proposal' && ai.params.at && inside(p, ai.box)) { confirmProposal(); return; }
+    if (ai.state === 'proposal' && ai.params.at && ai.box && inside(p, ai.box)) { confirmProposal(); return; }
     if (ai.state !== 'idle') cancelAi();
     const kind: ActionKind = POINT_KINDS.has(action) && action !== 'swipe' && action !== 'scroll' ? action : 'click';
     const params: RecordParams = { action: kind, at: p, ...(kind === 'upload' ? { sample: options.sample } : {}) };
@@ -449,7 +494,10 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     steps, dirty, selectedId, openLoopId, rerecordId, action, text, options, ai, busyId, checking, savedPill, sample, addedId,
     /** "Clicking…", "Waiting for the page…": what the step being recorded is doing now. */
     phaseText: busyId !== null ? phaseText(phase, busyAction) : null,
-    stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setText, setOptions, setDirty,
+    stepsRef, recordedRef, setSelectedId, setOpenLoopId, setAction, setOptions, setDirty,
+    /** The describe box's text; editing it clears what it said it can't do. */
+    setText: (t: string) => { setText(t); setUnhandled(null); },
+    unhandled, refocus,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi, pageScroll, retryNote,
     insertAfterId, setInsertAfter, unplayed, atStepId, played,
     hand, setHand, manual, handPlayed, handAsk,
@@ -480,7 +528,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     },
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),
     thinking: ai.state === 'thinking' ? thinkingText(ai.what) : null,
-    ask: ai.state === 'result' ? intentAskText(ai.what, ai.intent) : ai.state === 'proposal' ? `${ai.label}?` : null,
+    ask: ai.state === 'result' ? intentAskText(ai.what, ai.intent) : ai.state === 'proposal' ? `${ai.label}?${ai.note ? ` ${ai.note}` : ''}` : null,
     notFound: ai.state === 'notfound' ? notFoundText(ai.what) : null,
     busy: busyId !== null,
   };

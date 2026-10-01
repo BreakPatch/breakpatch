@@ -9,7 +9,7 @@
 // A paragraph that starts with <!-- prelaunch --> becomes the "Public release coming soon" note,
 // shown only while <html> has data-prelaunch (GitHub hides the comment and shows the text).
 // One that starts with <!-- solo-soon --> becomes a Solo "Coming soon" note, in the same style,
-// shown only while Solo isn't on sale (no <html data-solo>: assets/paddle-config.js soloOnSale).
+// shown only while Solo isn't on sale (no <html data-solo>: assets/paddle-config.js asks the back office).
 // Everything before the first "---" is the intro: its paragraphs become the lead, and its
 // contents list is skipped (the page builds its own). Ids match GitHub's heading anchors, so
 // links like manual/#run-requests work on both.
@@ -187,7 +187,7 @@ export function build(md) {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/assets/site.css">
-<!-- In <head>: it sets <html data-solo> while Solo is on sale (soloOnSale), which hides the Solo "Coming soon" note. -->
+<!-- In <head>: it sets <html data-solo> while Solo is on sale (the back office says so), which hides the Solo "Coming soon" note. -->
 <script src="/assets/paddle-config.js"></script>
 <!-- Built from docs/manual.md by site/build-manual.mjs. Edit the Markdown, then run: node site/build-manual.mjs -->
 </head>

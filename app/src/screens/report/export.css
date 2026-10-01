@@ -1,0 +1,18 @@
+/* Export dialog (ExportDialog.tsx). */
+.rpx-body { display: flex; flex-direction: column; gap: 14px; padding: 4px 0 8px; }
+.rpx-formats { display: flex; flex-direction: column; gap: 8px; }
+.rpx-format {
+  display: flex; align-items: flex-start; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-card, 12px);
+  background: var(--surface); cursor: pointer;
+}
+.rpx-format:hover { border-color: var(--line-strong); }
+.rpx-format.on { border-color: var(--accent); background: var(--selected); }
+.rpx-format input { margin: 3px 0 0; accent-color: var(--accent); flex: none; }
+.rpx-format > .icon { color: var(--text-muted); flex: none; }
+.rpx-format.on > .icon { color: var(--accent); }
+.rpx-format-t { font-size: 14px; font-weight: 600; }
+.rpx-format-d { font-size: 13px; color: var(--text-muted); line-height: 1.45; }
+.rpx-shots { display: flex; flex-direction: column; gap: 10px; }
+.rpx-shots-row { display: flex; align-items: center; gap: 14px; }
+.rpx-note { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; line-height: 1.45; color: var(--text-muted); padding: 10px 12px; border-radius: 10px; background: var(--fixed-tint); }
+.rpx-note .icon { color: var(--fixed); flex: none; margin-top: 1px; }

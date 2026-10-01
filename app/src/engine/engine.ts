@@ -1,5 +1,5 @@
 // UI-side view of the Python engine (see engine/PROTOCOL.md).
-import type { Box, HttpCall, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
+import type { Box, Explanation, HttpCall, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
 
 export interface SystemInfo {
   memoryGb: number; chip: string; os: string; engineVersion: string;
@@ -155,6 +155,8 @@ export interface Engine {
   intent(sentence: string): Promise<EngineIntent | null>;
   /** The element at a point and its name, without acting. `name: false` skips the AI assistant. */
   propose(at: Point, opts?: { name?: boolean }): Promise<Proposal>;
+  /** The field that has the keyboard focus (`record.focused`): its box and name, nulls when none. */
+  focused(): Promise<{ box: Box | null; name: string | null }>;
   /** The answer to a `record.fileChooser` event. */
   chooseFile(choice: FileChoice): Promise<void>;
   /** "Use the page": the user's own input goes straight to the page; nothing is recorded. */
@@ -169,7 +171,24 @@ export interface Engine {
 
   /** "Try it": one request under the same rules as a run's set-up and clean-up calls. */
   tryCall(call: HttpCall, appUrl: string, secrets?: Record<string, string>): Promise<CallReply>;
+
+  /**
+   * "Why did this fail?" for one failed step of a finished run (Team; engine `run.explain`).
+   * null when the AI assistant couldn't tell. Throws EngineError `not_ready` in Community, without
+   * the licence feature or without the AI assistant; `not_found` when the screenshot isn't on this Mac.
+   */
+  explain(step: Step, stepRun: StepRun, viewport: Pick<Viewport, 'width' | 'height'>): Promise<Explanation | null>;
+
+  /**
+   * Screenshots for an exported report (engine `report.images`): each as a WebP data: URI, "full"
+   * at the viewport's width or "small", in order; null for one that isn't in the engine's
+   * screenshots folder or can't be read. Absent on an engine that can't (then the report goes without).
+   */
+  reportImages?(items: ReportImageRequest[], viewportWidth?: number): Promise<(ReportImageReply | null)[]>;
 }
+
+export interface ReportImageRequest { path: string; size: 'full' | 'small' }
+export interface ReportImageReply { src: string; width: number; height: number; bytes: number }
 
 /**
  * Model repositories (spec §7). The engine only downloads what its own table allows

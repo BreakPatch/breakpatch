@@ -29,19 +29,22 @@ Breakpatch comes in these editions. **Community** is free and open source: one p
 15. [What Team adds](#what-team-adds)
 16. [Solo](#solo)
 17. [Upgrading to Team](#upgrading-to-team)
-18. [Create a workspace](#create-a-workspace)
-19. [Invite your team](#invite-your-team)
+18. [Hosted by Breakpatch](#hosted-by-breakpatch)
+19. [Host it yourself](#host-it-yourself)
 20. [Members and roles](#members-and-roles)
 21. [Version history](#version-history)
 22. [Fixed automatically](#fixed-automatically)
-23. [Schedules](#schedules)
-24. [The local runner](#the-local-runner)
-25. [Run requests](#run-requests)
-26. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
-27. [Result messages](#result-messages)
-28. [Security rules](#security-rules)
-29. [Licences and seats](#licences-and-seats)
-30. [The back office](#the-back-office)
+23. [Why did this fail?](#why-did-this-fail)
+24. [Schedules](#schedules)
+25. [The local runner](#the-local-runner)
+26. [Run requests](#run-requests)
+27. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
+28. [Result messages](#result-messages)
+29. [Create an issue](#create-an-issue)
+30. [Security rules](#security-rules)
+31. [Licences and seats](#licences-and-seats)
+32. [The back office](#the-back-office)
+33. [Encryption and the recovery code](#encryption-and-the-recovery-code)
 
 ---
 
@@ -190,11 +193,13 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
    - Logs show the address without its query string, and never a header's value.
 3. Add steps, in either of these ways:
    - **Click** anything on the page. Nothing happens to the page yet: Breakpatch highlights what you clicked and asks, for example, "Click Next button?". Press **Confirm** (or Enter, or click it again) to do the step; **Try again** to pick something else; Esc to cancel. Dragging and scrolling on the page work the same way.
-   - **Describe** it in the box below, for example "click the Done button". Breakpatch highlights what it found. Press **Confirm** or **Try again**.
+   - **Describe** it in the box below, for example "click the Done button". Breakpatch highlights what it found. Press **Confirm** or **Try again**. A step with nothing to find, like "scroll down", "type hello" (into the field that has the focus) or "go to example.com", asks first too, for example "Write "hello" into the field that has the focus?". Only "wait 3 seconds" is done at once. Breakpatch can't yet wait for something to go away ("wait for the spinner to go away"): it says so, and you can use **Wait** for a set time instead.
 4. Use the action button next to the box for everything else: double, long and right click, hover, swipe, scroll, drag and drop, **Write text**, **Wait until**, **Go to address**, reload, back and forward, tabs and popups, upload a sample file, check a download, **Checkpoint**, **Repeat** and **Shared steps**.
 5. Press **Save**.
 
 Screen checks are worked out automatically after every step. There's nothing to draw or approve.
+
+**Test details** (in the test's **⋯** menu on the Tests tab, or from the recorder's title bar) changes a test's name, description and start address after it's made. After a new start address, check the first steps still make sense from there. In Team a new start address on a test with steps saves a new version, so older versions, and a version marked as released, keep starting where they did.
 
 Select a step to open it. **What to look for** is the plain description of what the step acts on, for example "Done button, bottom right of the Create project dialog". Edit it if it's wrong. **What should happen** says how a run judges the step: a new page opens, something closes or disappears, something appears, text or a value changes, or nothing visible changes. Breakpatch picks one when you record; change it with one click. **+ note** adds a few words, like "closes the What's new dialog": the AI assistant reads them only when the step's check fails, to judge whether the failure is real and to say why.
 
@@ -212,6 +217,8 @@ Under that: **Play to here** starts a new browser and plays the test from the st
 
 Press **Run**. The live view shows each step as it runs. Each step is checked before and after it acts, and the first failure stops the run with a plain reason, for example "Couldn't find the Done button".
 
+**Run all** on an app's page runs each of its tests in turn, like a suite, and saves each test's run. Tests with no steps yet are left out, so they don't fail it.
+
 The report shows what was expected next to what was on screen, why it stopped and what to try. Press **Re-record this step** to fix it straight away.
 
 Common reasons:
@@ -223,7 +230,21 @@ Common reasons:
 - **Saved secret is missing on this Mac.** Add it in Settings → Saved secrets, then run again.
 - **STAGING_PASSWORD isn't allowed on login.example.com.** The page wasn't one of the secret's sites, so nothing was typed. If that site is right, add it to the secret in Settings → Saved secrets.
 
-Every error has **Copy details**, to paste into an issue or send to a developer.
+Every error has **Copy**, with two choices: **Plain text**, to paste into a message or send to a developer, and **Markdown, for an issue**: a ready-made bug report with a title, the steps up to the failure, what was expected and what was seen, the reason, and where and when it ran. Paste it into GitHub, Jira, Linear or any tracker that takes Markdown. In Team, **Create issue** makes the issue for you: see [Create an issue](#create-an-issue).
+
+In Team, a failed step also has **Why did this fail?**: the AI assistant says in plain words what changed on the screen. See [Why did this fail?](#why-did-this-fail).
+
+### Export a report
+
+**Export** on a run's report saves it for people who don't have Breakpatch. A finished suite run, and **Run all**, have **Export** too: one report with every test in it.
+
+- **Web page (HTML).** One file that opens in any browser, offline, without Breakpatch or a sign-in. Attach it to a ticket or an email, or drop it in a chat. It has the summary, every step with its result, the reason and where the time went, and the AI assistant's explanation when there is one. Steps open and close with a click, the one that failed is open, and it follows the reader's light or dark setting (**Theme** switches it). It never loads anything from the internet.
+- **PDF.** Opens the print dialog with the same report, every step open. Choose **PDF → Save as PDF**. A saved web page prints the same way from any browser.
+- **JUnit XML.** For CI dashboards: GitHub, GitLab and Jenkins read it. One test case per test, with the failed step and why. It has no screenshots.
+
+A suite's report starts with the tests that didn't pass, each a link to it; tests that passed start closed (**Open all steps** opens everything).
+
+**Screenshots.** The web page and the PDF include the screenshots the run took: full size for the step that failed, small for the others (steps that were fixed automatically). A 30-step run stays under about 5 MB. Screenshots can show personal data, like names, email addresses or account details on the page, so the dialog says so while they're included: turn off **Include screenshots** when the report goes to people who shouldn't see that. A run from another Mac has no screenshots on this one, so its report goes without them.
 
 ### Recorded on another system
 
@@ -266,7 +287,7 @@ On sites with good page structure (buttons, links and fields that say what they 
 - **Standard** is downloaded during setup (about 3 GB). It works well for almost every team.
 - **Larger** is optional on Macs with 32 GB of memory or more (about 5 GB). It's slower to load and rarely finds more.
 
-Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it, both when you click and when you describe a step, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)) is Team only.
+Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it, both when you click and when you describe a step, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)) and explaining a failure ([Why did this fail?](#why-did-this-fail)) are Team only.
 
 It's kept in `~/Library/Application Support/Breakpatch/models/`.
 
@@ -328,16 +349,20 @@ Everything in this part needs a paid edition: **Breakpatch Team**, or **Solo** f
 
 ## What Team adds
 
-- **A shared workspace** in your company's own Google Firebase project (see [Create a workspace](#create-a-workspace)): your team's apps, tests, suites and runs in one place, joined with an invite link. A test is *Only you* until you add it to the team suite. Then it's *In team suite*.
+- **A shared workspace**, [hosted by Breakpatch](#hosted-by-breakpatch) with nothing to set up, or in your company's own Google Firebase project ([Host it yourself](#host-it-yourself)): your team's apps, tests, suites and runs in one place. A test is *Only you* until you add it to the team suite. Then it's *In team suite*.
 - **Members and roles**: member, admin, a runner account and a CI account.
 - **Version history.** Every save is kept. Runs show which version they tested, and you can restore any version.
 - **Fixed automatically.** When a button has moved, the AI assistant finds it during the run and carries on. You accept the new position in the report.
+- **Why did this fail?** In the report, the AI assistant says in plain words what changed, for example "The Save button now reads “Save changes”", with the likely cause and what to do.
 - **Schedules** for suites, on any days and time.
 - **The local runner**: one Mac that runs suites for the whole team.
-- **Run requests** from CI or any other tool, and **result messages** after every suite run.
+- **Run requests** from CI or any other tool, and **result messages** after every suite run, to Slack, Microsoft Teams or any web address.
+- **Create issue** in GitHub, Linear or Jira from a failed step, with the steps, the screenshot and a link to the report.
 - **`breakpatch-ci`**: run the workspace's suites on your CI machines, with the results in the run history.
 
 Choosing another AI model for the assistant is in Business.
+
+**Coming soon:** workspaces hosted by Breakpatch, with nothing to set up in Firebase. Until then, a workspace lives in your company's own Firebase project, set up as in [Create a workspace](#create-a-workspace).
 
 ## Solo
 
@@ -350,8 +375,11 @@ Solo is for one person who wants the automation for themselves: $19 a month, or 
 | Price | Free | $19 a month, or $16 a month billed yearly | $20 per person a month, or $16 billed yearly | $30 per person a month, billed yearly |
 | People | 1 | 1 | 3 or more | 20 or more |
 | Machine licences | None | 1 | 1 included, you can buy more | 5 included, you can buy more |
-| Where tests are kept | A folder | A folder or Git, or your own workspace if you want one | Your company's Firebase project | Your company's Firebase project |
+| Where tests are kept | A folder | A folder or Git, or your own workspace if you want one | Hosted by Breakpatch, or your company's Firebase project | Hosted by Breakpatch, or your company's Firebase project |
 | Fixed automatically | No | Yes | Yes | Yes |
+| Why did this fail? | No | Yes | Yes | Yes |
+| Copy a failure as Markdown | Yes | Yes | Yes | Yes |
+| Create issue in GitHub, Linear or Jira | No | No | Yes | Yes |
 | Schedules, notifications and result messages | No | Yes, on your Mac | Yes | Yes |
 | The CI command line | No | Yes | Yes | Yes |
 | Run requests, the local runner and version history | No | With your own workspace | Yes | Yes |
@@ -360,43 +388,94 @@ Solo is for one person who wants the automation for themselves: $19 a month, or 
 
 - **Your tests stay where they are.** Solo works on your [tests folder](#the-tests-folder), or a folder you keep in [Git](#git-tips). There's nothing to set up in the cloud.
 - **A workspace is optional.** For [run requests](#run-requests), the [local runner](#the-local-runner) and [version history](#version-history), connect a workspace of your own ([Create a workspace](#create-a-workspace)). It stays yours alone: Solo has no members or invites.
-- **The licence.** Enter the key in **Settings → Licence**. It works on one Mac at a time. To use it on another Mac, free it on your licence page at [account.breakpatch.dev](#the-back-office), then enter the key on the new Mac.
-- **One machine licence**, for [breakpatch-ci](#from-ci-with-breakpatch-ci) or a runner. Your Mac and the machine licence each run one test at a time. Solo has no extra machine licences.
+- **The licence.** With your tests folder open, go to **Settings → Licence** → **Enter Solo licence key**, and give the email you bought Solo with and the key (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). The key stays in this Mac's Keychain. It works on one Mac at a time. To use it on another Mac, press **Release this Mac**, or free it on your licence page at [account.breakpatch.dev](#the-back-office), then enter the key on the new Mac. A Team or Business key there says "This is a Team licence key. Team licences are used in a workspace: connect or create one, then enter the key there."
+- **Schedules on your Mac.** Set a suite's [schedule](#schedules) and where its [result message](#result-messages) goes, as in Team. The suite runs on this Mac while Breakpatch is open, one test at a time: if you're running a test yourself, it waits for it. If a time came while Breakpatch was closed, the suite runs once when you open the folder again, not once for every time it missed. When it finishes, you get a notification if Breakpatch is in the background (**Settings → Notifications** says which). The result message's address stays in this Mac's Keychain, never in the folder, so it doesn't end up in Git. The failed step's screenshot needs a workspace, so it isn't sent from a folder. A saved secret a scheduled test types needs **Runner can use** turned on in **Settings → Saved secrets**.
+- **One machine licence**, for [breakpatch-ci](#from-ci-with-breakpatch-ci) or a runner. Your Mac and the machine licence each run one test at a time. Solo has no extra machine licences. In CI, set `BREAKPATCH_LICENCE_KEY` to your Solo key and leave `BREAKPATCH_WORKSPACE` out to run test files from your folder (`--test FILE.json`); a second job on the same machine waits for the first.
+- **Your own workspace, if you want one.** After you connect it, **Settings → Licence** offers **Use Solo here**: it's the same seat, for the same email, so there's no key to type. The workspace has no **Members** page and no invite link.
 - **One Solo per company.** If someone at your company email domain already has Solo, the pricing page offers Team instead. A personal address (such as Gmail or iCloud) counts on its own.
-- **Moving to Team** keeps your tests. Email [support@breakpatch.dev](mailto:support@breakpatch.dev) to switch your plan, then follow [Upgrading to Team](#upgrading-to-team).
+- **Moving to Team** keeps your tests. Email [support@breakpatch.dev](mailto:support@breakpatch.dev) to switch your plan, then follow [Upgrading to Team](#upgrading-to-team): connect or create the workspace, press **Use Solo here** (or enter the Team key if you have it already), and move your tests. Suites keep their schedules; set where their results go again in each suite. Then, in **Settings → Licence**, press **Replace key** and enter the Team key. The Solo seat on this Mac is given back.
 
 ## Upgrading to Team
 
 Install Breakpatch Team over Community. The AI assistant, the test browser, your settings and your saved secrets stay as they are, and Breakpatch opens your tests folder like before. Then go to **Settings → Upgrade to Team** (or **Upgrade to Team** on Home):
 
-1. **Connect a workspace**: [create one](#create-a-workspace), or open an invite link from your team. Then sign in.
-2. **The licence.** If you created the workspace, enter the licence key once in **Settings → Licence** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). If you joined with an invite link, the link sets up your licence and there's no key to enter. See [Licences and seats](#licences-and-seats).
-3. **Move your tests**. Choose the tests folder. Breakpatch shows what it will copy first, for example "1 app, 12 tests, 3 shared steps and 2 suites will be copied.", and you can rename apps, or merge them with apps the workspace already has. It then copies the apps, tests, shared steps, suites and the last run of each test into the workspace.
+1. **Connect a workspace**: sign in to one [hosted by Breakpatch](#hosted-by-breakpatch), [create one of your own](#create-a-workspace), or open an invite link from your team. Then sign in.
+2. **The licence.** A hosted workspace needs no key: Breakpatch sets up everyone's seat. If you created a workspace of your own, enter the licence key once in **Settings → Licence** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). If you joined with an invite link, the link sets up your licence and there's no key to enter. See [Licences and seats](#licences-and-seats).
+3. **Move your tests**. Choose the tests folder. Breakpatch shows what it will copy first, for example "1 app, 12 tests, 3 shared steps and 2 suites will be copied.", and you can rename apps, or merge them with apps the workspace already has. It then copies the apps, tests, shared steps, suites and the last run of each test, unless that run is over 90 days old, into the workspace.
 4. **Check, then move to the Trash.** Breakpatch reads everything back from the workspace and compares it with the folder. Only when it all matches, and you confirm, does it move the folder's `breakpatch.json`, `apps` and `suites` to the Trash, so there's one place to edit your tests. To undo it, drag them from the Trash back into the folder.
 
 Good to know:
 
+- **Changed your mind?** The connect screen always has a way back at the top: to where you came from, or **Back to your tests folder**, also after **Switch workspace**.
 - **Only Breakpatch's files move.** Everything else in the folder stays as it is. If the folder is in a Git repository, the removed tests show as deleted files to commit, and earlier versions stay in the repository's history.
 - **If the move stops half way** (the Mac restarts, say), Breakpatch picks it up where it left off the next time you open **Upgrade to Team**.
 - **A report of the move** is kept in Breakpatch's data folder on this Mac: what was copied, what went to the Trash, and anything left out.
 - **Each test starts at version 1** in the workspace, because the folder keeps only the latest version.
+- **Runs over 90 days old aren't copied**, because the workspace keeps runs for 90 days (see [Run history is kept 90 days](#run-history-is-kept-90-days)). Breakpatch says so before it copies, and the report lists them. They go to the Trash with the folder.
 - **Saved secrets** travel as names in the steps. Their values stay in this Mac's Keychain; teammates add their own in **Settings → Saved secrets**.
 - **Files that can't be read** stop the move until you fix them in the folder, so nothing unread goes to the Trash.
 - **Already in the workspace?** Anything that's already there is left out. If a test there differs from the folder's (a teammate copied an older version, say), Breakpatch names it, and you can keep the workspace's version.
 - A folder saved by a newer Breakpatch can't be moved until you update.
 
-## Create a workspace
+## Hosted by Breakpatch
+
+<!-- hosted-soon --> **Opens soon.** Until it does, keep your team's tests in your own Firebase project: see [Host it yourself](#host-it-yourself).
+
+The easy way to a Team or Business workspace: Breakpatch keeps it for you, in Europe, with nothing to set up. Everyone signs in with their work email and a code; there are no passwords. It's the same Breakpatch as a workspace of your own, with the same tests, suites, runs and roles.
+
+### Sign in
+
+**Connect a team workspace** → **Hosted by Breakpatch**. Type your work email and choose **Email me a code**. Enter the 6 digits from the email (it comes from signin@breakpatch.dev and works for 10 minutes). Breakpatch then lists your workspaces and your invitations: click a workspace to open it, or **Join** one you're invited to.
+
+This Mac stays signed in to your Breakpatch account, so next time the list opens straight away. **Use another address** signs it out. If a workspace asks you to sign in again, it shows **Open** *the workspace* with the address you're signed in as: choose **Continue**, or get a new code.
+
+### Create the hosted workspace
+
+A licence's admin does this once, after buying Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name, choose the country your company is in and press **Create workspace**. You're its first admin, and the licence's other admins are invited. Your data is stored in Europe. Hosting by Breakpatch for companies in the EU and the EEA is coming soon: those countries say *(coming soon)* in the list, and choosing one offers **Host it yourself** instead.
+
+Creating it turns on [encryption](#encryption-and-the-recovery-code): the workspace's key is made on your Mac, and Breakpatch never has it. Straight away, Breakpatch shows the workspace's **recovery code**: save it (**Save recovery kit (PDF)** or **Copy code**) and type back the 4 characters it asks for. The window stays open until you do, or until you choose **Skip, I'll make a new one later** and confirm. Without the code, losing every Mac that has the key means losing the tests.
+
+There's no licence key to enter: Breakpatch gives everyone in the workspace their seat, the runner Mac too. Runs are kept for 90 days (365 with the longer history on Business), then deleted; the Create screen says which.
+
+### Invite people
+
+Settings → **Members** → **Invite people**: type their email addresses, choose **Member** or **Admin**, and press **Send invitations**. Each gets an email. They open Breakpatch, choose **Hosted by Breakpatch**, sign in with that address and choose **Join**.
+
+- Invitations last 14 days. **Waiting to join** lists them; × takes one back.
+- **Anyone at @yourcompany.com can join** lets people with an address at your own company's domain join without an invitation. It's never offered for public addresses such as Gmail or Outlook.
+- A workspace holds its seats plus 5 people.
+- **Remove from workspace** stops someone opening it at once. To let them back, invite them again.
+
+### A runner Mac and CI
+
+A runner Mac and CI sign in with a token instead of an email. An admin makes one in Settings → **Local runner**:
+
+- **Set up a runner Mac**: name it, press **Make the token** and copy it. It's shown only this once. On the runner Mac choose **Connect a team workspace** → **Hosted by Breakpatch** → **This is a runner Mac**, and paste it. That Mac becomes the workspace's [local runner](#the-local-runner), and its runs show under its name. The runner's checklist in Settings → Local runner has the same **Set up a runner Mac** button.
+- **Add a CI token**: for [breakpatch-ci](#from-ci-with-breakpatch-ci). The window lists what CI needs, each with its own **Copy**. In CI, set `BREAKPATCH_WORKSPACE=hosted:<workspace>`, and the secrets `BREAKPATCH_WORKSPACE_TOKEN` (the token) and `BREAKPATCH_MACHINE_KEY` (the workspace's [machine key](#encryption-and-the-recovery-code)). There's no `.bpworkspace` file or CI account: `breakpatch-ci run --suite smoke-7f3a` signs in with the token.
+- The trash button next to a token stops it working at once. A workspace holds its machine licences plus 2 tokens.
+
+### Plan, region and usage
+
+Settings → **Workspace** shows the plan and seats, where the workspace is kept, how long runs are kept, and how many tests and how much storage it uses against its allowance (counted once a day). From 80 % the storage bar says **Nearly full**; when it's full, runs keep working and are saved, but new tests, new versions and screenshots wait until there's room. To add 10 GB for $5 a month ($48 a year), write to [support@breakpatch.dev](mailto:support@breakpatch.dev), or delete tests and apps you no longer need. The emails and the account page say the same.
+
+**Download export** (admins) makes a zip of the workspace's tests, versions, runs and suites and opens the download in your browser; the link works for 7 days. The account page has the same **Download export**. When the licence ends, the workspace becomes read-only for 30 days, so you can still open and export your tests, and then it's deleted: Settings → Workspace shows the date first. Renewing makes it active again. **Remove from this Mac** signs you out here; the workspace and its tests stay.
+
+## Host it yourself
+
+Keep the workspace in your company's own Google Firebase project instead: for teams with an IT person or developer, or who want the data in their own cloud account. You set it up once; then teammates join with a link. In Breakpatch: **Connect a team workspace** → **Host it yourself**.
+
+### Create a workspace
 
 Do this once for your organisation. You need owner access to a Firebase project. Use the project your product already signs in with, so everyone keeps their usual login. A new project works too: step 5 turns on sign-in and adds your account.
 
-In Breakpatch: **Connect a team workspace** → *Setting up for your team?* → **Create a workspace**. Each step has **Open Firebase console**, which opens the right page.
+In Breakpatch: **Connect a team workspace** → **Host it yourself** → *Setting up for your team?* → **Create a workspace**. It has six steps, numbered as in the app. Each has **Open Firebase console** (step 4, **Open Google Cloud console**), which opens the right page.
 
-1. **Create the web app.** Project settings → General → Your apps → **Add app** → Web. Name it `Breakpatch`, leave Firebase Hosting off and click Register app. Ignore the code Firebase shows and click Continue to console.
-2. **Paste the config.** Under Web apps, pick Breakpatch. In SDK setup and configuration, choose Config, copy it and paste it into Breakpatch. Then fill in **Who can sign in**: just the part after @, for example `example.com`.
-3. **Choose the database.** Breakpatch asks which one to use:
+1. **Create the web app and paste its config.** Project settings → General → Your apps → **Add app** → Web. Name it `Breakpatch`, leave Firebase Hosting off and click Register app. Ignore the code Firebase shows and click Continue to console. Then, under Web apps, pick Breakpatch. In SDK setup and configuration, choose Config, copy it and press **Paste** in Breakpatch (it pastes straight away). Then fill in **Who can sign in**: just the part after @, for example `example.com`.
+2. **Choose the database.** Breakpatch asks which one to use:
    - **This project's `(default)` database**: best if the Firebase project is only for Breakpatch, and it's the one Firebase's free tier covers. Open Firestore Database. If the page shows **Create database**, click it, keep Standard edition and the ID `(default)`, pick a location near your team (you can't change it later), keep Production mode and click Create. If the project has a `(default)` database already, there's nothing to do.
    - **A separate database**, if the project also runs your app, so test data stays apart. Open Firestore Database, open the database menu at the top of the page (the one that shows `(default)`) and choose **Add database** (a project with no database yet shows **Create database** instead). Keep Standard edition, enter the database ID `breakpatch` (copy it from the app), pick the same location as your main database, keep Production mode and click Create.
-4. **Paste the rules.** In Breakpatch press **Copy rules**. In Firestore pick the `breakpatch` database, open the Rules tab, replace everything with the rules you copied and click Publish.
+3. **Paste the rules.** In Breakpatch press **Copy rules**. In Firestore pick the database you chose in step 2 (`(default)` or `breakpatch`), open the Rules tab, replace everything with the rules you copied and click Publish.
+4. **Delete runs after 90 days automatically** (recommended, saves money). You can skip this step and do it later. Breakpatch opens the Time-to-live (TTL) page of your database in the Google Cloud console: sign in with the same Google account as for Firebase. Click **Create policy** three times, each with the timestamp field `expiresAt`: for the collection groups `runs`, `suiteRuns` and `runNotes` (what's added to a run later: the issue made from it and the AI assistant's explanations). Firestore takes a few minutes to turn them on, then deletes them 90 days after they were saved (see [Run history is kept 90 days](#run-history-is-kept-90-days)). Or with the Google Cloud CLI, as the step shows them: `gcloud firestore fields ttls update expiresAt --collection-group=runs --enable-ttl --database=breakpatch --project=<your project>` (with your database's ID: `--database='(default)'` for the default one; the step shows the commands filled in), and the same with `--collection-group=suiteRuns` and `--collection-group=runNotes`. Press **I've added the policies**, or **Skip this step**: the steps at the top then show it as skipped, not done. If you skip it, an admin's Breakpatch deletes old runs instead, once a day, which costs a few reads more.
 5. **Turn on sign-in and add yourself.** Open Authentication (click **Get started** if it's new). In Sign-in method choose **Email/Password**, turn on Enable and click Save. Then in Users click **Add user** and add yourself, with an address in the *Who can sign in* domain. Add your teammates the same way, now or later. If your team already signs in to this project with email and password, just check it's on. Breakpatch never creates accounts.
 6. **Connect.** Check the summary. Breakpatch checks the connection by itself (see below); fix anything it names first. Name the workspace, add a logo if you like and press **Create workspace**. Then sign in with the account you added. If you haven't added it yet, the sign-in screen says where, with a link to Authentication → Users in the Firebase console.
 
@@ -419,7 +498,15 @@ It only reads: a sign-in with a made-up address (which never signs anyone in) an
 
 If the details on this Mac are wrong (the config, the database ID, *Who can sign in* or the name), choose **Edit connection** on the sign-in screen or in Settings → Workspace. It changes only this Mac's saved details, never the workspace, then checks the connection with them. Changing the Firebase project or the database makes it another workspace to this Mac: its licence seat under the old details is given back, and it takes one again when you sign in.
 
-## Invite your team
+### Run history is kept 90 days
+
+In a team workspace, runs and suite runs are kept for 90 days, then deleted: by Firestore's TTL policy when it's set up (step 4 of [Create a workspace](#create-a-workspace), recommended), and otherwise by an admin's Breakpatch, once a day. Breakpatch from before this can't add runs to the workspace: update it on every Mac, the local runner and your CI machines. Tests, shared steps and their versions are never deleted.
+
+Lists that only grow show the newest first: the **Runs** tab and **Run history** show the latest 20 runs, with **Show older runs** for 20 more, and **Version history** the latest 20 versions, with **Show older versions**.
+
+Breakpatch keeps a copy of the workspace on each Mac, so opening it again only fetches what changed since, which keeps your Firebase bill small. After an update that changes the security rules, publish them again (Settings → Workspace → **Copy security rules**): until then Breakpatch reads everything each time, as before.
+
+### Invite your team
 
 Settings → Workspace → **Invite teammates** → **Copy link**. Send it any way you like. It works for everyone and doesn't expire.
 
@@ -433,11 +520,13 @@ Clicking it opens a page with **Open in Breakpatch** and **Install Breakpatch**.
 
 **Save as file** gives the same thing as a `.bpworkspace` file, handy for a shared drive, CI or the local runner. Double-click it to connect.
 
-Teammates can also paste the link on the connect screen: *Got a link or a .bpworkspace file?* → **Or paste the link here**.
+Teammates can also paste the link on the connect screen: **Host it yourself** → *Got a link or a .bpworkspace file?* → **Or paste the link here**.
+
+In an encrypted workspace, **Copy link with the key** gives the same link with the key that opens the tests in its `#` part, so a teammate's Mac reads them at once; it's the one to send, and **Copy link without the key** gives the plain one. Send it only to teammates. The teammate's Mac takes the key only once they choose to join the workspace. Without the key, an admin lets each new Mac in: see [Encryption and the recovery code](#encryption-and-the-recovery-code).
 
 ## Members and roles
 
-Everyone from your email domain joins as a **member** the first time they sign in. Admins change roles in Settings → **Members**.
+Everyone from your email domain joins as a **member** the first time they sign in (in a [hosted workspace](#invite-people), everyone you invite). Admins change roles in Settings → **Members**.
 
 | Role | What they can do |
 |---|---|
@@ -448,7 +537,7 @@ Everyone from your email domain joins as a **member** the first time they sign i
 
 Only admins can change roles, and nobody can change their own. **Remove from workspace** stops someone opening it; their tests and runs stay. If they sign in again with an account from your domain, they join as a member again, so to keep someone out, disable their account in Firebase Authentication.
 
-Runner and CI accounts sign in once and join as a member. Then an admin changes their role.
+Runner and CI accounts sign in once and join as a member. Then an admin changes their role. In a hosted workspace, a runner Mac and CI use [tokens](#a-runner-mac-and-ci) instead, and people are members or admins.
 
 ## Version history
 
@@ -478,11 +567,30 @@ These apply to runs on the Mac where you set them.
 
 The first few runs of a new test also learn which parts of the page change by themselves, like clocks and carousels, so they don't fail the test.
 
+## Why did this fail?
+
+"Couldn't find the Save button" says what failed. **Why did this fail?** says what changed, so you can tell a real bug from a change someone made on purpose.
+
+Open the run report, pick the failed step and press **Why did this fail?** under the reason. After a few seconds the AI assistant answers, marked **From the AI assistant**:
+
+- **What changed**, in a sentence or two. For example: "The Save button now reads “Save changes”", "The Save button isn't where it was. It's now at the top right of the screen", "The Save button is hidden behind the “Cookies” dialog" or "The page shows an error: “Page not found”".
+- **Likely cause**: it moved, its text changed, the page changed, the page was slow to load, the page shows an error, or it looks like a real bug.
+- **Suggested**: re-record this step, accept the change by re-recording it, give the page longer with a wait before the step, or report it as a bug.
+
+It looks at the screenshot of the failure and what the page said was on screen then, and compares them with how the step was recorded. It only says what it found: if the button is still where it was, it never says it moved. When it can't tell, it says so; compare the two screens instead.
+
+- It's worked out when you ask, never during the run, so it never slows a run down. Once it has answered, the answer is kept with the run, on every Mac in the workspace, and **Copy** includes it.
+- It needs the AI assistant on this Mac, a licence that includes it, and the failure's screenshot, which stays on the Mac that ran the test. For a run on another Mac (the local runner, or a teammate's), ask on that Mac.
+- It explains steps that couldn't find what they act on, didn't change the page, or left the screen looking different. A missing saved secret, a failed set-up call or a run you stopped already say it all.
+- Everything stays on the Mac: the screenshot and what the page said are kept next to each other in the screenshots folder, like any failure screenshot.
+
 ## Schedules
 
 Open a suite and set its **Schedule**: the days and a 24-hour time, like *Mon to Fri, 06:00*. The time is the local runner's clock. With no schedule, the suite is *By request only*: the Run button, CI or another tool.
 
 The suite shows its next run. If the runner was off when a run was due, the missed run happens once when it's back, not once for every time it missed.
+
+With [Solo](#solo) on a tests folder there's no runner: the time is this Mac's clock, and the suite runs while Breakpatch is open. A time missed while Breakpatch was closed runs once when it opens the folder again, as with the runner.
 
 ## The local runner
 
@@ -498,7 +606,9 @@ It uses the Standard AI assistant, like every Mac. With 32 GB of memory or more 
 
 **Record and run on the same kind of machine.** Tests pass most reliably on the runner when they're recorded on a Mac like it, with the same version of Breakpatch. A test recorded with another version of the test browser runs with **Allow for small differences between systems** (Settings → Screen checks, on unless you turn it off) on the runner Mac, and its report says so when a check fails. See [Recorded on another system](#recorded-on-another-system).
 
-Anyone can press **Run on runner** on a suite. If the runner is offline, the request waits until it's back.
+**HTML reports.** Settings → Local runner → **Save an HTML report of every suite run** saves each suite run as the same web page as [Export](#export-a-report), in a folder you choose on the runner Mac (named after the suite, the day and the time). Turn off **Include screenshots** there if others can open the folder who shouldn't see them. If the folder is also on a web server, or a shared drive with web links, enter its **web address** (`https://` is added if you leave it out; it's saved when you leave the field): the Slack and Teams [result messages](#result-messages) then have an **Open the HTML report** button, and the JSON has `htmlReportUrl`. Without one, the report is only saved: a file on the runner Mac isn't something others can open from a message. If a report can't be saved, the runner's status says so.
+
+Anyone can press **Run on runner** on a suite. If the runner is offline, the request waits until it's back. The runner tells the workspace it's there every 90 seconds, and whenever what it's doing changes; after 5 minutes without that, the other Macs show it as offline.
 
 **Queue rules**
 
@@ -514,7 +624,7 @@ The runner starts a suite whenever a document is added here:
 projects/<your-project>/databases/breakpatch/documents/runRequests
 ```
 
-Settings → Local runner → **How run requests work** shows the exact path for your workspace. Each document is one request. Let Firestore make its ID.
+Settings → Local runner → **How run requests work** shows the exact path for your workspace. If the workspace uses the project's `(default)` database, the path has `(default)` where this one has `breakpatch` (and so do the examples below). Each document is one request. Let Firestore make its ID.
 
 | Field | Needed | What it's for |
 |---|---|---|
@@ -579,11 +689,12 @@ To run a suite on the local runner Mac instead, add a [run request](#run-request
 **What you need**
 
 - A Breakpatch Team licence with a free **machine licence** for the CI machine. Machine licences count separately from people's seats.
-- A Mac with Apple Silicon and macOS 14 or later, for example GitHub's `macos-15` runners or a Codemagic Mac. Linux x86_64 works as a preview: it runs tests, but record them on a Mac.
-- Python 3.11 on that machine.
+- A Mac with Apple Silicon and macOS 14 or later, for example GitHub's `macos-15` runners or a Codemagic Mac. Linux (x86_64 and arm64, a Raspberry Pi too) and Windows x64 work as a preview: they run tests, but record them on a Mac. See [breakpatch-ci on Linux](#breakpatch-ci-on-linux), [breakpatch-ci on Windows](#breakpatch-ci-on-windows) and [Raspberry Pi runner](#raspberry-pi-runner).
+- Python 3.11 on that machine. When there's none, the install command downloads it.
 - One run at a time per machine licence. To run tests in parallel, give each parallel job its own machine licence and its own `BREAKPATCH_MACHINE_ID`.
 - The workspace's `.bpworkspace` file (Settings → Workspace → Invite teammates → **Save as file**), committed to your repo. It holds only the workspace's public details, never a password or key.
 - A **CI account**: a user such as `ci@yourcompany.com` with the *CI* role (see [Members and roles](#members-and-roles)). Have it sign in to Breakpatch once, then change its role in Settings → Members. Its email and password go in your CI's secrets.
+- [Hosted by Breakpatch](#a-runner-mac-and-ci) needs neither: a **CI token** and `BREAKPATCH_WORKSPACE=hosted:<workspace>` instead, with the machine key, since hosted workspaces are encrypted.
 - The workspace's latest [security rules](#security-rules): they let the CI account read tests and add its runs. After updating Breakpatch, an admin publishes them again (Settings → Workspace → **Copy security rules**).
 
 **Install**
@@ -624,6 +735,7 @@ Shared steps run the version each test's step pins, or their latest, as in the a
 
 - `BREAKPATCH_CI_EMAIL`: the CI account's email address.
 - `BREAKPATCH_CI_PASSWORD`: its password.
+- `BREAKPATCH_MACHINE_KEY`: in an encrypted workspace, the machine key (`bpmk1_…`, Settings → Workspace → Encryption → **Machine key**). It opens the tests, and the runs `breakpatch-ci` writes back are encrypted with the workspace's key too.
 
 Only an account with the *CI* role is accepted. To cut a pipeline off, disable the account in Firebase Authentication, or change its password.
 
@@ -647,6 +759,12 @@ Shared steps are read from `apps/<app>/shared/` next to `tests/`. The run isn't 
 | `3` | There's no usable licence, or it's for another workspace. The JSON and the log say why. |
 
 If a run can't be saved in the workspace (for example the security rules are out of date), the log says so and the JSON has `"saved": false`. The exit code is still the test's result.
+
+**Reports for your CI.** Add `--junit results.xml` to write the result as JUnit XML, which GitHub, GitLab and Jenkins show as test results, and `--html report.html` for the same report as the app's [Export](#export-a-report), screenshots included, to keep as a build artifact. `--html-no-screenshots` leaves the screenshots out (they can show personal data). Both work for a suite, a workspace test and a test file. The folder must exist; a file that can't be written is said in the log and doesn't change the exit code.
+
+```sh
+breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --junit results.xml --html report.html
+```
 
 **The machine licence.** Set these in the CI job's environment:
 
@@ -672,6 +790,7 @@ Keep the sites to your own test environments. A workspace member who can edit te
 - `--auto-fix` lets the AI assistant find a button that moved, as [Fixed automatically](#fixed-automatically) does in the app. It only works on a self-hosted Mac where Breakpatch is installed and its AI assistant is downloaded (Settings → AI assistant), with a licence that includes Fixed automatically. Anywhere else the run carries on without fixing and says so.
 - `--fail-on-fix` fails the run when a step needed fixing.
 - `--strict-systems` turns off **Allow for small differences between systems** for this run (see below).
+- `--notify-url URL` sends the result to Slack, Microsoft Teams or any web address when the run ends, as the local runner does (see [Result messages](#result-messages)). Anyone with the address can post to your channel, so keep it in a CI secret and set it as `BREAKPATCH_NOTIFY_URL` instead: then it never shows in the log. `--notify-kind slack|teams|webhook` says which format to send (Breakpatch picks it from the address), and `--notify-when failures` sends only failed runs (the default is `every`). The JSON gets `"notified"`, with what Slack or Teams said if it didn't work; the exit code is still the test's result. *When it starts failing, and when it passes again* isn't available in CI, since the CI account can't read the suite's last result.
 
 **Record and run on the same kind of machine.** Screen checks compare the page with how it looked when the step was recorded, and another system can draw text a little differently. Tests recorded on a Mac pass most reliably on a Mac with the same Breakpatch version. When a test was recorded on another system, `breakpatch-ci` says so in one line when the run starts, allows for small differences as the app's **Allow for small differences between systems** does (`--strict-systems` turns that off), and adds `systemMismatch` to the JSON, with the explanation when a check fails. See [Recorded on another system](#recorded-on-another-system).
 
@@ -753,13 +872,189 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 - **Exit code 2 with "wrong email or password"**: check `BREAKPATCH_CI_EMAIL` and `BREAKPATCH_CI_PASSWORD` in the job's secrets.
 - **Exit code 2 with "not CI"** or "isn't a member of this workspace": the account needs the *CI* role. Sign in to Breakpatch with it once, then an admin changes its role in Settings → Members.
 - **Exit code 2 with "The workspace refused the CI account"**: publish the latest security rules (Settings → Workspace → **Copy security rules**).
+- **Exit code 2 with "This workspace's tests are encrypted"** or "isn't this workspace's machine key": set `BREAKPATCH_MACHINE_KEY` to the workspace's current machine key. After an admin makes a new one, update the secret.
 - **Exit code 2 with "would use the secret … which --secret … doesn't list"**: a test's start page, app address or set-up call is on a site you didn't give that secret. If the site is right, add it: `--secret NAME=https://site1,https://site2`. If not, someone changed the test: check its Version history.
 - **"Left out: no version is marked as released"**: open the test's Version history and **Mark as released** the version CI should run, or use `--version latest`.
 - **Checks fail in CI but pass in the app**: look for the line "this test was recorded on…" at the start of the log. Re-record the test on a machine like the CI machine, or run it on a Mac.
 
+### breakpatch-ci on Linux
+
+`breakpatch-ci` runs on 64-bit Linux, on x86_64 and on arm64 (a Raspberry Pi 4 or 5, or an arm server), as a preview: it runs tests there, and you record them on a Mac. It needs a system from the last few years (glibc 2.28 or later): Ubuntu 22.04 or later, Debian 12 or later, Raspberry Pi OS Bookworm (64-bit) or later, Fedora. A 32-bit system isn't supported, even on a 64-bit Raspberry Pi.
+
+The install command is the same. When the machine has no Python 3.11 (Ubuntu 24.04 and Raspberry Pi OS come with a newer one), it downloads Python 3.11 into `~/.breakpatch-ci` and checks it against the checksum written in the install command. To use your own, set `BREAKPATCH_PYTHON`.
+
+Chromium needs some system libraries. Install them once per machine, as an administrator:
+
+```sh
+sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
+```
+
+`breakpatch-ci setup` installs the test browser again if it's missing (it needs no licence) and prints that line too.
+
+On Linux, Chromium's own sandbox is off by default, because containers and most CI machines can't start it. On a machine that can (your own Linux server, a Raspberry Pi), turn it on with `BP_SANDBOX=1`.
+
+**GitHub Actions on Linux.** The same job as above, with `runs-on: ubuntu-24.04` (or `ubuntu-24.04-arm` for arm64). You don't need `actions/setup-python`. Add the libraries before the run:
+
+```yaml
+      - run: curl -fsSL https://breakpatch.dev/install-ci | sh
+      - run: sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
+```
+
+**GitLab CI**
+
+```yaml
+ui-tests:
+  image: ubuntu:24.04
+  resource_group: breakpatch-ci        # one run at a time per machine licence
+  variables:
+    BREAKPATCH_MACHINE_ID: gitlab-acme-web
+    BREAKPATCH_LICENCE_FILE: $CI_PROJECT_DIR/.breakpatch/licence.json
+  cache:
+    key: breakpatch-licence
+    paths: [.breakpatch]
+  script:
+    - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+    - curl -fsSL https://breakpatch.dev/install-ci | sh
+    - ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
+    - >-
+      ~/.local/bin/breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --version released
+      --label "GitLab · pipeline $CI_PIPELINE_ID" --secret STAGING_PASSWORD=https://staging.acme.com --screenshots shots
+  artifacts:
+    when: on_failure
+    paths: [shots]
+```
+
+Set `BREAKPATCH_LICENCE_KEY`, `BREAKPATCH_CI_EMAIL`, `BREAKPATCH_CI_PASSWORD` and `BP_SECRET_STAGING_PASSWORD` as masked CI/CD variables. The job runs as root in the container, which the install command allows.
+
+### breakpatch-ci on Windows
+
+`breakpatch-ci` runs on 64-bit Windows 10 and 11 on x64, as a preview: it runs tests there, and you record them on a Mac. Windows on arm isn't supported yet. Install it from PowerShell (no administrator rights needed):
+
+```powershell
+irm https://breakpatch.dev/install-ci.ps1 | iex
+```
+
+It works like the install command for Mac and Linux. It installs `breakpatch-ci` and the test browser into `%LOCALAPPDATA%\breakpatch-ci`, uses Python 3.11 if it's installed (or downloads it, checked, into that folder), and adds `%LOCALAPPDATA%\breakpatch-ci\bin` to your PATH. Open a new terminal afterwards. For a given version, set `$env:BREAKPATCH_VERSION = "1.2.3"` first. To remove it, set `$env:BREAKPATCH_UNINSTALL = "1"` and run the same command.
+
+**GitHub Actions on Windows**
+
+```yaml
+jobs:
+  ui-tests:
+    runs-on: windows-latest
+    concurrency: breakpatch-ci
+    env:
+      BREAKPATCH_LICENCE_KEY: ${{ secrets.BREAKPATCH_LICENCE_KEY }}
+      BREAKPATCH_MACHINE_ID: github-acme-web-windows
+      BREAKPATCH_LICENCE_FILE: ${{ github.workspace }}\.breakpatch\licence.json
+      BREAKPATCH_CI_EMAIL: ${{ secrets.BREAKPATCH_CI_EMAIL }}
+      BREAKPATCH_CI_PASSWORD: ${{ secrets.BREAKPATCH_CI_PASSWORD }}
+      BP_SECRET_STAGING_PASSWORD: ${{ secrets.STAGING_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .breakpatch
+          key: breakpatch-licence-${{ github.run_id }}
+          restore-keys: breakpatch-licence-
+      - run: irm https://breakpatch.dev/install-ci.ps1 | iex
+        shell: pwsh
+      - run: >-
+          breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --version released
+          --label "GitHub · build ${{ github.run_number }}" --secret STAGING_PASSWORD=https://staging.acme.com --screenshots shots
+```
+
+The install command adds its folder to `GITHUB_PATH`, so the next steps can run `breakpatch-ci`.
+
+**A Windows PC as a runner.** To run a suite on a schedule without the app, use Task Scheduler: a task that runs `breakpatch-ci run --workspace … --suite …` at the times you want, as a local account made for it, set to *Run whether user is logged on or not*. Give it the same variables as a CI job (System → Advanced system settings → Environment Variables, for that account only). Chromium runs without a desktop.
+
+### Raspberry Pi runner
+
+A Raspberry Pi makes a cheap, always-on machine that replays your workspace's suites on a schedule and reports into the workspace, like a CI job that never stops. It replays tests. It doesn't record them (record on a Mac) and doesn't fix moved buttons: the AI assistant takes minutes per look on a Pi, so leave `--auto-fix` off.
+
+**Which Pi**
+
+- **Raspberry Pi 4 with 8 GB:** fine for nightly and hourly replays of normal web pages. A 4 GB Pi 4 works for replays too, with less room.
+- **Raspberry Pi 5 with 8 GB:** about twice as fast, and the better buy if you're buying one now.
+- **A small x64 mini PC** (for example one with an Intel N100): faster again, and the best choice for Flutter apps (below). It uses the same Linux install as any CI machine.
+- Use an **SSD** over USB 3 (or NVMe on a Pi 5) rather than an SD card, which wears out with screenshots and logs. Give it cooling (a Pi 4 slows down at 80 °C) and the official power supply (27 W on a Pi 5).
+- Install a **64-bit** system: Raspberry Pi OS Bookworm (64-bit) or later, or Ubuntu 24.04 for arm64.
+- On a Pi 5, the standard kernel uses 16 KB memory pages. If Chromium misbehaves, add `kernel=kernel8.img` to `/boot/firmware/config.txt` and restart: that kernel uses 4 KB pages.
+
+**Flutter web apps.** Replay works, because it compares the screen and needs no AI assistant, but Flutter is the hardest case for a Pi:
+
+- Flutter draws everything with WebGL, and a Pi's headless Chromium draws it in software. The first load and each step's settling are slow: use the slow-machine setting (`BP_TIMINGS_SCALE`, below).
+- Software drawing on an arm Linux machine looks slightly different from a Mac. Re-record Flutter tests on the same kind of machine as the runner (or allow for small differences between systems, which `breakpatch-ci` does by default), and check the first runs.
+- There's no automatic fixing for Flutter buttons that moved: nothing can read inside a canvas, and the AI assistant is too slow on a Pi.
+
+A Pi 4 with 8 GB suits nightly Flutter runs, a Pi 5 is better, and an x64 mini PC is best.
+
+**Slow machines.** `BP_TIMINGS_SCALE=2` doubles how long a run waits for a page to settle, for a step's first check to match, for pages to load and for the start page. It doesn't stretch the watch for moving parts before each step. Use a number from 1 to 10: 2 for a Pi 5 or a Pi 4 with normal pages, 3 for a Pi 4 with Flutter. If steps fail with "didn't settle" or "not there yet", raise it.
+
+**Set it up**
+
+1. Make a user for the runner, and install `breakpatch-ci` as that user:
+
+   ```sh
+   sudo useradd --create-home --shell /usr/sbin/nologin breakpatch
+   sudo -H -u breakpatch sh -c 'curl -fsSL https://breakpatch.dev/install-ci | sh'
+   sudo /home/breakpatch/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
+   ```
+
+2. Give it a **machine licence**, the workspace and a **CI account**, as for any CI machine (see [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)). Keep the secrets in files only root can read:
+
+   ```sh
+   sudo install -d -m 700 /etc/breakpatch
+   sudo cp team.bpworkspace /etc/breakpatch/
+   sudo sh -c 'umask 077; printf %s "BP-XXXX-XXXX" > /etc/breakpatch/licence-key; printf %s "the CI account password" > /etc/breakpatch/ci-password'
+   ```
+
+   `/etc/breakpatch/breakpatch.env` holds the rest: `BREAKPATCH_CI_EMAIL`, a fixed `BREAKPATCH_MACHINE_ID` such as `pi-runner-1`, and the suite options, for example `BREAKPATCH_SUITE_OPTIONS=--version released --secret STAGING_PASSWORD=https://staging.acme.com`. A saved secret goes in its own file, `/etc/breakpatch/secret.STAGING_PASSWORD`, with a `LoadCredential=` line for it in the service.
+
+3. Install the service and its timer. The files are in the Breakpatch repository, in `docs/systemd/`: `breakpatch-suite@.service`, `breakpatch-suite@.timer`, `run-suite` and an example `breakpatch.env`.
+
+   ```sh
+   sudo install -D -m 755 run-suite /usr/local/lib/breakpatch/run-suite
+   sudo install -m 644 breakpatch-suite@.service breakpatch-suite@.timer /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl start breakpatch-suite@smoke-7f3a         # a first run, now
+   journalctl -u breakpatch-suite@smoke-7f3a                # its log and result
+   sudo systemctl enable --now breakpatch-suite@smoke-7f3a.timer
+   ```
+
+   The instance name (after the `@`) is the suite's ID or name. The timer runs it on weekdays at 06:00. To change that for one suite, run `sudo systemctl edit breakpatch-suite@smoke-7f3a.timer` and set your own `OnCalendar=` (an empty `OnCalendar=` line first clears the default). `systemctl list-timers 'breakpatch-*'` shows the next runs.
+
+The service passes the licence key, the CI account's password and saved secrets as systemd credentials: only the run can read them, and they never appear in `systemctl show` or the log. It turns on Chromium's sandbox (`BP_SANDBOX=1`) and sets `BP_TIMINGS_SCALE=2`. Failure screenshots go to `/home/breakpatch/breakpatch-shots`.
+
+**What's different from the app's local runner**
+
+- The schedule is the timer's. The days and times set on a suite in the app aren't used.
+- Runs show in the run history marked *CI*, not as the local runner's.
+- There's no **Run now** from the app, and the app shows the runner as offline.
+
+**Copying the SD card or SSD.** Each Pi needs its own machine ID. If you copy a system that has already started once, run `sudo rm /etc/machine-id && sudo systemd-machine-id-setup` on the copy, and give it its own `BREAKPATCH_MACHINE_ID`. Otherwise both Pis use one machine licence and push each other out.
+
 ## Result messages
 
-Give a suite a **Result address** (*After each run, send the result to*): any web address that accepts a message. After every run, the runner sends it a `POST` with JSON:
+After each run, the local runner can send the suite's result where your team talks: **Slack**, **Microsoft Teams**, or any **web address** that takes a message. Set it in the suite (*After each run, send the result to*). Only admins can set or see it.
+
+**When.** *After every run*, *Only when it fails*, or *When it starts failing, and when it passes again*: the first failed run after a pass, then the first pass after that. A run that was replaced by a newer request is only sent with *After every run*.
+
+**Slack.** Make an [incoming webhook](https://api.slack.com/messaging/webhooks) for the channel (a Slack app with *Incoming Webhooks* turned on) and paste its address, `https://hooks.slack.com/services/…`. The message has the result and the counts with an **Open the report** button beside them, then one line per failed test with the step and why (the AI assistant's sentence, when there is one, is marked as the AI assistant's), and the screenshot, if you include it, right after the failure it shows. The notification says how many tests failed and which.
+
+**Microsoft Teams.** In the channel, add the Workflows template **Send webhook alerts to a channel** (or a workflow that starts with *When a Teams webhook request is received*), and paste its address. It ends in `environment.api.powerplatform.com`. The message is an Adaptive Card with the same things, and the same line as its notification preview. Microsoft turned off the old Office 365 connector addresses (`….webhook.office.com`) in Teams, so Breakpatch doesn't take them. If Teams says it wants a sign-in, set *Who can trigger the flow* to *Anyone* in the workflow's first step. Older Workflows addresses on `logic.azure.com` are being replaced by Microsoft: if the test message fails, copy the workflow's address again.
+
+**Include the failed step's screenshot** (Slack and Teams, off by default). Slack and Teams can only show a picture from a web address, so the runner puts the screenshot of the step that failed in your workspace's own Firebase Storage, at a random address. Anyone who has the message can open the picture. It needs Storage turned on in your Firebase project (new projects need the pay-as-you-go plan for it) and its rules published: Settings → Workspace → **Copy storage rules**, then Firebase console → Storage → Rules → Publish. The first time, the console asks whether Storage may read Firestore: allow it, because the rules check that whoever adds a picture is one of the workspace's people, its runner or its CI account. Update the runner Mac before you publish these rules: older apps put pictures where the new rules don't allow. Without the rules, the message goes without the picture. Pictures aren't deleted for you: to keep Storage small, add a lifecycle rule in the Google Cloud console (Cloud Storage → your bucket → Lifecycle → delete objects older than 90 days).
+
+**The address is a secret.** Anyone who has it can post to your channel. So it isn't stored with the suite: only admins and the runner can read it, not members or the CI account. Once saved it shows masked, like `hooks.slack.com/services/•••••`; press **Change** to paste a new one. It never goes in a message, a warning or the log.
+
+**Send a test message** posts a sample result to the address before you rely on it, and shows what Slack or Teams answered, for example "Slack doesn't know this webhook any more".
+
+If the address doesn't answer, the runner tries 3 times over 5 minutes. If Slack or Teams refuses the message (a removed webhook, say), it stops at once. Either way the runner's status says so.
+
+**The report link.** **Open the report** goes to `https://breakpatch.dev/report#r=…`, which opens the run's report in Breakpatch on a Mac, and on a phone says to open it on a Mac. The part after `#` never reaches a server.
+
+**A web address** gets the result as JSON, in a `POST`:
 
 ```json
 {
@@ -774,16 +1069,37 @@ Give a suite a **Result address** (*After each run, send the result to*): any we
   "note": "",
   "startedAt": "2026-09-24T14:52:03.000Z",
   "durationSeconds": 292,
-  "reportLink": "breakpatch://report/run_8f21c",
-  "text": "Smoke failed: 4 of 6 tests passed, 1 failed, 1 not run · 4:52 · asked by CI · build 412"
+  "reportLink": "breakpatch://report/web-app/run_8f21c",
+  "reportUrl": "https://breakpatch.dev/report#r=web-app/run_8f21c",
+  "text": "Smoke failed: 1 of 6 tests failed, 1 not run · Create a project · 4 min 52 s · started by CI · build 412"
 }
 ```
 
-`result` is one of `passed`, `passed_with_fixes`, `failed` or `replaced`. `reportLink` opens the report in Breakpatch. Use `text` as it is, or build your own message.
+`result` is one of `passed`, `passed_with_fixes`, `failed` or `replaced`. `reportLink` opens the report in Breakpatch on a Mac, and `reportUrl` does the same from anywhere (both are empty when there's no run to open). A failure can also have `explanation`, the AI assistant's sentence on why, and the message `imageUrl`, the screenshot, when the suite includes one, and `htmlReportUrl`, the runner's saved [HTML report](#the-local-runner), when its folder has a web address. Use `text` as it is, or build your own message. Any relay works: n8n, Zapier, an email service. Discord and Google Chat take it through such a relay.
 
-If the address doesn't answer, the runner tries 3 times over 5 minutes. **Send a test message** in the suite checks the address before you rely on it.
+[breakpatch-ci](#from-ci-with-breakpatch-ci) sends the same messages with `--notify-url`.
 
-Any relay works: an n8n workflow that posts to Teams, a Slack incoming webhook, an email service.
+**Updating.** Result addresses saved by an earlier Breakpatch were kept with the suite, where the CI account could read them. When an admin opens the updated app, it moves them to where only admins and the runner can read them. Update the runner Mac first, then publish the new [security rules](#security-rules). Older apps can't save in a workspace once the updated app has saved there (they say to update).
+
+## Create an issue
+
+On a failed step in a report, **Create issue** writes it up in **GitHub**, **Linear** or **Jira Cloud** in one click: the title ("Create a project: step 5 Click Done failed: couldn't find the Done button"), the steps up to the failure, what was expected and what was seen, the reason, the app, the start address, the test version, who or what ran it (a person, the local runner or CI), the Mac, the time and a link to the report. If the AI assistant explained the failure, its explanation goes in too. Afterwards the report shows **Open issue** instead, for everyone in the team.
+
+**The screenshot.** Jira gets the failed step's screenshot as an attachment, and Linear as a picture in the issue. GitHub has no way to attach one, so it's put in your workspace's Firebase Storage and linked, as for [result messages](#result-messages) (it needs Storage and its rules); without Storage the issue goes without it. The screenshot is on the Mac that ran the test, so an issue made on another Mac, or from a runner or CI run, has no picture.
+
+**Set it up** in Settings → **Issue trackers**:
+
+1. **Where issues go** (admins, for the whole team): the GitHub repository (`acme/web`) and labels, the Linear team's key (`ENG`), or the Jira site (`acme.atlassian.net`), project key (`WEB`), issue type (Bug unless you say otherwise) and labels.
+2. **Your token, on this Mac** (each person): issues are made in your name, with your own token.
+   - **GitHub:** a [fine-grained personal access token](https://github.com/settings/personal-access-tokens/new) with access to the repository and *Issues: Read and write*.
+   - **Linear:** a personal API key (Linear → Settings → Security & access).
+   - **Jira:** an [API token](https://id.atlassian.com/manage-profile/security/api-tokens) with the email you sign in to Jira with.
+
+   **Check and save** asks the tracker whether the token works, then keeps it in this Mac's Keychain. It's only used to make issues, and never goes to the workspace, your teammates or Breakpatch. **Remove** takes it off this Mac.
+
+If a tracker refuses, Breakpatch says why in plain words, for example "GitHub said the token can't create issues in acme/web".
+
+Create issue comes with a Breakpatch Team licence that includes it; licences get it at their next check. In Community, **Copy** → **Markdown, for an issue** gives the same text to paste yourself.
 
 ## Security rules
 
@@ -795,8 +1111,13 @@ Any relay works: an n8n workflow that posts to Teams, a Slack incoming webhook, 
 - `runRequests` accepts a small document of a fixed shape from members and from accounts with the `ci` role. Only the runner can read or delete them.
 - Accounts with the `ci` role read apps, tests, shared steps, their versions and suites, and add runs marked `ci` as themselves. They can't change anything, or read members, runs or the licence.
 - A test's released version must be one that's saved.
+- Every change to apps, tests, shared steps or suites also updates `workspace/changes`, a small document that tells the other Macs what changed, so they don't read everything again. Apps from before this can't save until they're updated.
+- Runs and suite runs must carry `expiresAt`, 90 days after they're saved, which the TTL policy deletes them by. It can't be changed. Runs from Breakpatch or `breakpatch-ci` from before this are refused, so update them first.
+- Only admins set where a suite's result goes. Its address is kept apart from the suite, and only admins and the runner can read it.
+- Anyone in the team can note the issue made from a run, and change nothing else about it. Only admins set where issues go. Tokens for GitHub, Linear and Jira are never in the workspace.
+- In an encrypted workspace, names, steps, addresses and results are stored encrypted, and the rules check only their size. Only admins can encrypt what's there again (turning encryption on, a new key), and nothing else about it. The copies of the key for the recovery code and the machine key are for admins (the machine key's for the runner and CI too), and each Mac's request to be let in is its owner's.
 
-To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the `breakpatch` database. Disable the user in Firebase Authentication to cut it off.
+To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the workspace's database. Disable the user in Firebase Authentication to cut it off.
 
 A service account using the Firebase Admin SDK skips the rules altogether. Use a normal user with the `ci` role instead: `breakpatch-ci` only signs in with one.
 
@@ -804,7 +1125,8 @@ A service account using the Firebase Admin SDK skips the rules altogether. Use a
 
 A Team licence has **seats** for people and **machine licences** for the local runner and CI machines. The licence belongs to the workspace.
 
-- **The admin sets up the licence once**: **Settings → Licence** → **Enter licence key** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). The key is on your licence page after you buy: see [The back office](#the-back-office).
+- **Hosted by Breakpatch** needs no key in the app: Breakpatch gives each person their seat when they sign in. The rest of this section is the same.
+- **The admin sets up the licence once** (in a workspace of your own): **Settings → Licence** → **Enter licence key** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). The key is on your licence page after you buy: see [The back office](#the-back-office).
 - **Members don't enter a key.** Everyone else gets a seat by themselves when they join through the [invite link](#invite-your-team) or sign in. Only admins can see the key. Until the admin has entered it, members see "Your admin hasn't set up the licence for this workspace yet."
 - **Out of seats:** the member sees "Your team is out of seats. Your admin can see you're waiting and can add a seat or free one." Admins see who is waiting in **Settings → Licence**.
 - **A new key:** if the admin replaces the key, members' seats follow once an admin opens Breakpatch.
@@ -817,6 +1139,8 @@ A Team licence has **seats** for people and **machine licences** for the local r
 - **Usage counts go with the licence check.** Each check sends how many tests were created and how many runs there were (by hand, from schedules, on the local runner and in CI), passed and failed, and on how many days Breakpatch was used, since the last check. Only numbers: never test names, addresses, steps or screenshots. The licence check already knows the licence and seat, so your admin sees the numbers per person and machine in the [back office](#the-back-office). They're part of how the licence works, so there's no switch for them in Team. `breakpatch-ci` counts its runs the same way in its licence file and sends them with its next check; on CI machines that don't keep that file between jobs they aren't sent.
 
 Without a licence, Breakpatch keeps working as Community (tests, recording and running on this Mac) and Team features are off. A quiet banner under the title bar says why: "Breakpatch Team needs a licence. Your admin enters the key once in Settings → Licence, then everyone gets a seat when they sign in.", "Your team is out of seats. Ask your admin to add one.", "Reconnect to check your licence." (after 30 days offline) or "Your licence has expired." A runner with no machine licence left gets "Your team has no machine licences left. Ask your admin to add one."
+
+With Solo, the messages are for one person: "This Solo licence is in use on another Mac. Free it at account.breakpatch.dev, then try again.", "Your Solo licence has expired. Renew it at account.breakpatch.dev." or "This Solo licence is already used by someone else. Solo is for one person: for more people, choose Team." The banner then has a button for what to do there, such as **Free the other Mac** or **Renew**, and Home doesn't offer Upgrade to Team while it shows.
 
 Other messages you may see:
 
@@ -841,3 +1165,28 @@ If you're one of your licence's admins, you see:
 If you bought Breakpatch Team on the [pricing page](https://breakpatch.dev/pricing/), sign in with the email you bought with: the first time, you see **Your new licence key (shown once)**. Press **Show my licence key** and keep it somewhere safe, because it isn't shown again. The same page has **Manage billing** (invoices, payment method, cancelling, through Paddle, our reseller) and **Change seats** (seats and extra machine licences, charged or credited straight away, pro rata for the rest of the billing period; credits go against your next payments; Solo has no seats to change). A cancelled licence keeps working until the end of the period you paid for.
 
 For a licence you didn't buy on the site, contact Breakpatch to add seats or renew. If you see "No licences for this email", ask whoever bought Breakpatch Team to add you as an admin.
+
+## Encryption and the recovery code
+
+Breakpatch can encrypt a workspace's tests on your Macs, so the workspace's database keeps only unreadable text. Workspaces hosted by Breakpatch are always encrypted. For a workspace in your own Firebase, an admin turns it on in **Settings → Workspace → Encryption** (publish this version's security rules first: **Copy security rules**). It can't be turned off again.
+
+**What's encrypted.** Test, app, suite and shared-step names and descriptions; steps, with what they click and type, their addresses and labels; start addresses; run results, their steps and "Why did this fail?" explanations; where results and issues go. **What isn't:** ids, times, version numbers, pass or fail and counts, when a run expires, and who is in the team with which role. The workspace needs those to check who may do what and to delete old runs, and they say nothing about what your tests do.
+
+**The key.** Each workspace has one key, made on the first admin's Mac and kept in its Keychain. It never leaves your Macs unencrypted, and Breakpatch never has it. A teammate's Mac gets it one of two ways:
+
+- **An invite link with the key**: Settings → Workspace → **Copy link with the key**. The key is in the part after `#`, which browsers never send to a server. Send it only to teammates.
+- **An admin lets the Mac in**: a Mac without the key shows *This Mac can't read the workspace's tests yet* with four words, for example *otter maple tulip quartz*. The admin sees it under **Macs waiting to be let in**, checks the words with its owner, and presses **Let in**. If this Mac doesn't know that admin yet, it then shows *An admin let this Mac in. Check it was them.* with the admin's Mac's words: compare them with the ones in their Settings → Workspace → Encryption and confirm. A Mac takes a key only from an admin it trusts (from the invite link, or one you confirmed, or one a trusted admin vouched for); anything else is refused and said, for example *The words didn't match, so this Mac didn't take the key.*
+
+Until then, that Mac shows names as *Locked* and can't save. Once encryption is on, content that isn't encrypted (saved by an older Breakpatch, for example) shows as *Locked* too and isn't saved that way again; the workspace's rules and breakpatch-ci refuse it as well.
+
+**The recovery code.** When encryption is turned on, the admin sees a recovery code once, like `BPR1-50M6-HA79-55MT-KTHA-DANE-PAVB-NFH`. Save it with **Save recovery kit (PDF)** or **Copy code**, keep it in your password manager or with your company's papers, then type back the 4 characters Breakpatch asks for. Until you do, admins see *Save the workspace's recovery code* under the title bar. The window doesn't close with Esc or a click outside it; **Skip, I'll make a new one later** asks first, because the code isn't shown again. Breakpatch never sees the code and can't make it again. A recovery code (`BPR1-…`) pasted where a licence key goes is refused, and never sent.
+
+- **I lost access to the key**: on a new Mac, sign in as an admin and open **Settings → Workspace → Encryption → I lost access to the key**, then type the recovery code. Any Mac that still has the key can also let the new one in.
+- **Make a new recovery code** stops the old one working. Save the new one straight away.
+- **If every Mac with the key is lost and nobody has the recovery code, the tests saved so far can't be read again**, by you or by Breakpatch. An admin can **Start again with a new key** (under the help text in **I lost access to the key**, and it asks first): new tests and runs are encrypted with it, and older ones stay locked.
+
+**The local runner and CI** use the **machine key** (`bpmk1_…`): **Make one** under **Machine key**, then enter it on the runner Mac (Settings → Workspace → Encryption) and save it as `BREAKPATCH_MACHINE_KEY` in CI ([From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)). A new machine key stops the old one working.
+
+**A new key.** After someone leaves the team, Breakpatch offers **Make a new key** (it's also in Settings → Workspace → Encryption). Every Mac still in the team gets it, the recovery code and machine key keep working, and what's in the workspace is encrypted again with it in the background. Once that's done, each Mac deletes the older keys from its Keychain, so a copy of an old key opens nothing new. Anyone who had access may have kept copies of what they could read.
+
+**Turning it on**, or a new key, encrypts what's already there in the background: keep working, and if you close the app, it carries on the next time an admin opens the workspace. Breakpatch versions from before encryption can't save to an encrypted workspace, so update everyone first.

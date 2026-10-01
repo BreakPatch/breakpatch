@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<!-- data-prelaunch shows the pre-launch notes. Remove it on launch day (site/README.md, "Launch day"). -->
+<html lang="en" data-prelaunch>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open a run report · Breakpatch</title>
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<header class="top"><a class="brand" href="../"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a><nav></nav></header>
+<main class="connect">
+  <div class="card" id="mac" hidden>
+    <div class="ws-logo"><span class="ear" style="width:34px;height:34px;border-radius:19px 4px 19px 19px" aria-hidden="true"></span></div>
+    <h1>Open the run report.</h1>
+    <p>This report is in your team's Breakpatch workspace. It opens in the Breakpatch app.</p>
+    <div class="actions">
+      <a class="btn" id="open" href="#">Open in Breakpatch</a>
+      <a class="btn ghost" href="../#install">Install Breakpatch</a>
+    </div>
+    <p class="small">You need to be signed in to the workspace the run belongs to.</p>
+  </div>
+  <div class="card" id="notopen" hidden>
+    <h1>Didn't open?</h1>
+    <p>It looks like Breakpatch isn't on this Mac yet. Install it, connect to your team's workspace, then click the link again.</p>
+    <div class="actions">
+      <a class="btn" href="../#install">Install Breakpatch</a>
+      <a class="btn ghost" id="retry" href="#">Try opening again</a>
+    </div>
+    <p class="prelaunch" role="note"><span class="dot" aria-hidden="true"></span><span>Public release coming soon. Join the list: <a href="mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list">support@breakpatch.dev</a></span></p>
+  </div>
+  <div class="card" id="other" hidden>
+    <h1>Open this link on your Mac.</h1>
+    <p>Run reports open in Breakpatch, a Mac app. The message you came from has the result and what failed. For the screenshots and each step, open this link on the Mac where you use Breakpatch.</p>
+    <div class="actions"><button class="btn" id="copy" type="button">Copy link</button></div>
+    <p class="small">The report stays in your team's own workspace. This page only passes the link on, and it never reaches a server.</p>
+  </div>
+  <div class="card" id="bad" hidden>
+    <h1>This link doesn't work.</h1>
+    <p>It may have been cut short when it was copied. Open the report from the run history in Breakpatch instead.</p>
+  </div>
+</main>
+<footer class="site-foot rich">
+  <div class="wrap">
+    <div class="foot-brand">
+      <a class="brand" href="/"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a>
+      <p>Here to find what breaks.</p>
+      <p><a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></p>
+    </div>
+    <nav class="foot-links" aria-label="Footer">
+      <a href="/manual/">Manual</a>
+      <a href="/pricing/">Pricing</a>
+      <a href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a>
+      <a href="/terms">Terms</a>
+      <a href="/privacy">Privacy</a>
+      <a href="mailto:support@breakpatch.dev">Support</a>
+    </nav>
+    <p class="foot-small">© 2026 Breakpatch. The Community edition is open source under Apache 2.0.</p>
+  </div>
+</footer>
+<script src="/assets/site.js"></script>
+<script src="/assets/report-link.js"></script>
+<script>
+(function () {
+  const show = id => document.querySelectorAll('.card').forEach(c => (c.hidden = c.id !== id));
+  const deep = window.bpReportDeepLink(location.hash);
+  if (!deep) return show('bad');
+  const isMac = /Mac/.test(navigator.platform || navigator.userAgent) && !/iPhone|iPad|iPod/.test(navigator.userAgent) && navigator.maxTouchPoints < 2;
+  if (!isMac) {
+    show('other');
+    document.getElementById('copy').onclick = async e => { try { await navigator.clipboard.writeText(location.href); e.target.textContent = 'Copied'; } catch (_) {} };
+    return;
+  }
+  show('mac');
+  const tryOpen = ev => {
+    if (ev) ev.preventDefault();
+    let left = false;
+    const onHide = () => { left = true; };
+    window.addEventListener('blur', onHide, { once: true });
+    document.addEventListener('visibilitychange', onHide, { once: true });
+    location.href = deep;
+    setTimeout(() => { if (!left) show('notopen'); }, 2500);
+  };
+  document.getElementById('open').onclick = tryOpen;
+  document.getElementById('retry').onclick = e => { show('mac'); tryOpen(e); };
+  tryOpen();
+})();
+</script>
+</body>
+</html>

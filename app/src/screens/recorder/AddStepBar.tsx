@@ -41,19 +41,25 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   const bannerP = usePresence(!!bannerNow), banner = useLatched(bannerNow, sameBanner);
   const askP = usePresence(asking), askAi = useLatched(asking ? rec.ai : null), askText = useLatched(asking ? rec.ask : null);
   const lostP = usePresence(rec.ai.state === 'notfound'), lostText = useLatched(rec.ai.state === 'notfound' ? rec.notFound : null);
+  // Only a key pressed after the bar appeared answers it: the Enter that sent a sentence can show the
+  // bar during its own keydown (typing, an address, a scroll are proposed at once), and must not
+  // confirm it too. So the listener starts after that event, and a held key's repeats don't count.
   useEffect(() => {
     if (!asking) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       const el = e.target as HTMLElement | null;
       const typing = !!el && (el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && (el as HTMLInputElement).value !== ''));
       if (e.key === 'Escape') { e.preventDefault(); rec.cancelAi(); }
       else if (e.key === 'Enter' && !typing && !(el?.tagName === 'BUTTON')) { e.preventDefault(); rec.confirmAi(); }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const start = setTimeout(() => window.addEventListener('keydown', onKey), 0);
+    return () => { clearTimeout(start); window.removeEventListener('keydown', onKey); };
   }, [asking, rec]);
 
   useEffect(() => { void secrets.list().then(setSecretNames).catch(() => setSecretNames([])); }, []);
+  // Try again on a described step: its sentence is back in the box, ready to change.
+  useEffect(() => { if (rec.refocus) inputRef.current?.focus(); }, [rec.refocus]);
   useEffect(() => { if (action === 'write' && o.writeSource === 'secret' && !o.secretRef && secretNames[0]) rec.setOptions({ secretRef: secretNames[0] }); }, [action, o.writeSource, o.secretRef, secretNames, rec]);
 
   const closeMenu = () => { setMenu('closed'); actionBtn.current?.focus(); };
@@ -174,6 +180,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' : action === 'write' && o.writeSource !== 'typed' ? true : !!rec.text.trim());
 
   if (rec.retryNote && !rr) hint = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click the page again to pick another spot.</>;
+  // What the box can't do, by the box, until the sentence is changed (not a toast that goes).
+  if (rec.unhandled && !rr) hint = <><Icon name="info" size={16} className="rec-hint-icon" /><span className="grow rec-hint-unhandled" role="status">{rec.unhandled}</span></>;
   if (frozen) hint = <><Icon name="play_arrow" size={16} className="rec-hint-icon" /><span className="grow">{frozen}</span></>;
   else if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span></>;
 

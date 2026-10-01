@@ -119,7 +119,9 @@ triple=${target:-$host}
 sidecar="$app/src-tauri/binaries/breakpatch-engine-$triple"
 
 VENV=${VENV:-"$engine/.venv"}
-py="$VENV/bin/python"
+# shellcheck source=scripts/platform.sh
+. "$repo/scripts/platform.sh"
+py=$(venv_python "$VENV")
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/bp-release.XXXXXX")
 saved_sidecar=""
@@ -183,12 +185,10 @@ engine_extras() {
     | tr -d ' ' | grep -v '^$' | sort -u | paste -sd, -
 }
 
+# The platform's name in engine/locks/ (scripts/platform.sh: linux-x86_64, linux-arm64,
+# macos-arm64, windows-x86_64).
 lock_platform() {
-  case "$(uname -s)-$(uname -m)" in
-    Linux-x86_64) echo linux-x86_64 ;;
-    Darwin-arm64) echo macos-arm64 ;;
-    *) echo "$(uname -s)-$(uname -m)" ;;
-  esac
+  bp_platform "$(uname -s)" "$(uname -m)" || echo "$(uname -s)-$(uname -m)"
 }
 
 # The engine and its dependencies, from the hashed lock (security review S3): build tools first,

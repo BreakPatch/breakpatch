@@ -53,7 +53,7 @@ const plain = v => JSON.parse(JSON.stringify(v)); // out of the page's realm, fo
  * what GET /api/solo-domain answers: a body, a status number, or 'offline'. Returns the elements,
  * Paddle's checkout calls and the fetches.
  */
-async function load(config, places = { total: 25, taken: 0 }, domains = { taken: false }, search = '') {
+async function load(config, places = { total: 25, taken: 0 }, domains = { taken: false }, search = '', setUp = () => {}) {
   const { byId, all } = parse(HTML);
   const opened = [], fetched = [];
   const answer = a => {
@@ -90,6 +90,7 @@ async function load(config, places = { total: 25, taken: 0 }, domains = { taken:
     },
   };
   const location = { href: 'https://breakpatch.dev/pricing/', search };
+  setUp(window);
   const ctx = vm.createContext({ window, document, location, URL, setTimeout, clearTimeout, AbortController });
   vm.runInContext(GET_JSON, ctx);
   vm.runInContext(JS, ctx);
@@ -481,15 +482,39 @@ const MANUAL_PAGE = read('./manual/index.html');
 const SITE_CSS = read('./assets/site.css');
 const PRICING_CSS = read('./assets/pricing.css');
 
-test('the launch switch: soloOnSale is false for now, and <html data-solo> is set only when it is true', () => {
+test('Solo is on sale when the back office says so: /api/solo-domain answers (404 until its switch is on)', async () => {
+  // No switch of its own to flip: soloOnSale starts false and comes from the back office's answer.
   assert.match(CONFIG, /\n  soloOnSale: false,\n/);
-  for (const [on, expect] of [['false', false], ['true', true], ["'yes'", false]]) {
-    const attrs = {};
-    const ctx = vm.createContext({ window: {}, document: { documentElement: { setAttribute(k, v) { attrs[k] = v; } } } });
-    vm.runInContext(CONFIG.replace('soloOnSale: false', `soloOnSale: ${on}`), ctx);
-    assert.equal('data-solo' in attrs, expect, on);
+  const run = async (answer, stored = null) => {
+    const attrs = {}, events = [], store = new Map(stored === null ? [] : [['breakpatch.soloOnSale', stored]]), asked = [];
+    const window = {
+      fetch: async url => { asked.push(url); if (answer === 'offline') throw new TypeError('Failed to fetch'); return { ok: answer === 200, status: answer }; },
+      localStorage: { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) },
+      Event: class { constructor(type) { this.type = type; } },
+      dispatchEvent: e => events.push(e.type),
+    };
+    const ctx = vm.createContext({ window, document: { documentElement: { setAttribute(k, v) { attrs[k] = v; }, removeAttribute(k) { delete attrs[k]; } } } });
+    vm.runInContext(CONFIG, ctx);
+    const before = 'data-solo' in attrs;
+    await new Promise(r => setImmediate(r));
+    return { before, after: 'data-solo' in attrs, on: window.BREAKPATCH_PADDLE.soloOnSale, stored: store.get('breakpatch.soloOnSale'), events, asked };
+  };
+  const off = await run(404);
+  assert.deepEqual([off.before, off.after, off.on, off.stored, off.events], [false, false, false, '0', []]);
+  assert.match(off.asked[0], /^https:\/\/account\.breakpatch\.dev\/api\/solo-domain\?domain=/);
+  const on = await run(200);
+  assert.deepEqual([on.before, on.after, on.on, on.stored, on.events], [false, true, true, '1', ['breakpatch-solo']]);
+  // The last answer on this browser is there before the first paint, then the new one wins.
+  const seen = await run(200, '1');
+  assert.deepEqual([seen.before, seen.after, seen.events], [true, true, []]);
+  const withdrawn = await run(404, '1');
+  assert.deepEqual([withdrawn.before, withdrawn.after, withdrawn.stored], [true, false, '0']);
+  // Offline, or the back office had a problem: as last time.
+  for (const a of ['offline', 500]) {
+    const r = await run(a, '1');
+    assert.deepEqual([r.after, r.stored], [true, '1'], String(a));
   }
-  // Loaded in <head> (before the page is drawn, so nothing moves), and no page has data-solo as served.
+  // Loaded in <head> (before the page is drawn), and no page has data-solo as served.
   for (const [name, page] of [['home', HOME], ['pricing', HTML], ['manual', MANUAL_PAGE]]) {
     const head = page.slice(0, page.indexOf('</head>'));
     assert.match(head, /<script src="(\.\.)?\/assets\/paddle-config\.js"><\/script>/, name);
@@ -498,6 +523,18 @@ test('the launch switch: soloOnSale is false for now, and <html data-solo> is se
   assert.ok(SITE_CSS.includes('html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}'));
 });
 
+test('a Solo answer that comes after Pricing started sets up the card then', async () => {
+  const config = { ...cfg(), soloOnSale: false };
+  const listeners = {};
+  const p = await load(config, undefined, { taken: false }, '', w => {
+    w.addEventListener = (t, f) => { (listeners[t] ??= []).push(f); };
+    w.removeEventListener = (t, f) => { listeners[t] = (listeners[t] ?? []).filter(x => x !== f); };
+  });
+  assert.equal(await p.buySolo(), undefined, 'not yet');
+  config.soloOnSale = true;
+  for (const f of listeners['breakpatch-solo'] ?? []) f();
+  assert.equal(p.$('solo-buy').textContent, 'Buy Solo');
+});
 test('while Solo is off: no Solo card, words or links on Pricing, and no gap where the card was', () => {
   const page = visible(without(HTML, 'solo-only'));
   assert.doesNotMatch(page, /Solo/);

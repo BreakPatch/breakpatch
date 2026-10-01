@@ -1,11 +1,10 @@
-"""Setup: this Mac's details, the pinned Chromium and the AI model (spec §7, §16)."""
+"""Setup: this machine's details, the pinned Chromium and the AI model (spec §7, §16)."""
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
 import os
-import platform
 import re
 import shutil
 import subprocess
@@ -23,42 +22,14 @@ Progress = Callable[[dict], None]
 MARKER = ".breakpatch-model.json"
 
 
-# ---------------------------------------------------------------- this Mac
+# ---------------------------------------------------------------- this machine
 
-def memory_gb() -> float:
-    try:
-        total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    except (ValueError, OSError, AttributeError):
-        total = 0
-    if sys.platform == "darwin":
-        try:
-            total = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5).stdout)
-        except Exception:  # noqa: BLE001
-            pass
-    return round(total / 2**30)
-
-
-def chip() -> str:
-    if sys.platform == "darwin":
-        try:
-            out = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"], capture_output=True, text=True, timeout=5)
-            if out.stdout.strip():
-                return out.stdout.strip()
-        except Exception:  # noqa: BLE001
-            pass
-    try:
-        for line in Path("/proc/cpuinfo").read_text().splitlines():
-            if line.lower().startswith("model name"):
-                return line.split(":", 1)[1].strip()
-    except OSError:
-        pass
-    return platform.processor() or platform.machine()
-
-
-def os_name() -> str:
-    if sys.platform == "darwin":
-        return f"macOS {platform.mac_ver()[0]}".strip()
-    return f"{platform.system()} {platform.release()}"
+# Everything that says what this machine is lives in systems.py; these names stay here for the
+# code and tests that read them from install.
+from .systems import (  # noqa: E402,F401
+    CPUINFO, DEVICE_TREE_MODEL, WINDOWS_CPU_KEY, chip, linux_cpu_name, memory_gb, os_name,
+    windows_cpu_name, windows_memory_bytes,
+)
 
 
 # ---------------------------------------------------------------- browser
