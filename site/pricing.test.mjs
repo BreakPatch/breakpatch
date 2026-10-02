@@ -49,11 +49,10 @@ function parse(html) {
 const plain = v => JSON.parse(JSON.stringify(v)); // out of the page's realm, for deepEqual
 
 /**
- * Loads the page with this Paddle config. `places` is what GET /api/founding answers, and `domains`
- * what GET /api/solo-domain answers: a body, a status number, or 'offline'. Returns the elements,
- * Paddle's checkout calls and the fetches.
+ * Loads the page with this Paddle config. `domains` is what GET /api/solo-domain answers: a body, a
+ * status number, or 'offline'. Returns the elements, Paddle's checkout calls and the fetches.
  */
-async function load(config, places = { total: 25, taken: 0 }, domains = { taken: false }, search = '', setUp = () => {}) {
+async function load(config, domains = { taken: false }, search = '', setUp = () => {}) {
   const { byId, all } = parse(HTML);
   const opened = [], fetched = [];
   const answer = a => {
@@ -66,7 +65,7 @@ async function load(config, places = { total: 25, taken: 0 }, domains = { taken:
     matchMedia: () => ({ matches: false }),
     fetch: async (url, init) => {
       fetched.push({ url, credentials: init?.credentials });
-      return answer(url.startsWith(SOLO_URL) ? domains : places);
+      return answer(domains);
     },
   };
   const document = {
@@ -94,10 +93,8 @@ async function load(config, places = { total: 25, taken: 0 }, domains = { taken:
   const ctx = vm.createContext({ window, document, location, URL, setTimeout, clearTimeout, AbortController });
   vm.runInContext(GET_JSON, ctx);
   vm.runInContext(JS, ctx);
-  await new Promise(r => setImmediate(r)); // the places answer
+  await new Promise(r => setImmediate(r));
   const $ = id => byId[id];
-  const buy = async () => { $('team-form').fire('submit'); await new Promise(r => setImmediate(r)); return opened.at(-1); };
-  const period = p => all.find(e => e.dataset.period === p).click();
   const soloPeriod = p => all.find(e => e.dataset.soloPeriod === p).click();
   /** Presses Buy Solo; the domain check and Paddle.js take a few turns. Returns the checkout opened, if any. */
   const buySolo = async () => {
@@ -106,124 +103,13 @@ async function load(config, places = { total: 25, taken: 0 }, domains = { taken:
     for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0));
     return opened.length > before ? opened.at(-1) : undefined;
   };
-  return { $, buy, period, soloPeriod, buySolo, opened, fetched, location, window };
+  return { $, soloPeriod, buySolo, opened, fetched, location, window };
 }
 
-const prices = { soloMonthly: 'pri_sm', soloYearly: 'pri_sy', teamMonthly: 'pri_tm', teamYearly: 'pri_ty', machineMonthly: 'pri_mm', machineYearly: 'pri_my' };
-const URL_ = 'https://account.breakpatch.dev/api/founding';
+const prices = { soloMonthly: 'pri_sm', soloYearly: 'pri_sy' };
 const SOLO_URL = 'https://account.breakpatch.dev/api/solo-domain';
-// Solo on sale, as on launch day; the tests below "Solo not on sale yet" turn it off.
-const cfg = (extra = {}) => ({ env: 'sandbox', soloOnSale: true, foundingPlacesUrl: URL_, soloDomainUrl: SOLO_URL, sandbox: { clientToken: 'test_x', prices, ...extra }, live: { prices: {} } });
-const FOUNDING = { foundingDiscountId: 'dsc_01test' };
-const TITLE = 'Founding teams: $12/person/month for 24 months · ';
-
-test('without a founding discount nothing shows and checkout has no discount', async () => {
-  for (const c of [cfg(), cfg({ foundingDiscountId: '' }), cfg({ foundingDiscountId: 'pri_ty' })]) {
-    const { $, buy, fetched } = await load(c);
-    assert.equal(fetched.length, 0); // nothing asked of the back office either
-    assert.equal($('founding').hidden, true);
-    assert.equal($('founding-opt').hidden, true);
-    assert.equal($('team-price').textContent, '$16');
-    assert.equal($('total').textContent, '$960 a year');
-    const opts = await buy();
-    assert.deepEqual(opts.items, [{ priceId: 'pri_ty', quantity: 5 }]);
-    assert.equal('discountId' in opts, false);
-  }
-});
-
-test('the founding offer: places left, $12 on Team yearly, discountId passed to checkout', async () => {
-  const { $, buy, fetched } = await load(cfg(FOUNDING), { total: 25, taken: 7 });
-  assert.deepEqual(plain(fetched), [{ url: URL_, credentials: 'omit' }]);
-  assert.equal($('founding').hidden, false);
-  assert.equal($('founding-title').textContent, TITLE + '18 of 25 places left');
-  assert.equal($('founding-opt').hidden, false);
-  assert.equal($('team-price').textContent, '$12');
-  assert.match($('team-per').textContent, /billed yearly, for 24 months/);
-  assert.equal($('total').textContent, '$720 a year'); // 5 × $12 × 12
-  const opts = await buy();
-  assert.equal(opts.discountId, 'dsc_01test');
-  assert.deepEqual(opts.items, [{ priceId: 'pri_ty', quantity: 5 }]);
-  assert.deepEqual(opts.customer, { email: '' });
-});
-
-test('founding is Team yearly only, and the buyer can untick it', async () => {
-  const p = await load(cfg(FOUNDING));
-  p.period('month');
-  assert.equal(p.$('founding').hidden, false); // the banner stays; the option is yearly only
-  assert.equal(p.$('founding-opt').hidden, true);
-  assert.equal(p.$('team-price').textContent, '$20');
-  assert.equal('discountId' in await p.buy(), false);
-  assert.deepEqual(p.opened.at(-1).items, [{ priceId: 'pri_tm', quantity: 5 }]);
-
-  p.period('year');
-  p.$('founding-on').click();
-  assert.equal(p.$('team-price').textContent, '$16');
-  assert.equal(p.$('total').textContent, '$960 a year');
-  assert.equal('discountId' in await p.buy(), false);
-  p.$('founding-on').click();
-  assert.equal((await p.buy()).discountId, 'dsc_01test');
-});
-
-test('extra machines are not discounted', async () => {
-  const { $ } = await load(cfg(FOUNDING));
-  $('machines').value = '2';
-  $('machines').fire('input');
-  assert.equal($('total').textContent, '$1,488 a year'); // 5 × $12 × 12 + 2 × $384
-});
-
-test('the founding price is for teams of up to 20 people; above that a short line, and no discount', async () => {
-  const p = await load(cfg(FOUNDING));
-  const people = n => { p.$('seats').value = String(n); p.$('seats').fire('input'); };
-  people(20);
-  assert.equal(p.$('founding-opt').hidden, false);
-  assert.equal(p.$('founding-cap').hidden, true);
-  assert.equal(p.$('team-price').textContent, '$12');
-  assert.equal(p.$('total').textContent, '$2,880 a year'); // 20 × $12 × 12
-  assert.equal((await p.buy()).discountId, 'dsc_01test');
-
-  people(21);
-  assert.equal(p.$('founding-opt').hidden, true);
-  assert.equal(p.$('founding-cap').hidden, false);
-  assert.equal(p.$('founding').hidden, false); // the banner still shows
-  assert.equal(p.$('team-price').textContent, '$16');
-  assert.equal(p.$('total').textContent, '$4,032 a year'); // 21 × $16 × 12
-  const opts = await p.buy();
-  assert.equal('discountId' in opts, false);
-  assert.deepEqual(opts.items, [{ priceId: 'pri_ty', quantity: 21 }]);
-  assert.ok(HTML.includes('>The founding price is for teams of up to 20 people</p>'));
-
-  // Monthly: neither the option nor the line (founding is yearly only anyway).
-  p.period('month');
-  assert.equal(p.$('founding-opt').hidden, true);
-  assert.equal(p.$('founding-cap').hidden, true);
-  // Back to 20 on yearly: offered again, still ticked.
-  p.period('year');
-  people(20);
-  assert.equal(p.$('founding-cap').hidden, true);
-  assert.equal((await p.buy()).discountId, 'dsc_01test');
-
-  // Without the offer, the line never shows.
-  const none = await load(cfg());
-  none.$('seats').value = '30'; none.$('seats').fire('input');
-  assert.equal(none.$('founding-cap').hidden, true);
-});
-
-test('after the founding price: the Team yearly price at that time, with 60 days’ notice, never a set number', async () => {
-  const RENEW = 'then the Team yearly price at that time, with 60 days’ notice';
-  const TERMS = readFileSync(new URL('./terms/index.html', import.meta.url), 'utf8');
-  const MANUAL = readFileSync(new URL('../docs/manual.md', import.meta.url), 'utf8');
-  for (const [name, text] of [['pricing', HTML], ['pricing.js', JS], ['terms', TERMS], ['manual', MANUAL]]) {
-    assert.doesNotMatch(text, /then \$\d+/, name);
-    assert.doesNotMatch(text, /normal (Team )?yearly price/, name);
-  }
-  const card = HTML.slice(HTML.indexOf('id="founding-opt"'), HTML.indexOf('</label>', HTML.indexOf('id="founding-opt"')));
-  assert.ok(card.includes(RENEW), 'the Team card');
-  const banner = HTML.slice(HTML.indexOf('class="founding-sub"'), HTML.indexOf('</p>', HTML.indexOf('class="founding-sub"')));
-  assert.ok(banner.includes(RENEW), 'the banner');
-  assert.ok(TERMS.includes("the Team yearly price at that time, with 60 days' notice"), 'the terms');
-  const { $ } = await load(cfg(FOUNDING));
-  assert.equal($('team-alt').textContent, 'Founding price, then the Team yearly price at that time, with 60 days’ notice. $20 month to month.');
-});
+// Solo on sale, as on its launch day; the tests below "Solo not on sale yet" turn it off.
+const cfg = (extra = {}) => ({ env: 'sandbox', soloOnSale: true, soloDomainUrl: SOLO_URL, sandbox: { clientToken: 'test_x', prices, ...extra }, live: { prices: {} } });
 
 test('a machine licence is one test run at a time, on the pricing page and in the terms', () => {
   const RULE = 'A machine licence covers one test run at a time on any machine; a pipeline running N jobs in parallel needs N licences.';
@@ -233,72 +119,81 @@ test('a machine licence is one test run at a time, on the pricing page and in th
   assert.ok(HTML.includes('1 machine licence: one test run at a time'), 'the Team card');
 });
 
-test('when the count can’t be had, the offer shows as "25 places", with no number', async () => {
-  for (const answer of ['offline', 503, 429, { ok: false }, { total: '25', taken: 3 }, { total: 25, taken: -1 }]) {
-    const { $, buy } = await load(cfg(FOUNDING), answer);
-    assert.equal($('founding').hidden, false, JSON.stringify(answer));
-    assert.equal($('founding-title').textContent, TITLE + '25 places');
-    assert.equal($('team-price').textContent, '$12');
-    assert.equal((await buy()).discountId, 'dsc_01test');
+/** The HTML of the element that `marker` opens, up to its closing tag. */
+const section = (html, marker, close = '</article>') => html.slice(html.indexOf(marker), html.indexOf(close, html.indexOf(marker)) + close.length);
+const HOME_PAGE = read('./index.html');
+
+test('Team and Business are coming later: no price, no checkout, and a way to hear when they’re ready', () => {
+  const team = section(HTML, '<article class="edition soon plan-team"');
+  const biz = section(HTML, '<article class="edition soon plan-business"');
+  const homeTeam = section(HOME_PAGE, '<article class="plan team">');
+  const homeBiz = section(HOME_PAGE, '<p class="biz">', '</p>');
+  for (const [name, card, subject] of [['pricing Team', team, 'Team'], ['pricing Business', biz, 'Business'], ['home Team', homeTeam, 'Team'], ['home Business', homeBiz, 'Business']]) {
+    assert.ok(card.length > 100, name);
+    assert.ok(card.includes('Coming later') || card.includes('coming later'), name + ': labelled');
+    assert.doesNotMatch(card, /\$\s?\d|USD|per person per month|billed (yearly|monthly)|a year|a month/i, name + ': no price');
+    assert.doesNotMatch(card, /<form|<button|<input|\bBuy\b|beta|checkout/i, name + ': no checkout');
+    assert.ok(card.includes(`href="mailto:support@breakpatch.dev?subject=Tell%20me%20when%20Breakpatch%20${subject}%20is%20ready"`), name + ': hear when ready');
+    assert.doesNotMatch(card.replace(/<[^>]*>/g, ' '), /\b(20\d\d|Q[1-4]|January|February|March|April|May|June|July|August|September|October|November|December|next month|soon)\b/, name + ': no date promised');
   }
-  // No places URL in the config: the same.
-  const { $ } = await load({ ...cfg(FOUNDING), foundingPlacesUrl: '' });
-  assert.equal($('founding-title').textContent, TITLE + '25 places');
-});
-
-test('all places taken: nothing shows and checkout has no discount', async () => {
-  for (const places of [{ total: 25, taken: 25 }, { total: 25, taken: 26 }]) {
-    const { $, buy } = await load(cfg(FOUNDING), places);
-    assert.equal($('founding').hidden, true);
-    assert.equal($('founding-opt').hidden, true);
-    assert.equal($('team-price').textContent, '$16');
-    assert.equal('discountId' in await buy(), false);
+  for (const card of [team, biz]) assert.ok(card.includes('<p class="tbd">Pricing to be decided</p>'));
+  assert.ok(homeTeam.includes('<p class="plan-tbd">Pricing to be decided</p>'));
+  // What they'll include is still there.
+  for (const s of ['shared workspace, hosted by Breakpatch or in your company', 'Version history', 'Fixed automatically', 'Why did this fail?', 'Create issue', 'local runner']) assert.ok(team.includes(s), s);
+  for (const s of ['Everything in Team', '5 machine licences included', 'Invoice billing']) assert.ok(biz.includes(s), s);
+  // Bringing your own model isn't available yet, so Business doesn't offer one.
+  assert.doesNotMatch(biz + homeBiz, /another AI model/i);
+  // As a visitor reads them (Solo hidden): no amount anywhere on Pricing or in Home's plans, and no buy button.
+  const pricing = visible(without(HTML, 'solo-only'));
+  assert.doesNotMatch(pricing, /\$\s?\d/);
+  assert.doesNotMatch(pricing, /<form|\bBuy\b|free beta/);
+  const plans = visible(without(HOME_PAGE, 'solo-only'));
+  assert.doesNotMatch(plans.slice(plans.indexOf('id="editions"'), plans.indexOf('id="faq"')), /\$\s?\d/);
+  assert.doesNotMatch(visible(without(HOME_PAGE, 'solo-only')), /\$\s?\d/, 'home, FAQ included');
+  // Nor in what search engines and link previews show, nor in the scripts the page serves.
+  for (const [name, page] of [['home', HOME_PAGE], ['pricing', HTML]]) {
+    for (const m of page.matchAll(/<meta (?:name|property)="(?:description|og:description|twitter:description)" content="([^"]*)"/g)) assert.doesNotMatch(m[1], /\$\s?\d/, name);
   }
-  const last = await load(cfg(FOUNDING), { total: 25, taken: 24 });
-  assert.equal(last.$('founding-title').textContent, TITLE + '1 of 25 places left');
+  assert.doesNotMatch(JS, /per person|Buy Team|team-form|foundingDiscountId|placesLeft|\$20/i, 'pricing.js');
+  assert.doesNotMatch(CONFIG, /team(Monthly|Yearly)|machine(Monthly|Yearly)|foundingDiscountId|foundingPlacesUrl|\$\d/, 'paddle-config.js');
 });
 
-test('the Business card: $30 billed yearly, 20 people, what it adds, and Contact us', () => {
-  const card = HTML.slice(HTML.indexOf('<h2>Business</h2>'), HTML.indexOf('</article>', HTML.indexOf('<h2>Business</h2>')));
-  for (const s of ['20 people or more', '$30', 'per person per month, billed yearly', '$360 per person per year', 'Everything in Team',
-    '5 machine licences included', 'Choose another AI model', 'Support answered within 4 business hours, Monday to Friday', 'Invoice billing']) assert.ok(card.includes(s), s);
-  assert.ok(card.includes('href="mailto:support@breakpatch.dev?subject=Breakpatch%20Business">Contact us</a>'));
+test('no founding offer anywhere while Team is to be decided', () => {
+  const TERMS = read('./terms/index.html');
+  for (const [name, text] of [['pricing', HTML], ['pricing.css', PRICING_CSS], ['home', HOME_PAGE], ['terms', TERMS]]) {
+    assert.doesNotMatch(text, /founding/i, name);
+    assert.doesNotMatch(text, /\$12\b/, name);
+  }
+  assert.doesNotMatch(TERMS, /\$\d/, 'terms name no amount');
 });
 
-test('checkout off: the free beta, no Work email or Company, no tax line, and an email that says what was picked', async () => {
-  const off = { env: 'sandbox', foundingPlacesUrl: URL_, soloDomainUrl: SOLO_URL, sandbox: { clientToken: '', prices: {} }, live: { prices: {} } };
-  const p = await load(off);
-  assert.equal(p.$('buyer').hidden, true);
-  assert.equal(p.$('buy').textContent, 'Join the free beta');
-  assert.equal(p.$('buy-note').hidden, false);
-  assert.doesNotMatch(p.$('total-sub').textContent, /Tax/);
-  p.$('seats').value = '7'; p.$('seats').fire('input');
-  p.period('month');
-  assert.equal(await p.buy(), undefined); // no Paddle checkout
-  const mail = p.location.href;
-  assert.ok(mail.startsWith('mailto:support@breakpatch.dev?subject=Breakpatch%20Team%20beta&body='), mail);
-  const body = decodeURIComponent(mail.slice(mail.indexOf('&body=') + 6));
-  assert.match(body, /People: 7\n/);
-  assert.match(body, /Extra machine licences: 0\n/);
-  assert.match(body, /Billing: monthly\n/);
-  // The page as served (before the script runs) has the fields hidden and no tax line either.
-  assert.match(HTML, /<div class="fields buyer" id="buyer" hidden>/);
-  assert.doesNotMatch(HTML, /Tax is added at checkout/);
+test('Community is the plan on sale now, first and highlighted', () => {
+  const page = visible(without(HTML, 'solo-only'));
+  const community = section(page, '<article class="edition plan-now"');
+  for (const s of ['Free', 'Available now', 'Record by clicking on the page', 'href="../#install">Install Breakpatch</a>']) assert.ok(community.includes(s), s);
+  assert.ok(page.indexOf('plan-now') < page.indexOf('plan-team') && page.indexOf('plan-team') < page.indexOf('plan-business'));
+  assert.ok(PRICING_CSS.includes('.plan-now{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent)}'));
 });
 
-test('checkout on: Work email and Company show, and the tax line is back', async () => {
-  const { $ } = await load(cfg());
-  assert.equal($('buyer').hidden, false);
-  assert.equal($('buy').textContent, 'Buy Team');
-  assert.equal($('buy-note').hidden, true);
-  assert.equal($('total-sub').textContent, '5 people, 1 machine licence (1 included). Tax is added at checkout.');
+test('a Paddle payment link (?_ptxn=) that fails says so under the heading', async () => {
+  const p = await load(cfg(), { taken: false }, '?_ptxn=txn_01test');
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(p.window.paddleInit, 'Paddle.js was initialized for the payment link');
+  assert.equal(p.$('buy-error').hidden, true);
+  p.window.paddleInit.eventCallback({ name: 'checkout.error' });
+  assert.equal(p.$('buy-error').hidden, false);
+  assert.equal(p.$('buy-error').textContent, 'The checkout couldn’t continue. Try again, or email support@breakpatch.dev.');
+  assert.ok(section(HTML, '<section class="pricing-head">', '</section>').includes('id="buy-error"'));
+  // Without a payment link, reading the page sends nothing anywhere.
+  const q = await load(cfg({ clientToken: 'test_x' }), undefined, '', w => { w.addEventListener = () => {}; });
+  assert.equal(q.window.paddleInit, undefined);
 });
 
 // ---------- Solo ----------
 
 const soloCard = () => HTML.slice(HTML.indexOf('class="edition plan-solo'), HTML.indexOf('</article>', HTML.indexOf('class="edition plan-solo')));
 
-test('the Solo card: $16 a month billed yearly or $19 monthly, one person, one per company, Team for more', async () => {
+test('the Solo card (hidden until it’s on sale): $16 a month billed yearly or $19 monthly, one person, one per company, Team for more', async () => {
   const card = soloCard();
   for (const s of ['<h2 id="solo-title">Solo</h2>', '1 person', 'Fixed automatically', 'Schedules on your Mac, with notifications and result messages',
     'The CI command line, with 1 machine licence: one test run at a time', 'Your tests stay in your folder or in Git. Connecting your own workspace is optional',
@@ -315,12 +210,7 @@ test('the Solo card: $16 a month billed yearly or $19 monthly, one person, one p
   assert.equal(p.$('solo-price').textContent, '$19');
   assert.equal(p.$('solo-per').textContent, 'per month');
   assert.equal(p.$('solo-total').textContent, '$19 a month');
-  // Solo's period doesn't move Team's, and the other way round.
-  assert.equal(p.$('team-price').textContent, '$16');
-  p.period('month');
-  assert.equal(p.$('solo-price').textContent, '$19');
   p.soloPeriod('year');
-  assert.equal(p.$('team-price').textContent, '$20');
   assert.equal(p.$('solo-price').textContent, '$16');
 });
 
@@ -342,7 +232,7 @@ test('Buy Solo: asks about the email’s domain only, then opens checkout for on
 });
 
 test('a company that already has Solo is shown Team, with no checkout', async () => {
-  const p = await load(cfg(), undefined, { domain: 'initech.com', taken: true, personal: false });
+  const p = await load(cfg(), { domain: 'initech.com', taken: true, personal: false });
   p.$('solo-email').value = 'lee@initech.com';
   assert.equal(await p.buySolo(), undefined);
   assert.equal(p.$('solo-taken').hidden, false);
@@ -356,7 +246,7 @@ test('a company that already has Solo is shown Team, with no checkout', async ()
 
 test('a company that has Team or Business is told to ask its admin for a seat, with no checkout', async () => {
   // The back office answers for the company: a subdomain's email is counted as it.
-  const p = await load(cfg(), undefined, { domain: 'initech.com', taken: true, takenBy: 'team', personal: false });
+  const p = await load(cfg(), { domain: 'initech.com', taken: true, takenBy: 'team', personal: false });
   p.$('solo-email').value = 'lee@eng.initech.com';
   assert.equal(await p.buySolo(), undefined);
   assert.deepEqual(plain(p.fetched), [{ url: SOLO_URL + '?domain=eng.initech.com', credentials: 'omit' }]);
@@ -368,7 +258,7 @@ test('a company that has Team or Business is told to ask its admin for a seat, w
   p.$('solo-email').fire('input');
   assert.equal(p.$('solo-team').hidden, true);
   // A second Solo at a subdomain names the company too.
-  const q = await load(cfg(), undefined, { domain: 'initech.com', taken: true, takenBy: 'solo', personal: false });
+  const q = await load(cfg(), { domain: 'initech.com', taken: true, takenBy: 'solo', personal: false });
   q.$('solo-email').value = 'kim@eu.initech.com';
   assert.equal(await q.buySolo(), undefined);
   assert.equal(q.$('solo-taken-domain').textContent, 'initech.com');
@@ -381,7 +271,7 @@ test('support response times are the same on the pricing page, the terms and the
   const card = name => HTML.slice(HTML.indexOf(`id="${name}-title"`), HTML.indexOf('</article>', HTML.indexOf(`id="${name}-title"`)));
   assert.ok(card('solo').includes('Email support, answered within 5 business days'));
   assert.ok(card('team').includes('Email support, answered within 2 business days'));
-  const biz = HTML.slice(HTML.indexOf('<h2>Business</h2>'), HTML.indexOf('</article>', HTML.indexOf('<h2>Business</h2>')));
+  const biz = card('business');
   assert.ok(biz.includes('Support answered within 4 business hours, Monday to Friday'));
   assert.ok(terms.includes('Solo: email support, answered within 5 business days. Team: email support, answered within 2 business days. Business: support answered within 4 business hours, Monday to Friday.'));
   assert.ok(manual.includes('| Support | GitHub issues | Email, answered within 5 business days | Email, answered within 2 business days | Within 4 business hours, Monday to Friday |'));
@@ -390,7 +280,7 @@ test('support response times are the same on the pricing page, the terms and the
 
 test('when the domain check can’t answer, checkout goes ahead (the back office checks again)', async () => {
   for (const answer of ['offline', 503, 429, { ok: false }, { taken: 'yes' }]) {
-    const p = await load(cfg(), undefined, answer);
+    const p = await load(cfg(), answer);
     p.$('solo-email').value = 'sam@initech.com';
     const opts = await p.buySolo();
     assert.deepEqual(opts?.items, [{ priceId: 'pri_sy', quantity: 1 }], JSON.stringify(answer));
@@ -413,8 +303,6 @@ test('Solo checkout off (no Solo prices yet): the free beta, no email field, no 
   assert.equal(await p.buySolo(), undefined);
   assert.ok(p.location.href.startsWith('mailto:support@breakpatch.dev?subject=Breakpatch%20Solo%20beta&body='), p.location.href);
   assert.equal(p.fetched.length, 0);
-  // Team still sells meanwhile.
-  assert.equal(p.$('buy').textContent, 'Buy Team');
   assert.match(HTML, /<div class="fields buyer" id="solo-buyer" hidden>/);
 });
 
@@ -426,9 +314,9 @@ test('Solo in the FAQ, the terms, the refunds and the manual', () => {
   // The description can't follow the switch (search engines read it as served), so it leaves Solo out.
   assert.doesNotMatch(HTML.match(/<meta name="description" content="([^"]*)"/)[1], /Solo/);
   assert.ok(HTML.includes('<dt class="solo-only">Who is Solo for?</dt>'));
-  assert.ok(TERMS.includes('Breakpatch Team and Business licences bought on breakpatch.dev, and Solo licences when the Solo plan is offered'), 'terms: what they cover');
+  assert.ok(TERMS.includes('Breakpatch Team and Business licences, and Solo licences, bought on breakpatch.dev once those plans are offered. None of them is on sale yet'), 'terms: what they cover');
   assert.ok(TERMS.includes('one Solo per company'), 'terms: the Solo rule');
-  assert.ok(REFUNDS.includes('Breakpatch Team and Business, and the Solo plan when it’s offered'), 'refunds');
+  assert.ok(REFUNDS.includes('Breakpatch Team and Business, and the Solo plan, aren’t on sale yet. Once they’re offered'), 'refunds');
   assert.match(MANUAL, /\| *Solo *\|/, 'manual editions');
   assert.ok(HOME.includes('<th scope="col" class="solo-only">Solo</th>'), 'home comparison table');
   // The same prices everywhere.
@@ -436,7 +324,7 @@ test('Solo in the FAQ, the terms, the refunds and the manual', () => {
 });
 
 test('a personal email is still sent only as its domain, and gets a checkout (the service never looks those up)', async () => {
-  const p = await load(cfg(), undefined, { domain: 'gmail.com', taken: false, personal: true });
+  const p = await load(cfg(), { domain: 'gmail.com', taken: false, personal: true });
   p.$('solo-email').value = 'sam.smith@gmail.com';
   const opts = await p.buySolo();
   assert.deepEqual(plain(p.fetched), [{ url: SOLO_URL + '?domain=gmail.com', credentials: 'omit' }]);
@@ -464,7 +352,7 @@ test('the domain is asked when the email field loses focus, so Buy doesn’t wai
 });
 
 test('a check that failed is asked again on Buy', async () => {
-  const p = await load(cfg(), undefined, 503);
+  const p = await load(cfg(), 503);
   p.$('solo-email').value = 'sam@initech.com';
   p.$('solo-email').fire('blur');
   for (let i = 0; i < 3; i++) await new Promise(r => setTimeout(r, 0));
@@ -473,7 +361,7 @@ test('a check that failed is asked again on Buy', async () => {
 });
 
 test('a Paddle payment link (?_ptxn=) that fails shows the error on the Team card', async () => {
-  const p = await load(cfg(), undefined, undefined, '?_ptxn=txn_01test');
+  const p = await load(cfg(), undefined, '?_ptxn=txn_01test');
   await new Promise(r => setTimeout(r, 0));
   assert.ok(p.window.paddleInit, 'Paddle.js was initialized for the payment link');
   assert.equal(p.$('buy-error').hidden, true);
@@ -560,7 +448,7 @@ test('Solo is on sale when the back office says so: /api/solo-domain answers (40
 test('a Solo answer that comes after Pricing started sets up the card then', async () => {
   const config = { ...cfg(), soloOnSale: false };
   const listeners = {};
-  const p = await load(config, undefined, { taken: false }, '', w => {
+  const p = await load(config, { taken: false }, '', w => {
     w.addEventListener = (t, f) => { (listeners[t] ??= []).push(f); };
     w.removeEventListener = (t, f) => { listeners[t] = (listeners[t] ?? []).filter(x => x !== f); };
   });
@@ -572,18 +460,19 @@ test('a Solo answer that comes after Pricing started sets up the card then', asy
 test('while Solo is off: no Solo card, words or links on Pricing, and no gap where the card was', () => {
   const page = visible(without(HTML, 'solo-only'));
   assert.doesNotMatch(page, /Solo/);
-  assert.doesNotMatch(page, /solo-/, 'nothing points at the Solo card');
-  // Three cards, in the three-column grid (and two columns on smaller screens, with Team across the top).
+  assert.doesNotMatch(page, /solo-(?!off")/, 'nothing points at the Solo card');
+  // Three cards, in the three-column grid (and two columns on smaller screens, with Community across the top).
   assert.equal((page.match(/<article class="edition/g) ?? []).length, 3);
-  assert.match(PRICING_CSS, /\.plans\{display:grid;grid-template-columns:1fr 1\.4fr 1fr;/);
-  assert.ok(PRICING_CSS.includes(':where([data-solo]) .plans{grid-template-columns:1fr 1.1fr 1.4fr 1fr}'));
-  assert.ok(PRICING_CSS.includes('@media (max-width:1000px){.plans{grid-template-columns:1fr 1fr}.plan-team{grid-column:1 / -1;order:-1}}'));
-  // The sentences still read: "Free on your own Mac. Pay per person …".
-  assert.ok(page.includes('<p>Free on your own Mac. Pay per person when your team tests together'));
-  assert.ok(page.includes('Your key is shown there once. On Team, a workspace admin'));
+  assert.match(PRICING_CSS, /\.plans\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\);/);
+  assert.ok(PRICING_CSS.includes(':where([data-solo]) .plans{grid-template-columns:1fr 1.3fr 1fr 1fr}'));
+  assert.ok(PRICING_CSS.includes('@media (max-width:1000px){.plans{grid-template-columns:1fr 1fr}:where(html:not([data-solo])) .plan-now{grid-column:1 / -1}}'));
+  // The sentences still read without Solo's words.
+  assert.ok(page.includes("<p>Breakpatch Community is free, and it's what you can install today. Team and Business, for working together, are coming later."));
+  assert.ok(page.includes('<dd><span class="solo-off">Nothing is on sale yet. When it is, it works like this. </span>Our order process'));
   // And with Solo on, everything is there.
   const on = visible(without(HTML, 'solo-off'));
-  for (const s of ['<h2 id="solo-title">Solo</h2>', 'Who is Solo for?', ' Solo when you want the automation for yourself.', ' On Solo, enter it in Breakpatch']) assert.ok(on.includes(s), s);
+  for (const s of ['<h2 id="solo-title">Solo</h2>', 'Who is Solo for?', ' Solo when you want the automation for yourself.', 'Enter it in Breakpatch, in Settings → Licence.']) assert.ok(on.includes(s), s);
+  assert.ok(!on.includes('Nothing is on sale yet'));
   assert.equal((on.match(/<article class="edition/g) ?? []).length, 4);
 });
 
@@ -603,8 +492,8 @@ test('while Solo is off: Home has no Solo card or column, and no gap', () => {
     assert.doesNotMatch(r, /data-label="Solo"/);
   }
   assert.ok(page.includes('<caption>Community and Team side by side</caption>'));
-  assert.ok(page.includes('for one person on one Mac. Team shares everything'));
-  assert.ok(page.includes('no time limit and no account. Team is paid'));
+  assert.ok(page.includes("for one person on one Mac, and it's what you can install today. Team, which shares everything"));
+  assert.ok(page.includes('no time limit and no account. Team and Business, the paid plans'));
   // With Solo on: three plans, and four cells a row.
   const on = visible(without(HOME, 'solo-off'));
   assert.equal((on.slice(on.indexOf('<div class="compare">'), on.indexOf('<p class="biz">')).match(/<article class="plan/g) ?? []).length, 3);
@@ -621,9 +510,7 @@ test('while Solo is off: pricing.js leaves the card alone and never asks about a
     assert.equal(p.fetched.length, 0, 'no domain check');
     assert.equal(p.location.href, 'https://breakpatch.dev/pricing/', 'no beta email either');
     assert.equal(p.$('solo-price').textContent, '', 'the card isn’t set up');
-    // Team sells as usual.
-    assert.equal(p.$('buy').textContent, 'Buy Team');
-    assert.deepEqual((await p.buy()).items, [{ priceId: 'pri_ty', quantity: 5 }]);
+    assert.equal(p.opened.length, 0, 'no checkout at all');
   }
 });
 
@@ -632,7 +519,7 @@ test('the terms, refunds and privacy pages read right while Solo is off: "when o
   assert.ok(TERMS.includes('<li><b>Solo</b>, when offered, is for one person'));
   assert.ok(REFUNDS.includes('<p>The Solo plan, when offered, is one per company.'));
   assert.ok(PRIVACY.includes('<p>When the Solo plan is offered: before its checkout opens, the pricing page sends'));
-  assert.ok(PRIVACY.includes('<th scope="row">Breakpatch Team, and Solo when offered</th>'));
+  assert.ok(PRIVACY.includes('<th scope="row">Breakpatch Team and Business, and Solo, once offered</th>'));
   for (const [name, text] of [['terms', TERMS], ['refunds', REFUNDS], ['privacy', PRIVACY]]) {
     assert.doesNotMatch(text, /href="[^"]*solo/i, name);
     assert.doesNotMatch(text, /Breakpatch Solo, Team/, name);

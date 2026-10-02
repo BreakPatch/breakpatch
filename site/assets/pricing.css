@@ -3,23 +3,19 @@
 .pricing-head h1{font-size:3rem;line-height:1.05;letter-spacing:-.025em;margin:0 0 12px}
 .pricing-head p{margin:0 auto;max-width:560px;color:var(--muted);font-size:1.125rem;text-wrap:pretty}
 .home.pricing{max-width:1200px}
-.plans{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:20px;align-items:start;padding-bottom:56px}
+.plans{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:start;padding-bottom:56px}
 /* With Solo on sale (<html data-solo>, assets/paddle-config.js), four cards. :where() keeps these as weak as .plans, so the smaller screens' rules below still win. */
-:where([data-solo]) .plans{grid-template-columns:1fr 1.1fr 1.4fr 1fr}
+:where([data-solo]) .plans{grid-template-columns:1fr 1.3fr 1fr 1fr}
 .plans .edition h2{margin:0;font-size:1.5rem;letter-spacing:-.01em}
-.plan-team{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent)}
+/* Community is the plan on sale now; Team and Business (.soon) are coming later, with no price yet. */
+.plan-now{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent)}
+.plans .soon .price{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
+.tbd{margin:2px 0 0;font-size:1.25rem;font-weight:700;letter-spacing:-.01em;color:var(--text)}
 .plan-cta{justify-content:center;margin-top:14px;width:100%}
 .amount{margin:6px 0 0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .amount span:first-child{font-size:2.5rem;font-weight:700;letter-spacing:-.02em;color:var(--text)}
 .amount .per{font-size:0.9375rem;color:var(--muted)}
 .alt{margin:0;font-size:0.875rem;color:var(--faint);letter-spacing:.01em}
-.founding{margin:0 auto 28px;max-width:760px;padding:14px 20px;border:1px solid var(--accent);border-radius:var(--r-md);background:var(--surface);text-align:center}
-.founding p{margin:0}
-.founding-title{font-weight:700;font-size:1.0625rem;color:var(--text)}
-.founding-sub{margin-top:4px!important;font-size:0.875rem;color:var(--muted);text-wrap:pretty}
-.founding-opt{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line2);border-radius:10px;background:var(--sunk);font-size:0.875rem;color:var(--text2);cursor:pointer}
-.founding-opt input{margin:3px 0 0;accent-color:var(--accent);flex:none}
-.founding-opt b{color:var(--text)}
 .period{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;align-self:flex-start;gap:2px;padding:3px;border-radius:var(--r-sm);background:var(--sunk);border:1px solid var(--line)}
 .period button{position:relative;z-index:1;font-family:var(--font);font-size:0.875rem;font-weight:600;color:var(--muted);background:transparent;border:0;border-radius:8px;padding:5px 14px;cursor:pointer;transition:color .15s ease-out,scale .12s ease-out}
 .period button[aria-pressed="true"]{background:var(--raised);color:var(--text)}
@@ -54,6 +50,7 @@
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btn[aria-busy="true"]{opacity:.7;cursor:progress}
 .buy-error{margin:0;font-size:0.875rem;color:#F08A6C}
+.pricing-head .buy-error{margin-top:12px}
 .solo-taken{margin:0;padding:10px 12px;border:1px solid var(--accent);border-radius:10px;background:var(--sunk);font-size:0.875rem;color:var(--text2)}
 .solo-taken a{text-decoration:underline;text-underline-offset:3px}
 .pricing-faq{border-top:1px solid var(--line);padding:48px 0 80px;max-width:760px;margin:0 auto}
@@ -77,13 +74,12 @@
 .steps li::before{content:counter(s);position:absolute;left:18px;top:15px;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-weight:700;font-size:0.875rem;display:flex;align-items:center;justify-content:center}
 .steps b{color:var(--text)}
 @media (prefers-color-scheme: light){.buy-error{color:#B3261E}}
-@media (max-width:1180px){:where([data-solo]) .plans{grid-template-columns:1fr 1fr}:where([data-solo]) .plan-team{grid-column:1 / -1;order:-1}:where([data-solo]) .plans .edition:last-child{grid-column:1 / -1}}
-@media (max-width:1000px){.plans{grid-template-columns:1fr 1fr}.plan-team{grid-column:1 / -1;order:-1}}
+@media (max-width:1180px){:where([data-solo]) .plans{grid-template-columns:1fr 1fr}}
+@media (max-width:1000px){.plans{grid-template-columns:1fr 1fr}:where(html:not([data-solo])) .plan-now{grid-column:1 / -1}}
 @media (max-width:720px){.plans{grid-template-columns:1fr}.pricing-head{padding:40px 0 24px}.pricing-head h1{font-size:2.25rem}.page-narrow{padding:32px 16px 60px}.page-narrow h1{font-size:2rem}}
 @media (max-width:420px){.fields{grid-template-columns:1fr;grid-template-rows:none;row-gap:12px}.fields .field{display:flex;grid-row:auto}.fields .field label{align-self:auto}}
 .page-narrow code,.pricing-faq code{overflow-wrap:anywhere}
 .plans .price{white-space:nowrap}
-.plans .edition:last-child .price{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
 /* Plain-language tables and expandable details on legal pages */
 .page-narrow .table-wrap{margin-top:12px}
 table.plain{border-collapse:collapse;width:100%;min-width:520px;font-size:.9375rem}

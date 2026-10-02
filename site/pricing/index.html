@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Pricing · Breakpatch</title>
-<meta name="description" content="Breakpatch pricing. Community is free. Team is $16 per person per month billed yearly, or $20 month to month, with one machine licence included. Business for 20 people or more.">
+<meta name="description" content="Breakpatch pricing. Community is free and open source, and available now. Team and Business, for working together, are coming later: their prices aren't decided yet.">
 <link rel="icon" href="../assets/favicon.svg">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="../assets/site.css">
@@ -18,26 +18,23 @@
 <main class="home pricing">
   <section class="pricing-head">
     <h1>Pricing</h1>
-    <p>Free on your own Mac.<span class="solo-only"> Solo when you want the automation for yourself.</span> Pay per person when your team tests together, and per machine for runners and CI.</p>
+    <p>Breakpatch Community is free, and it's what you can install today.<span class="solo-only"> Solo when you want the automation for yourself.</span> Team and Business, for working together, are coming later. Their prices aren't decided yet.</p>
+    <div class="buy-error" id="buy-error" role="alert" hidden></div>
   </section>
 
-  <aside class="founding" id="founding" aria-labelledby="founding-title" hidden>
-    <p class="founding-title" id="founding-title">Founding teams: $12/person/month for 24 months · 25 places</p>
-    <p class="founding-sub">Team, billed yearly, instead of $16, for the first 25 teams of up to 20 people. The price is locked for 24 months from purchase, then the Team yearly price at that time, with 60 days’ notice. Extra machine licences are at list price.</p>
-  </aside>
-
   <section class="plans" aria-label="Plans">
-    <article class="edition">
-      <div class="edition-head"><h2>Community</h2><span class="price">Free</span></div>
-      <p class="who">One person, one Mac. Open source, Apache 2.0.</p>
+    <article class="edition plan-now" aria-labelledby="community-title">
+      <div class="edition-head"><h2 id="community-title">Community</h2><span class="price">Free</span></div>
+      <p class="who">One person, one Mac. Open source, Apache 2.0. Available now.</p>
       <ul>
         <li>Record by clicking on the page</li>
+        <li>The AI on your Mac names each step</li>
         <li>Run tests and suites by hand, with a clear report when something breaks</li>
         <li>Tests saved as files in a folder you pick</li>
         <li>Copy a failed step as Markdown, for any tracker</li>
         <li>Help through GitHub issues<span class="prelaunch-text">, or email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a> until the public release</span></li>
       </ul>
-      <a class="btn ghost plan-cta" href="../#install">Install Breakpatch</a>
+      <a class="btn plan-cta" href="../#install">Install Breakpatch</a>
     </article>
 
     <!-- Solo shows only while it is on sale (assets/paddle-config.js asks the back office). -->
@@ -76,21 +73,14 @@
       </form>
     </article>
 
-    <article class="edition team plan-team" aria-labelledby="team-title">
-      <div class="edition-head"><h2 id="team-title">Team</h2><span class="price">3 people or more</span></div>
-      <div class="period" role="group" aria-label="Billing period">
-        <button type="button" data-period="year" aria-pressed="true">Yearly</button>
-        <button type="button" data-period="month" aria-pressed="false">Monthly</button>
-      </div>
-      <p class="amount"><span id="team-price">$16</span> <span class="per" id="team-per">per person per month, billed yearly</span></p>
-      <p class="alt" id="team-alt">$20 month to month. Save $48 per person per year.</p>
-      <label class="founding-opt" id="founding-opt" hidden>
-        <input type="checkbox" id="founding-on" checked>
-        <span><b>Founding price</b> $12 per person per month for your first 24 months, then the Team yearly price at that time, with 60 days’ notice. For the first 25 teams of up to 20 people.</span>
-      </label>
-      <p class="hint" id="founding-cap" hidden>The founding price is for teams of up to 20 people</p>
+    <!-- Team and Business: coming later, prices to be decided (owner, 2026-10-02). No amounts and no checkout until then (site/README.md, "Team and Business"). -->
+    <article class="edition soon plan-team" aria-labelledby="team-title">
+      <div class="edition-head"><h2 id="team-title">Team</h2><span class="price">Coming later</span></div>
+      <p class="tbd">Pricing to be decided</p>
+      <p class="who">For 3 people or more who test together.</p>
       <ul>
-        <li>A shared workspace in your company's own Google Firebase project (<a href="../manual/#create-a-workspace">how it's set up</a>), joined with an invite link</li>
+        <li>Everything in Community, plus:</li>
+        <li>A shared workspace, hosted by Breakpatch or in your company's own Google Firebase project (<a href="../manual/#create-a-workspace">how that's set up</a>), joined with an invite link</li>
         <li>Version history for every test, and the full run history</li>
         <li>Fixed automatically: the AI assistant finds buttons that moved</li>
         <li>Why did this fail?: the AI assistant explains a failed step, and Create issue sends it to GitHub, Linear or Jira</li>
@@ -98,75 +88,36 @@
         <li>Schedules on your local runner Mac, and 1 machine licence: one test run at a time, on a local runner or a CI machine</li>
         <li>Email support, answered within 2 business days</li>
       </ul>
-
-      <form id="team-form" class="buy" novalidate>
-        <div class="fields">
-          <div class="field">
-            <label for="seats">People</label>
-            <div class="stepper">
-              <button type="button" data-step="-1" data-for="seats" aria-label="One person fewer">−</button>
-              <input id="seats" name="seats" type="number" inputmode="numeric" min="3" max="1000" step="1" value="5" required>
-              <button type="button" data-step="1" data-for="seats" aria-label="One more person">+</button>
-            </div>
-            <span class="hint">At least 3</span>
-          </div>
-          <div class="field">
-            <label for="machines">Extra machine licences</label>
-            <div class="stepper">
-              <button type="button" data-step="-1" data-for="machines" aria-label="One machine fewer">−</button>
-              <input id="machines" name="machines" type="number" inputmode="numeric" min="0" max="100" step="1" value="0" required>
-              <button type="button" data-step="1" data-for="machines" aria-label="One more machine">+</button>
-            </div>
-            <span class="hint" id="machine-price">$384 a year each</span>
-          </div>
-        </div>
-        <div class="fields buyer" id="buyer" hidden>
-          <div class="field">
-            <label for="email">Work email</label>
-            <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@company.com" maxlength="254">
-            <span class="hint">Your licence key is waiting for this email at account.breakpatch.dev</span>
-          </div>
-          <div class="field">
-            <label for="company">Company</label>
-            <input id="company" name="company" type="text" autocomplete="organization" required placeholder="Acme Ltd" maxlength="120">
-            <span class="hint">The name on your licence</span>
-          </div>
-        </div>
-        <div class="total"><span id="total">$960 a year</span><span class="hint" id="total-sub">5 people, 1 machine licence (1 included).</span></div>
-        <button class="btn plan-cta" id="buy" type="submit">Buy Team</button>
-        <p class="hint" id="buy-note" hidden>Breakpatch Team is in a free private beta while we get ready to sell. Email <a href="mailto:support@breakpatch.dev?subject=Breakpatch%20Team%20beta">support@breakpatch.dev</a> to join, or to buy for your team now.</p>
-        <p class="buy-error" id="buy-error" role="alert" hidden></p>
-      </form>
+      <a class="btn ghost plan-cta" href="mailto:support@breakpatch.dev?subject=Tell%20me%20when%20Breakpatch%20Team%20is%20ready">Tell me when it's ready</a>
     </article>
 
-    <article class="edition">
-      <div class="edition-head"><h2>Business</h2><span class="price">20 people or more</span></div>
-      <p class="amount"><span>$30</span> <span class="per">per person per month, billed yearly</span></p>
-      <p class="alt">$360 per person per year. From $7,200 a year for 20 people.</p>
+    <article class="edition soon plan-business" aria-labelledby="business-title">
+      <div class="edition-head"><h2 id="business-title">Business</h2><span class="price">Coming later</span></div>
+      <p class="tbd">Pricing to be decided</p>
+      <p class="who">For 20 people or more.</p>
       <ul>
         <li>Everything in Team, plus:</li>
         <li>5 machine licences included</li>
-        <li>Choose another AI model for the assistant, per workspace</li>
         <li>Support answered within 4 business hours, Monday to Friday</li>
         <li>Invoice billing</li>
       </ul>
-      <a class="btn ghost plan-cta" href="mailto:support@breakpatch.dev?subject=Breakpatch%20Business">Contact us</a>
+      <a class="btn ghost plan-cta" href="mailto:support@breakpatch.dev?subject=Tell%20me%20when%20Breakpatch%20Business%20is%20ready">Tell me when it's ready</a>
     </article>
   </section>
 
   <section class="pricing-faq" aria-labelledby="faq-title">
     <h2 id="faq-title">Questions</h2>
     <dl>
+      <dt>When will Team and Business be ready?</dt>
+      <dd>We haven't set a date or the prices yet. Email <a href="mailto:support@breakpatch.dev?subject=Tell%20me%20when%20Breakpatch%20Team%20is%20ready">support@breakpatch.dev</a> and we'll tell you when they're ready. Until then, Community has everything for one person on one Mac, and moving to Team later copies your tests folder into the team's workspace.</dd>
       <dt>What's a machine licence?</dt>
-      <dd>People take seats. A Mac that runs tests for the whole team (the local runner) or a build server that runs your tests takes a machine licence. Each machine licence runs one test at a time, so running two at once needs two. Team includes one. Extra ones are $40 a month, or $384 a year, always at list price.<br><span class="dev-note"><b>For developers:</b> A machine licence covers one test run at a time on any machine; a pipeline running N jobs in parallel needs N licences. A CI machine takes one when it runs <code>breakpatch-ci</code>.</span></dd>
+      <dd>In Team and Business, people take seats. A Mac that runs tests for the whole team (the local runner) or a build server that runs your tests takes a machine licence. Each machine licence runs one test at a time, so running two at once needs two. Team will include one, and Business five.<br><span class="dev-note"><b>For developers:</b> A machine licence covers one test run at a time on any machine; a pipeline running N jobs in parallel needs N licences. A CI machine takes one when it runs <code>breakpatch-ci</code>.</span></dd>
       <dt class="solo-only">Who is Solo for?</dt>
       <dd class="solo-only">One person who wants the automation for themselves: fixed automatically, schedules on your Mac, notifications, result messages and the CI command line. It works on your tests folder or Git, with nothing to set up in the cloud. You can connect your own workspace if you want run requests, the local runner and version history, still for just you. Solo is one per company: if someone at your company email domain already has it, choose Team. Moving to Team later keeps your tests.</dd>
-      <dt>How do I get my licence key?</dt>
-      <dd>After checkout, sign in at <a href="https://account.breakpatch.dev">account.breakpatch.dev</a> with the email you bought with. Your key is shown there once.<span class="solo-only"> On Solo, enter it in Breakpatch, in Settings → Licence.</span> On Team, a workspace admin enters it once in Settings → Licence. Then invite your team: the invite link sets up each person's licence, so they don't enter a key. The local runner and CI machines use a machine licence.</dd>
-      <dt>Can I change the number of people later?</dt>
-      <dd>Yes, from your account page. Adding or removing seats or machine licences is charged or credited straight away, pro rata for the rest of the billing period; credits go against your next payments. Cancel any time from Manage billing: the licence keeps working until the end of the period you paid for.</dd>
+      <dt class="solo-only">How do I get my licence key?</dt>
+      <dd class="solo-only">After checkout, sign in at <a href="https://account.breakpatch.dev">account.breakpatch.dev</a> with the email you bought with. Your key is shown there once. Enter it in Breakpatch, in Settings → Licence.</dd>
       <dt>Who handles the payment?</dt>
-      <dd>Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders, and handles payments, invoices, tax and refunds. For help with Breakpatch itself, email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a>. You can ask either of us for a refund: see our <a href="../refunds/">refund policy</a>.</dd>
+      <dd><span class="solo-off">Nothing is on sale yet. When it is, it works like this. </span>Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders, and handles payments, invoices, tax and refunds. For help with Breakpatch itself, email <a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a>. You can ask either of us for a refund: see our <a href="../refunds/">refund policy</a>.</dd>
     </dl>
   </section>
 </main>
