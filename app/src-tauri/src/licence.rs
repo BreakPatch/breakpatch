@@ -561,6 +561,9 @@ enum CallError {
 struct Service {
     base: String,
     client: reqwest::Client,
+    /// The last call failed on a certificate this Mac doesn't trust (a TLS-inspecting network):
+    /// "offline" then says that instead of "check your connection".
+    cert_failed: std::sync::atomic::AtomicBool,
 }
 
 impl Service {
@@ -570,16 +573,38 @@ impl Service {
             .user_agent(concat!("Breakpatch/", env!("CARGO_PKG_VERSION")))
             .build()
             .unwrap_or_default();
-        Self { base: base.trim_end_matches('/').to_string(), client }
+        Self { base: base.trim_end_matches('/').to_string(), client, cert_failed: Default::default() }
+    }
+
+    /// The words for "offline": the TLS-inspection sentence when that's what it was.
+    fn offline_message(&self) -> String {
+        if self.cert_failed.load(std::sync::atomic::Ordering::Relaxed) {
+            crate::net::TLS_INTERCEPTED.to_string()
+        } else {
+            message_for("offline", None)
+        }
+    }
+
+    fn offline(&self) -> Failure {
+        Failure { message: self.offline_message(), ..Failure::new("offline", None) }
     }
 
     async fn post(&self, endpoint: &str, body: &Value) -> Result<Value, CallError> {
         let url = format!("{}/{endpoint}", self.base);
         let res = match self.client.post(&url).json(body).send().await {
-            Ok(r) => r,
+            Ok(r) => {
+                self.cert_failed.store(false, std::sync::atomic::Ordering::Relaxed);
+                r
+            }
             Err(e) => {
+                let cert = crate::net::is_cert_error(&e);
+                self.cert_failed.store(cert, std::sync::atomic::Ordering::Relaxed);
                 // The error names the address only; the body (key, token) is never logged.
-                log::warn!("licence {endpoint}: couldn't reach the service ({})", e.without_url());
+                if cert {
+                    log::warn!("licence {endpoint}: the service's certificate isn't trusted on this Mac (TLS inspection?)");
+                } else {
+                    log::warn!("licence {endpoint}: couldn't reach the service ({})", e.without_url());
+                }
                 return Err(CallError::Unreachable);
             }
         };
@@ -1116,7 +1141,7 @@ impl<S: SecretStore> Licensing<S> {
                 }
                 Err(Failure::for_tier(&code, message.as_deref(), solo))
             }
-            Err(CallError::Unreachable) => Err(Failure::new("offline", None)),
+            Err(CallError::Unreachable) => Err(self.service.offline()),
         }
     }
 
@@ -1213,7 +1238,7 @@ impl<S: SecretStore> Licensing<S> {
                 let mut st = self.status_for(Some(&ws_key), None);
                 if st.state == State::Active {
                     st.code = Some("offline".into());
-                    st.message = Some(message_for("offline", None));
+                    st.message = Some(self.service.offline_message());
                 }
                 st
             }

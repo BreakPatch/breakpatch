@@ -202,7 +202,9 @@ fn check_request(p: Provider, r: &IssueRequest) -> Result<(), String> {
 // ---------------------------------------------------------------- replies
 
 fn reach_error(e: reqwest::Error, who: &str) -> String {
-    if e.is_timeout() {
+    if crate::net::is_cert_error(&e) {
+        crate::net::TLS_INTERCEPTED.to_string()
+    } else if e.is_timeout() {
         format!("{who} didn't answer within {} seconds. Try again.", TIMEOUT.as_secs())
     } else {
         format!("Couldn't reach {who}. Check this Mac's connection and try again.")

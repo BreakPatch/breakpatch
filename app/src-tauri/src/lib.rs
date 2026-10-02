@@ -9,6 +9,7 @@ mod engine;
 mod folder;
 mod licence;
 mod migration;
+mod net;
 mod results;
 mod runner;
 mod secrets;

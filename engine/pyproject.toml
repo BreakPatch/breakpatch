@@ -20,6 +20,9 @@ dependencies = [
   "huggingface_hub==1.9.2",
   # The fast locator's text matching (dom/s0.py): fuzzy ratios over the page's control names.
   "rapidfuzz>=3.9",
+  # The system's certificate store (macOS Keychain, Windows, Linux) for the engine's own HTTPS
+  # (net.py): a company's TLS-inspection root installed there is trusted (Team issue #42).
+  "truststore>=0.10",
 ]
 
 [project.optional-dependencies]

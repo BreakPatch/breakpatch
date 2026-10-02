@@ -23,7 +23,8 @@ Breakpatch comes in these editions. **Community** is free and open source: one p
 12. [The AI assistant](#the-ai-assistant)
 13. [Updates](#updates)
 14. [Privacy](#privacy)
-15. [Troubleshooting](#troubleshooting)
+15. [Using Breakpatch on a company network](#using-breakpatch-on-a-company-network)
+16. [Troubleshooting](#troubleshooting)
 
 **Team**
 
@@ -348,6 +349,32 @@ The counts wait in `~/Library/Application Support/Breakpatch/usage.json`, with y
 
 **Breakpatch Team** works differently: see [Licences and seats](#licences-and-seats).
 
+## Using Breakpatch on a company network
+
+Company networks often check the traffic that leaves them: a proxy every connection goes through, *TLS inspection* (a firewall such as Fortinet, Zscaler, Palo Alto or Netskope opens HTTPS connections, checks them and signs them again with the company's own certificate), and a web filter that blocks sites by category. Breakpatch works on these networks once they let it through. This is what it needs, and what to ask IT for.
+
+**What Breakpatch connects to.** Setup downloads the browser from `cdn.playwright.dev` and `playwright.download.prss.microsoft.com`, and the AI assistant from `huggingface.co` (its files come from `cdn-lfs.huggingface.co`, `cdn-lfs.hf.co` and `cas-bridge.xethub.hf.co`). Updates come from `github.com` (the files from `objects.githubusercontent.com` and `release-assets.githubusercontent.com`). Licences, the hosted workspace and the anonymous usage counts use `breakpatch.dev` and `account.breakpatch.dev`. A Team workspace also uses Google Firebase: `firestore.googleapis.com`, `identitytoolkit.googleapis.com`, `securetoken.googleapis.com` and `firebasestorage.googleapis.com`, and for one hosted by Breakpatch `europe-west1-breakpatch-cloud.cloudfunctions.net`. And during a test, the browser opens your own app, and set-up and clean-up calls go to its hosts.
+
+**Certificates.** Breakpatch trusts the certificates your Mac trusts: the app, its engine, the setup downloads and the browser all trust the certificates in the macOS Keychain, including one IT installs there, and none of them ever skips the check. On a network with TLS inspection, IT installs the network's root certificate on company Macs (usually through device management), and then Breakpatch just works. If it isn't installed, you see:
+
+> Your network replaced the website's certificate (common on company networks). Breakpatch trusts the certificates your Mac trusts; ask IT to install the network's certificate on this Mac.
+
+Ask IT to install the network's TLS-inspection certificate in the **System** keychain and mark it trusted (Keychain Access → System → the certificate → Trust → **Always Trust**), or to exempt the addresses above from inspection. A certificate added only to Firefox, or only for one command-line tool, isn't enough. When a test's own app or a set-up call has a certificate of its own making (a staging server), Breakpatch says it doesn't trust that host's certificate: add that certificate to the Keychain the same way.
+
+**Proxies.** Breakpatch uses the proxy set in **System Settings → Network → your network → Details → Proxies**: **Web proxy (HTTP)** and **Secure web proxy (HTTPS)**, with **Bypass proxy settings for these hosts and domains**. The app, the setup downloads and the browser all follow it. The browser that runs your tests is Chromium, which follows every macOS proxy setting, including **Automatic proxy configuration** (a PAC file) and **Auto proxy discovery**.
+
+- **Automatic proxy configuration.** The app and the setup downloads don't read a PAC file or auto discovery: only the browser does. If setup can't download on such a network, ask IT for the proxy's address and either add it as the Secure web proxy, or set it for apps you open from then on with `launchctl setenv HTTPS_PROXY http://proxy.example.com:8080` in Terminal and open Breakpatch again (until you log out). `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` set this way take the place of the System Settings proxy.
+- **A proxy that asks for a password.** Breakpatch can't use a password saved in System Settings, so a proxy that asks for one stops the app's connections and the setup downloads (setup and set-up calls say the proxy asks for a password). Ask IT to let this Mac through without a password (by its address, or for the addresses above). If they can't, put the user name and password in the address you set with `launchctl setenv HTTPS_PROXY http://name:password@proxy.example.com:8080` (an `@` or `:` in them written as `%40` and `%3A`); other apps you open can read it too, so it's the last choice. The browser running your tests can't type a proxy password either; a proxy that signs you in with your Mac's company login (Kerberos) usually works without one.
+- **Set-up and clean-up calls** go through the proxy to the address Breakpatch checked ([Record a test](#record-a-test)), not to the name, so the address rules still hold. Your Mac must still be able to look the name up itself, and some proxies refuse a connection to an address without a name: then ask IT to allow your app's hosts, or to add them to the bypass list.
+
+**Web filters.** Company web filters (FortiGuard, Cisco Talos, Palo Alto Networks, Zscaler, Symantec WebPulse and others) sort sites into categories and may block a site they haven't seen before as *new*, *newly registered* or *unrated*. `breakpatch.dev` is a new domain, so a filter may block it until it has been rated. A blocked address shows as the setup download stopping, "Couldn't reach the licence service", or a page saying your network blocked it. Ask IT to:
+
+1. allow the addresses above (or `*.breakpatch.dev`, `*.huggingface.co`, `*.hf.co`, `cdn.playwright.dev`, `playwright.download.prss.microsoft.com`, `github.com` and `*.githubusercontent.com`);
+2. ask their filter's vendor to rate `breakpatch.dev` (each vendor has a page for asking to re-rate a site: FortiGuard, Cisco Talos, Palo Alto URL Filtering, Zscaler and Symantec Site Review). It's software for testing websites, usually *Information Technology* or *Software*; and
+3. if they inspect TLS, install the network's certificate on the Mac (above), or exempt these addresses from inspection.
+
+You can also send IT this section: [breakpatch.dev/manual/#using-breakpatch-on-a-company-network](https://breakpatch.dev/manual/#using-breakpatch-on-a-company-network).
+
 ## Troubleshooting
 
 **"Couldn't open this folder."** The folder was moved or deleted, or Breakpatch can't save files there. Choose a folder you can write to.
@@ -357,6 +384,8 @@ The counts wait in `~/Library/Application Support/Breakpatch/usage.json`, with y
 **A test file was skipped.** It isn't valid JSON, often after a merge conflict. Fix the file and switch back to Breakpatch.
 
 **"Setup paused."** The download stopped, usually because the connection dropped. Nothing's lost. It continues when you're back online.
+
+**"Your network replaced the website's certificate", a proxy or a blocked site.** See [Using Breakpatch on a company network](#using-breakpatch-on-a-company-network).
 
 **"The AI assistant isn't downloaded."** Download it in Settings → AI assistant. You need it to record.
 
