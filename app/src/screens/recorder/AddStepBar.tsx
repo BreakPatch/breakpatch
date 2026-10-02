@@ -177,7 +177,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   }
 
   const leadIcon = CLICK_FAMILY.has(action) ? 'auto_awesome' : actionInfo(action).icon;
-  const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' : action === 'write' && o.writeSource !== 'typed' ? true : !!rec.text.trim());
+  const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' : action === 'write' ? o.writeSource !== 'typed' || rec.text !== '' : !!rec.text.trim());
 
   if (rec.retryNote && !rr) hint = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click the page again to pick another spot.</>;
   // What the box can't do, by the box, until the sentence is changed (not a toast that goes).

@@ -88,3 +88,14 @@ describe('Use the page', () => {
     expect(result.current.handPlayed.size).toBe(0);
   });
 });
+
+describe('Write', () => {
+  it('types the text exactly as written, spaces at either end included', () => {
+    vi.spyOn(getEngine(), 'recordPoint');
+    const { result } = renderHook(() => useRecorder({ viewport: vp, onError: vi.fn() }));
+    act(() => { result.current.load([]); result.current.setAction('write'); });
+    act(() => { result.current.setText('  hello '); });
+    act(() => { result.current.send(); });
+    expect(result.current.steps.find(s => s.action === 'write')?.text).toBe('  hello ');
+  });
+});

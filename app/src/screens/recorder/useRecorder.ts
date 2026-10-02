@@ -467,7 +467,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
       case 'write': {
         if (options.writeSource === 'secret') { if (!options.secretRef) return; void record({ action: 'write', secretRef: options.secretRef }); }
         else if (options.writeSource === 'generated') void record({ action: 'write', generated: options.generated });
-        else { if (!t) return; void record({ action: 'write', text: t }); }
+        // Typed exactly as written: leading and trailing spaces are part of what's typed.
+        else { if (!text) return; void record({ action: 'write', text }); }
         setText(''); return;
       }
       case 'navigate': if (!t) return; setText(''); void record({ action: 'navigate', nav: 'url', url: /^[a-z]+:\/\//i.test(t) ? t : 'https://' + t }); return;
