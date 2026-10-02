@@ -1,0 +1,8 @@
+node_modules/
+raw/
+rects.json
+frames*/
+out/*.wav
+*.log
+__pycache__/
+out/
