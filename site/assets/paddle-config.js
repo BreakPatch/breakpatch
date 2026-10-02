@@ -7,12 +7,9 @@
 // live ids below are filled in. The back office has its own copy of the price ids
 // (breakpatch-team: backoffice/functions/src/paddle/config.ts), so it knows what each item buys.
 //
-// Founding price (optional; back office README, "Founding price"): `foundingDiscountId` is the
-// Paddle discount's id (dsc_…: 25% off Team yearly, 2 billing periods, usage limit 25). While it's
-// set, /pricing shows the founding banner with the places left (from `foundingPlacesUrl`, the back
-// office's GET /api/founding) and applies the discount to Team yearly for 20 people or fewer
-// (Paddle can't cap the quantity, so the page does, and the webhook); when all 25 are taken, it
-// hides them. Leave it '' and nothing shows.
+// Team and Business are coming later, with prices to be decided (owner, 2026-10-02): the site
+// sells neither, so their price ids and the founding discount aren't here. They're in git at
+// 0b3b672, with the Team checkout, for when Team goes on sale (site/README.md, "Team and Business").
 //
 // Solo (one person, one per company email domain) is on sale when the back office says so: its
 // GET /api/solo-domain (`soloDomainUrl`) answers 404 until its SOLO_ON_SALE switch is on, so the
@@ -29,33 +26,21 @@ window.BREAKPATCH_PADDLE = {
   env: 'sandbox',
   // Set below from the back office's answer; never by hand.
   soloOnSale: false,
-  // Until account.breakpatch.dev is connected: 'https://breakpatch-backoffice.web.app/api/founding'.
-  foundingPlacesUrl: 'https://account.breakpatch.dev/api/founding',
   // Until account.breakpatch.dev is connected: 'https://breakpatch-backoffice.web.app/api/solo-domain'.
   soloDomainUrl: 'https://account.breakpatch.dev/api/solo-domain',
   sandbox: {
     clientToken: '',
     prices: {
-      soloMonthly: '',     // Solo, $19 per month, quantity 1
-      soloYearly: '',      // Solo, $192 per year, quantity 1
-      teamMonthly: '',     // Team, $20 per person per month
-      teamYearly: '',      // Team, $192 per person per year
-      machineMonthly: '',  // Extra machine licence, $40 per month
-      machineYearly: '',   // Extra machine licence, $384 per year
+      soloMonthly: '',     // Solo, monthly, quantity 1
+      soloYearly: '',      // Solo, yearly, quantity 1
     },
-    foundingDiscountId: '',  // dsc_…, the founding discount (25% off Team yearly)
   },
   live: {
     clientToken: '',
     prices: {
       soloMonthly: '',
       soloYearly: '',
-      teamMonthly: '',
-      teamYearly: '',
-      machineMonthly: '',
-      machineYearly: '',
     },
-    foundingDiscountId: '',
   },
 };
 

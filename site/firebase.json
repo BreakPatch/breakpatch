@@ -3,7 +3,7 @@
     "site": "breakpatch-web",
     "public": ".",
     "cleanUrls": true,
-    "ignore": ["firebase.json", ".firebaserc", "README.md", "build-manual.mjs", "*.test.mjs", "**/.*", "package.json", "package-lock.json", "node_modules/**"],
+    "ignore": ["firebase.json", ".firebaserc", "README.md", "build-manual.mjs", "*.test.mjs", "*.py", "**/.*", "package.json", "package-lock.json", "node_modules/**"],
     "redirects": [
       { "source": "/manual", "destination": "/docs/", "type": 301 },
       { "source": "/manual/", "destination": "/docs/", "type": 301 },
