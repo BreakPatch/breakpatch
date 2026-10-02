@@ -35,6 +35,16 @@
   padding: 5px 5px 5px 12px; background: var(--bg); min-height: 42px;
 }
 .rec-composer:focus-within { box-shadow: 0 0 0 3px var(--ring-accent); }
+/* Nothing to type (the step is done on the page): a quiet toolbar, not a text field. The action
+   button keeps its own focus ring. */
+.rec-composer.passive { border-color: var(--line-strong); background: var(--surface); }
+.rec-composer.passive:focus-within { box-shadow: none; }
+.rec-composer.passive .rec-lead { color: var(--text-muted); }
+.rec-page-hint { color: var(--text-muted); gap: 14px; }
+.rec-page-hint .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-page-hint .rec-chips { flex: none; }
+.rec-page-hint .rec-chips > .faint { font-size: 12px; color: var(--text-muted); }   /* the same size as Distance and Maximum wait */
+.rec-composer.passive .rec-inline.faint { color: var(--text-muted); }
 .rec-lead { color: var(--accent); flex: none; }
 .rec-input {
   flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--text);

@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import type { ActionKind } from '../../data/types';
 import { Icon } from '../../components/ui';
 import { usePresence } from '../../components/ui/presence';
-import { menuGroups, type MenuAction } from './actions';
+import { DESCRIBE_STEPS, menuGroups, type MenuAction } from './actions';
 
 export function ActionMenu({ open, current, allowGroups, onPick, onClose }: {
   open: boolean; current: ActionKind; allowGroups: boolean; onPick: (a: MenuAction) => void; onClose: () => void;
@@ -51,7 +51,7 @@ export function ActionMenu({ open, current, allowGroups, onPick, onClose }: {
           </div>
         ))}
       </div>
-      <div className="rec-menu-foot">The chosen action is used for your next click on the page, and for a message that doesn't say what to do.</div>
+      <div className="rec-menu-foot">{DESCRIBE_STEPS ? "The chosen action is used for your next click on the page, and for a message that doesn't say what to do." : 'The chosen action is used for your next click on the page.'}</div>
     </div>
   );
 }

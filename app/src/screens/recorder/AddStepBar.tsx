@@ -90,9 +90,10 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   // Hint row: re-record, then tool hints, then the open loop, else the default.
   const rr = rec.rerecordId ? findStep(rec.steps, rec.rerecordId) : undefined;
   const loop = rec.openLoopId ? findStep(rec.steps, rec.openLoopId) : undefined;
-  let hint: ReactNode = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click anything on the page to add a step, or describe it below.</>;
+  // With describing off the bar itself says what to do, so the hint row is only for situations.
+  let hint: ReactNode = describe ? <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click anything on the page to add a step, or describe it below.</> : null;
   const th = toolHint(action, describe);
-  if (rr) hint = <><Icon name="replay" size={16} className="rec-hint-icon" /><span className="grow">Do step {numberOf(rec.steps, rr.id)} again on the page, or describe it. It replaces "{rr.label}".</span><button type="button" className="rec-hint-link" onClick={rec.cancelRerecord}>Cancel</button></>;
+  if (rr) hint = <><Icon name="replay" size={16} className="rec-hint-icon" /><span className="grow">Do step {numberOf(rec.steps, rr.id)} again on the page{describe ? ', or describe it' : ''}. It replaces "{rr.label}".</span><button type="button" className="rec-hint-link" onClick={rec.cancelRerecord}>Cancel</button></>;
   else if (th) hint = <><Icon name={actionInfo(action).icon} size={16} className="rec-hint-icon" />{th}</>;
   else if (loop) hint = <><Icon name="repeat" size={16} className="rec-hint-icon" />New steps go inside "{loop.label}" until you press Done repeating.</>;
 
@@ -130,7 +131,11 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   } else if (action === 'group') {
     field = <span className="rec-inline faint">Pick shared steps from the list.</span>;
   } else {
-    field = <span className="rec-inline faint">{action === 'drag' ? 'Drag on the page from the start point to the end point.' : onPage(action) ? pageHint(action) : placeholderFor(action)}</span>;
+    field = !describe && (action === 'swipe' || action === 'scroll')
+      ? <span className="rec-inline rec-page-hint">{directionChips()}</span>
+      : onPage(action)
+      ? <span className="rec-inline rec-page-hint"><span className="grow">{pageHint(action)}</span>{!describe && action === 'waitUntil' && maxWaitBox()}{!describe && action === 'upload' && sampleChips()}</span>
+      : <span className="rec-inline faint">{action === 'drag' ? 'Drag on the page from the start point to the end point, or click one and then the other.' : placeholderFor(action)}</span>;
   }
 
   const extra = extraRow();
@@ -150,20 +155,11 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
         {o.writeSource === 'secret' && <span className="faint">The value stays in this Mac's Keychain and is never shown.</span>}
       </div>
     );
-    if (action === 'swipe' || action === 'scroll') return (
-      <div className="rec-extra">
-        <div className="rec-chips" role="radiogroup" aria-label="Direction"><span className="faint">Direction:</span>
-          {(['up', 'down', 'left', 'right'] as Direction[]).map(d => (
-            <button key={d} type="button" role="radio" aria-checked={o.direction === d} className={'rec-chip' + (o.direction === d ? ' on' : '')} onClick={() => rec.setOptions({ direction: d })}>
-              <Icon name={{ up: 'arrow_upward', down: 'arrow_downward', left: 'arrow_back', right: 'arrow_forward' }[d]} size={15} />{d[0].toUpperCase() + d.slice(1)}
-            </button>
-          ))}
-        </div>
-        <label className="rec-inline small">Distance<NumberBox value={o.distance} min={20} max={5000} step={20} label="Distance" onChange={v => rec.setOptions({ distance: v })} />px</label>
-      </div>
-    );
+    // Drawn or clicked on the page: their options are in the bar, not floating over where you draw.
+    if (!describe && (action === 'waitUntil' || action === 'upload' || action === 'swipe' || action === 'scroll')) return null;
+    if (action === 'swipe' || action === 'scroll') return <div className="rec-extra">{directionChips()}</div>;
     if (action === 'waitUntil') return (
-      <div className="rec-extra"><label className="rec-inline small">Maximum wait<NumberBox value={o.maxWait} min={1} max={600} label="Maximum wait in seconds" onChange={v => rec.setOptions({ maxWait: v })} />seconds</label></div>
+      <div className="rec-extra">{maxWaitBox()}</div>
     );
     if (action === 'upload') return (
       <div className="rec-extra">
@@ -172,13 +168,41 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
             <button key={k} type="button" role="radio" aria-checked={o.sample === k} className={'rec-chip' + (o.sample === k ? ' on' : '')} onClick={() => rec.setOptions({ sample: k })}>{SAMPLES[k]}</button>
           ))}
         </div>
-        <span className="faint">Then click the upload button on the page, or describe it.</span>
+        <span className="faint">Then click the upload button on the page{describe ? ', or describe it' : ''}.</span>
       </div>
     );
     return null;
   }
+  function directionChips() {
+    return <>
+      <div className="rec-chips" role="radiogroup" aria-label="Direction"><span className="faint">Direction:</span>
+        {(['up', 'down', 'left', 'right'] as Direction[]).map(d => (
+          <button key={d} type="button" role="radio" aria-checked={o.direction === d} className={'rec-chip' + (o.direction === d ? ' on' : '')} onClick={() => rec.setOptions({ direction: d })}>
+            <Icon name={{ up: 'arrow_upward', down: 'arrow_downward', left: 'arrow_back', right: 'arrow_forward' }[d]} size={15} />{d[0].toUpperCase() + d.slice(1)}
+          </button>
+        ))}
+      </div>
+      <label className="rec-inline small">Distance<NumberBox value={o.distance} min={20} max={5000} step={20} label="Distance" onChange={v => rec.setOptions({ distance: v })} />px</label>
+    </>;
+  }
+  function maxWaitBox() {
+    return <label className="rec-inline small">Maximum wait<NumberBox value={o.maxWait} min={1} max={600} label="Maximum wait in seconds" onChange={v => rec.setOptions({ maxWait: v })} />seconds</label>;
+  }
+  function sampleChips() {
+    return (
+      <div className="rec-chips" role="radiogroup" aria-label="Sample file"><span className="faint">File:</span>
+        {(Object.keys(SAMPLES) as SampleFile[]).map(k => (
+          <button key={k} type="button" role="radio" aria-checked={o.sample === k} className={'rec-chip' + (o.sample === k ? ' on' : '')} onClick={() => rec.setOptions({ sample: k })}>{SAMPLES[k]}</button>
+        ))}
+      </div>
+    );
+  }
 
-  const leadIcon = CLICK_FAMILY.has(action) ? 'auto_awesome' : actionInfo(action).icon;
+  // The sparkle only means "describe it to the AI"; otherwise the chosen action's own icon.
+  const leadIcon = describe && CLICK_FAMILY.has(action) ? 'auto_awesome' : actionInfo(action).icon;
+  // Nothing to type and nothing to send (it's done on the page): no field look and no send button.
+  const passive = input === 'none' && (onPage(action) || action === 'drag');
+  const showSend = !passive && action !== 'group';
   const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' && !onPage(action) : action === 'write' ? o.writeSource !== 'typed' || rec.text !== '' : !!rec.text.trim());
 
   if (rec.retryNote && !rr) hint = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click the page again to pick another spot.</>;
@@ -221,18 +245,20 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
       </div>
       <div className="rec-hint">{hint}</div>
       <div className="rec-composer-wrap">
-        <div className="rec-composer">
+        <div className={'rec-composer' + (passive ? ' passive' : '')}>
           <Icon name={leadIcon} size={18} className="rec-lead" />
           {field}
           <button ref={actionBtn} type="button" className={'rec-action-btn' + (menu !== 'closed' ? ' open' : '')} aria-haspopup="menu" aria-expanded={menu !== 'closed'}
             onClick={() => setMenu(m => (m === 'closed' ? 'menu' : 'closed'))}>
             <Icon name={actionInfo(action).icon} size={16} />{shortName(action)}<Icon name={menu !== 'closed' ? 'expand_less' : 'expand_more'} size={16} className="faint" />
           </button>
-          <button type="button" className="rec-send" aria-label={input === 'describe' ? 'Ask the AI assistant' : 'Add step'}
-            title={rec.busy ? 'Waiting for the last step to finish' : input === 'describe' ? 'Ask the AI assistant' : 'Add step'}
-            onClick={rec.send} disabled={!canSend}>
-            <Icon name="arrow_upward" size={18} />
-          </button>
+          {showSend && (
+            <button type="button" className="rec-send" aria-label={input === 'describe' ? 'Ask the AI assistant' : 'Add step'}
+              title={rec.busy ? 'Waiting for the last step to finish' : input === 'describe' ? 'Ask the AI assistant' : 'Add step'}
+              onClick={rec.send} disabled={!canSend}>
+              <Icon name="arrow_upward" size={18} />
+            </button>
+          )}
         </div>
         <ActionMenu open={menu === 'menu'} current={action} allowGroups={allowGroups} onPick={pick} onClose={closeMenu} />
         {menu === 'picker' && (

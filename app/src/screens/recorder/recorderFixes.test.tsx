@@ -408,11 +408,15 @@ describe('the describe box is off (DESCRIBE_STEPS)', () => {
     }
     render(<Bar />);
     expect(screen.queryByLabelText('Describe the next step')).toBeNull();
-    expect(screen.getByText('Click where the step happens on the page.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add step' })).toBeDisabled();
+    // One instruction, in the bar; no hint row repeating it, no send button with nothing to send.
+    expect(screen.getByText('Click on the page to add a step.')).toBeInTheDocument();
+    expect(screen.queryByText(/describe it/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add step' })).toBeNull();
     act(() => { r.setAction('waitUntil'); });
-    expect(screen.getByText(/Draw a box around what should appear/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Draw a box around what should appear/)).toHaveLength(1);
+    expect(screen.getByLabelText('Maximum wait in seconds').closest('.rec-composer')).not.toBeNull();   // in the bar, not over the page
     act(() => { r.setAction('write'); });
     expect(screen.getByLabelText('Text to write')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add step' })).toBeInTheDocument();
   });
 });
