@@ -40,7 +40,7 @@ export function AiSection() {
           <Disc icon="auto_awesome" size={44} color="var(--accent)" />
           <div className="grow col" style={{ gap: 2 }}>
             <div style={{ fontSize: 16, fontWeight: 600 }}>AI assistant</div>
-            <div className="set-card-sub sm">{fixing ? 'Names each step, finds what you describe, and fixes moved buttons during runs.' : 'Names each step and finds what you describe.'}</div>
+            <div className="set-card-sub sm">{fixing ? 'Names each step you record, and fixes moved buttons during runs.' : 'Names each step you record.'}</div>
           </div>
           {!info ? <Skeleton w={70} h={26} r={13} /> : installed ? <StatusPill status="passed">Ready</StatusPill> : <StatusPill status="failed">Not downloaded</StatusPill>}
         </div>
@@ -53,7 +53,7 @@ export function AiSection() {
 
       <div className="set-info">
         <Icon name="info" />
-        <div className="grow">The standard assistant works well for almost every team. On Macs with 32 GB of memory or more you can download a larger one if you want to, but it's slower to load and rarely finds more.</div>
+        <div className="grow">The built-in assistant works well for almost every app. Bringing your own model isn't available yet.</div>
       </div>
 
       <div className="col" style={{ gap: 8 }}>

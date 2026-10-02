@@ -84,7 +84,7 @@ describe('small layout and wording', () => {
   });
   it('DESK-08/16 words the AI assistant by edition and About in plain words', () => {
     const ai = css('screens/settings/sections/AiSection.tsx'), about = css('screens/settings/sections/AboutSection.tsx');
-    expect(ai).toContain("'Names each step and finds what you describe.'");
+    expect(ai).toContain("'Names each step you record.'");
     expect(ai).toContain("hasFeature('autoFix')");
     expect(about).not.toMatch(/pinned|Shared library|'Connected'/);
   });
