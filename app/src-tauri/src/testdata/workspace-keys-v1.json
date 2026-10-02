@@ -108,6 +108,15 @@
     "keyMsg1": "bp-key-v1|team:acme-tests/breakpatch|1|YriNYbQOsRBKY207y3EL4XGRSfohKdkU1cjNpeElVuU=",
     "otherSeed": "909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
     "other_b64": "0uuZO2MUNSjnDc3H65yiEBDddpvpUlDCxbq/rRXUWOI=",
+    "revocation": {
+      "by": "HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU=",
+      "keep": [
+        "HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU="
+      ],
+      "pk": "0uuZO2MUNSjnDc3H65yiEBDddpvpUlDCxbq/rRXUWOI=",
+      "sig": "ZpKoMyNAmFca5fehDjUNT3ppKOnY4Dr6gKWZQJUUULps1r4lhF6qv20rF3uhS4zXk0k7I2VWNmAYmHOR/GvEAA=="
+    },
+    "revokeMsg": "bp-revoke-v1|team:acme-tests/breakpatch|0uuZO2MUNSjnDc3H65yiEBDddpvpUlDCxbq/rRXUWOI=|HOVqSMgv+ZFioUvFRGEmdOXWH7kxfmXUBVeA/by03DU=",
     "signerMsg": "bp-signer-v1|team:acme-tests/breakpatch|0uuZO2MUNSjnDc3H65yiEBDddpvpUlDCxbq/rRXUWOI=",
     "ws": "team:acme-tests/breakpatch"
   },
