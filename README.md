@@ -3,8 +3,9 @@
   raw.githubusercontent.com/BreakPatch/breakpatch/badges/*.json) both need to read this repo, so
   while it's private they don't render for anyone outside it, and shields.io can't read the
   coverage files at all. They work for everyone once the repo is public. The coverage files are
-  written to the orphan branch `badges` by .github/workflows/ci.yml on every push to main, with
-  the workflow's own token. The latest release badge fills in with the first public release.
+  written to the orphan branch `badges` by the `badges` job in .github/workflows/ci.yml on every
+  push to main, with the workflow's own token. The latest release badge fills in with the first
+  public release.
 -->
 
 <p align="center">
@@ -49,7 +50,7 @@
     <img src="site/assets/shots/recorder-dark@2x.webp" width="880" alt="The Breakpatch recorder. The web app being tested is on the left, the recorded steps are on the right, and the AI assistant asks “Is this the New project button?” with Confirm and Try again.">
   </picture>
   <br>
-  <sub>The recorder. You clicked on the page, and the AI on your Mac named the button.</sub>
+  <sub>The recorder: your web app on the left, the steps on the right, and the AI on your Mac naming a button.</sub>
 </p>
 
 ## Install
@@ -84,14 +85,15 @@ straight away.
 | | |
 |---|---|
 | Mac | Apple Silicon (M1 or later) |
-| Memory | 16 GB or more (32 GB for the optional Larger AI assistant) |
+| Memory | 16 GB or more |
 | macOS | 14 Sonoma or later |
 | Disk | About 3 GB for the AI assistant, plus the test browser |
 
 ## What it does
 
-- **The AI names what you click.** Steps read “Click New project”, not coordinates, and each keeps a
-  plain *What to look for* that you can edit.
+- **Record by clicking.** Click, drag or draw a box on the page, and the AI names what you clicked:
+  steps read “Click New project”, not coordinates, and each keeps a plain *What to look for* that
+  you can edit.
 - **The AI runs on your Mac.** Qwen3-VL 4B, an open-weights model, on Apple Silicon through MLX.
   Your screens never leave the Mac, there are no API keys and no per-run fees, and it works
   offline once it's downloaded. It's the only model for now: bringing your own (a local one through
@@ -102,7 +104,8 @@ straight away.
   and carousels.
 - **Know what broke.** The first thing that's wrong stops the run. The report shows what was
   expected next to what was on screen, and why, in plain words, with **Re-record this step** right
-  there. **Copy as Markdown** turns a failed step into a ready-made bug report for any tracker.
+  there. **Copy** → **Markdown, for an issue** turns a failed step into a ready-made bug report for
+  any tracker.
 - **Every action a person does.** Click, double, long and right click, hover, swipe, scroll, drag
   and drop, typing, uploads, downloads, tabs and popups, plus checkpoints, loops, shared steps
   (record *Log in* once, use it everywhere) and suites.
@@ -117,25 +120,29 @@ anonymous daily usage counts, with no names, addresses, screenshots or IDs. Turn
 [Privacy](https://breakpatch.dev/manual/#privacy) section lists exactly what's sent; the code is
 in [`usage.rs`](app/src-tauri/src/usage.rs) and [`countUsage.ts`](app/src/data/countUsage.ts).
 
-## Community and Team
+## Editions
 
-This repository is **Breakpatch Community**: free and open source. **Breakpatch Team** is the paid
-edition for teams, built from a separate private module on top of this one. **Business** is Team
-for 20 people or more, and **Solo**, the automation for one person, isn't on sale yet.
+This repository is **Breakpatch Community**: free and open source, and the edition you can install
+today. **Breakpatch Team**, the paid edition for teams, is built from a separate private module on
+top of this one, and is **coming later**, with **Business** (Team for 20 people or more). Their
+prices aren't decided yet: [breakpatch.dev/pricing](https://breakpatch.dev/pricing/) shows what
+they'll include, and [support@breakpatch.dev](mailto:support@breakpatch.dev) will tell you when
+they're ready. **Solo**, the automation for one person, isn't on sale yet either.
 
-| | Community | Team |
+| | Community | Team (coming later) |
 |---|---|---|
-| Price | Free, Apache 2.0 | Paid, per person ([pricing](https://breakpatch.dev/pricing/)) |
+| Available | Now | Later; no date yet |
+| Price | Free, Apache 2.0 | To be decided |
 | People | One person, one Mac | Your whole team, with members and roles |
 | Recording, AI assistant, screen checks, reports | Yes | Yes |
-| Where tests live | JSON files in a folder you pick | A shared workspace in your company's own Firebase project (hosted by Breakpatch is coming soon) |
+| Where tests live | JSON files in a folder you pick | A shared workspace, hosted by Breakpatch or in your company's own Firebase project |
 | History | The latest version and the last run of each test | Version history with restore, and the team's run history for 90 days |
 | When a button moves | The step fails and says why | Fixed automatically: the AI finds it again, and you accept or dismiss the fix |
-| When a step fails | The report, **Copy details** and **Copy as Markdown** | Also **Why did this fail?** (the AI says what changed) and **Create issue** in GitHub, Linear or Jira |
+| When a step fails | The report, with **Copy** as plain text or Markdown for an issue | Also **Why did this fail?** (the AI says what changed) and **Create issue** in GitHub, Linear or Jira |
 | Running | By hand: tests and suites (**Run all** for an app) | Also schedules, a local runner, run requests from CI, result messages to Slack, Microsoft Teams or any web address, and the `breakpatch-ci` command line |
 
-The exact line between them is in [docs/editions.md](docs/editions.md). Moving from Community to
-Team keeps your settings, saved secrets and AI assistant, and copies your tests folder into the
+The exact line between them is in [docs/editions.md](docs/editions.md). When Team is out, moving to
+it keeps your settings, saved secrets and AI assistant, and copies your tests folder into the
 workspace.
 
 ## Documentation
@@ -164,7 +171,7 @@ flowchart LR
 |---|---|
 | **React UI** (`app/src`) | Every screen: Home, the recorder, the run view and report, suites, setup and settings. TypeScript, Vite and Zustand. It reaches the engine only through the shell. |
 | **Tauri shell** (`app/src-tauri`) | The native app: the window, starting and supervising the engine, saved secrets in the Keychain, the updater and the usage counts. For Team it also posts result messages (`runner.rs`) and talks to GitHub, Linear and Jira for Create issue, with each person's token in the Keychain (`trackers.rs`), so the webview's CSP stays strict. Rust and Tauri 2. |
-| **Engine sidecar** (`engine/`) | A Python process the shell starts. It drives a pinned Chromium with Playwright through screenshots, mouse and keyboard, records steps and their screen checks, and replays tests. To find a described element it reads the page's accessible names and roles where the page has them, and asks the local model otherwise; the model also reads a described step's meaning when the app's own reading can't (`record.intent`) and, in Team, explains a failed step (`run.explain`). |
+| **Engine sidecar** (`engine/`) | A Python process the shell starts. It drives a pinned Chromium with Playwright through screenshots, mouse and keyboard, records steps and their screen checks, and replays tests. To find a described element it reads the page's accessible names and roles where the page has them, and asks the local model otherwise; the model also reads a described step's meaning when the app's own reading can't (`record.intent`; the recorder's describe box is off for now, `DESCRIBE_STEPS`) and, in Team, explains a failed step (`run.explain`). |
 | **Protocol** ([`engine/PROTOCOL.md`](engine/PROTOCOL.md)) | JSON Lines on stdin and stdout: requests with an id, exactly one response per id, and events such as live frames and progress. The shell forwards requests (`engine_request`) and passes events on to the UI. It's the contract: change it there first. |
 
 Screen checks are perceptual hashes of the areas each step affects, with the parts that change by
