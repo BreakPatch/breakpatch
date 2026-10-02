@@ -85,6 +85,9 @@ fn make_vectors() -> Value {
     mac_sealed.by = other.clone();
     mac_sealed.sig = sign_with(&other_seed, &sealed_msg(WS, "machine", &mac_sealed));
     let endorsement = json!({"pk": other, "by": admin, "sig": sign_with(&admin_seed, &signer_msg(WS, &other))});
+    // The first admin withdraws the other's signing key, keeping its own.
+    let keep = vec![admin.clone()];
+    let revocation = json!({"pk": other, "keep": keep, "by": admin, "sig": sign_with(&admin_seed, &revoke_msg(WS, &other, &keep))});
 
     json!({
         "v": 1,
@@ -102,6 +105,7 @@ fn make_vectors() -> Value {
                  "checks": {"1": announce(1), "2": announce(2)},
                  "check1_b64": key_check(&data_key, WS, 1), "keyMsg1": key_msg(WS, 1, &key_check(&data_key, WS, 1)),
                  "endorsement": endorsement, "signerMsg": signer_msg(WS, &other),
+                 "revocation": revocation, "revokeMsg": revoke_msg(WS, &other, &keep),
                  "holds_b64": STANDARD.encode(holds_mac(&data_key, WS, &id, &STANDARD.encode(recipient_sign_pk))),
                  "holdsDevice": id, "holdsSignKey_b64": STANDARD.encode(recipient_sign_pk)},
         "seal": {"recipientSecret": hex(&recipient_secret), "recipientPublic_b64": STANDARD.encode(recipient_pk), "deviceId": id,
@@ -133,7 +137,7 @@ fn the_test_vectors_are_what_this_code_makes() {
 
 fn trust_of(v: &Value) -> Trust {
     let sg = &v["sign"];
-    Trust { checks: serde_json::from_value(sg["checks"].clone()).unwrap(), signers: vec![serde_json::from_value(sg["endorsement"].clone()).unwrap()] }
+    Trust { checks: serde_json::from_value(sg["checks"].clone()).unwrap(), signers: vec![serde_json::from_value(sg["endorsement"].clone()).unwrap()], revoked: vec![] }
 }
 
 #[test]
@@ -171,7 +175,14 @@ fn the_pinned_vectors_open() {
     let mk = parse_machine_key(m["text"].as_str().unwrap()).unwrap();
     let sealed: Sealed = serde_json::from_value(m["sealed"].clone()).unwrap();
     check_sealed(WS, "machine", &trusted, &sealed).unwrap();
-    assert!(check_sealed(WS, "machine", &[admin].into(), &sealed).is_err(), "not without the endorsement");
+    assert!(check_sealed(WS, "machine", &[admin.clone()].into(), &sealed).is_err(), "not without the endorsement");
+    // The revocation: the other admin isn't trusted once it's applied, and the first is kept.
+    let mut revoked = trust.clone();
+    revoked.revoked.push(serde_json::from_value(v["sign"]["revocation"].clone()).unwrap());
+    let res = revoked.resolve(WS, [admin.clone()].into(), BTreeSet::new());
+    assert_eq!(res.trusted, [admin.clone()].into());
+    assert_eq!(res.revoked, [v["sign"]["other_b64"].as_str().unwrap().to_string()].into());
+    assert!(check_sealed(WS, "machine", &res.trusted, &sealed).is_err(), "the withdrawn admin's copy is refused");
     assert_eq!(hex(&open_sealed(&machine_secret(&mk, WS), WS, "machine", &sealed).unwrap()[..]), m["dataKey"].as_str().unwrap());
 }
 
@@ -269,6 +280,9 @@ impl Docs {
     fn endorse(&mut self, e: Endorsement) {
         self.0.signers.push(e);
     }
+    fn revoke(&mut self, r: Revocation) {
+        self.0.revoked.push(r);
+    }
 }
 
 fn signer(m: &WorkspaceKeys<MemStore>) -> String {
@@ -287,7 +301,7 @@ fn admin_with_two_keys() -> (WorkspaceKeys<MemStore>, Docs) {
 #[test]
 fn the_first_mac_makes_the_key_and_new_versions_keep_old_content_readable() {
     let a = mac();
-    assert_eq!(a.status(WS).unwrap(), Status { has_key: false, current: None, kids: vec![], pinned: false });
+    assert_eq!(a.status(WS).unwrap(), Status { has_key: false, current: None, kids: vec![], pinned: false, withdrawn: false });
     assert!(a.seal(WS, None, &[item("apps/a", "name", "\"Web\"")]).is_err());
     let first = a.create(WS, None).unwrap();
     assert_eq!(first.kid, 1);
@@ -304,7 +318,7 @@ fn the_first_mac_makes_the_key_and_new_versions_keep_old_content_readable() {
     assert_eq!(pinned[0].kid, 1);
     let opened = a.open(WS, &[open_item("apps/a", "name", &old[0]), open_item("apps/a", "name", &new[0]), open_item("apps/b", "name", &new[0])]).unwrap();
     assert_eq!(opened, vec![Some("\"Web\"".into()), Some("\"Web 2\"".into()), None]);
-    assert_eq!(a.status(WS).unwrap(), Status { has_key: true, current: Some(2), kids: vec![1, 2], pinned: false });
+    assert_eq!(a.status(WS).unwrap(), Status { has_key: true, current: Some(2), kids: vec![1, 2], pinned: false, withdrawn: false });
     // Kept in the Keychain entry people:<ws>, read back by the next launch.
     let text = a.store.get(&format!("people:{WS}")).unwrap().unwrap();
     let b = WorkspaceKeys::new(MemStore::default());
@@ -433,7 +447,202 @@ fn an_admin_endorsed_by_a_trusted_one_is_trusted_too() {
     // A forged endorsement (the signature isn't the first admin's) isn't followed.
     let mut forged = first.endorse(WS, &signer(&mac())).unwrap();
     forged.pk = signer(&mac());
-    assert!(!Docs(Trust { checks: Default::default(), signers: vec![forged.clone()] }).0.trusted_from(WS, [signer(&first)].into()).contains(&forged.pk));
+    assert!(!Docs(Trust { signers: vec![forged.clone()], ..Default::default() }).0.trusted_from(WS, [signer(&first)].into()).contains(&forged.pk));
+}
+
+// ---- An admin leaves: their signing key is withdrawn -------------------------------------------
+
+/// The first admin's Mac, a second admin's Mac it let in and endorsed, and Ana's Mac, which pinned
+/// the first admin only (an invite link from them) and trusts the second through the endorsement.
+fn team_of_two_admins() -> (WorkspaceKeys<MemStore>, WorkspaceKeys<MemStore>, WorkspaceKeys<MemStore>, Docs) {
+    let (first, mut docs) = admin_with_two_keys();
+    let second = mac();
+    second.trust(WS, &signer(&first)).unwrap();
+    let d2 = second.device(WS).unwrap();
+    second.accept(WS, &first.grant(WS, &d2.id, &d2.public_key).unwrap(), &docs.0).unwrap();
+    docs.endorse(first.endorse(WS, &d2.sign_key).unwrap());
+    let ana = mac();
+    ana.import_invite(WS, &first.invite(WS).unwrap(), &docs.0).unwrap();
+    assert!(ana.signer_trusted(WS, &d2.sign_key, &docs.0).unwrap());
+    (first, second, ana, docs)
+}
+
+#[test]
+fn a_withdrawn_admin_is_not_trusted_from_then_on_and_the_others_stay() {
+    let (first, second, ana, mut docs) = team_of_two_admins();
+    let dev = ana.device(WS).unwrap();
+    // A grant the first admin made before leaving, not taken yet.
+    let before = first.grant(WS, &dev.id, &dev.public_key).unwrap();
+    // The first admin is removed: the second admin's Mac withdraws their key, keeping its own.
+    let r = second.revoke(WS, &signer(&first), &[signer(&second), signer(&mac())], &docs.0).unwrap();
+    assert_eq!(r.keep, vec![signer(&second)], "only keys it trusts, and its own");
+    assert_eq!(r.by, signer(&second));
+    docs.revoke(r);
+    let review = ana.review(WS, &docs.0).unwrap();
+    assert_eq!(review.revoked, vec![signer(&first)]);
+    assert!(review.trusted.contains(&signer(&second)), "the admin who's still there stays trusted, though Ana trusted them through the first");
+    assert!(!review.withdrawn);
+    assert!(ana.status(WS).unwrap().pinned, "the second admin is pinned now");
+    // What the first admin signs is refused from now on: copies, announcements, invite links.
+    assert!(ana.accept(WS, &before, &docs.0).unwrap_err().contains("doesn't trust"));
+    let theirs: [u8; 32] = seq(0x44);
+    let first_secrets = first.device_secrets(WS).unwrap();
+    let mut forged = seal_to(&parse_public(&dev.public_key).unwrap(), WS, &dev.id, 3, &theirs).unwrap();
+    forged.by = signer(&first);
+    forged.sig = first_secrets.sign(&sealed_msg(WS, &dev.id, &forged));
+    let check = key_check(&theirs, WS, 3);
+    let mut pushed = docs.clone();
+    pushed.0.checks.insert("3".into(), Check { check: check.clone(), by: signer(&first), sig: first_secrets.sign(&key_msg(WS, 3, &check)) });
+    assert!(ana.accept(WS, &[forged], &pushed.0).is_err());
+    assert!(!ana.status(WS).unwrap().kids.contains(&3));
+    assert!(ana.import_invite(WS, &first.invite(WS).unwrap(), &docs.0).is_err());
+    // An announcement the first admin made is refused too, until the second admin signs it again.
+    let again = second.grant(WS, &dev.id, &dev.public_key).unwrap();
+    assert!(ana.accept(WS, &again, &docs.0).unwrap_err().contains("wasn't announced by an admin this Mac trusts"));
+    for kid in [1, 2] {
+        docs.announce(second.announce(WS, kid).unwrap());
+    }
+    assert_eq!(ana.accept(WS, &again, &docs.0).unwrap(), vec![1, 2]);
+    // Taking the revocation out of the workspace doesn't bring the first admin back: this Mac keeps it.
+    let mut wiped = docs.clone();
+    wiped.0.revoked.clear();
+    assert!(!ana.signer_trusted(WS, &signer(&first), &wiped.0).unwrap());
+    assert!(ana.signer_trusted(WS, &signer(&second), &wiped.0).unwrap());
+    let relaunched = WorkspaceKeys::new(MemStore::default());
+    for e in ["people", "device"] {
+        let n = format!("{e}:{WS}");
+        relaunched.store.set(&n, &ana.store.get(&n).unwrap().unwrap()).unwrap();
+    }
+    assert!(!relaunched.signer_trusted(WS, &signer(&first), &wiped.0).unwrap(), "kept in the Keychain");
+    assert!(relaunched.trust(WS, &signer(&first)).unwrap_err().contains("isn't an admin"), "and never pinned again");
+}
+
+#[test]
+fn a_revocation_counts_only_from_an_admin_this_mac_trusts() {
+    let (first, second, ana, mut docs) = team_of_two_admins();
+    // Whoever writes the workspace withdraws the admins with a Mac of their own: ignored.
+    let server = mac();
+    for k in [signer(&first), signer(&second)] {
+        let mut r = server.revoke(WS, &k, &[], &docs.0).unwrap();
+        docs.revoke(r.clone());
+        // Or claims the second admin signed it: the signature doesn't match.
+        r.by = signer(&second);
+        docs.revoke(r);
+    }
+    let review = ana.review(WS, &docs.0).unwrap();
+    assert!(review.revoked.is_empty());
+    assert!(review.trusted.contains(&signer(&first)) && review.trusted.contains(&signer(&second)));
+    // A revocation's keep never adds a key: the second admin keeps one it doesn't trust.
+    let other = mac();
+    let r = second.revoke(WS, &signer(&first), &[signer(&other)], &docs.0).unwrap();
+    assert!(!r.keep.contains(&signer(&other)));
+    let mut forged = r.clone();
+    forged.keep = vec![signer(&other), signer(&second)];
+    let mut d = docs.clone();
+    d.revoke(forged);
+    assert!(ana.review(WS, &d.0).unwrap().revoked.is_empty(), "a changed keep breaks the signature");
+    // A Mac can't withdraw its own key.
+    assert!(second.revoke(WS, &signer(&second), &[], &docs.0).unwrap_err().contains("its own"));
+}
+
+#[test]
+fn what_a_withdrawn_admin_endorsed_after_is_not_followed() {
+    let (first, second, ana, mut docs) = team_of_two_admins();
+    // The first admin's Mac (or whoever has it) endorses a Mac of theirs; then the second admin
+    // withdraws the first. A Mac that sees both at once (it was off) trusts the second only.
+    let evil = mac();
+    docs.endorse(first.endorse(WS, &signer(&evil)).unwrap());
+    let r = second.revoke(WS, &signer(&first), &[signer(&second)], &Docs::default().0).unwrap();
+    assert_eq!(r.keep, vec![signer(&second)]);
+    docs.revoke(r);
+    let review = ana.review(WS, &docs.0).unwrap();
+    assert!(review.trusted.contains(&signer(&second)));
+    assert!(!review.trusted.contains(&signer(&evil)));
+    assert!(!review.trusted.contains(&signer(&first)));
+}
+
+#[test]
+fn two_admins_withdrawing_each_other_both_lose_trust() {
+    let (first, second, ana, mut docs) = team_of_two_admins();
+    docs.revoke(second.revoke(WS, &signer(&first), &[], &docs.0).unwrap());
+    docs.revoke(first.revoke(WS, &signer(&second), &[], &Docs::default().0).unwrap());
+    let review = ana.review(WS, &docs.0).unwrap();
+    assert_eq!(review.revoked.len(), 2, "refused rather than guessed");
+    assert!(!ana.status(WS).unwrap().pinned, "its person checks a remaining admin's words again");
+    // A Mac that saw the second admin's revocation first keeps the second admin.
+    let (f2, s2, ben, mut d2) = team_of_two_admins();
+    d2.revoke(s2.revoke(WS, &signer(&f2), &[signer(&s2)], &d2.0).unwrap());
+    ben.review(WS, &d2.0).unwrap();
+    d2.revoke(f2.revoke(WS, &signer(&s2), &[], &Docs::default().0).unwrap());
+    let later = ben.review(WS, &d2.0).unwrap();
+    assert!(later.trusted.contains(&signer(&s2)), "the first admin's key was withdrawn already, so its revocation doesn't count");
+}
+
+#[test]
+fn a_withdrawn_mac_signs_nothing_and_makes_new_keys_when_its_person_is_an_admin_again() {
+    let (first, second, _ana, mut docs) = team_of_two_admins();
+    docs.revoke(second.revoke(WS, &signer(&first), &[signer(&second)], &docs.0).unwrap());
+    let old = first.device(WS).unwrap();
+    assert!(!first.status(WS).unwrap().withdrawn, "not until it sees the revocation");
+    assert!(first.renew(WS).is_err(), "nothing to renew yet");
+    assert!(first.review(WS, &docs.0).unwrap().withdrawn);
+    assert!(first.status(WS).unwrap().withdrawn);
+    let ana = mac().device(WS).unwrap();
+    for err in [
+        first.grant(WS, &ana.id, &ana.public_key).map(|_| ()).unwrap_err(),
+        first.announce(WS, 1).map(|_| ()).unwrap_err(),
+        first.rotate(WS).map(|_| ()).unwrap_err(),
+        first.endorse(WS, &signer(&mac())).map(|_| ()).unwrap_err(),
+        first.recovery_new(WS).map(|_| ()).unwrap_err(),
+        first.invite(WS).map(|_| ()).unwrap_err(),
+        first.revoke(WS, &signer(&second), &[], &docs.0).map(|_| ()).unwrap_err(),
+    ] {
+        assert!(err.contains("withdrawn"), "{err}");
+    }
+    assert_eq!(first.status(WS).unwrap().kids, vec![1, 2], "no key version was added by the refused rotate");
+    // Made an admin again: new keys, the same key versions, and another admin endorses the new one.
+    let new = first.renew(WS).unwrap();
+    assert_ne!(new.id, old.id);
+    assert_ne!(new.sign_key, old.sign_key);
+    assert!(!first.status(WS).unwrap().withdrawn);
+    assert_eq!(first.status(WS).unwrap().kids, vec![1, 2]);
+    assert!(second.check_proof(WS, &new.id, &new.sign_key, &first.prove(WS).unwrap()).unwrap());
+    docs.endorse(second.endorse(WS, &new.sign_key).unwrap());
+    let ben = mac();
+    ben.trust(WS, &signer(&second)).unwrap();
+    assert!(ben.signer_trusted(WS, &new.sign_key, &docs.0).unwrap());
+    let relaunched = WorkspaceKeys::new(MemStore::default());
+    relaunched.store.set(&format!("device:{WS}"), &first.store.get(&format!("device:{WS}")).unwrap().unwrap()).unwrap();
+    assert_eq!(relaunched.device(WS).unwrap(), new, "saved");
+}
+
+#[test]
+fn a_recovery_code_or_machine_key_a_withdrawn_admin_made_is_refused() {
+    let (first, second, _ana, mut docs) = team_of_two_admins();
+    let rec = first.recovery_new(WS).unwrap();
+    let machine = first.machine_new(WS).unwrap();
+    assert_eq!(mac().recover(WS, &rec.secret, &rec.public_key, &rec.sealed, &rec.vouch, &docs.0).unwrap(), vec![1, 2]);
+    docs.revoke(second.revoke(WS, &signer(&first), &[signer(&second)], &docs.0).unwrap());
+    // They saw the code and the key: neither opens the workspace now, even sealed again by the second admin.
+    let relocked = second.grant(WS, "recovery", &rec.public_key).unwrap();
+    let err = mac().recover(WS, &rec.secret, &rec.public_key, &relocked, &rec.vouch, &docs.0).unwrap_err();
+    assert!(err.contains("recovery code was made by an admin who isn't"), "{err}");
+    let err = mac().machine_use(WS, &machine.secret, &machine.public_key, &machine.sealed, &machine.vouch, &docs.0).unwrap_err();
+    assert!(err.contains("machine key was made by an admin who isn't"), "{err}");
+    // New ones made by the second admin work.
+    for kid in [1, 2] {
+        docs.announce(second.announce(WS, kid).unwrap());
+    }
+    let next = second.recovery_new(WS).unwrap();
+    assert_eq!(mac().recover(WS, &next.secret, &next.public_key, &next.sealed, &next.vouch, &docs.0).unwrap(), vec![1, 2]);
+}
+
+#[test]
+fn trust_lists_with_too_many_revocations_are_refused() {
+    let k = mac();
+    let r = Revocation { pk: signer_public(&seq(3)), keep: vec![], by: signer(&k), sig: String::new() };
+    let t = Trust { revoked: vec![r; MAX_SIGNERS + 1], ..Default::default() };
+    assert!(k.review(WS, &t).is_err());
 }
 
 #[test]
@@ -703,7 +912,7 @@ fn the_recovery_code_is_kept_for_the_kit_only_a_while() {
 fn trust_lists_that_are_too_long_are_refused() {
     let k = mac();
     let e = k.endorse(WS, &signer_public(&seq(3))).unwrap();
-    let t = Trust { checks: Default::default(), signers: vec![e; MAX_SIGNERS + 1] };
+    let t = Trust { signers: vec![e; MAX_SIGNERS + 1], ..Default::default() };
     assert!(k.signer_trusted(WS, "x", &t).is_err());
 }
 

@@ -40,6 +40,16 @@
 //!   which only someone who saw the code could make.
 //! - Later admins are trusted when a trusted admin signs their signing key (`keys/signers`); a Mac
 //!   follows those endorsements from the keys it has pinned.
+//! - When an admin is removed or made a member, a remaining admin's Mac *withdraws* their signing
+//!   key (`keys/signers.revoked`): a signed revocation that also names the signing keys that admin
+//!   still trusts (`keep`). A Mac that sees a revocation by an admin it trusts stops trusting the
+//!   withdrawn key, and what it endorsed, from then on: it keeps the withdrawn key in its Keychain
+//!   entry, so deleting the document later doesn't bring it back. It pins the `keep` keys it
+//!   already trusted, so a Mac that trusted the team through the admin who left still trusts the
+//!   admins who are still there. Keys taken earlier stay; copies and announcements signed by the
+//!   withdrawn key are refused, so the remaining admin's Mac signs them again. Two admins
+//!   withdrawing each other both lose trust (refused rather than guessed); the person then checks
+//!   a remaining admin's words again.
 //! - A Mac that holds the key proves it to admins' Macs with a MAC under the current data key over
 //!   its device id and signing key (`devices/<id>.proof`); a key version is passed on to a Mac only
 //!   when an admin let it in, or it proved it holds the key already.
@@ -56,8 +66,9 @@
 //!   the data key sealed with associated data `bp-seal-v1|<ws>|<recipient>|<kid>` (the recipient is
 //!   a device id, `recovery` or `machine`).
 //! - A signature is Ed25519 over `bp-sealed-v1|<ws>|<recipient>|<kid>|<epk>|<enc>` (a sealed copy),
-//!   `bp-key-v1|<ws>|<kid>|<check>` (an announced key version) or `bp-signer-v1|<ws>|<signing key>`
-//!   (an endorsement). Keys, signatures, MACs and checks are standard base64.
+//!   `bp-key-v1|<ws>|<kid>|<check>` (an announced key version), `bp-signer-v1|<ws>|<signing key>`
+//!   (an endorsement) or `bp-revoke-v1|<ws>|<signing key>|<keep, sorted, joined by commas>` (a
+//!   withdrawn signing key). Keys, signatures, MACs and checks are standard base64.
 //! - `ws` is the workspace's connection id (`team:<project>/<database>` or `hosted:<id>`), and a
 //!   document path is relative to the workspace (`apps/<id>/tests/<id>`), the same for own Firebase
 //!   and Breakpatch Cloud.
@@ -90,6 +101,7 @@ const MACHINE_PREFIX: &str = "bpmk1_";
 const SEALED_SIG: &str = "bp-sealed-v1";
 const KEY_SIG: &str = "bp-key-v1";
 const SIGNER_SIG: &str = "bp-signer-v1";
+const REVOKE_SIG: &str = "bp-revoke-v1";
 const CHECK_INFO: &str = "bp-check-v1";
 const HOLDS_INFO: &str = "bp-holds-v1";
 const VOUCH_INFO: &str = "bp-vouch-v1";
@@ -308,6 +320,9 @@ pub fn key_msg(ws: &str, kid: u32, check: &str) -> String {
 pub fn signer_msg(ws: &str, sign_pk: &str) -> String {
     format!("{SIGNER_SIG}|{ws}|{sign_pk}")
 }
+pub fn revoke_msg(ws: &str, sign_pk: &str, keep: &[String]) -> String {
+    format!("{REVOKE_SIG}|{ws}|{sign_pk}|{}", keep.join(","))
+}
 
 /// The commitment to a data key version: HMAC-SHA256(data key, `bp-check-v1|<ws>|<kid>`), base64.
 pub fn key_check(data_key: &[u8; 32], ws: &str, kid: u32) -> String {
@@ -362,6 +377,17 @@ pub struct Endorsement {
     pub sig: String,
 }
 
+/// An admin's signing key withdrawn by another admin (`keys/signers.revoked.<id>`), with the signing
+/// keys `by` still trusts (sorted): a Mac that trusted the team through `pk` keeps those.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct Revocation {
+    pub pk: String,
+    #[serde(default)]
+    pub keep: Vec<String>,
+    pub by: String,
+    pub sig: String,
+}
+
 /// The recovery code's or machine key's vouch for the admin who made it (`keys/recovery.vouch`).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Vouch {
@@ -383,29 +409,86 @@ pub struct Trust {
     pub checks: BTreeMap<String, Check>,
     #[serde(default)]
     pub signers: Vec<Endorsement>,
+    /// `keys/signers.revoked`: admins' signing keys withdrawn by another admin.
+    #[serde(default)]
+    pub revoked: Vec<Revocation>,
+}
+
+/// What a Mac trusts once the workspace's revocations are applied (`Trust::resolve`).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Resolved {
+    pub trusted: BTreeSet<String>,
+    /// Every withdrawn key: the ones the Mac knew of, and the ones signed by a key it trusts.
+    pub revoked: BTreeSet<String>,
+    /// Keys a revocation kept that the Mac trusted: pinned, so they stay trusted without the withdrawn key.
+    pub kept: BTreeSet<String>,
 }
 
 impl Trust {
     fn checked(&self) -> Result<(), String> {
-        if self.checks.len() > MAX_CHECKS || self.signers.len() > MAX_SIGNERS {
+        if self.checks.len() > MAX_CHECKS || self.signers.len() > MAX_SIGNERS || self.revoked.len() > MAX_SIGNERS
+            || self.revoked.iter().any(|r| r.keep.len() > MAX_SIGNERS) {
             return Err("The workspace's key list is too long.".into());
         }
         Ok(())
     }
 
-    /// `roots` and every signing key they endorse, directly or through others.
+    /// `roots` and every signing key they endorse, directly or through others (no revocations; the tests').
+    #[cfg(test)]
     pub fn trusted_from(&self, ws: &str, roots: BTreeSet<String>) -> BTreeSet<String> {
-        let mut t = roots;
+        self.closure(ws, roots, &BTreeSet::new())
+    }
+
+    /// `roots` and what they endorse, leaving out withdrawn keys and what only they endorsed.
+    fn closure(&self, ws: &str, roots: BTreeSet<String>, revoked: &BTreeSet<String>) -> BTreeSet<String> {
+        let mut t: BTreeSet<String> = roots.into_iter().filter(|r| !revoked.contains(r)).collect();
         loop {
             let before = t.len();
             for e in &self.signers {
-                if !t.contains(&e.pk) && t.contains(&e.by) && verify_sig(&e.by, &signer_msg(ws, &e.pk), &e.sig) {
+                if !t.contains(&e.pk) && !revoked.contains(&e.pk) && t.contains(&e.by) && verify_sig(&e.by, &signer_msg(ws, &e.pk), &e.sig) {
                     t.insert(e.pk.clone());
                 }
             }
             if t.len() == before {
                 return t;
             }
+        }
+    }
+
+    /// The keys trusted from `roots` once every revocation signed by a trusted key is applied,
+    /// with `revoked` (those this Mac already knows of) left out from the start.
+    ///
+    /// Each round checks every revocation against what is trusted at its start, so the order of the
+    /// list never matters: two keys withdrawing each other in the same round both go, and neither's
+    /// `keep` is followed. A revocation's `keep` only keeps keys already trusted then; it never adds one.
+    pub fn resolve(&self, ws: &str, roots: BTreeSet<String>, revoked: BTreeSet<String>) -> Resolved {
+        let mut roots = roots;
+        let mut revoked = revoked;
+        let mut kept = BTreeSet::new();
+        loop {
+            let t = self.closure(ws, roots.clone(), &revoked);
+            let valid: Vec<&Revocation> = self
+                .revoked
+                .iter()
+                .filter(|r| !revoked.contains(&r.pk) && t.contains(&r.by) && verify_sig(&r.by, &revoke_msg(ws, &r.pk, &r.keep), &r.sig))
+                .collect();
+            if valid.is_empty() {
+                kept.retain(|k| !revoked.contains(k));
+                return Resolved { trusted: t, revoked, kept };
+            }
+            let gone: BTreeSet<String> = valid.iter().map(|r| r.pk.clone()).collect();
+            for r in &valid {
+                if gone.contains(&r.by) {
+                    continue;
+                }
+                for k in &r.keep {
+                    if t.contains(k) && !gone.contains(k) && !revoked.contains(k) {
+                        roots.insert(k.clone());
+                        kept.insert(k.clone());
+                    }
+                }
+            }
+            revoked.extend(gone);
         }
     }
 
@@ -616,6 +699,8 @@ pub fn ymd(unix: i64) -> String {
 struct Ring {
     keys: BTreeMap<u32, Key>,
     trusted: BTreeSet<String>,
+    /// Admins' signing keys withdrawn (`keys/signers.revoked`), never trusted again on this Mac.
+    revoked: BTreeSet<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -624,15 +709,21 @@ struct RingFile {
     keys: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     trusted: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    revoked: BTreeSet<String>,
 }
 
 impl Ring {
     fn current(&self) -> Option<u32> {
         self.keys.keys().next_back().copied()
     }
+    /// Pins that still count (a pinned key withdrawn since doesn't).
+    fn pinned(&self) -> bool {
+        self.trusted.iter().any(|t| !self.revoked.contains(t))
+    }
     fn to_json(&self) -> Zeroizing<String> {
         let keys = self.keys.iter().map(|(k, v)| (k.to_string(), STANDARD.encode(&v[..]))).collect();
-        Zeroizing::new(serde_json::to_string(&RingFile { v: 2, keys, trusted: self.trusted.clone() }).expect("a ring serialises"))
+        Zeroizing::new(serde_json::to_string(&RingFile { v: 2, keys, trusted: self.trusted.clone(), revoked: self.revoked.clone() }).expect("a ring serialises"))
     }
     fn from_json(text: &str) -> Result<Ring, String> {
         let damaged = || "The workspace key on this Mac is damaged.".to_string();
@@ -645,7 +736,7 @@ impl Ring {
             let kid: u32 = k.parse().map_err(|_| damaged())?;
             keys.insert(kid, key32(&v)?);
         }
-        Ok(Ring { keys, trusted: f.trusted })
+        Ok(Ring { keys, trusted: f.trusted, revoked: f.revoked })
     }
 }
 
@@ -688,8 +779,20 @@ pub struct Status {
     pub has_key: bool,
     pub current: Option<u32>,
     pub kids: Vec<u32>,
-    /// This Mac has pinned an admin's signing key for the workspace.
+    /// This Mac has pinned an admin's signing key for the workspace (one that wasn't withdrawn since).
     pub pinned: bool,
+    /// This Mac's own signing key was withdrawn (its person stopped being an admin): it signs
+    /// nothing with it, and makes a new one with `renew` if they're an admin again.
+    pub withdrawn: bool,
+}
+
+/// What `review` found: the signing keys this Mac trusts and those withdrawn, after the workspace's revocations.
+#[derive(Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Review {
+    pub trusted: Vec<String>,
+    pub revoked: Vec<String>,
+    pub withdrawn: bool,
 }
 
 /// This Mac's keys for the workspace, as the workspace shows them (`devices/<id>`).
@@ -828,22 +931,57 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     }
 
     pub fn status(&self, ws: &str) -> Result<Status, String> {
-        let r = self.ring(ws)?;
-        let ring = r.lock().unwrap();
-        Ok(Status { has_key: !ring.keys.is_empty(), current: ring.current(), kids: ring.keys.keys().copied().collect(), pinned: !ring.trusted.is_empty() })
+        let (st, revoked) = {
+            let r = self.ring(ws)?;
+            let ring = r.lock().unwrap();
+            let st = Status { has_key: !ring.keys.is_empty(), current: ring.current(), kids: ring.keys.keys().copied().collect(), pinned: ring.pinned(), withdrawn: false };
+            (st, (!ring.revoked.is_empty()).then(|| ring.revoked.clone()))
+        };
+        // Only a Mac that knows of a withdrawn key looks at its own (so a first status makes no device key).
+        let withdrawn = match revoked {
+            Some(rv) => rv.contains(&self.device_secrets(ws)?.signer()),
+            None => false,
+        };
+        Ok(Status { withdrawn, ..st })
     }
 
-    /// The signing keys this Mac trusts for `ws`: its pins, its own, and those they endorse in `trust`.
-    fn trusted(&self, ws: &str, trust: &Trust, also: Option<&str>) -> Result<BTreeSet<String>, String> {
+    /// What this Mac trusts for `ws`: its pins, its own key and `also`, what they endorse in `trust`,
+    /// less every withdrawn key. Without `also`, what it learnt is kept in the Keychain: the keys
+    /// withdrawn (for good) and the keys a revocation kept (pinned). With `also` (an invite link's
+    /// admin, a recovery code's or machine key's) nothing is kept: that admin isn't trusted yet.
+    fn resolve(&self, ws: &str, trust: &Trust, also: Option<&str>) -> Result<Resolved, String> {
         trust.checked()?;
         let own = self.device_secrets(ws)?.signer();
-        let r = self.ring(ws)?;
-        let mut roots = r.lock().unwrap().trusted.clone();
+        let (mut roots, known) = {
+            let r = self.ring(ws)?;
+            let ring = r.lock().unwrap();
+            (ring.trusted.clone(), ring.revoked.clone())
+        };
         roots.insert(own);
         if let Some(a) = also {
             roots.insert(a.to_string());
         }
-        Ok(trust.trusted_from(ws, roots))
+        let res = trust.resolve(ws, roots, known);
+        if also.is_none() {
+            self.update_ring(ws, |ring| {
+                let mut changed = false;
+                for k in &res.revoked {
+                    changed |= ring.revoked.insert(k.clone());
+                }
+                for k in &res.kept {
+                    if !ring.revoked.contains(k) {
+                        changed |= ring.trusted.insert(k.clone());
+                    }
+                }
+                Ok(((), changed))
+            })?;
+        }
+        Ok(res)
+    }
+
+    /// The signing keys this Mac trusts for `ws` (see `resolve`).
+    fn trusted(&self, ws: &str, trust: &Trust, also: Option<&str>) -> Result<BTreeSet<String>, String> {
+        Ok(self.resolve(ws, trust, also)?.trusted)
     }
 
     /// Whether this Mac trusts `signer` (directly, or through the workspace's endorsements).
@@ -851,10 +989,68 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         Ok(self.trusted(ws, trust, None)?.contains(signer))
     }
 
-    /// Pins an admin's signing key: the person checked that admin's four words.
+    /// Applies the workspace's revocations on this Mac (kept from then on) and says what it trusts,
+    /// what is withdrawn, and whether its own signing key is.
+    pub fn review(&self, ws: &str, trust: &Trust) -> Result<Review, String> {
+        let res = self.resolve(ws, trust, None)?;
+        let own = self.device_secrets(ws)?.signer();
+        Ok(Review { withdrawn: res.revoked.contains(&own), trusted: res.trusted.into_iter().collect(), revoked: res.revoked.into_iter().collect() })
+    }
+
+    /// Pins an admin's signing key: the person checked that admin's four words. Never a withdrawn one.
     pub fn trust(&self, ws: &str, signer: &str) -> Result<(), String> {
         parse_signer(signer)?;
-        self.update_ring(ws, |ring| Ok(((), ring.trusted.insert(signer.to_string()))))
+        self.update_ring(ws, |ring| {
+            if ring.revoked.contains(signer) {
+                return Err("That Mac's admin isn't an admin of the workspace any more, so this Mac doesn't trust it.".into());
+            }
+            Ok(((), ring.trusted.insert(signer.to_string())))
+        })
+    }
+
+    /// This Mac's secrets, to sign with: refused once its signing key was withdrawn.
+    fn signing(&self, ws: &str) -> Result<Arc<DeviceSecrets>, String> {
+        let d = self.device_secrets(ws)?;
+        let r = self.ring(ws)?;
+        if r.lock().unwrap().revoked.contains(&d.signer()) {
+            return Err("This Mac's signing key for the workspace was withdrawn when its person stopped being an admin, so other Macs don't take what it signs.".into());
+        }
+        Ok(d)
+    }
+
+    /// Withdraws another admin's signing key (they were removed, or made a member): the revocation
+    /// for `keys/signers.revoked`, signed by this Mac, and kept here at once. `keep`: the signing keys
+    /// of the admins still there; only those this Mac trusts are named, with its own.
+    pub fn revoke(&self, ws: &str, sign_key: &str, keep: &[String], trust: &Trust) -> Result<Revocation, String> {
+        parse_signer(sign_key)?;
+        let d = self.signing(ws)?;
+        let own = d.signer();
+        if sign_key == own {
+            return Err("This Mac can't withdraw its own signing key.".into());
+        }
+        let trusted = self.trusted(ws, trust, None)?;
+        let mut kept: BTreeSet<String> = keep.iter().filter(|k| *k != sign_key && trusted.contains(*k)).cloned().collect();
+        kept.insert(own.clone());
+        let keep: Vec<String> = kept.into_iter().collect();
+        let sig = d.sign(&revoke_msg(ws, sign_key, &keep));
+        self.update_ring(ws, |ring| Ok(((), ring.revoked.insert(sign_key.to_string()))))?;
+        Ok(Revocation { pk: sign_key.to_string(), keep, by: own, sig })
+    }
+
+    /// A new device and signing key for this Mac, once its old signing key was withdrawn and its
+    /// person is an admin again. Its key versions stay; its new keys show as a new Mac, which proves
+    /// it holds the key, so another admin's Mac endorses it. Refused while the old key is good.
+    pub fn renew(&self, ws: &str) -> Result<Device, String> {
+        if !self.status(ws)?.withdrawn {
+            return Err("This Mac's signing key wasn't withdrawn.".into());
+        }
+        let secrets = DeviceSecrets { x: Zeroizing::new(random()?), ed: Zeroizing::new(random()?) };
+        let f = Zeroizing::new(serde_json::to_string(&DeviceFile { v: 2, x: STANDARD.encode(&secrets.x[..]), ed: STANDARD.encode(&secrets.ed[..]) }).expect("serialises"));
+        let mut devices = self.devices.lock().unwrap();
+        self.store.set(&format!("device:{ws}"), &f)?;
+        devices.insert(ws.to_string(), Arc::new(secrets));
+        drop(devices);
+        self.device(ws)
     }
 
     /// The first key of a workspace (its first admin's Mac): version 1, or `kid` when every copy of
@@ -865,12 +1061,14 @@ impl<S: SecretStore> WorkspaceKeys<S> {
             return Err("This Mac already holds this workspace's key.".into());
         }
         let kid = kid.unwrap_or(1).max(1);
+        self.signing(ws)?;
         self.add_keys(ws, vec![(kid, Zeroizing::new(random()?))], &[])?;
         self.announce(ws, kid)
     }
 
     /// A new key version (after someone leaves). New content is sealed with it. Returns its announcement.
     pub fn rotate(&self, ws: &str) -> Result<Announced, String> {
+        self.signing(ws)?;
         let next = self.status(ws)?.current.ok_or("This Mac doesn't hold this workspace's key.")? + 1;
         self.add_keys(ws, vec![(next, Zeroizing::new(random()?))], &[])?;
         self.announce(ws, next)
@@ -879,7 +1077,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     /// The announcement of key `kid` for `keys/meta.checks`: its commitment, signed by this Mac.
     pub fn announce(&self, ws: &str, kid: u32) -> Result<Announced, String> {
         let (kid, key) = self.key(ws, Some(kid))?;
-        let d = self.device_secrets(ws)?;
+        let d = self.signing(ws)?;
         let check = key_check(&key, ws, kid);
         let sig = d.sign(&key_msg(ws, kid, &check));
         Ok(Announced { kid, check: Check { check, by: d.signer(), sig } })
@@ -888,7 +1086,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     /// Signs another admin's signing key, so the team's Macs trust what that admin's Mac signs.
     pub fn endorse(&self, ws: &str, sign_key: &str) -> Result<Endorsement, String> {
         parse_signer(sign_key)?;
-        let d = self.device_secrets(ws)?;
+        let d = self.signing(ws)?;
         Ok(Endorsement { pk: sign_key.to_string(), by: d.signer(), sig: d.sign(&signer_msg(ws, sign_key)) })
     }
 
@@ -975,7 +1173,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         if recipient != "recovery" && recipient != "machine" && recipient != device_id(&pk) {
             return Err("That device key doesn't belong to that device.".into());
         }
-        let d = self.device_secrets(ws)?;
+        let d = self.signing(ws)?;
         let r = self.ring(ws)?;
         let ring = r.lock().unwrap();
         if ring.keys.is_empty() {
@@ -998,7 +1196,12 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         if sealed.is_empty() || sealed.len() > 100 {
             return Err("That key copy is empty.".into());
         }
-        let trusted = self.trusted(ws, trust, root)?;
+        let res = self.resolve(ws, trust, root)?;
+        if root.is_some_and(|r| res.revoked.contains(r)) {
+            let what = if recipient == "machine" { "machine key" } else { "recovery code" };
+            return Err(format!("This {what} was made by an admin who isn't an admin of the workspace any more, so this Mac doesn't take it. An admin makes a new one in Settings → Workspace → Encryption."));
+        }
+        let trusted = res.trusted;
         let mut keys = Vec::new();
         for s in sealed {
             check_sealed(ws, recipient, &trusted, s)?;
@@ -1033,7 +1236,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     }
 
     fn vouch(&self, ws: &str, recipient: &str, secret: &[u8]) -> Result<Vouch, String> {
-        let by = self.device_secrets(ws)?.signer();
+        let by = self.signing(ws)?.signer();
         let mac = STANDARD.encode(vouch_mac(secret, ws, recipient, &by));
         Ok(Vouch { by, mac })
     }
@@ -1111,7 +1314,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
 
     /// The `k=` part of an invite link: every key version, for this workspace only, with this Mac's signing key.
     pub fn invite(&self, ws: &str) -> Result<Zeroizing<String>, String> {
-        let signer = self.device_secrets(ws)?.signer();
+        let signer = self.signing(ws)?.signer();
         let r = self.ring(ws)?;
         let ring = r.lock().unwrap();
         if ring.keys.is_empty() {
@@ -1232,6 +1435,24 @@ pub mod commands {
     pub async fn workspace_keys_signer_trusted(k: State<'_, KeysState>, ws: String, signer: String, trust: Trust) -> Result<bool, String> {
         let k = Arc::clone(&k);
         blocking(move || k.signer_trusted(&ws, &signer, &trust)).await
+    }
+
+    #[tauri::command]
+    pub async fn workspace_keys_review(k: State<'_, KeysState>, ws: String, trust: Trust) -> Result<Review, String> {
+        let k = Arc::clone(&k);
+        blocking(move || k.review(&ws, &trust)).await
+    }
+
+    #[tauri::command]
+    pub async fn workspace_keys_revoke(k: State<'_, KeysState>, ws: String, sign_key: String, keep: Vec<String>, trust: Trust) -> Result<Revocation, String> {
+        let k = Arc::clone(&k);
+        blocking(move || k.revoke(&ws, &sign_key, &keep, &trust)).await
+    }
+
+    #[tauri::command]
+    pub async fn workspace_keys_renew(k: State<'_, KeysState>, ws: String) -> Result<Device, String> {
+        let k = Arc::clone(&k);
+        blocking(move || k.renew(&ws)).await
     }
 
     #[tauri::command]
