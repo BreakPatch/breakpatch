@@ -15,7 +15,7 @@ const FIRST = [
 const LAST = ['setUp', 'cleanUp', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt', 'savedBy', 'savedAt', 'tests', 'steps'];
 
 /** Times are kept as numbers in the app and written as ISO strings. */
-const TIME_KEYS = new Set(['createdAt', 'updatedAt', 'savedAt', 'startedAt', 'finishedAt', 'at', 'queuedAt', 'lastSeen']);
+const TIME_KEYS = new Set(['createdAt', 'updatedAt', 'savedAt', 'startedAt', 'finishedAt', 'at', 'queuedAt', 'lastSeen', 'deletedAt']);
 
 function rank(k: string): [number, string] {
   const f = FIRST.indexOf(k); if (f >= 0) return [f, ''];

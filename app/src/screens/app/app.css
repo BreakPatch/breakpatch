@@ -95,3 +95,7 @@
 .app-reply.ok { color: var(--passed); }
 .app-reply.bad { color: var(--failed); }
 .app-hooks-switch { display: flex; align-items: center; gap: 10px; font-size: 13px; border-top: 1px solid var(--line); padding-top: 10px; cursor: pointer; }
+
+/* The app's tests and shared steps in Recently deleted (Settings), under the table. */
+.app-bin { display: flex; justify-content: flex-end; margin-top: 10px; }
+.app-bin .btn { color: var(--text-muted); }

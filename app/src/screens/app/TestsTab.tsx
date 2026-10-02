@@ -6,6 +6,7 @@ import {
   ConfirmDialog, FilterChip, RelativeTime, ResultTally, SearchBox, countResults, formatWhen, lastRunStatus, plural,
 } from '../../components/common';
 import { useBackend } from '../../data/hooks';
+import { KEEP_DELETED_DAYS } from '../../data/backend';
 import type { App, Test } from '../../data/types';
 import { useFeature } from '../../edition';
 import { distinct, filterTests, type LastRunFilter, type SharedFilter } from './filters';
@@ -24,6 +25,7 @@ export function TestsTab({ app, tests }: { app: App; tests: Test[] }) {
   const [deleting, setDeleting] = useState<Test | null>(null);
   const [editing, setEditing] = useState<Test | null>(null);
   const backend = useBackend();
+  const toast = useToast();
 
   const creators = useMemo(() => distinct(tests.map(t => t.createdBy), p => p.uid), [tests]);
   const shown = filterTests(tests, { q, shared, lastRun, createdBy });
@@ -54,8 +56,12 @@ export function TestsTab({ app, tests }: { app: App; tests: Test[] }) {
         )}
       </div>
       <ConfirmDialog open={!!deleting} onClose={() => setDeleting(null)} danger confirmLabel="Delete test" title={`Delete "${deleting?.name ?? ''}"?`}
-        onConfirm={async () => { if (deleting) await backend.deleteTest(app.id, deleting.id); }}>
-        {TEAM ? "It's removed for everyone, with its version history." : "It's removed from this Mac."} Past runs stay in the Runs tab.
+        onConfirm={async () => {
+          if (!deleting) return;
+          try { await backend.deleteTest(app.id, deleting.id); toast(`${deleting.name} moved to Recently deleted.`); }
+          catch (e) { toast(e instanceof Error ? e.message : "Couldn't delete the test.", { error: true }); }
+        }}>
+        It goes to Recently deleted{TEAM ? ' for everyone, with its version history' : ''}. You can restore it there for {KEEP_DELETED_DAYS} days. Past runs stay in the Runs tab.
       </ConfirmDialog>
       {editing && <TestDetailsDialog open test={tests.find(t => t.id === editing.id) ?? editing} onClose={() => setEditing(null)} />}
     </>

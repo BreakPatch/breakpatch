@@ -1,7 +1,7 @@
 // Shared rules every backend follows: what Test details change, and where a version starts.
 import { renderHook, act } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanDetails, detailsDiff, startUrlOf } from './backend';
+import { KEEP_DELETED_MS, canManageDeleted, cleanDetails, daysLeft, detailsDiff, startUrlOf, type DeletedItem } from './backend';
 import { DemoBackend } from './demo/demoBackend';
 import { useSession } from '../state/session';
 import { getEngine, type EngineEvents } from '../engine';
@@ -46,5 +46,45 @@ describe('where a version starts', () => {
     const { result } = renderHook(() => useTestRun());
     await act(async () => { await result.current.start(test, { notify: false }); });
     expect(startRun.mock.calls[0][0].startUrl).toBe('https://app.example.com/v1-start');
+  });
+});
+
+describe('Recently deleted', () => {
+  const ana = { uid: 'ana', name: 'Ana', email: 'ana@acme.example' };
+  it('is managed by whoever may delete it: admins, and members their own draft tests', () => {
+    const test = { kind: 'test' as const, createdBy: ana, status: 'draft' as const };
+    expect(canManageDeleted(test, 'admin', 'someone')).toBe(true);
+    expect(canManageDeleted(test, 'member', 'ana')).toBe(true);
+    expect(canManageDeleted({ ...test, status: 'published' }, 'member', 'ana')).toBe(false);
+    expect(canManageDeleted(test, 'member', 'bo')).toBe(false);
+    expect(canManageDeleted({ kind: 'app', createdBy: ana }, 'member', 'ana')).toBe(false);
+    expect(canManageDeleted(test, 'runner', 'ana')).toBe(false);
+  });
+  it('counts the days left, the one it is in too', () => {
+    expect(daysLeft(0, 0)).toBe(30);
+    expect(daysLeft(0, 1)).toBe(30);
+    expect(daysLeft(0, KEEP_DELETED_MS - 1)).toBe(1);
+    expect(daysLeft(0, KEEP_DELETED_MS + 5)).toBe(0);
+  });
+  it('the demo keeps an app with its tests and shared steps, and deletes them for good on Delete now', async () => {
+    const b = new DemoBackend({ empty: true, signedIn: true, delayMs: 0 });
+    const items = () => new Promise<DeletedItem[]>(res => { const off = b.recentlyDeleted.items(v => { setTimeout(off); res(v); }); });
+    const app = await b.addApp({ name: 'Web', baseUrl: 'https://app.example.com', defaultViewport: VP });
+    const t = await b.createTest({ appId: app.id, name: 'Log in', startUrl: 'https://app.example.com', viewport: VP });
+    await b.saveTest(app.id, t.id, [{ id: 's1', action: 'click', label: 'Click', at: [1, 1] }]);
+    await b.createGroup(app.id, 'Sign in', '', []);
+    await b.deleteTest(app.id, t.id);
+    expect(await items()).toMatchObject([{ kind: 'test', id: t.id, appId: app.id, appName: 'Web', deletedBy: { uid: b.currentUser()!.uid } }]);
+    await b.recentlyDeleted.restore({ kind: 'test', id: t.id, appId: app.id });
+    expect(await b.version(app.id, t.id, 1)).toBeTruthy();
+    await b.deleteApp(app.id);
+    expect((await items()).map(i => i.kind)).toEqual(['app']);
+    await b.recentlyDeleted.restore({ kind: 'app', id: app.id });
+    const tests = await new Promise(res => { const off = b.tests(app.id, v => { setTimeout(off); res(v); }); });
+    expect(tests).toHaveLength(1);
+    await b.deleteApp(app.id);
+    await b.recentlyDeleted.deleteNow({ kind: 'app', id: app.id });
+    expect(await items()).toEqual([]);
+    expect(await b.version(app.id, t.id, 1)).toBeNull();
   });
 });

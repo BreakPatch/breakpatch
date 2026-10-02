@@ -6,13 +6,23 @@
 //   <folder>/apps/<appId>/shared/<groupId>.json  shared steps + "steps"
 //   <folder>/apps/<appId>/runs/<testId>.json     the last run of that test
 //   <folder>/suites/<suiteId>.json
+//   <folder>/deleted/<entry>/deleted.json         Recently deleted: what it is, when and by whom
+//   <folder>/deleted/<entry>/apps/…, suites/…     its files, at their places in the folder
 //
 // Ids are the file and folder names (readable slugs), so they aren't repeated inside the files.
 // Derived values (step counts, last runs, where shared steps are used) aren't stored either.
 // The text of every file as last read or written is the source of truth; the model is parsed
 // from it. Saving the same thing writes nothing; outside edits (a `git pull`) are picked up on
 // window focus, through the storage's watcher, or by a light poll.
-import { cleanDetails, detailsDiff, upTo, type Backend, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type TestDetails, type Unsubscribe } from '../backend';
+//
+// Deleting an app, a test, shared steps or a suite moves its files into deleted/ (Recently
+// deleted) for KEEP_DELETED_DAYS; restoring moves them back. Older entries are deleted for good
+// when the folder is opened. The folder's name has no leading dot: the Mac's file access refuses
+// dot files (storage.ts tempName).
+import {
+  KEEP_DELETED_MS, cleanDetails, detailsDiff, newestDeletedFirst, upTo,
+  type Backend, type DeletedItem, type DeletedKind, type DeletedRef, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type RecentlyDeleted, type TestDetails, type Unsubscribe,
+} from '../backend';
 import type {
   App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
 } from '../types';
@@ -91,6 +101,8 @@ export interface LocalOptions {
   live?: boolean;
   /** Poll interval when the storage can't watch. Default 5 s. */
   pollMs?: number;
+  /** The clock (tests). */
+  now?: () => number;
 }
 
 /** `recordedOn` belongs to the latest version (the only one a folder keeps), next to its steps. */
@@ -98,7 +110,13 @@ type TestRec = { test: Omit<Test, 'id' | 'appId' | 'stepCount' | 'lastRun'>; ste
 type GroupRec = { group: Omit<StepGroup, 'id' | 'appId' | 'stepCount' | 'usedBy'>; steps: Step[] };
 type RunRec = Omit<Run, 'appId' | 'testId'>;
 interface AppRec { app: App; tests: Map<string, TestRec>; groups: Map<string, GroupRec>; runs: Map<string, RunRec> }
-interface Model { meta: FolderMeta | null; apps: Map<string, AppRec>; suites: Map<string, Suite> }
+/** An entry in deleted/: its folder's name and what it holds. */
+interface BinRec { entry: string; item: Omit<DeletedItem, 'appName'> }
+interface Model { meta: FolderMeta | null; apps: Map<string, AppRec>; suites: Map<string, Suite>; bin: Map<string, BinRec> }
+
+/** Recently deleted, in the folder. */
+export const DELETED_DIR = 'deleted';
+const KINDS: DeletedKind[] = ['app', 'test', 'group', 'suite'];
 
 const DEFAULT_VIEWPORT: Viewport = { width: 1440, height: 900, dpr: 1 };
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -186,7 +204,7 @@ export class LocalBackend implements Backend {
   private root: string;
   private me: Person;
   private texts = new Map<string, string>();
-  private model: Model = { meta: null, apps: new Map(), suites: new Map() };
+  private model: Model = { meta: null, apps: new Map(), suites: new Map(), bin: new Map() };
   private warnings: string[] = [];
   private readOnly = false;
   /** Suite results live only for this session: Community keeps no suite run history. */
@@ -199,9 +217,11 @@ export class LocalBackend implements Backend {
   private closed = false;
 
   private readonly addresses: AddressStore | null;
+  private readonly now: () => number;
 
   private constructor(o: LocalOptions) {
     this.addresses = o.addresses ?? null;
+    this.now = o.now ?? Date.now;
     this.st = o.storage; this.root = o.path.replace(/\/+$/, '') || '/'; this.me = o.person;
     this.local = { path: this.root };
   }
@@ -211,6 +231,7 @@ export class LocalBackend implements Backend {
     const b = new LocalBackend(o);
     parseMeta(await readMeta(o.storage, b.root));
     await b.reload();
+    await b.emptyBin().catch(() => {});
     if (o.live !== false) b.startLive(o.pollMs ?? 5000);
     return b;
   }
@@ -290,6 +311,8 @@ export class LocalBackend implements Backend {
       }
     }
     for (const f of await this.st.list(this.abs('suites'))) if (!f.isDir && json(f.name)) await add(`suites/${f.name}`);
+    // Recently deleted: only what each entry is; its files are read when it's restored.
+    for (const e of await this.st.list(this.abs(DELETED_DIR))) if (e.isDir && !e.name.startsWith('.')) await add(`${DELETED_DIR}/${e.name}/deleted.json`);
     return out;
   }
 
@@ -327,7 +350,19 @@ export class LocalBackend implements Backend {
 
     const apps = new Map<string, AppRec>();
     const suites = new Map<string, Suite>();
+    const bin = new Map<string, BinRec>();
     for (const rel of [...this.texts.keys()].sort()) {
+      const d = /^deleted\/([^/]+)\/deleted\.json$/.exec(rel);
+      if (d) {
+        const v = parse(rel); if (!v) continue;
+        const kind = v.kind as DeletedKind;
+        if (!KINDS.includes(kind) || typeof v.id !== 'string' || typeof v.name !== 'string' || ((kind === 'test' || kind === 'group') && typeof v.appId !== 'string')) {
+          bad(rel, 'not a Recently deleted entry, skipped'); continue;
+        }
+        bin.set(d[1], { entry: d[1], item: { kind, id: v.id, ...(typeof v.appId === 'string' ? { appId: v.appId } : {}), name: v.name, deletedAt: num(v.deletedAt),
+          deletedBy: who(v.deletedBy), createdBy: who(v.createdBy), ...(v.status === 'published' || v.status === 'draft' ? { status: v.status } : {}) } });
+        continue;
+      }
       const m = /^apps\/([^/]+)\/(?:(app)\.json|(tests|shared|runs)\/(.+)\.json)$/.exec(rel);
       if (m) {
         const [, appId, isApp, kind, id] = m;
@@ -366,7 +401,7 @@ export class LocalBackend implements Backend {
       }
     }
 
-    this.model = { meta, apps, suites };
+    this.model = { meta, apps, suites, bin };
     this.emit();
     if (warn.join('\n') !== this.warnings.join('\n')) { this.warnings = warn; this.warnSubs.forEach(l => l([...warn])); }
     if (readOnly !== this.readOnly) { this.readOnly = readOnly; this.roSubs.forEach(l => l(readOnly)); }
@@ -489,7 +524,12 @@ export class LocalBackend implements Backend {
       await this.put(`apps/${id}/app.json`, file);
     });
   }
-  deleteApp(id: string) { return this.write(() => this.drop(`apps/${id}`)); }
+  deleteApp(id: string) {
+    return this.write(async () => {
+      const { app } = this.appRec(id);
+      await this.toBin({ kind: 'app', id, name: app.name, createdBy: app.createdBy }, async entry => { await this.moveDir(`apps/${id}`, `${entry}/apps/${id}`); });
+    });
+  }
 
   // ---- tests ----
   tests(appId: string, l: Listener<Test[]>) {
@@ -576,10 +616,13 @@ export class LocalBackend implements Backend {
       return this.testOut(appId, id, rec);
     });
   }
+  /** Its last run goes along, and comes back with it. */
   deleteTest(appId: string, testId: string) {
     return this.write(async () => {
-      await this.drop(`apps/${appId}/tests/${testId}.json`);
-      await this.drop(`apps/${appId}/runs/${testId}.json`);
+      const { test } = this.testRec(appId, testId);
+      await this.toBin({ kind: 'test', id: testId, appId, name: test.name, createdBy: test.createdBy, status: test.status }, async entry => {
+        for (const sub of ['tests', 'runs']) await this.moveFile(`apps/${appId}/${sub}/${testId}.json`, `${entry}/apps/${appId}/${sub}/${testId}.json`);
+      });
     });
   }
 
@@ -619,6 +662,101 @@ export class LocalBackend implements Backend {
       return this.current(next);
     });
   }
+
+  deleteGroup(appId: string, groupId: string) {
+    return this.write(async () => {
+      const r = this.appRec(appId).groups.get(groupId);
+      if (!r) throw new Error('Shared steps not found');
+      await this.toBin({ kind: 'group', id: groupId, appId, name: r.group.name, createdBy: r.group.createdBy }, async entry => {
+        await this.moveFile(`apps/${appId}/shared/${groupId}.json`, `${entry}/apps/${appId}/shared/${groupId}.json`);
+      });
+    });
+  }
+
+  // ---- recently deleted: deleted/<entry> ----
+  /** Moves a file (relative paths), making the folders it goes into. Nothing there: nothing to do. */
+  private async moveFile(from: string, to: string) {
+    if (!(await this.st.exists(this.abs(from)))) return;
+    const dir = this.abs(to).slice(0, this.abs(to).lastIndexOf('/'));
+    if (!(await this.st.exists(dir))) await this.st.mkdir(dir);
+    await this.st.rename(this.abs(from), this.abs(to));
+    this.texts.delete(from);
+  }
+  /** Moves a folder with everything in it, file by file, then removes what's left of it. */
+  private async moveDir(from: string, to: string) {
+    for (const e of await this.st.list(this.abs(from))) {
+      if (e.isDir) await this.moveDir(`${from}/${e.name}`, `${to}/${e.name}`);
+      else await this.moveFile(`${from}/${e.name}`, `${to}/${e.name}`);
+    }
+    await this.drop(from);
+  }
+  /** Writes the entry's deleted.json, moves the item's files in with `move`, and reads the folder again. */
+  private async toBin(item: Omit<DeletedItem, 'deletedAt' | 'deletedBy' | 'appName'>, move: (entry: string) => Promise<void>) {
+    const at = this.now();
+    const name = `${stamp(at)}-${item.kind}-${item.appId ? `${item.appId}-` : ''}${item.id}`;
+    const entry = `${DELETED_DIR}/${uniqueSlug(name, x => this.model.bin.has(x) || this.texts.has(`${DELETED_DIR}/${x}/deleted.json`))}`;
+    await this.put(`${entry}/deleted.json`, { ...item, deletedAt: at, deletedBy: this.me });
+    try { await move(entry); }
+    finally { this.texts = await this.scan(); }
+  }
+  /** The newest entry for this item. */
+  private binRec(r: DeletedRef): BinRec {
+    const found = [...this.model.bin.values()].filter(b => b.item.kind === r.kind && b.item.id === r.id && (b.item.appId ?? '') === (r.appId ?? ''))
+      .sort((a, b) => b.item.deletedAt - a.item.deletedAt)[0];
+    if (!found) throw new Error('This is no longer in Recently deleted.');
+    return found;
+  }
+  /** Back where it was, under a new id when something else has taken its place since. */
+  private async restoreRec(b: BinRec) {
+    const { kind, id, appId, name } = b.item;
+    const from = `${DELETED_DIR}/${b.entry}`;
+    const app = appId ? this.model.apps.get(appId) : undefined;
+    if (appId && !app) throw new Error('Its app was deleted. Restore the app first.');
+    try {
+      if (kind === 'app') {
+        const to = uniqueSlug(id, x => this.model.apps.has(x) || this.texts.has(`apps/${x}/app.json`));
+        await this.moveDir(`${from}/apps/${id}`, `apps/${to}`);
+      } else if (kind === 'test') {
+        const to = app!.tests.has(id) ? uniqueSlug(name, x => app!.tests.has(x) || app!.runs.has(x)) : id;
+        for (const sub of ['tests', 'runs']) await this.moveFile(`${from}/apps/${appId}/${sub}/${id}.json`, `apps/${appId}/${sub}/${to}.json`);
+      } else if (kind === 'group') {
+        const to = app!.groups.has(id) ? uniqueSlug(name, x => app!.groups.has(x)) : id;
+        await this.moveFile(`${from}/apps/${appId}/shared/${id}.json`, `apps/${appId}/shared/${to}.json`);
+      } else {
+        const to = this.model.suites.has(id) ? uniqueSlug(name, x => this.model.suites.has(x)) : id;
+        await this.moveFile(`${from}/suites/${id}.json`, `suites/${to}.json`);
+        if (to !== id && this.addresses) {
+          const url = await this.addresses.get(this.connectionId, id).catch(() => null);
+          if (url) await this.addresses.set(this.connectionId, to, url);
+        }
+      }
+      await this.drop(from);
+    } finally { this.texts = await this.scan(); }
+  }
+  /** Deletes the entry with everything in it, and a suite's result address with it (unless a suite of that id is back). */
+  private async purgeRec(b: BinRec) {
+    await this.drop(`${DELETED_DIR}/${b.entry}`);
+    // An app's own deleted tests and shared steps go with it.
+    if (b.item.kind === 'app') for (const x of this.model.bin.values()) if (x.item.appId === b.item.id && !this.model.apps.has(b.item.id)) await this.drop(`${DELETED_DIR}/${x.entry}`);
+    if (b.item.kind === 'suite' && this.addresses && !this.model.suites.has(b.item.id)) await this.addresses.set(this.connectionId, b.item.id, null).catch(() => {});
+  }
+  /** Deletes for good what has been in Recently deleted for KEEP_DELETED_DAYS (when the folder is opened). */
+  emptyBin(): Promise<number> {
+    if (this.readOnly) return Promise.resolve(0);
+    return this.write(async () => {
+      const old = [...this.model.bin.values()].filter(b => b.item.deletedAt + KEEP_DELETED_MS <= this.now());
+      for (const b of old) await this.purgeRec(b);
+      return old.length;
+    });
+  }
+  readonly recentlyDeleted: RecentlyDeleted = {
+    items: (l, appId) => this.watch((): DeletedItem[] => [...this.model.bin.values()].map(b => b.item)
+      .filter(i => (appId ? i.appId === appId : true) && (!i.appId || this.model.apps.has(i.appId)))
+      .map(i => (i.appId ? { ...i, appName: this.model.apps.get(i.appId)!.app.name } : { ...i }))
+      .sort(newestDeletedFirst), l),
+    restore: r => this.write(async () => { await this.restoreRec(this.binRec(r)); }),
+    deleteNow: r => this.write(async () => { await this.purgeRec(this.binRec(r)); }),
+  };
 
   // ---- runs: the last one per test ----
   runs(appId: string, l: Listener<Run[]>, limit?: Limit) {
@@ -669,11 +807,13 @@ export class LocalBackend implements Backend {
       return clone({ ...stamped, id: sid, schedule, lastRun: this.suiteLast.get(sid) });
     });
   }
+  /** Its result address stays in the Keychain until it's deleted for good. */
   deleteSuite(id: string) {
     return this.write(async () => {
-      const had = !!this.model.suites.get(id)?.notify;
-      await this.drop(`suites/${id}.json`); this.suiteLast.delete(id);
-      if (had && this.addresses) await this.addresses.set(this.connectionId, id, null).catch(() => {});
+      const s = this.model.suites.get(id);
+      if (!s) throw new Error('Suite not found');
+      await this.toBin({ kind: 'suite', id, name: s.name, createdBy: s.createdBy }, async entry => { await this.moveFile(`suites/${id}.json`, `${entry}/suites/${id}.json`); });
+      this.suiteLast.delete(id);
     });
   }
   /** Where a suite's result goes: its address, from this Mac's Keychain (the folder never holds it). */

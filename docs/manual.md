@@ -18,33 +18,34 @@ Breakpatch comes in these editions. **Community** is free and open source: one p
 7. [Run a test and read the report](#run-a-test-and-read-the-report)
 8. [Shared steps](#shared-steps)
 9. [Suites](#suites)
-10. [Saved secrets](#saved-secrets)
-11. [The AI assistant](#the-ai-assistant)
-12. [Updates](#updates)
-13. [Privacy](#privacy)
-14. [Troubleshooting](#troubleshooting)
+10. [Get a deleted app or test back](#get-a-deleted-app-or-test-back)
+11. [Saved secrets](#saved-secrets)
+12. [The AI assistant](#the-ai-assistant)
+13. [Updates](#updates)
+14. [Privacy](#privacy)
+15. [Troubleshooting](#troubleshooting)
 
 **Team**
 
-15. [What Team adds](#what-team-adds)
-16. [Solo](#solo)
-17. [Upgrading to Team](#upgrading-to-team)
-18. [Hosted by Breakpatch](#hosted-by-breakpatch)
-19. [Host it yourself](#host-it-yourself)
-20. [Members and roles](#members-and-roles)
-21. [Version history](#version-history)
-22. [Fixed automatically](#fixed-automatically)
-23. [Why did this fail?](#why-did-this-fail)
-24. [Schedules](#schedules)
-25. [The local runner](#the-local-runner)
-26. [Run requests](#run-requests)
-27. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
-28. [Result messages](#result-messages)
-29. [Create an issue](#create-an-issue)
-30. [Security rules](#security-rules)
-31. [Licences and seats](#licences-and-seats)
-32. [The back office](#the-back-office)
-33. [Encryption and the recovery code](#encryption-and-the-recovery-code)
+16. [What Team adds](#what-team-adds)
+17. [Solo](#solo)
+18. [Upgrading to Team](#upgrading-to-team)
+19. [Hosted by Breakpatch](#hosted-by-breakpatch)
+20. [Host it yourself](#host-it-yourself)
+21. [Members and roles](#members-and-roles)
+22. [Version history](#version-history)
+23. [Fixed automatically](#fixed-automatically)
+24. [Why did this fail?](#why-did-this-fail)
+25. [Schedules](#schedules)
+26. [The local runner](#the-local-runner)
+27. [Run requests](#run-requests)
+28. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
+29. [Result messages](#result-messages)
+30. [Create an issue](#create-an-issue)
+31. [Security rules](#security-rules)
+32. [Licences and seats](#licences-and-seats)
+33. [The back office](#the-back-office)
+34. [Encryption and the recovery code](#encryption-and-the-recovery-code)
 
 ---
 
@@ -131,6 +132,7 @@ breakpatch-tests/
     photo.jpg                     a file a test uploads (see Record a test)
   suites/
     smoke.json                    a suite: its name and tests, in order
+  deleted/                        Recently deleted, for 30 days (see Get a deleted app or test back)
 ```
 
 File and folder names come from the names you give things: *Log in* becomes `log-in.json`. Only the latest version of each test is kept, so saving overwrites the file. Each test keeps its last run only.
@@ -175,6 +177,7 @@ The same test always gives the same file: two-space indents, keys in a fixed ord
 
 - **Keep the folder in your repo. Git is your history.** Commit tests with the code they test, and go back to an older version with Git.
 - **Leave out the last runs if you like.** Add `breakpatch-tests/apps/*/runs/` to `.gitignore`. They only hold the last run on your Mac.
+- **Leave out Recently deleted too.** Add `breakpatch-tests/deleted/` to `.gitignore`, so deleting a test shows in Git as a deleted file and nothing else. Git keeps it in the history anyway.
 - **Secrets never land in the folder.** Tests only store a secret's name. The value stays in this Mac's Keychain. See [Saved secrets](#saved-secrets).
 - **Pulled a change?** Switch back to Breakpatch and it reads the folder again.
 - **Merge conflict in a test file?** Fix it as you would any JSON file. Until it's valid again, Breakpatch skips that file and tells you which one.
@@ -266,6 +269,27 @@ A named set of tests, which can mix apps: *Smoke*, *Before release*. Pick the te
 Press **Run** on a suite to run it on this Mac, one test after another, in the order you picked. You can watch each test as it runs, stop the suite, and open each test's report when it's done.
 
 In Community you run suites by hand. A suite's result is kept until you close Breakpatch, and each test keeps its last run. Schedules, a runner Mac and starting suites from CI come with [Team](#what-team-adds).
+
+## Get a deleted app or test back
+
+Deleting an app, a test, shared steps or a suite moves it to **Recently deleted** for 30 days. It takes everything in it along: an app its tests, shared steps and runs; a test its version history and last run. Nothing changes for 30 days; then it's deleted for good.
+
+To put it back: Settings → **Recently deleted**. Each item says what it is, which app it's in, when it was deleted and how many days it has left. **Restore** puts it back where it was. On an app's page, a line under the tests says how many of its tests and shared steps are in Recently deleted and opens the list.
+
+- **A deleted app keeps its own.** Its tests and shared steps aren't listed one by one: restore the app and they come back with it, together with anything deleted in it before.
+- **Something took its place?** If you made a new test with the same name since, the restored one comes back next to it, as *log-in-2*.
+- **Suites keep deleted tests.** A suite that has a test in Recently deleted keeps it and says so; runs skip it (*Couldn't run: it was deleted*) until it's restored. A test that's gone for good leaves the suite the next time you save it.
+- **Shared steps in use can't be deleted.** Take them out of the tests that use them first.
+- **Delete now** (the bin icon next to Restore) deletes one for good at once, after asking. That can't be undone.
+
+In a tests folder, Recently deleted is the `deleted/` folder: one folder per deleted item, with its files as they were and a `deleted.json` that says what it is. Breakpatch deletes what's older than 30 days when it opens the folder.
+
+**In a team workspace** Recently deleted is the same for everyone. Restoring and deleting for good are for whoever may delete it: admins for apps, shared steps and suites, and a member for their own tests that aren't in the team suite. Other Macs see a deleted or restored item at once.
+
+- **Hosted by Breakpatch** deletes what's older than 30 days once a day, with everything in it. Things in Recently deleted don't count toward your plan's number of apps, tests, shared steps and suites, but they still use storage until they're gone: use **Delete now** to free it. When the plan is full, restoring waits until there's room, like adding one.
+- **Hosted yourself**, there's no server of ours to do it: an admin's Breakpatch deletes what's older than 30 days, once a day, while it's open. If no admin opens the workspace, it stays in Recently deleted (and in your database) until one does.
+- Breakpatch from before this shows items in Recently deleted as if they weren't deleted, and can't delete anything: update it on every Mac. Hosted yourself, publish the security rules again first (Settings → Workspace → **Copy security rules**): older rules refuse the delete.
+- Runs of a deleted test stay in the app's **Runs** tab until the run history deletes them; a deleted suite's runs stay in its history the same way.
 
 ## Saved secrets
 
@@ -503,7 +527,7 @@ If the details on this Mac are wrong (the config, the database ID, *Who can sign
 
 ### Run history is kept 90 days
 
-In a team workspace, runs and suite runs are kept for 90 days, then deleted: by Firestore's TTL policy when it's set up (step 4 of [Create a workspace](#create-a-workspace), recommended), and otherwise by an admin's Breakpatch, once a day. Breakpatch from before this can't add runs to the workspace: update it on every Mac, the local runner and your CI machines. Tests, shared steps and their versions are never deleted.
+In a team workspace, runs and suite runs are kept for 90 days, then deleted: by Firestore's TTL policy when it's set up (step 4 of [Create a workspace](#create-a-workspace), recommended), and otherwise by an admin's Breakpatch, once a day. Breakpatch from before this can't add runs to the workspace: update it on every Mac, the local runner and your CI machines. Tests, shared steps and their versions are only deleted when you delete them, 30 days after (see [Get a deleted app or test back](#get-a-deleted-app-or-test-back)).
 
 Lists that only grow show the newest first: the **Runs** tab and **Run history** show the latest 20 runs, with **Show older runs** for 20 more, and **Version history** the latest 20 versions, with **Show older versions**.
 
@@ -533,8 +557,8 @@ Everyone from your email domain joins as a **member** the first time they sign i
 
 | Role | What they can do |
 |---|---|
-| **Member** | Record, run and edit tests. Add tests to the team suite. Make suites. |
-| **Admin** | Everything a member can, plus workspace settings, roles and deleting apps. |
+| **Member** | Record, run and edit tests. Add tests to the team suite. Make suites. Delete and restore their own tests that aren't in the team suite yet. |
+| **Admin** | Everything a member can, plus workspace settings, roles, deleting apps, shared steps and suites, and getting them back. |
 | **Local runner** | For the runner Mac. Reads tests, runs suites, writes results. |
 | **CI** | For CI pipelines. Asks for suite runs, reads tests, shared steps and suites to run them with `breakpatch-ci`, and adds its runs to the history. Sees nothing else. |
 
@@ -544,7 +568,7 @@ Runner and CI accounts sign in once and join as a member. Then an admin changes 
 
 ## Version history
 
-Every save is a new version, with an optional note: *What changed?* → **Save as version 4**. Nothing is ever deleted.
+Every save is a new version, with an optional note: *What changed?* → **Save as version 4**. Versions are never deleted on their own: only with their test or shared steps, 30 days after those are deleted.
 
 On a test or shared steps, open **Version history** to see each version, who saved it, what changed since the one before and the runs on that version. **Restore version 2** saves it again as the newest version. The current one stays in the history.
 
@@ -1111,6 +1135,7 @@ Create issue comes with a Breakpatch Team licence that includes it; licences get
 - Only signed-in accounts from your email domain, with a confirmed email address, can read or write. Runner and CI accounts are let in by their role.
 - There are four roles: **member**, **admin**, **runner** and **ci**, as in [Members and roles](#members-and-roles). Whoever connects the workspace is the first admin.
 - Versions can only be added. History can't be edited.
+- Deleting an app, a test, shared steps or a suite marks it as deleted (Recently deleted), and only whoever may delete it can mark it or take the mark off. Only then can it, its versions and, for an app, everything in it be deleted for good. Breakpatch from before this can't delete.
 - `runRequests` accepts a small document of a fixed shape from members and from accounts with the `ci` role. Only the runner can read or delete them.
 - Accounts with the `ci` role read apps, tests, shared steps, their versions and suites, and add runs marked `ci` as themselves. They can't change anything, or read members, runs or the licence.
 - A test's released version must be one that's saved.

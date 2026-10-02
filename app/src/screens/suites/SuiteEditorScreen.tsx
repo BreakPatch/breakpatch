@@ -6,6 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { AppFrame } from '../../components/shell/AppFrame';
 import { Button, Checkbox, Dialog, Icon, IconButton, Skeleton, TextInput, useToast } from '../../components/ui';
 import { useBackend, useLive } from '../../data/hooks';
+import { KEEP_DELETED_DAYS, type DeletedItem } from '../../data/backend';
 import type { App, Suite } from '../../data/types';
 import { plural } from '../../components/common/format';
 import { useAllTests } from './useAllTests';
@@ -25,6 +26,8 @@ export default function SuiteEditorScreen() {
   const suites = useLive<Suite[]>((b, l) => b.suites(l), []).data;
   const apps = useLive<App[]>((b, l) => b.apps(l), []).data;
   const testsByApp = useAllTests(apps);
+  // Tests in Recently deleted (or in a deleted app) stay in the suite, skipped, until they're restored.
+  const deleted = useLive<DeletedItem[]>((b, l) => b.recentlyDeleted?.items(l) ?? (l([]), () => {}), []).data;
   const suite = suiteId ? suites?.find(s => s.id === suiteId) : undefined;
 
   const [name, setName] = useState('');
@@ -49,8 +52,12 @@ export default function SuiteEditorScreen() {
   }, [isNew, suite]);
 
   const findTest = (r: Ref) => testsByApp?.[r.appId]?.find(t => t.id === r.testId);
+  const inBin = (r: Ref) => !deleted || deleted.some(i => (i.kind === 'test' && i.appId === r.appId && i.id === r.testId) || (i.kind === 'app' && i.id === r.appId));
   const present = testsByApp ? picked.filter(r => findTest(r)) : picked;
-  const missing = testsByApp ? picked.length - present.length : 0;
+  const binned = testsByApp && deleted ? picked.filter(r => !findTest(r) && inBin(r)) : [];
+  const missing = testsByApp && deleted ? picked.length - present.length - binned.length : 0;
+  /** What saving keeps: the tests there are, and the ones in Recently deleted, in their order. */
+  const kept = testsByApp ? picked.filter(r => findTest(r) || inBin(r)) : picked;
   const pickedApps = new Set(present.map(r => r.appId)).size;
   const order = new Map(present.map((r, i) => [key(r), i + 1]));
 
@@ -61,7 +68,7 @@ export default function SuiteEditorScreen() {
   };
   const move = (i: number, d: -1 | 1) => {
     setDirty(true);
-    setPicked(() => { const list = [...present]; const j = i + d; [list[i], list[j]] = [list[j], list[i]]; return list; });
+    setPicked(p => { const list = [...present]; const j = i + d; [list[i], list[j]] = [list[j], list[i]]; return [...list, ...p.filter(r => !findTest(r))]; });
   };
 
   const problems = {
@@ -77,7 +84,7 @@ export default function SuiteEditorScreen() {
     setSaving(true);
     try {
       const url = extras.resultUrl?.trim();
-      const out = await backend.saveSuite(suiteId ?? null, { name: name.trim(), tests: present, schedule: extras.schedule, ...(url ? { resultUrl: url } : {}), ...(extras.notify !== undefined ? { notify: extras.notify } : {}) });
+      const out = await backend.saveSuite(suiteId ?? null, { name: name.trim(), tests: kept, schedule: extras.schedule, ...(url ? { resultUrl: url } : {}), ...(extras.notify !== undefined ? { notify: extras.notify } : {}) });
       setDirty(false);
       toast(isNew ? `${out.name} created.` : 'Suite saved.');
       if (isNew) { loaded.current = out.id; navigate(`/suites/${out.id}`, { replace: true }); }
@@ -93,7 +100,7 @@ export default function SuiteEditorScreen() {
 
   const remove = async () => {
     if (!suiteId) return;
-    try { await backend.deleteSuite(suiteId); toast(`${name || 'Suite'} deleted.`); navigate('/suites', { replace: true }); }
+    try { await backend.deleteSuite(suiteId); toast(`${name || 'Suite'} moved to Recently deleted.`); navigate('/suites', { replace: true }); }
     catch (e) { toast(e instanceof Error ? e.message : "Couldn't delete the suite.", { error: true }); }
   };
 
@@ -131,6 +138,11 @@ export default function SuiteEditorScreen() {
             <div className="se-count">{present.length ? `${present.length} picked from ${plural(pickedApps, 'app')} · run in this order` : 'None picked yet'}</div>
           </div>
           {tried && problems.tests && <div className="se-err" role="alert"><Icon name="error" />{problems.tests}</div>}
+          {binned.length > 0 && (
+            <div className="se-missing"><Icon name="delete" />
+              <span>{binned.length === 1 ? '1 test in this suite is in Recently deleted.' : `${binned.length} tests in this suite are in Recently deleted.`} Runs skip {binned.length === 1 ? 'it' : 'them'} until {binned.length === 1 ? "it's" : "they're"} restored.</span>
+            </div>
+          )}
           {missing > 0 && (
             <div className="se-missing"><Icon name="warning" />
               <span>{missing === 1 ? '1 test in this suite no longer exists. Saving removes it.' : `${missing} tests in this suite no longer exist. Saving removes them.`}</span>
@@ -192,7 +204,7 @@ export default function SuiteEditorScreen() {
       </div>
 
       <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete ${name || 'this suite'}?`}
-        sub="The suite and its schedule are removed. Its past runs stay in the history."
+        sub={`It goes to Recently deleted with its schedule. You can restore it there for ${KEEP_DELETED_DAYS} days. Its past runs stay in the history.`}
         actions={<><Button onClick={() => setConfirmDelete(false)} data-autofocus>Cancel</Button><Button kind="danger" icon="delete" onClick={remove}>Delete suite</Button></>} />
     </AppFrame>
   );
