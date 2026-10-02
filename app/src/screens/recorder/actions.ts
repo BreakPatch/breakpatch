@@ -51,8 +51,18 @@ export const STICKY = new Set<ActionKind>(['click', 'doubleClick', 'longClick', 
 export const INSTANT = new Set<string>(['reload', 'back', 'forward', 'switchTab']);
 
 export type ComposerInput = 'describe' | 'text' | 'url' | 'none';
-export function composerInput(k: ActionKind): ComposerInput {
-  if (POINT_KINDS.has(k) || k === 'checkpoint' || k === 'waitUntil') return 'describe';
+// ============================== DESCRIBE SWITCH ==============================
+// The add-step bar's "Describe the next step" box. Off (owner, 2026-10-02): steps that act on
+// the page are added by clicking or drawing on it, and Write and Go to address keep their own
+// boxes. The describing code stays for the AI test agent (#10) to bring back.
+export const DESCRIBE_STEPS = false;
+// =============================================================================
+
+/** Actions added by pointing at the page: with describing off, the page is the only way. */
+export function onPage(k: ActionKind): boolean { return POINT_KINDS.has(k) || k === 'checkpoint' || k === 'waitUntil'; }
+
+export function composerInput(k: ActionKind, describe: boolean = DESCRIBE_STEPS): ComposerInput {
+  if (onPage(k)) return describe ? 'describe' : 'none';
   if (k === 'write') return 'text';
   if (k === 'navigate') return 'url';
   return 'none';
@@ -69,8 +79,22 @@ export function placeholderFor(k: ActionKind): string {
   }
 }
 
+/** What to do on the page, where the describe box was (DESCRIBE_STEPS off). */
+export function pageHint(k: ActionKind): string {
+  switch (k) {
+    case 'waitUntil': return 'Draw a box around what should appear on the page, or click it.';
+    case 'checkpoint': return 'Click the area to check on the page, or draw a box around it.';
+    case 'upload': return 'Click the file field or the upload button on the page.';
+    case 'hover': return 'Click what to point at on the page.';
+    case 'swipe': case 'scroll': return 'Drag on the page, or scroll it.';
+    default: return 'Click where the step happens on the page.';
+  }
+}
+
 /** Hint row text for tools that need more than a click. */
-export function toolHint(k: ActionKind): string | null {
+export function toolHint(k: ActionKind, describe: boolean = DESCRIBE_STEPS): string | null {
+  // Without the describe box, the bar itself says what to do for these (pageHint).
+  if (!describe && (k === 'checkpoint' || k === 'waitUntil')) return null;
   switch (k) {
     case 'drag': return 'Drag on the page from the start point to the end point, or click one and then the other.';
     case 'swipe': case 'scroll': return 'Drag on the page in the direction to move. The length of the drag sets the distance.';

@@ -38,6 +38,9 @@ describe('action list', () => {
     expect(composerInput('write')).toBe('text');
     expect(composerInput('navigate')).toBe('url');
     expect(composerInput('waitFor')).toBe('none');
-    expect(composerInput('upload')).toBe('describe');
+    expect(composerInput('upload', true)).toBe('describe');
+    // The describe box is off: what acts on the page is added on the page.
+    for (const k of ['click', 'hover', 'upload', 'scroll', 'waitUntil', 'checkpoint'] as const) expect(composerInput(k)).toBe('none');
+    expect(composerInput('write')).toBe('text');
   });
 });

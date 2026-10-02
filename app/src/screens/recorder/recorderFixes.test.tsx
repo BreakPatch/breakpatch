@@ -156,7 +156,7 @@ describe('nothing under or over the page moves it', () => {
     for (const item of menuGroups({ allowGroups: true }).flatMap(g => g.items)) {
       if (item.nav || item.kind === 'group') continue;
       act(() => { result.current.setAction(item.kind); });
-      const { container, unmount } = render(<AddStepBar rec={result.current} appId="a" allowGroups onInsertGroup={() => undefined} />);
+      const { container, unmount } = render(<AddStepBar rec={result.current} appId="a" allowGroups describe onInsertGroup={() => undefined} />);
       const inFlow = [...container.querySelector('.rec-bar')!.children].map(c => c.className.split(' ')[0]);
       expect(inFlow, item.kind).toEqual(['rec-float', 'rec-hint', 'rec-composer-wrap']);
       unmount();
@@ -326,7 +326,7 @@ describe('the Enter that sends a sentence never confirms it too (DES2-01)', () =
     const confirm = vi.fn();
     function Bar() {
       const rec = useRecorder({ viewport: vp, onError: vi.fn() });
-      return <AddStepBar rec={{ ...rec, confirmAi: () => { confirm(); rec.confirmAi(); } }} appId="a" allowGroups onInsertGroup={() => undefined} />;
+      return <AddStepBar rec={{ ...rec, confirmAi: () => { confirm(); rec.confirmAi(); } }} appId="a" allowGroups describe onInsertGroup={() => undefined} />;
     }
     const { container } = render(<Bar />);
     const box = screen.getByLabelText('Describe the next step');
@@ -369,7 +369,7 @@ describe('Try again and what the box can\'t do (DES2-09, DES2-11)', () => {
     const { AddStepBar } = await import('./AddStepBar');
     function Bar() {
       const rec = useRecorder({ viewport: vp, onError: vi.fn() });
-      return <AddStepBar rec={rec} appId="a" allowGroups onInsertGroup={() => undefined} />;
+      return <AddStepBar rec={rec} appId="a" allowGroups describe onInsertGroup={() => undefined} />;
     }
     render(<Bar />);
     const box = screen.getByLabelText('Describe the next step');
@@ -395,5 +395,24 @@ describe('where a described typing step will type (DES2-10)', () => {
     const { result } = hook();
     act(() => { void result.current.describe('type hello 2 times'); });
     await waitFor(() => expect(result.current.ask).toBe('Write "hello", 2 times? No field is selected: click the field first.'));
+  });
+});
+
+describe('the describe box is off (DESCRIBE_STEPS)', () => {
+  it('has no describe box: on-page actions say what to do on the page, Write keeps its box', async () => {
+    const { AddStepBar } = await import('./AddStepBar');
+    let r!: ReturnType<typeof useRecorder>;
+    function Bar() {
+      r = useRecorder({ viewport: vp, onError: vi.fn() });
+      return <AddStepBar rec={r} appId="a" allowGroups onInsertGroup={() => undefined} />;
+    }
+    render(<Bar />);
+    expect(screen.queryByLabelText('Describe the next step')).toBeNull();
+    expect(screen.getByText('Click where the step happens on the page.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add step' })).toBeDisabled();
+    act(() => { r.setAction('waitUntil'); });
+    expect(screen.getByText(/Draw a box around what should appear/)).toBeInTheDocument();
+    act(() => { r.setAction('write'); });
+    expect(screen.getByLabelText('Text to write')).toBeInTheDocument();
   });
 });

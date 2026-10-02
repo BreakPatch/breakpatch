@@ -10,7 +10,7 @@ import { Button, ChipSelect, Icon } from '../../components/ui';
 import { useLatched, usePresence } from '../../components/ui/presence';
 import { ActionMenu } from './ActionMenu';
 import { SharedStepsPicker } from './SharedStepsPicker';
-import { composerInput, INSTANT, placeholderFor, shortName, toolHint, type MenuAction } from './actions';
+import { composerInput, DESCRIBE_STEPS, INSTANT, onPage, pageHint, placeholderFor, shortName, toolHint, type MenuAction } from './actions';
 import type { Recorder } from './useRecorder';
 
 const CLICK_FAMILY = new Set(['click', 'doubleClick', 'longClick', 'rightClick', 'hover']);
@@ -20,7 +20,9 @@ type FloatBanner = { text: string; tone?: 'ok' | 'bad'; icon?: string; action?: 
 const sameBanner = (a: FloatBanner, b: FloatBanner) => a.text === b.text && a.tone === b.tone && a.icon === b.icon && a.action?.label === b.action?.label;
 const leaving = (closing: boolean) => closing ? { 'aria-hidden': true, inert: true } : {};
 
-export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, banner: bannerNow }: {
+export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, banner: bannerNow, describe = DESCRIBE_STEPS }: {
+  /** The describe box (DESCRIBE_STEPS); the tests of describing turn it on. */
+  describe?: boolean;
   rec: Recorder; appId: string; allowGroups: boolean; onInsertGroup: (g: StepGroup, version: number | 'latest') => void;
   /** Adding steps waits (the test is playing in this browser): says why. */
   frozen?: string | null;
@@ -32,7 +34,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   const inputRef = useRef<HTMLInputElement>(null);
   const actionBtn = useRef<HTMLButtonElement>(null);
   const { action, options: o } = rec;
-  const input = composerInput(action);
+  const input = composerInput(action, describe);
   const busy = rec.busy || rec.ai.state === 'thinking' || !!frozen;
 
   // The bar that asks "Click Next button?": Enter confirms, Esc cancels (not while typing in a field).
@@ -89,7 +91,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   const rr = rec.rerecordId ? findStep(rec.steps, rec.rerecordId) : undefined;
   const loop = rec.openLoopId ? findStep(rec.steps, rec.openLoopId) : undefined;
   let hint: ReactNode = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click anything on the page to add a step, or describe it below.</>;
-  const th = toolHint(action);
+  const th = toolHint(action, describe);
   if (rr) hint = <><Icon name="replay" size={16} className="rec-hint-icon" /><span className="grow">Do step {numberOf(rec.steps, rr.id)} again on the page, or describe it. It replaces "{rr.label}".</span><button type="button" className="rec-hint-link" onClick={rec.cancelRerecord}>Cancel</button></>;
   else if (th) hint = <><Icon name={actionInfo(action).icon} size={16} className="rec-hint-icon" />{th}</>;
   else if (loop) hint = <><Icon name="repeat" size={16} className="rec-hint-icon" />New steps go inside "{loop.label}" until you press Done repeating.</>;
@@ -128,7 +130,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   } else if (action === 'group') {
     field = <span className="rec-inline faint">Pick shared steps from the list.</span>;
   } else {
-    field = <span className="rec-inline faint">{action === 'drag' ? 'Drag on the page from the start point to the end point.' : placeholderFor(action)}</span>;
+    field = <span className="rec-inline faint">{action === 'drag' ? 'Drag on the page from the start point to the end point.' : onPage(action) ? pageHint(action) : placeholderFor(action)}</span>;
   }
 
   const extra = extraRow();
@@ -177,7 +179,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   }
 
   const leadIcon = CLICK_FAMILY.has(action) ? 'auto_awesome' : actionInfo(action).icon;
-  const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' : action === 'write' ? o.writeSource !== 'typed' || rec.text !== '' : !!rec.text.trim());
+  const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' && !onPage(action) : action === 'write' ? o.writeSource !== 'typed' || rec.text !== '' : !!rec.text.trim());
 
   if (rec.retryNote && !rr) hint = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click the page again to pick another spot.</>;
   // What the box can't do, by the box, until the sentence is changed (not a toast that goes).
