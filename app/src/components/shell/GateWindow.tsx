@@ -20,7 +20,7 @@ export function GateWindow({ children, className }: { children: ReactNode; class
 /** Left panel: ear mark, a big line (wordmark by default), the strapline and a footer line. */
 export function BrandPanel({ heading, line = 'Tests your web apps by looking at them, the way a person would.', foot }: { heading?: ReactNode; line?: ReactNode; foot?: ReactNode }) {
   return (
-    <aside className="gi-brand">
+    <aside className="gi-brand" data-tauri-drag-region>
       <div className="gi-brand-top">
         <EarMark size={72} />
         {heading ?? <div className="gi-brand-word" aria-label="breakpatch"><b>break</b><span>patch</span></div>}

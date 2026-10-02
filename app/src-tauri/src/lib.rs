@@ -679,6 +679,17 @@ mod config_tests {
         assert_eq!(scope, &serde_json::json!(["$DATA/Breakpatch/screenshots/**"]));
     }
 
+    /// Hosted by Breakpatch: the app calls the cloud's functions from the webview (Team
+    /// app/cloud/account.ts), so connect-src must name their host, in release and in development.
+    #[test]
+    fn the_webview_may_call_breakpatch_cloud() {
+        let security = &conf()["app"]["security"];
+        for csp in ["csp", "devCsp"] {
+            let src = security[csp]["connect-src"].as_str().unwrap();
+            assert!(src.split(' ').any(|h| h == "https://europe-west1-breakpatch-cloud.cloudfunctions.net"), "{csp}");
+        }
+    }
+
     /// The UI may show local notifications when a run finishes (lib/notify.ts).
     #[test]
     fn the_ui_may_notify() {
