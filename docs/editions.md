@@ -1,24 +1,23 @@
 # Editions
 
-Breakpatch comes in four editions. **Community** is free and open source (Apache 2.0): one person, one Mac, tests saved as files. **Team** is paid: everything shared, unattended or tracked over time. **Business** is Team for 20 people or more, with more machine licences and support. **Solo**, Team's automation for one person, is planned but not on sale yet.
+Breakpatch has four editions. **Community** is free and open source (Apache 2.0): one person, one Mac, tests saved as files. It's the only one at launch. **Team** is paid: everything shared, unattended or tracked over time. **Business** is Team for bigger companies. **Solo** is Team's automation for one person. Team, Business and Solo aren't on sale yet and have no prices yet: the site shows Team and Business as coming, and hides Solo until the back office's `SOLO_ON_SALE` is on. The Documentation (`docs/manual.md`) names no prices.
 
-| | Community | Solo (not on sale yet) | Team | Business |
+| | Community | Solo (not on sale yet) | Team (not on sale yet) | Business (not on sale yet) |
 |---|---|---|---|---|
-| Price | Free | $19 a month, or $16 billed yearly | $20 per person a month, or $16 billed yearly | $30 per person a month, billed yearly |
-| People | 1 | 1 | 3 or more | 20 or more |
+| People | 1 | 1 | From 3 (`tiers.ts` `minSeats`) | From 20 |
 | Machine licences | None | 1, no extras | 1 included, more can be bought | 5 included, more can be bought |
-| Where tests live | A tests folder | A tests folder or Git; a workspace of your own is optional | A workspace in the customer's own Firebase | A workspace in the customer's own Firebase |
+| Where tests live | A tests folder | A tests folder or Git; a workspace of your own is optional | A workspace hosted by Breakpatch, or in the customer's own Firebase | The same as Team |
 
-Hosted workspaces (Breakpatch Cloud, no Firebase set-up) are coming for Team and Business, and will be the default way to get a workspace when they open; the customer's own Firebase stays as "Host it yourself". Nothing about hosting is in the app yet.
+Hosted workspaces (Breakpatch Cloud, no Firebase set-up) are built for Team and Business and will be the default way to get a workspace when they open; the customer's own Firebase stays as "Host it yourself". In the app they're behind the Team module's `HOSTED_OPEN` switch (`app/cloud/config.ts`), off until Breakpatch Cloud opens: until then the app says "Hosted by Breakpatch opens soon".
 
 ## Community (free)
 
 | Area | Included |
 |---|---|
-| Recording | Record by clicking; describe a step and let the AI assistant find it (the sentence decides the action, the target and how many times: "add 2 people" is the "+" next to People, twice); every action (click, double, long and right click, hover, swipe, scroll, drag and drop, write text, wait, go to address, tabs and popups, upload a sample file, check a download); checkpoints; loops; shared steps; set-up and clean-up calls; automatic screen checks; re-record a step |
+| Recording | Record by clicking or drawing on the page, each step confirmed before it's done (the "Describe the next step" box is off: `DESCRIBE_STEPS` in `app/src/screens/recorder/actions.ts`); every action (click, double, long and right click, hover, swipe, scroll, drag and drop, write text, wait, go to address, tabs and popups, upload a sample file, check a download); checkpoints; loops; shared steps; set-up and clean-up calls; automatic screen checks; re-record a step |
 | Running | Run a test or a suite by hand on this Mac; **Run all** for an app's tests; live run view; report with expected vs seen and the reason; **Copy details** and **Copy as Markdown** (a ready-made bug report) on every failed step |
-| Storage | Tests saved as JSON files in a folder you pick (for example inside your project's Git repo). Only the latest version is kept: saving overwrites. The last run of each test is kept. |
-| This Mac | Saved secrets in the macOS Keychain; Standard AI assistant (Larger optional on 32 GB+); auto-updates; dark and light; works offline; anonymous usage counts you can turn off (Settings → Privacy) |
+| Storage | Tests saved as JSON files in a folder you pick (for example inside your project's Git repo). Only the latest version is kept: saving overwrites. The last run of each test is kept. Deleted apps, tests, shared steps and suites stay in Recently deleted (the folder's `deleted/`) for 30 days. |
+| This Mac | Saved secrets in the macOS Keychain; the Standard AI assistant, the one built-in model (the Larger one only from Team's runner settings, on 32 GB+); auto-updates; dark and light; works offline; anonymous usage counts you can turn off (Settings → Privacy) |
 
 ## Team (paid)
 
@@ -31,9 +30,9 @@ Hosted workspaces (Breakpatch Cloud, no Firebase set-up) are coming for Team and
 | Automation | Schedules on any Mac; local runner (runner mode, queue, newest request wins); run requests from CI or other tools; result messages to Slack, Microsoft Teams (Workflows) or any web address, with the failed step's screenshot if the suite asks; `breakpatch-ci` for CI, reading suites and tests straight from the workspace |
 | Costs | A copy of the workspace on each Mac and a change marker (`workspace/changes`), so opening it again reads only what changed; the runner's heartbeat on change or every 90 s |
 
-Business is everything in Team, plus 5 machine licences, choosing another AI model for the assistant (the `modelOverride` feature), support within 4 business hours and invoice billing.
+Business is everything in Team, plus 5 machine licences and the `modelOverride` feature (choosing another AI model), which has no screen yet: the built-in model is the only one, and the Documentation says bringing your own isn't available yet. Its support and billing are set when it goes on sale.
 
-Solo (when it goes on sale) is Team's automation for one person: fixed automatically, Why did this fail?, schedules on the Mac, result messages and `breakpatch-ci`, on a tests folder. Version history, the local runner and run requests need a workspace of its own. It has no members, roles, sharing, model override or Create issue. The site hides it until `soloOnSale` is on (site/README.md); the app side is still to come.
+Solo (when it goes on sale) is Team's automation for one person: fixed automatically, Why did this fail?, schedules on the Mac, result messages and `breakpatch-ci`, on a tests folder. Version history, the local runner and run requests need a workspace of its own. It has no members, roles, sharing, model override or Create issue. The site hides it until `soloOnSale` is on (site/README.md). The app side is in the Team module (Settings → Licence → Enter Solo licence key on a tests folder).
 
 ## Licence features
 
