@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Breakpatch: AI UI testing on your Mac</title>
-<meta name="description" content="AI UI testing for web apps that runs on your Mac. Describe a step and a local vision model finds it. No code, no cloud, no per-run fees. Free and open source.">
+<meta name="description" content="AI UI testing for web apps that runs on your Mac. Click through your app and a local vision model names each step. No code, no cloud, no per-run fees. Free and open source.">
 <link rel="canonical" href="https://breakpatch.dev/">
 <meta name="theme-color" content="#171412" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#FBF7F3" media="(prefers-color-scheme: light)">
@@ -59,7 +59,7 @@
       <div class="hero-text">
         <p class="ai-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>AI on your Mac<span class="sep" aria-hidden="true"></span><span class="soft">no cloud, no per-run fees</span></p>
         <h1 id="hero-title">AI-powered UI testing that <em>runs on your Mac.</em></h1>
-        <p class="sub">Click through your web app, or describe a step in plain words. A vision AI model on your Mac finds what you mean and names what you click. Replay any time and see exactly what broke. No code to write.</p>
+        <p class="sub">Click through your web app. A vision AI model on your Mac names what you click. Replay any time and see exactly what broke. No code to write.</p>
         <div class="install" id="install">
           <div class="code install-cmd"><button class="copy" type="button" aria-label="Copy the install command">Copy</button><pre><code>curl -fsSL https://breakpatch.dev/install <span>| sh</span></code></pre></div>
           <p class="prelaunch" role="note"><span class="dot" aria-hidden="true"></span><span>Public release coming soon. Join the list: <a href="mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list">support@breakpatch.dev</a></span></p>
@@ -113,22 +113,7 @@
           </div>
         </article>
 
-        <article class="ai-card">
-          <div class="ai-media pos-bottom">
-            <picture>
-              <source media="(prefers-color-scheme: light)" srcset="/assets/shots/describe-light.webp 1060w, /assets/shots/describe-light@2x.webp 2120w" sizes="(min-width: 1000px) 540px, calc(100vw - 32px)">
-              <img src="/assets/shots/describe-dark.webp" srcset="/assets/shots/describe-dark.webp 1060w, /assets/shots/describe-dark@2x.webp 2120w" sizes="(min-width: 1000px) 540px, calc(100vw - 32px)" width="1060" height="700" loading="lazy" decoding="async" alt="The AI assistant has outlined the New project button on the page and asks “Is this the New project button?” with Confirm and Try again.">
-            </picture>
-          </div>
-          <div class="ai-text">
-            <p class="eyebrow"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3"/></svg>Describe a step</p>
-            <h3>Describe it. The AI finds it.</h3>
-            <p>Type “click the Done button”. The AI finds that element on screen and outlines it for you to check. Press <strong>Confirm</strong>, or <strong>Try again</strong>. Or just click it yourself.</p>
-            <a class="more" href="/manual/#record-a-test">How recording works</a>
-          </div>
-        </article>
-
-        <article class="ai-card">
+        <article class="ai-card wide">
           <div class="ai-media pos-left">
             <picture>
               <source media="(prefers-color-scheme: light)" srcset="/assets/shots/names-light.webp 810w, /assets/shots/names-light@2x.webp 1620w" sizes="(min-width: 1000px) 540px, calc(100vw - 32px)">
@@ -336,7 +321,7 @@ suites/smoke.json</pre>
           <div class="plan-price"><b>Free</b><span>open source, Apache 2.0</span></div>
           <p class="who">One person, one Mac.</p>
           <ul>
-            <li>Record by clicking, or describe a step to the AI assistant</li>
+            <li>Record by clicking on the page</li>
             <li>The AI names what you click, so steps read plainly</li>
             <li>Run tests and suites by hand, with the full report</li>
             <li>Tests as JSON files in a folder you pick</li>
@@ -385,7 +370,6 @@ suites/smoke.json</pre>
           <thead><tr><th scope="col">Feature</th><th scope="col">Community</th><th scope="col" class="solo-only">Solo</th><th scope="col">Team</th></tr></thead>
           <tbody>
             <tr><th scope="row">Record by clicking</th><td class="yes" data-label="Community">Yes</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
-            <tr><th scope="row">Describe a step to the local AI</th><td class="yes" data-label="Community">Yes</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
             <tr><th scope="row">The AI names what you click</th><td class="yes" data-label="Community">Yes</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
             <tr><th scope="row">Screen checks and the report</th><td class="yes" data-label="Community">Yes</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>
             <tr><th scope="row">Shared steps and suites</th><td class="yes" data-label="Community">Yes</td><td class="yes solo-only" data-label="Solo">Yes</td><td class="yes" data-label="Team">Yes</td></tr>

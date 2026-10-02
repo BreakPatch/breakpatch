@@ -21,8 +21,7 @@
 <p align="center"><strong>Here to find what breaks.</strong></p>
 
 <p align="center">
-  AI-powered UI testing that runs on your Mac. Click through your web app or describe a step in plain
-  words, replay it any time, and see exactly what broke. No code, no selectors, no cloud.
+  AI-powered UI testing that runs on your Mac. Click through your web app, replay it any time, and see exactly what broke. No code, no selectors, no cloud.
 </p>
 
 <p align="center">
@@ -91,9 +90,6 @@ straight away.
 
 ## What it does
 
-- **Describe a step, and the AI finds it.** Type “click the Done button”. A vision model on your Mac
-  finds that element on screen and outlines it; press **Confirm** or **Try again**. Clicking always
-  works too, with or without the AI.
 - **The AI names what you click.** Steps read “Click New project”, not coordinates, and each keeps a
   plain *What to look for* that you can edit.
 - **The AI runs on your Mac.** Qwen3-VL 4B, an open-weights model, on Apple Silicon through MLX.
