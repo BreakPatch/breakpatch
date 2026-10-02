@@ -1,7 +1,10 @@
 .window { height: 100%; display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
 .titlebar {
   height: var(--titlebar-h); flex: none; background: var(--surface); border-bottom: 1px solid var(--line);
-  display: flex; align-items: center; gap: 14px; padding: 0 16px; position: relative; z-index: 20;
+  display: flex; align-items: center; gap: 14px; padding: 0 16px; position: relative;
+  /* Above the content (a selected step card is 30), so what opens from the title bar (Save's
+     "What changed?") is never under it; dialogs and menus (90 and up) stay above. */
+  z-index: 40;
 }
 .traffic { display: flex; gap: 8px; margin-right: 10px; }
 .traffic span { width: 12px; height: 12px; border-radius: 50%; display: block; }
