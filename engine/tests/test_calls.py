@@ -198,3 +198,25 @@ async def test_a_refused_set_up_call_stops_the_run_and_says_why(api, caplog):
     assert "The set-up call didn't succeed" in out[-1]["message"] and "https://" in out[-1]["message"]
     assert Api.seen == []
     assert "secret=1" not in caplog.text
+
+
+def test_a_call_tries_each_checked_address_in_turn():
+    """localhost is ::1 first on macOS and Ubuntu; a dev server on 127.0.0.1 only must still answer."""
+    import socket, threading
+    from breakpatch_engine.calls import Plan, _send
+    srv = socket.create_server(("127.0.0.1", 0))
+    port = srv.getsockname()[1]
+
+    def serve():
+        conn, _ = srv.accept()
+        with conn:
+            conn.recv(1024)
+            conn.sendall(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    # ::1 refuses (nothing listens there on this port), then 127.0.0.1 answers.
+    p = Plan("GET", f"http://localhost:{port}/", "http", "localhost", port, "/", "::1", addresses=["::1", "127.0.0.1"])
+    try:
+        assert _send(p, 5) == 204
+    finally:
+        srv.close()

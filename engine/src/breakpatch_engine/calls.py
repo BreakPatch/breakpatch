@@ -96,6 +96,12 @@ class Plan:
     address: str                       # the checked IP address to connect to
     headers: dict[str, str] = field(default_factory=dict)
     proxy: str | None = None           # the http proxy to tunnel through (https only), or None
+    # Every checked address, `address` first: tried in turn, so "localhost" reaches a server that
+    # listens on 127.0.0.1 only when ::1 comes first (macOS, Ubuntu).
+    addresses: list[str] = field(default_factory=list)
+
+    def tried(self) -> list[str]:
+        return self.addresses or [self.address]
 
 
 # ---------------------------------------------------------------- the rules
@@ -235,7 +241,7 @@ def plan(call: dict, app_url: str | None, secrets: dict[str, Secret], resolver=r
     headers = _headers(call, origin_of(url), secrets)
     target = (u.path or "/") + (f"?{u.query}" if u.query else "")
     proxy = proxy_finder(url) if scheme == "https" and not is_loopback_host(host) else None
-    return Plan(method, url, scheme, host, port, target, addrs[0], headers, proxy)
+    return Plan(method, url, scheme, host, port, target, addrs[0], headers, proxy, list(addrs))
 
 
 def _headers(call: dict, origin: str | None, secrets: dict[str, Secret]) -> dict[str, str]:
@@ -266,34 +272,51 @@ def _headers(call: dict, origin: str | None, secrets: dict[str, Secret]) -> dict
 
 # ---------------------------------------------------------------- making the call
 
+def _connect_any(addresses: list[str], port: int, timeout: float, open_one) -> socket.socket:
+    """Opens the first of the checked addresses that answers (as create_connection does for a name).
+    A refused or unreachable address moves on to the next; the last error is raised."""
+    last: OSError | None = None
+    for a in addresses:
+        try:
+            return open_one(a)
+        except net.ProxyError:
+            raise                      # the proxy's answer is the same for every address
+        except OSError as e:
+            last = e
+    raise last or OSError("no address to connect to")
+
+
 class _Pinned(http.client.HTTPConnection):
     def __init__(self, host, port, address, timeout):
         super().__init__(host, port, timeout=timeout)
-        self._address = address
+        self._addresses = address if isinstance(address, list) else [address]
 
     def connect(self):
-        self.sock = socket.create_connection((self._address, self.port), self.timeout)
+        self.sock = _connect_any(self._addresses, self.port, self.timeout,
+                                 lambda a: socket.create_connection((a, self.port), self.timeout))
 
 
 class _PinnedTLS(http.client.HTTPSConnection):
     def __init__(self, host, port, address, timeout, proxy=None):
         super().__init__(host, port, timeout=timeout, context=net.ssl_context())
-        self._address = address
+        self._addresses = address if isinstance(address, list) else [address]
         self._proxy = proxy
 
     def connect(self):
         if self._proxy:
-            raw = net.tunnel(self._proxy, self._address, self.port, self.timeout)
+            raw = _connect_any(self._addresses, self.port, self.timeout,
+                               lambda a: net.tunnel(self._proxy, a, self.port, self.timeout))
         else:
-            raw = socket.create_connection((self._address, self.port), self.timeout)
+            raw = _connect_any(self._addresses, self.port, self.timeout,
+                               lambda a: socket.create_connection((a, self.port), self.timeout))
         self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
 
 
 def _send(p: Plan, timeout: float) -> int:
     if p.scheme == "https":
-        conn = _PinnedTLS(p.host, p.port, p.address, timeout, p.proxy)
+        conn = _PinnedTLS(p.host, p.port, p.tried(), timeout, p.proxy)
     else:
-        conn = _Pinned(p.host, p.port, p.address, timeout)
+        conn = _Pinned(p.host, p.port, p.tried(), timeout)
     try:
         body = b"" if p.method in ("POST", "PUT", "PATCH") else None
         headers = {"User-Agent": "Breakpatch", **p.headers}
