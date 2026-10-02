@@ -261,7 +261,7 @@ test('all places taken: nothing shows and checkout has no discount', async () =>
 test('the Business card: $30 billed yearly, 20 people, what it adds, and Contact us', () => {
   const card = HTML.slice(HTML.indexOf('<h2>Business</h2>'), HTML.indexOf('</article>', HTML.indexOf('<h2>Business</h2>')));
   for (const s of ['20 people or more', '$30', 'per person per month, billed yearly', '$360 per person per year', 'Everything in Team',
-    '5 machine licences included', 'Choose another AI model', 'Support answered within 4 business hours', 'Invoice billing']) assert.ok(card.includes(s), s);
+    '5 machine licences included', 'Choose another AI model', 'Support answered within 4 business hours, Monday to Friday', 'Invoice billing']) assert.ok(card.includes(s), s);
   assert.ok(card.includes('href="mailto:support@breakpatch.dev?subject=Breakpatch%20Business">Contact us</a>'));
 });
 
@@ -352,6 +352,40 @@ test('a company that already has Solo is shown Team, with no checkout', async ()
   p.$('solo-email').value = 'lee@elsewhere.com';
   p.$('solo-email').fire('input');
   assert.equal(p.$('solo-taken').hidden, true);
+});
+
+test('a company that has Team or Business is told to ask its admin for a seat, with no checkout', async () => {
+  // The back office answers for the company: a subdomain's email is counted as it.
+  const p = await load(cfg(), undefined, { domain: 'initech.com', taken: true, takenBy: 'team', personal: false });
+  p.$('solo-email').value = 'lee@eng.initech.com';
+  assert.equal(await p.buySolo(), undefined);
+  assert.deepEqual(plain(p.fetched), [{ url: SOLO_URL + '?domain=eng.initech.com', credentials: 'omit' }]);
+  assert.equal(p.$('solo-team').hidden, false);
+  assert.equal(p.$('solo-taken').hidden, true);
+  assert.equal(p.$('solo-team-domain').textContent, 'initech.com');
+  assert.ok(HTML.includes("already uses Breakpatch Team or Business, so ask its admin for a seat there. Solo is for companies that don't use Breakpatch yet."));
+  p.$('solo-email').value = 'lee@elsewhere.com';
+  p.$('solo-email').fire('input');
+  assert.equal(p.$('solo-team').hidden, true);
+  // A second Solo at a subdomain names the company too.
+  const q = await load(cfg(), undefined, { domain: 'initech.com', taken: true, takenBy: 'solo', personal: false });
+  q.$('solo-email').value = 'kim@eu.initech.com';
+  assert.equal(await q.buySolo(), undefined);
+  assert.equal(q.$('solo-taken-domain').textContent, 'initech.com');
+  assert.equal(q.$('solo-team').hidden, true);
+});
+
+test('support response times are the same on the pricing page, the terms and the manual', () => {
+  const terms = read('./terms/index.html');
+  const manual = read('../docs/manual.md');
+  const card = name => HTML.slice(HTML.indexOf(`id="${name}-title"`), HTML.indexOf('</article>', HTML.indexOf(`id="${name}-title"`)));
+  assert.ok(card('solo').includes('Email support, answered within 5 business days'));
+  assert.ok(card('team').includes('Email support, answered within 2 business days'));
+  const biz = HTML.slice(HTML.indexOf('<h2>Business</h2>'), HTML.indexOf('</article>', HTML.indexOf('<h2>Business</h2>')));
+  assert.ok(biz.includes('Support answered within 4 business hours, Monday to Friday'));
+  assert.ok(terms.includes('Solo: email support, answered within 5 business days. Team: email support, answered within 2 business days. Business: support answered within 4 business hours, Monday to Friday.'));
+  assert.ok(manual.includes('| Support | GitHub issues | Email, answered within 5 business days | Email, answered within 2 business days | Within 4 business hours, Monday to Friday |'));
+  for (const page of [HTML, terms, manual]) assert.ok(!/Solo and Team: email support/.test(page));
 });
 
 test('when the domain check can’t answer, checkout goes ahead (the back office checks again)', async () => {
@@ -456,7 +490,7 @@ test('one test run at a time is per Mac or machine licence: nothing promises it 
   }
   assert.ok(MANUAL.includes('Your Mac and the machine licence each run one test at a time.'));
   const PRIVACY = readFileSync(new URL('./privacy/index.html', import.meta.url), 'utf8');
-  assert.ok(PRIVACY.includes('The answer is only whether that company domain already has a Solo'), 'privacy: what the check answers');
+  assert.ok(PRIVACY.includes('The answer is only whether that company already has Solo, or Team or Business (without saying which of the two, or who)'), 'privacy: what the check answers');
 });
 
 // ---------- Solo not on sale yet (paddle-config.js soloOnSale: false) ----------

@@ -23,8 +23,8 @@
 // soon" (site.css `.solo-only`, `.solo-off`, `.solo-soon`). `soloMonthly` and `soloYearly` stay '' until the Solo
 // prices exist in Paddle; while either is empty for the period picked, the Solo card invites people
 // to the beta instead. Before checkout the card asks `soloDomainUrl` (the back office's
-// GET /api/solo-domain, sent only the email's domain) whether that company has Solo already, and
-// shows Team if it has.
+// GET /api/solo-domain, sent only the email's domain) whether that company has Solo already (then
+// it shows Team), or has Team or Business (then it says to ask that licence's admin for a seat).
 window.BREAKPATCH_PADDLE = {
   env: 'sandbox',
   // Set below from the back office's answer; never by hand.

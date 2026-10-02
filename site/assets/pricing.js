@@ -75,7 +75,7 @@
       });
       return;
     }
-    var email = $('solo-email'), buy = $('solo-buy'), note = $('solo-buy-note'), err = $('solo-buy-error'), taken = $('solo-taken');
+    var email = $('solo-email'), buy = $('solo-buy'), note = $('solo-buy-note'), err = $('solo-buy-error'), taken = $('solo-taken'), team = $('solo-team');
     var state = { period: 'year' };
 
     function priceId() { var p = cfg.prices || {}; return state.period === 'year' ? p.soloYearly : p.soloMonthly; }
@@ -98,9 +98,11 @@
     }
 
     /**
-     * Whether the email's company already has Solo: GET soloDomainUrl?domain=… (only the domain is
-     * sent, never the address) → { taken }. Null when it can't say; then checkout goes ahead and the
-     * back office checks again.
+     * Whether Solo can be bought for the email's company: GET soloDomainUrl?domain=… (only the
+     * domain is sent, never the address) → { domain, taken, takenBy }. `domain` is the company the
+     * back office counts it as (eng.acme.com is acme.com). Resolves to { by: 'solo' | 'team',
+     * domain } when it can't (another Solo there, or Team or Business), false when it can, and null
+     * when it can't say; then checkout goes ahead and the back office checks again.
      */
     // Asked once per domain: when the email field loses focus (so Buy doesn't wait for it), and
     // again on Buy only if the email changed.
@@ -109,7 +111,11 @@
       var url = typeof cfgAll.soloDomainUrl === 'string' ? cfgAll.soloDomainUrl : '';
       if (!url || !/^[^\s@]+\.[^\s@]+$/.test(domain)) return Promise.resolve(null);
       if (!asked[domain]) {
-        asked[domain] = getJson(url + '?domain=' + encodeURIComponent(domain)).then(function (b) { return b && typeof b.taken === 'boolean' ? b.taken : null; });
+        asked[domain] = getJson(url + '?domain=' + encodeURIComponent(domain)).then(function (b) {
+          if (!b || typeof b.taken !== 'boolean') return null;
+          if (!b.taken) return false;
+          return { by: b.takenBy === 'team' ? 'team' : 'solo', domain: typeof b.domain === 'string' && b.domain ? b.domain : domain };
+        });
         // A failed check is asked again next time.
         asked[domain].then(function (t) { if (t === null) delete asked[domain]; });
       }
@@ -125,23 +131,30 @@
     document.querySelectorAll('[data-solo-period]').forEach(function (b) {
       b.addEventListener('click', function () { state.period = b.dataset.soloPeriod; render(); });
     });
-    email.addEventListener('input', function () { taken.hidden = true; });
+    email.addEventListener('input', function () { taken.hidden = true; team.hidden = true; });
     email.addEventListener('blur', function () { if (ready()) domainTaken(domainOf(email.value)); });
 
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
       showError('');
       taken.hidden = true;
+      team.hidden = true;
       if (!ready()) { location.href = betaMail(); return; }
       if (!form.reportValidity()) return;
       var who = email.value.trim().toLowerCase();
       var domain = domainOf(who);
       var id = priceId();
       buy.setAttribute('aria-busy', 'true');
-      domainTaken(domain).then(function (isTaken) {
-        if (isTaken) {
+      domainTaken(domain).then(function (has) {
+        if (has && has.by === 'team') {
+          // The company has Team or Business: the person gets a seat there, not a Solo.
+          $('solo-team-domain').textContent = has.domain;
+          team.hidden = false;
+          return null;
+        }
+        if (has) {
           // One Solo per company: someone there has it, so Team is the plan for them.
-          $('solo-taken-domain').textContent = domain;
+          $('solo-taken-domain').textContent = has.domain;
           taken.hidden = false;
           return null;
         }
