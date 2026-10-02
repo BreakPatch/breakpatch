@@ -113,6 +113,7 @@ mod tests {
             .await
             .expect_err("a certificate nobody trusts must fail");
         let _ = server.kill();
+        let _ = server.wait();
         assert!(is_cert_error(&err), "not seen as a certificate error: {err:?}");
     }
 }
