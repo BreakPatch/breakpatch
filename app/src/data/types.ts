@@ -245,6 +245,12 @@ export interface Run {
   systemMismatch?: SystemMismatch;
   /** The issue made from this run with Create issue (Team), so the report offers Open issue next time. */
   issue?: RunIssue;
+  /**
+   * A plain note about how the run came about, shown in the report and the run history: a missed
+   * schedule run late (Solo on a tests folder), "This 8:00 run was missed, so it ran when Breakpatch
+   * opened at 9:14."
+   */
+  note?: string;
 }
 
 export type IssueProvider = 'github' | 'linear' | 'jira';

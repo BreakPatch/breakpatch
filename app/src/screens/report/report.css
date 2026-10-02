@@ -67,6 +67,9 @@
 .rh-tr.current { background: var(--line-soft); }
 .rh-tr .pill { justify-self: start; }
 .rh-2 { color: var(--text-2); min-width: 0; }
+.rh-who { gap: 2px; }
+.rh-note { font-size: 12px; color: var(--text-faint); }
+.rp-note { flex: none; padding: 8px 20px; border-bottom: 1px solid var(--line); background: var(--surface); font-size: 13px; color: var(--text-muted); }
 .rh-3 { color: var(--text-muted); }
 .rh-where { display: flex; align-items: center; gap: 6px; color: var(--text-muted); min-width: 0; }
 .rh-where > .icon { flex: none; }
