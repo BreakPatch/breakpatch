@@ -1,0 +1,11 @@
+{
+  "name": "breakpatch-reel",
+  "private": true,
+  "description": "Breakpatch product reel and teasers: every frame is rendered from index.html with Playwright, the soundtrack is synthesised, ffmpeg joins them.",
+  "scripts": {
+    "render": "./make.sh"
+  },
+  "dependencies": {
+    "playwright-core": "^1.50.0"
+  }
+}
