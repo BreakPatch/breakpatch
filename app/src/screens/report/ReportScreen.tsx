@@ -96,6 +96,7 @@ export default function ReportScreen() {
         {showHistory && <Segmented<'run' | 'history'> label="Report" value={tab} onChange={setTab} items={[{ value: 'run', label: 'This run' }, { value: 'history', label: 'Run history' }]} />}
       </div>
 
+      {tab === 'run' && run?.note && <p className="rp-note" data-testid="run-note">{run.note}</p>}
       {tab === 'history' ? (
         <div className="rp-history-wrap">
           {runs ? <RunHistory runs={runs} currentId={runId} onOpen={r => navigate(`/apps/${appId}/runs/${r.id}`)} more={moreRuns} /> : <Skeleton h={200} />}

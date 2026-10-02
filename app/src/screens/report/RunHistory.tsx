@@ -23,7 +23,10 @@ export function RunHistory({ runs, currentId, onOpen, more }: { runs: Run[]; cur
             onClick={() => onOpen(r)} onKeyDown={e => { if (e.key === 'Enter') onOpen(r); }}>
             <div role="cell"><StatusPill status={runStatus(r)} /></div>
             <div role="cell" className="rh-2">{formatDateTime(r.startedAt)}</div>
-            <div role="cell" className="rh-2 ellipsis">{runBy(r)}</div>
+            <div role="cell" className="rh-2 col rh-who">
+              <span className="ellipsis">{runBy(r)}</span>
+              {r.note && <span className="rh-note ellipsis" title={r.note}>{r.note}</span>}
+            </div>
             <div role="cell" className="rh-where" title={r.machine}>
               <Icon name={where.icon} size={17} />
               <div className="col" style={{ minWidth: 0 }}><span>{where.label}</span><span className="rh-machine ellipsis">{r.machine}</span></div>
