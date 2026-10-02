@@ -356,11 +356,14 @@ class BrowserSession:
     async def shoot(self) -> np.ndarray:
         for attempt in range(3):
             page = await self.live()
+            url = page.url
             try:
                 return imaging.to_array(await page.screenshot(type="png", timeout=15000))
             except Exception:  # noqa: BLE001
-                # The page closed between the check and the screenshot: go again on the next one.
-                if attempt == 2 or not page.is_closed():
+                # The page closed between the check and the screenshot, or moved to another address
+                # while it was taken (a redirect to another site swaps Chromium's renderer, and the
+                # screenshot can hang across the swap): go again on the next one.
+                if attempt == 2 or not (page.is_closed() or page.url != url):
                     raise
                 await asyncio.sleep(0.05)
         raise AssertionError("unreachable")

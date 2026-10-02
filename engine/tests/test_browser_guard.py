@@ -179,3 +179,32 @@ async def test_a_run_with_a_local_start_page_or_navigate_step_fails_plainly(site
     await asyncio.wait_for(ended.wait(), 30)
     out = [d for e, d in events if e == "run.ended"][-1]
     assert out["result"] == "fail" and "only opens web addresses" in out["message"]
+
+
+class _MovingPage:
+    """A page whose first screenshot hangs while a redirect moves it to another site."""
+    def __init__(self, moves: bool):
+        self.url, self.moves, self.calls = "http://127.0.0.1/a", moves, 0
+
+    def is_closed(self):
+        return False
+
+    async def screenshot(self, **_):
+        self.calls += 1
+        if self.calls == 1:
+            if self.moves:
+                self.url = "http://localhost/b"
+            raise TimeoutError("Page.screenshot: Timeout 15000ms exceeded.")
+        return b"png"
+
+
+@pytest.mark.parametrize("moves", [True, False])
+async def test_a_screenshot_caught_in_a_redirect_is_taken_again(monkeypatch, moves):
+    session = br.BrowserSession(Timings.fast())
+    session.page = page = _MovingPage(moves)
+    monkeypatch.setattr(br.imaging, "to_array", lambda data: data)
+    if moves:
+        assert await session.shoot() == b"png" and page.calls == 2
+    else:   # a page that stayed put and still timed out is a real failure
+        with pytest.raises(TimeoutError):
+            await session.shoot()
