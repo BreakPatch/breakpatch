@@ -3,9 +3,10 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppFrame } from '../../components/shell/AppFrame';
 import { OfflineCards } from '../../components/shell/SystemBanners';
-import { Button, Icon, Skeleton } from '../../components/ui';
+import { Button, Icon, Skeleton, useToast } from '../../components/ui';
 import { ConfirmDialog, plural } from '../../components/common';
 import { useBackend, useLive } from '../../data/hooks';
+import { KEEP_DELETED_DAYS } from '../../data/backend';
 import type { App } from '../../data/types';
 import { useSession } from '../../state/session';
 import { edition } from '../../edition';
@@ -22,6 +23,7 @@ const HomeBanner = edition.slots.homeBanner;
 export default function HomeScreen() {
   const navigate = useNavigate();
   const backend = useBackend();
+  const toast = useToast();
   const user = useSession(s => s.user);
   const { data: apps, slow } = useLive<App[]>((b, l) => b.apps(l), []);
   const testsByApp = useAllTests(apps);
@@ -72,8 +74,12 @@ export default function HomeScreen() {
       <AppDialog open={!!dialog} app={dialog?.app} onClose={() => setDialog(null)} />
       <ConfirmDialog open={!!deleting} onClose={() => setDeleting(null)} danger confirmLabel="Delete app"
         title={`Delete ${deleting?.name ?? 'app'}?`}
-        onConfirm={async () => { if (deleting) await backend.deleteApp(deleting.id); }}>
-        {deleting && `Its ${plural(testsByApp[deleting.id]?.length ?? 0, 'test')}, shared steps and run history are removed for everyone. This can't be undone.`}
+        onConfirm={async () => {
+          if (!deleting) return;
+          try { await backend.deleteApp(deleting.id); toast(`${deleting.name} moved to Recently deleted.`); }
+          catch (e) { toast(e instanceof Error ? e.message : "Couldn't delete the app.", { error: true }); }
+        }}>
+        {deleting && `It goes to Recently deleted with its ${plural(testsByApp[deleting.id]?.length ?? 0, 'test')}, shared steps and runs${backend.workspace ? ', for everyone' : ''}. You can restore it there for ${KEEP_DELETED_DAYS} days.`}
       </ConfirmDialog>
     </AppFrame>
   );

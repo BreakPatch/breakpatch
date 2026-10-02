@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppFrame } from '../../components/shell/AppFrame';
 import { Button, EmptyState, Icon, Skeleton, Tabs, useToast } from '../../components/ui';
-import { hostOf } from '../../components/common';
+import { hostOf, plural } from '../../components/common';
 import { useBackend, useLive, usePagedLive } from '../../data/hooks';
+import type { DeletedItem } from '../../data/backend';
 import type { App, Run, StepGroup, Test } from '../../data/types';
 import { NewTestDialog } from './NewTestDialog';
 import { RunsTab } from './RunsTab';
@@ -28,6 +29,9 @@ export default function AppScreen() {
   const groups = useLive<StepGroup[]>((b, l) => b.stepGroups(appId, l), [appId]);
   const runs = usePagedLive<Run>((b, l, limit) => b.runs(appId, l, limit), [appId]);
   const app = apps.data?.find(a => a.id === appId);
+  const deleted = useLive<DeletedItem[]>((b, l) => b.recentlyDeleted?.items(l, appId) ?? (l([]), () => {}), [appId]).data ?? [];
+  const binLine = [plural(deleted.filter(i => i.kind === 'test').length, 'test'), plural(deleted.filter(i => i.kind === 'group').length, 'set of shared steps', 'sets of shared steps')]
+    .filter(x => !x.startsWith('0 ')).join(' and ');
 
   const [newOpen, setNewOpen] = useState(false);
   // ?new (from the first-use checklist) opens the New test dialog once.
@@ -96,6 +100,9 @@ export default function AppScreen() {
                     <Button size="lg" onClick={() => setTab('tests')}>Open Tests</Button>
                   </div>} />
           )}
+        {app && !loading && tab !== 'runs' && binLine && (
+          <div className="app-bin"><Button kind="link" size="sm" icon="delete" onClick={() => navigate('/settings/deleted')}>{binLine} in Recently deleted</Button></div>
+        )}
       </div>
       {app && <NewTestDialog open={newOpen} app={app} onClose={() => setNewOpen(false)} />}
     </AppFrame>
