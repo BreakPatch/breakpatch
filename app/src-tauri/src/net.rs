@@ -5,7 +5,7 @@
 //! operating system to check each certificate (Security.framework on a Mac, so a company's
 //! TLS-inspection root installed in the Keychain is trusted), and `system-proxy`, which takes the
 //! Mac's Web Proxy and Secure Web Proxy settings and their bypass list (or HTTPS_PROXY and the
-//! like when set). Not a PAC file or WPAD: the manual says what to do then.
+//! like when set). Not a PAC file or WPAD: the Documentation (docs/manual.md) says what to do then.
 //!
 //! What's here: telling a certificate the Mac doesn't trust apart from "couldn't reach", so the
 //! person gets the sentence that says what to ask IT for.

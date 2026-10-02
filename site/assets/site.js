@@ -55,7 +55,7 @@ if (navLinks.length) {
   }, { passive: true });
 }
 
-// The manual: highlight the section you're reading in the contents, on the side and in the
+// The documentation: highlight the section you're reading in the contents, on the side and in the
 // small-screen menu, whose summary also names it ("Contents · Install").
 const links = [...document.querySelectorAll('.toc a, .toc-mobile a')];
 if (links.length) {
@@ -76,10 +76,10 @@ if (links.length) {
   });
 }
 
-// Manual on small screens: close the contents after picking a section.
+// Documentation on small screens: close the contents after picking a section.
 document.querySelectorAll('.toc-mobile a').forEach(a => a.addEventListener('click', () => a.closest('details').removeAttribute('open')));
 
-// Manual on small screens: "Back to the top" once you've scrolled down.
+// Documentation on small screens: "Back to the top" once you've scrolled down.
 const toTop = document.querySelector('.to-top');
 if (toTop) {
   const onScroll = () => toTop.classList.toggle('show', scrollY > 900);

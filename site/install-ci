@@ -61,7 +61,7 @@ GITHUB_API=https://api.github.com/
 API=${BREAKPATCH_API:-${GITHUB_API}repos/BreakPatch/breakpatch}
 RELEASES=https://github.com/BreakPatch/breakpatch/releases
 DOWNLOADS=${BREAKPATCH_DOWNLOADS:-$RELEASES/download/}
-MANUAL=https://breakpatch.dev/manual/#from-ci-with-breakpatch-ci
+DOCS=https://breakpatch.dev/docs/#from-ci-with-breakpatch-ci
 MARKER=breakpatch-ci.json
 
 # Python 3.11 from python-build-standalone, for machines without one: the release, the version,
@@ -651,7 +651,7 @@ do_install() {
     say "$(pretty "$bin") isn't on your PATH. Add it, for example: export PATH=\"$bin:\$PATH\""
     say "Or run it as $bin/breakpatch-ci"
   fi
-  say "How to use it: $MANUAL"
+  say "How to use it: $DOCS"
 }
 
 do_uninstall() {

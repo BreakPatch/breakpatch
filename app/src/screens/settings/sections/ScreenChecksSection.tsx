@@ -5,7 +5,8 @@ import { openExternal } from '../../../platform';
 import { useSession } from '../../../state/session';
 import { Section } from './common';
 
-const MANUAL = 'https://breakpatch.dev/manual/#run-a-test-and-read-the-report';
+/** The Documentation's section on this setting (docs/manual.md "Recorded on another system"). */
+export const SCREEN_CHECKS_DOCS = 'https://breakpatch.dev/docs/#recorded-on-another-system';
 export const ALLOW_DIFFERENCES = 'Allow for small differences between systems';
 
 export function ScreenChecksSection() {
@@ -21,7 +22,7 @@ export function ScreenChecksSection() {
         </div>
         <Switch checked={on} onChange={v => set({ allowSystemDifferences: v })} label={ALLOW_DIFFERENCES} />
       </div>
-      <p className="set-note">This applies to runs on this Mac. <Button kind="link" size="sm" onClick={() => void openExternal(MANUAL)}>More in the manual</Button></p>
+      <p className="set-note">This applies to runs on this Mac. <Button kind="link" size="sm" onClick={() => void openExternal(SCREEN_CHECKS_DOCS)}>More in the documentation</Button></p>
     </Section>
   );
 }

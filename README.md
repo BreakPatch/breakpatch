@@ -37,7 +37,7 @@
 
 <p align="center">
   <a href="https://breakpatch.dev">Website</a> ·
-  <a href="https://breakpatch.dev/manual/">Manual</a> ·
+  <a href="https://breakpatch.dev/docs/">Docs</a> ·
   <a href="https://breakpatch.dev/pricing/">Pricing</a> ·
   <a href="#install">Install</a> ·
   <a href="#for-developers">For developers</a>
@@ -113,19 +113,20 @@ straight away.
 
 **Privacy.** Your tests, screenshots and saved secrets stay on your Mac. Breakpatch sends only
 anonymous daily usage counts, with no names, addresses, screenshots or IDs. Turn them off in
-**Settings → Privacy** or with `BREAKPATCH_NO_USAGE=1`. The manual's
-[Privacy](https://breakpatch.dev/manual/#privacy) section lists exactly what's sent; the code is
+**Settings → Privacy** or with `BREAKPATCH_NO_USAGE=1`. The documentation's
+[Privacy](https://breakpatch.dev/docs/#privacy) section lists exactly what's sent; the code is
 in [`usage.rs`](app/src-tauri/src/usage.rs) and [`countUsage.ts`](app/src/data/countUsage.ts).
 
 ## Community and Team
 
-This repository is **Breakpatch Community**: free and open source. **Breakpatch Team** is the paid
-edition for teams, built from a separate private module on top of this one. **Business** is Team
-for 20 people or more, and **Solo**, the automation for one person, isn't on sale yet.
+This repository is **Breakpatch Community**: free and open source, and the edition the first
+release is for. **Breakpatch Team** is the paid edition for teams, built from a separate private
+module on top of this one. **Business** is Team for 20 people or more. Neither is on sale yet, and
+their prices aren't set.
 
 | | Community | Team |
 |---|---|---|
-| Price | Free, Apache 2.0 | Paid, per person ([pricing](https://breakpatch.dev/pricing/)) |
+| Price | Free, Apache 2.0 | Paid, per person; not on sale yet |
 | People | One person, one Mac | Your whole team, with members and roles |
 | Recording, AI assistant, screen checks, reports | Yes | Yes |
 | Where tests live | JSON files in a folder you pick | A shared workspace in your company's own Firebase project (hosted by Breakpatch is coming soon) |
@@ -140,7 +141,7 @@ workspace.
 
 ## Documentation
 
-- **[The manual](https://breakpatch.dev/manual/)**: installing, recording, running, reading the
+- **[The documentation](https://breakpatch.dev/docs/)**: installing, recording, running, reading the
   report, shared steps, suites, saved secrets, the AI assistant, privacy and troubleshooting. Its
   source is [docs/manual.md](docs/manual.md).
 - [docs/editions.md](docs/editions.md): what's in each edition, and how the code is split.
@@ -184,7 +185,7 @@ engine/               the Python engine sidecar
   PROTOCOL.md         the app ↔ engine contract
 scripts/              build-release.sh, build-ci.sh, the install commands' tests, signing and edition helpers
 tools/model-test/     compares candidate AI models on real screenshots
-docs/                 the manual's source, editions, repository settings
+docs/                 the documentation's source (manual.md), editions, repository settings
 site/                 breakpatch.dev, a static site
 ```
 

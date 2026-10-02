@@ -1,7 +1,7 @@
 name: CI
 
-# A change to documentation only (the manual, READMEs, notes) runs nothing here: the site workflow
-# builds the manual. The same skip as the Team repo's CI.
+# A change to documentation only (docs/manual.md, READMEs, notes) runs nothing here: the site workflow
+# builds the Documentation page. The same skip as the Team repo's CI.
 on:
   push:
     branches: [main]

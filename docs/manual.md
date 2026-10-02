@@ -1,8 +1,8 @@
-# Breakpatch manual
+# Breakpatch documentation
 
 Everything about Breakpatch on one page. Use the contents or your browser's find.
 
-Breakpatch comes in these editions. **Community** is free and open source: one person, one Mac, tests saved as files. **Solo** is paid, for one person: it adds fixed automatically, schedules on your Mac, notifications, result messages and the CI command line, and keeps your tests in your folder. **Team** is paid and adds a shared workspace, version history, schedules and a local runner for the whole team. **Business** is Team for 20 people or more. The last part of this manual is for the paid editions: see [Solo](#solo) for what Solo includes.
+Breakpatch comes in these editions. **Community** is free and open source: one person, one Mac, tests saved as files. **Solo** is paid, for one person: it adds fixed automatically, schedules on your Mac, notifications, result messages and the CI command line, and keeps your tests in your folder. **Team** is paid and adds a shared workspace, version history, schedules and a local runner for the whole team. **Business** is Team for 20 people or more. The last part of this documentation is for the paid editions: see [Solo](#solo) for what Solo includes.
 
 **Getting started**
 
@@ -108,7 +108,7 @@ It takes about 5 minutes on office Wi-Fi. It's safe to close Breakpatch: setup p
 3. Click through the page the way a person would. Each click becomes a step on the right.
 4. Press **Save**, then **Run**.
 
-Your first test takes about 5 minutes, so about 10 minutes from install to your first run. The rest of this manual covers each part in more detail.
+Your first test takes about 5 minutes, so about 10 minutes from install to your first run. The rest of this documentation covers each part in more detail.
 
 ---
 
@@ -373,7 +373,7 @@ Ask IT to install the network's TLS-inspection certificate in the **System** key
 2. ask their filter's vendor to rate `breakpatch.dev` (each vendor has a page for asking to re-rate a site: FortiGuard, Cisco Talos, Palo Alto URL Filtering, Zscaler and Symantec Site Review). It's software for testing websites, usually *Information Technology* or *Software*; and
 3. if they inspect TLS, install the network's certificate on the Mac (above), or exempt these addresses from inspection.
 
-You can also send IT this section: [breakpatch.dev/manual/#using-breakpatch-on-a-company-network](https://breakpatch.dev/manual/#using-breakpatch-on-a-company-network).
+You can also send IT this section: [breakpatch.dev/docs/#using-breakpatch-on-a-company-network](https://breakpatch.dev/docs/#using-breakpatch-on-a-company-network).
 
 ## Troubleshooting
 

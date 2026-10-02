@@ -4,6 +4,11 @@
     "public": ".",
     "cleanUrls": true,
     "ignore": ["firebase.json", ".firebaserc", "README.md", "build-manual.mjs", "*.test.mjs", "**/.*", "package.json", "package-lock.json", "node_modules/**"],
+    "redirects": [
+      { "source": "/manual", "destination": "/docs/", "type": 301 },
+      { "source": "/manual/", "destination": "/docs/", "type": 301 },
+      { "source": "/manual/**", "destination": "/docs/", "type": 301 }
+    ],
     "headers": [
       {
         "source": "/@(install|install-ci|install-ci.ps1)",

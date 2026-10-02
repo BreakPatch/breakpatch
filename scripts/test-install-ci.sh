@@ -527,7 +527,7 @@ for sh_name in "sh" "bash --posix"; do
   expect_out "install the libraries it needs: sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium"
   # shellcheck disable=SC2088  # the message shows a ~
   expect_out "~/.local/bin isn't on your PATH. Add it, for example: export PATH=\"$bin:\$PATH\""
-  expect_out "https://breakpatch.dev/manual/#from-ci-with-breakpatch-ci"
+  expect_out "https://breakpatch.dev/docs/#from-ci-with-breakpatch-ci"
   expect_version 1.1.0
   expect_envs 1
   if grep -qx "install chromium --no-shell | $home/browsers" "$c/state/playwright"; then ok "Chromium went into ~/.breakpatch-ci/browsers"; else bad "playwright was run as: $(cat "$c/state/playwright" 2>/dev/null)"; fi

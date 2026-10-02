@@ -51,7 +51,7 @@ def tls_untrusted(host: str) -> str:
 def proxy_auth(proxy: str | None) -> str:
     return (f"Your network's proxy{_at(proxy)} asks for a password, which Breakpatch can't send. Ask IT to let "
             "this Mac through without one (for example by its address), or for the proxy address with the "
-            "user name and password in it (see Using Breakpatch on a company network in the manual).")
+            "user name and password in it (see Using Breakpatch on a company network in the Breakpatch documentation).")
 
 
 def proxy_failed(proxy: str | None) -> str:
@@ -66,7 +66,7 @@ def proxy_refused(proxy: str | None, status: int | None) -> str:
 
 
 PAC_HINT = (" This Mac uses an automatic proxy configuration, which Breakpatch's own downloads can't read: "
-            "see Using Breakpatch on a company network in the manual.")
+            "see Using Breakpatch on a company network in the Breakpatch documentation.")
 
 
 def _at(proxy: str | None) -> str:

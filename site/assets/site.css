@@ -1,4 +1,4 @@
-/* breakpatch.dev: one stylesheet for the landing page, the manual, the connect page and 404.
+/* breakpatch.dev: one stylesheet for the landing page, the documentation, the connect page and 404.
    Dark by default; light follows the Mac's appearance. Tokens as in the app. */
 :root{
   color-scheme:dark;
@@ -300,7 +300,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 .edition li::before{content:"";position:absolute;left:2px;top:.5em;width:9px;height:9px;background:var(--accent);border-radius:5px 1px 5px 5px;transform:rotate(-14deg)}
 .edition .more{margin-top:auto;padding-top:10px;font-size:0.9375rem;font-weight:600}
 
-/* ---------- Manual ---------- */
+/* ---------- Documentation ---------- */
 .docs{display:grid;grid-template-columns:272px minmax(0,1fr);max-width:1260px;margin:0 auto}
 .toc{position:sticky;top:var(--top);align-self:start;height:calc(100vh - var(--top));overflow:auto;padding:28px 16px 40px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:1px;overscroll-behavior:contain}
 .toc-title{font-size:0.75rem;font-weight:700;color:var(--faint);padding:0 10px 6px;letter-spacing:.07em;text-transform:uppercase}

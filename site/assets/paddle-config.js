@@ -19,7 +19,7 @@
 // site has no switch of its own to flip with it. The bottom of this file asks once per page and
 // sets `soloOnSale` and <html data-solo>, remembering the last answer on this browser so a later
 // visit is drawn right at once. Until then the site doesn't show Solo at all: no card on /pricing,
-// no card or column on the home page, no domain check, and the manual's Solo section says "Coming
+// no card or column on the home page, no domain check, and the documentation's Solo section says "Coming
 // soon" (site.css `.solo-only`, `.solo-off`, `.solo-soon`). `soloMonthly` and `soloYearly` stay '' until the Solo
 // prices exist in Paddle; while either is empty for the period picked, the Solo card invites people
 // to the beta instead. Before checkout the card asks `soloDomainUrl` (the back office's

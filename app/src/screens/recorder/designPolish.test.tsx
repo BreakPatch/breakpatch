@@ -161,7 +161,7 @@ describe('DES-09: notifications blocked by macOS', () => {
   it('lets the shell open that pane, and nothing else new', () => {
     const rx = new RegExp(`^${JSON.parse(tauriConf).plugins.shell.open}$`);
     expect(rx.test(NOTIFICATION_SETTINGS_URL)).toBe(true);
-    expect(rx.test('https://breakpatch.dev/manual')).toBe(true);
+    expect(rx.test('https://breakpatch.dev/docs/#privacy')).toBe(true);
     expect(rx.test('x-apple.systempreferences:com.apple.preference.security')).toBe(false);
     expect(rx.test('file:///etc/passwd')).toBe(false);
     expect(rx.test('-a Terminal')).toBe(false);

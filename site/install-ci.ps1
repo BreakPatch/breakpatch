@@ -46,7 +46,7 @@ function Install-BreakpatchCi {
   $Releases = 'https://github.com/BreakPatch/breakpatch/releases'
   $Api = if ($env:BREAKPATCH_API) { $env:BREAKPATCH_API } else { "${GitHubApi}repos/BreakPatch/breakpatch" }
   $Downloads = if ($env:BREAKPATCH_DOWNLOADS) { $env:BREAKPATCH_DOWNLOADS } else { "$Releases/download/" }
-  $Manual = 'https://breakpatch.dev/manual/#breakpatch-ci-on-windows'
+  $Docs = 'https://breakpatch.dev/docs/#breakpatch-ci-on-windows'
   $Marker = 'breakpatch-ci.json'
   # Python 3.11 from python-build-standalone (as in site/install-ci), with its SHA-256.
   $PbsRelease = '20260924'
@@ -456,7 +456,7 @@ function Install-BreakpatchCi {
     } else {
       Say 'Run it with: breakpatch-ci run --test path\to\test.json'
     }
-    Say "How to use it: $Manual"
+    Say "How to use it: $Docs"
   } finally {
     if ($staged -and (Test-Path -LiteralPath $staged)) { Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }

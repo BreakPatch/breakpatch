@@ -47,7 +47,7 @@
     <a class="wide" href="#how">How it works</a>
     <a class="wide" href="#features">Features</a>
     <a href="/pricing/">Pricing</a>
-    <a href="/manual/">Manual</a>
+    <a href="/docs/">Docs</a>
     <a class="wide" href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a>
   </nav>
   <a class="btn" href="#install">Install</a>
@@ -64,7 +64,7 @@
           <div class="code install-cmd"><button class="copy" type="button" aria-label="Copy the install command">Copy</button><pre><code>curl -fsSL https://breakpatch.dev/install <span>| sh</span></code></pre></div>
           <p class="prelaunch" role="note"><span class="dot" aria-hidden="true"></span><span>Public release coming soon. Join the list: <a href="mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list">support@breakpatch.dev</a></span></p>
           <div class="install-actions">
-            <a href="/manual/#install">What the command does</a>
+            <a href="/docs/#install">What the command does</a>
           </div>
           <p class="reqs">Free and open source · Apple Silicon · macOS 14 or later · 16 GB memory</p>
           <p class="runs-count" id="runs-count" hidden><b id="runs-count-n"></b> tests run with Breakpatch</p>
@@ -109,7 +109,7 @@
               <li><strong>Accept new position</strong>, or dismiss it. Nothing changes until someone decides</li>
               <li>Suites show <em>Passed with fixes</em>, or fail on any fix for release checks</li>
             </ul>
-            <a class="more" href="/manual/#fixed-automatically">How fixing works</a>
+            <a class="more" href="/docs/#fixed-automatically">How fixing works</a>
           </div>
         </article>
 
@@ -124,7 +124,7 @@
             <p class="eyebrow"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12.3V4.5a1 1 0 0 1 1-1h7.8l8.2 8.2a1 1 0 0 1 0 1.4l-7.4 7.4a1 1 0 0 1-1.4 0z"/><circle cx="8" cy="8" r="1.5"/></svg>Named steps</p>
             <h3>The AI names what you clicked.</h3>
             <p>Click something and the AI says what it is, so the test reads “Click New project”, not a pair of coordinates. Each step also keeps a plain <strong>What to look for</strong>, like “Done button, bottom right of the Create project dialog”. Edit it if it's wrong.</p>
-            <a class="more" href="/manual/#record-a-test">Editing steps</a>
+            <a class="more" href="/docs/#record-a-test">Editing steps</a>
           </div>
         </article>
 
@@ -134,7 +134,7 @@
             <h3>On your Mac, and nowhere else.</h3>
             <p>The model runs on your Mac, so your screens never leave it. There's no cloud service, no API key to manage and no fee per run. Once it's downloaded, the AI works offline.</p>
             <p class="dev-note"><b>For developers:</b> Qwen3-VL 4B, open weights, run on Apple Silicon through MLX.</p>
-            <a class="more" href="/manual/#the-ai-assistant">About the AI assistant</a>
+            <a class="more" href="/docs/#the-ai-assistant">About the AI assistant</a>
           </div>
           <dl class="spec">
             <div><dt>Model</dt><dd>Qwen3-VL 4B, published openly</dd></div>
@@ -209,7 +209,7 @@
             <li><strong>Why did this fail?</strong> <span class="team-tag">Team</span> The AI says in plain words what changed, like “The Save button now reads Save changes”, and what to do</li>
             <li><strong>Create issue</strong> <span class="team-tag">Team</span> in GitHub, Linear or Jira in one click, with the steps, the screenshot and a link to the report</li>
           </ul>
-          <a class="more" href="/manual/#run-a-test-and-read-the-report">Reading the report</a>
+          <a class="more" href="/docs/#run-a-test-and-read-the-report">Reading the report</a>
         </div>
         <div class="visual">
           <div class="window">
@@ -231,7 +231,7 @@
             <li>Saved secrets stay in your Keychain. Tests only store their names</li>
             <li>Pull a change, switch back to Breakpatch, and it reads the folder again</li>
           </ul>
-          <a class="more" href="/manual/#the-tests-folder">How the tests folder works</a>
+          <a class="more" href="/docs/#the-tests-folder">How the tests folder works</a>
         </div>
         <div class="visual">
           <div class="window">
@@ -262,9 +262,9 @@ suites/smoke.json</pre>
             <li>Schedules like <em>Mon to Fri, 06:00</em></li>
             <li>Run requests from Codemagic, GitHub Actions, Bitrise or Jenkins</li>
             <li>Result messages to Slack and Microsoft Teams, with the failed step, why, and a link to the report, or to any web address</li>
-            <li>A failing test can stop a release before it ships, with <a href="/manual/#from-ci-with-breakpatch-ci"><code>breakpatch-ci</code></a></li>
+            <li>A failing test can stop a release before it ships, with <a href="/docs/#from-ci-with-breakpatch-ci"><code>breakpatch-ci</code></a></li>
           </ul>
-          <a class="more" href="/manual/#the-local-runner">About the local runner</a>
+          <a class="more" href="/docs/#the-local-runner">About the local runner</a>
         </div>
         <div class="visual">
           <div class="window">
@@ -292,10 +292,10 @@ suites/smoke.json</pre>
           <div class="points">
             <div class="point"><b>AI on your Mac</b><span>About 3 GB, downloaded once during setup. Unloaded when it's idle.</span></div>
             <div class="point"><b>Works offline</b><span>Once set up, recording and running need no connection to us.</span></div>
-            <div class="point"><b>Your storage</b><span>A folder you pick in Community. In Team, your company's own Google Firebase project: see <a href="/manual/#create-a-workspace">Create a workspace</a>.</span></div>
+            <div class="point"><b>Your storage</b><span>A folder you pick in Community. In Team, your company's own Google Firebase project: see <a href="/docs/#create-a-workspace">Create a workspace</a>.</span></div>
             <div class="point"><b>Counts you can turn off</b><span>Community sends anonymous daily totals, with no IDs. Settings → Privacy shows them.</span></div>
           </div>
-          <a class="more" href="/manual/#privacy">Exactly what's sent</a>
+          <a class="more" href="/docs/#privacy">Exactly what's sent</a>
         </div>
         <div class="visual">
           <div class="window">
@@ -353,7 +353,7 @@ suites/smoke.json</pre>
           <p class="who">Your whole team in one shared workspace.</p>
           <ul>
             <li class="plus">Everything in Community, plus:</li>
-            <li>A shared workspace in your company's own Google Firebase project (<a href="/manual/#create-a-workspace">how it's set up</a>)</li>
+            <li>A shared workspace in your company's own Google Firebase project (<a href="/docs/#create-a-workspace">how it's set up</a>)</li>
             <li>Version history for every test</li>
             <li>Self-healing tests: the AI finds buttons that moved</li>
             <li>Why did this fail?, and Create issue in GitHub, Linear or Jira</li>
@@ -399,7 +399,7 @@ suites/smoke.json</pre>
         </details>
         <details>
           <summary>Which AI model does it use?</summary>
-          <div class="a"><p>A vision AI model that runs on your Mac and reads the screen. It's about 3 GB, downloaded once during setup, and unloaded when it's idle. On a Mac with 32 GB of memory you can add a larger model (about 5 GB), though it rarely finds more.</p><p class="dev-note"><b>For developers:</b> Qwen3-VL 4B (or 8B), an open-weights vision-language model, run on Apple Silicon through MLX.</p><p>The AI names the steps you record and, in Team, finds buttons that moved and says why a step failed. Screen checks don't use it: they're a visual comparison. See <a href="/manual/#the-ai-assistant">The AI assistant</a>.</p><p>It's the only model for now. Bringing your own, a local one through Ollama or LM Studio or a cloud model, isn't available yet.</p></div>
+          <div class="a"><p>A vision AI model that runs on your Mac and reads the screen. It's about 3 GB, downloaded once during setup, and unloaded when it's idle. On a Mac with 32 GB of memory you can add a larger model (about 5 GB), though it rarely finds more.</p><p class="dev-note"><b>For developers:</b> Qwen3-VL 4B (or 8B), an open-weights vision-language model, run on Apple Silicon through MLX.</p><p>The AI names the steps you record and, in Team, finds buttons that moved and says why a step failed. Screen checks don't use it: they're a visual comparison. See <a href="/docs/#the-ai-assistant">The AI assistant</a>.</p><p>It's the only model for now. Bringing your own, a local one through Ollama or LM Studio or a cloud model, isn't available yet.</p></div>
         </details>
         <details>
           <summary>Does the AI need the internet, or cost extra to run?</summary>
@@ -407,7 +407,7 @@ suites/smoke.json</pre>
         </details>
         <details>
           <summary>Does my data leave my Mac?</summary>
-          <div class="a"><p>Your tests, screenshots and saved secrets don't. The test browser and the AI model both run on your Mac. In Community your tests are files in a folder you choose; in Team they're in your company's own Google Firebase project (see <a href="/manual/#create-a-workspace">Create a workspace</a>), not on our servers.</p><p>Community sends anonymous daily totals of tests created and runs, with no names, addresses or IDs. You can turn that off in Settings → Privacy. The manual lists <a href="/manual/#privacy">exactly what's sent</a>.</p></div>
+          <div class="a"><p>Your tests, screenshots and saved secrets don't. The test browser and the AI model both run on your Mac. In Community your tests are files in a folder you choose; in Team they're in your company's own Google Firebase project (see <a href="/docs/#create-a-workspace">Create a workspace</a>), not on our servers.</p><p>Community sends anonymous daily totals of tests created and runs, with no names, addresses or IDs. You can turn that off in Settings → Privacy. The documentation lists <a href="/docs/#privacy">exactly what's sent</a>.</p></div>
         </details>
         <details>
           <summary>Which Macs does it run on?</summary>
@@ -415,15 +415,15 @@ suites/smoke.json</pre>
         </details>
         <details>
           <summary>How do I install and update it?</summary>
-          <div class="a"><p>Paste one line into Terminal and Breakpatch is in your Applications folder a minute later<span class="prelaunch-text"> (once the public release is out: <a href="mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list">join the list</a> to hear when)</span>. No password, no admin rights. After that it updates itself, so you're always on the latest version.</p><p>Want to see exactly what it does first? <a href="/install">Read the script</a> or the <a href="/manual/#install">install guide</a>.</p></div>
+          <div class="a"><p>Paste one line into Terminal and Breakpatch is in your Applications folder a minute later<span class="prelaunch-text"> (once the public release is out: <a href="mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list">join the list</a> to hear when)</span>. No password, no admin rights. After that it updates itself, so you're always on the latest version.</p><p>Want to see exactly what it does first? <a href="/install">Read the script</a> or the <a href="/docs/#install">install guide</a>.</p></div>
         </details>
         <details>
           <summary>What does Breakpatch send back to you?</summary>
-          <div class="a"><p>Only what's needed to check a Team licence, never your tests. Community has no licence at all.</p><p>Team confirms its licence once a day and keeps working for 30 days without a connection. It sends the licence, who is using it (the person's work email, or the machine's name for a runner) and simple counts, such as how many tests ran and passed. Never test names, web addresses, steps or screenshots. The <a href="/manual/#licences-and-seats">manual</a> lists every detail.</p></div>
+          <div class="a"><p>Only what's needed to check a Team licence, never your tests. Community has no licence at all.</p><p>Team confirms its licence once a day and keeps working for 30 days without a connection. It sends the licence, who is using it (the person's work email, or the machine's name for a runner) and simple counts, such as how many tests ran and passed. Never test names, web addresses, steps or screenshots. The <a href="/docs/#licences-and-seats">documentation</a> lists every detail.</p></div>
         </details>
         <details>
           <summary>Can I use it in CI?</summary>
-          <div class="a"><p>Yes, with Team, in two ways. Your pipeline can add a run request, and the local runner runs the suite and sends the result to Slack, Microsoft Teams or any web address. Or run <code>breakpatch-ci run --test</code> on the CI machine: it tells your pipeline whether the test passed, so a failing test stops the build. Both work with Codemagic, GitHub Actions, Bitrise and Jenkins. See <a href="/manual/#run-requests">Run requests</a> and <a href="/manual/#from-ci-with-breakpatch-ci">From CI with breakpatch-ci</a>.</p></div>
+          <div class="a"><p>Yes, with Team, in two ways. Your pipeline can add a run request, and the local runner runs the suite and sends the result to Slack, Microsoft Teams or any web address. Or run <code>breakpatch-ci run --test</code> on the CI machine: it tells your pipeline whether the test passed, so a failing test stops the build. Both work with Codemagic, GitHub Actions, Bitrise and Jenkins. See <a href="/docs/#run-requests">Run requests</a> and <a href="/docs/#from-ci-with-breakpatch-ci">From CI with breakpatch-ci</a>.</p></div>
         </details>
       </div>
     </div>
@@ -437,7 +437,7 @@ suites/smoke.json</pre>
       <div class="code install-cmd"><button class="copy" type="button" aria-label="Copy the install command">Copy</button><pre><code>curl -fsSL https://breakpatch.dev/install <span>| sh</span></code></pre></div>
       <p class="prelaunch" role="note"><span class="dot" aria-hidden="true"></span><span>Public release coming soon. Join the list: <a href="mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list">support@breakpatch.dev</a></span></p>
       <div class="install-actions">
-        <a href="/manual/">Read the manual</a>
+        <a href="/docs/">Read the documentation</a>
       </div>
     </div>
   </section>
@@ -451,7 +451,7 @@ suites/smoke.json</pre>
       <p><a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></p>
     </div>
     <nav class="foot-links" aria-label="Footer">
-      <a href="/manual/">Manual</a>
+      <a href="/docs/">Docs</a>
       <a href="/pricing/">Pricing</a>
       <a href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a>
       <a href="https://github.com/BreakPatch/breakpatch/releases" data-gh="/releases">Releases</a>

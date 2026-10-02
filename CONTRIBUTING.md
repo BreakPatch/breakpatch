@@ -33,7 +33,7 @@ The README's [For developers](README.md#for-developers) section has the architec
 
 ## Things we won't merge
 
-- Anything that sends screenshots, test data or secrets off the user's Mac, or usage data beyond the anonymous counts the manual's Privacy section describes.
+- Anything that sends screenshots, test data or secrets off the user's Mac, or usage data beyond the anonymous counts the documentation's [Privacy](https://breakpatch.dev/docs/#privacy) section describes.
 - Pixels decide. Page structure (accessible names and roles) may only be used to find things, never CSS or XPath selectors, and every step is still checked on the screen.
 - New settings that ask users to tune numbers. If it needs tuning, the app should work it out.
 

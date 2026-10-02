@@ -9,7 +9,7 @@ site/
   install               the install command's script (served as text/plain, see firebase.json)
   install-ci            breakpatch-ci's install command (Team, for CI machines; text/plain too)
   install-ci.ps1        the same for Windows, in PowerShell (irm … | iex; text/plain too)
-  manual/index.html     the full manual (built from docs/manual.md)
+  docs/index.html       the Documentation page (built from docs/manual.md); /manual/ redirects here
   connect/index.html    Team invite link page
   report/index.html     run report links from Slack, Teams and issues (opens the report in the app)
   pricing/index.html    pricing and the Team checkout (Paddle.js overlay)
@@ -26,16 +26,16 @@ site/
   assets/shots/         app screenshots, WebP, 1x and 2x, dark and light
   assets/og.png         social preview image (1200 × 630)
   assets/favicon.svg
-  build-manual.mjs      builds manual/index.html from docs/manual.md
+  build-manual.mjs      builds docs/index.html from docs/manual.md
 ```
 
-The pricing, thanks and legal pages (`pricing/`, `thanks/`, `terms/`, `privacy/`, `refunds/`, `assets/pricing.*`, `assets/paddle-config.js`) sit on top of `site.css`: keep `.edition`, `.price` and `.home` working when you change it. Every page, the manual included, has the same footer as `index.html` (`.site-foot.rich`): change it everywhere at once.
+The pricing, thanks and legal pages (`pricing/`, `thanks/`, `terms/`, `privacy/`, `refunds/`, `assets/pricing.*`, `assets/paddle-config.js`) sit on top of `site.css`: keep `.edition`, `.price` and `.home` working when you change it. Every page, the Documentation included, has the same footer as `index.html` (`.site-foot.rich`): change it everywhere at once.
 
 ## Launch day
 
 - **GitHub links.** Every GitHub link is `<a data-gh="/path">`, and `assets/site.js` points them all at `GITHUB` (one line at its top). The HTML also has the full address in `href` for browsers without JavaScript. The repository is private, so these 404 for visitors until it's public.
-- **Pre-launch notes.** While a page's `<html>` has `data-prelaunch`, it shows its `.prelaunch` notes ("Public release coming soon. Join the list") and `.prelaunch-text` words (Home's install answer, Pricing's "or email support@breakpatch.dev"). The pages that have it: `index.html`, `pricing/`, `connect/`, and the manual through `build-manual.mjs`. On launch day, delete the attribute from each (`grep -rl data-prelaunch site`), then run `node site/build-manual.mjs`. The manual's notes are the paragraphs starting with `<!-- prelaunch -->` in `docs/manual.md`: delete those too.
-- **Solo.** Solo goes on sale on the site when the back office's `SOLO_ON_SALE` is on (its README, "Solo"): `assets/paddle-config.js` asks its `GET /api/solo-domain`, which answers 404 until then, and sets `soloOnSale` from the answer (remembered on each browser, so a later visit is drawn right at once). There's no switch on the site to flip with it; put the Solo prices in `paddle-config.js` first. While Solo isn't on sale, `<html>` has no `data-solo`, and `site.css` hides every `.solo-only` element (the Solo cards on Home and Pricing, the Solo column in Home's table, and the words about Solo in Home's and Pricing's text and questions), shows the `.solo-off` ones in their place, and shows the manual's `.solo-soon` notes ("Coming soon", the paragraphs starting with `<!-- solo-soon -->` in `docs/manual.md`, styled like the pre-launch notes). `pricing.js` then doesn't set up the Solo card at all, so the domain check is never called. `paddle-config.js` sets `data-solo` from `<head>` on Home, Pricing and the manual, so the page never moves. The terms, refunds and privacy pages mention Solo as "when offered" either way. Anything new about Solo on those pages gets `class="solo-only"`.
+- **Pre-launch notes.** While a page's `<html>` has `data-prelaunch`, it shows its `.prelaunch` notes ("Public release coming soon. Join the list") and `.prelaunch-text` words (Home's install answer, Pricing's "or email support@breakpatch.dev"). The pages that have it: `index.html`, `pricing/`, `connect/`, and the Documentation through `build-manual.mjs`. On launch day, delete the attribute from each (`grep -rl data-prelaunch site`), then run `node site/build-manual.mjs`. The Documentation's notes are the paragraphs starting with `<!-- prelaunch -->` in `docs/manual.md`: delete those too.
+- **Solo.** Solo goes on sale on the site when the back office's `SOLO_ON_SALE` is on (its README, "Solo"): `assets/paddle-config.js` asks its `GET /api/solo-domain`, which answers 404 until then, and sets `soloOnSale` from the answer (remembered on each browser, so a later visit is drawn right at once). There's no switch on the site to flip with it; put the Solo prices in `paddle-config.js` first. While Solo isn't on sale, `<html>` has no `data-solo`, and `site.css` hides every `.solo-only` element (the Solo cards on Home and Pricing, the Solo column in Home's table, and the words about Solo in Home's and Pricing's text and questions), shows the `.solo-off` ones in their place, and shows the Documentation's `.solo-soon` notes ("Coming soon", the paragraphs starting with `<!-- solo-soon -->` in `docs/manual.md`, styled like the pre-launch notes). `pricing.js` then doesn't set up the Solo card at all, so the domain check is never called. `paddle-config.js` sets `data-solo` from `<head>` on Home, Pricing and the Documentation, so the page never moves. The terms, refunds and privacy pages mention Solo as "when offered" either way. Anything new about Solo on those pages gets `class="solo-only"`.
 
 ## Private beta
 
@@ -87,20 +87,22 @@ npx firebase deploy --only hosting:breakpatch-web --project breakpatch-backoffic
 
 Until the domain is connected, `https://breakpatch.dev` (and the invite links built on it) won't load. `https://breakpatch-web.web.app` works straight away.
 
-Leave `trailingSlash` unset or `true`, so `/manual` and `/connect` open their `index.html`. Browsers keep the `#c=…` part of an invite link through that redirect.
+Leave `trailingSlash` unset or `true`, so `/docs` and `/connect` open their `index.html`. Browsers keep the `#c=…` part of an invite link through that redirect.
+
+The Documentation used to be at `/manual/`. `firebase.json` redirects `/manual`, `/manual/` and anything under it to `/docs/` (301), and browsers keep the part after `#` through a redirect, so old links like `/manual/#run-requests` still open the right section.
 
 The invite link address lives in `app/lib/workspaceLink.ts` in the private Team repo.
 
-## Keep the manual in sync
+## Keep the Documentation in sync
 
 `docs/manual.md` is the source. After editing it, rebuild the page (Node 18 or later, nothing to install):
 
 ```sh
-node site/build-manual.mjs           # writes site/manual/index.html
+node site/build-manual.mjs           # writes site/docs/index.html
 node site/build-manual.mjs --check   # exits 1 if the page is out of date, for CI
 ```
 
-The script keeps the classes the CSS and JS rely on: `.docs`, `.toc`, `.content`, `section[id]`, `.code`. Section ids are the same as GitHub's heading anchors, so `manual/#run-requests` works on the site and on GitHub. The app links to `https://breakpatch.dev/manual/#run-requests`, so keep that heading as it is.
+The script keeps the classes the CSS and JS rely on: `.docs`, `.toc`, `.content`, `section[id]`, `.code`. Section ids are the same as GitHub's heading anchors, so `docs/#run-requests` works on the site and on GitHub. The app links to `https://breakpatch.dev/docs/#run-requests` (and `#privacy`, `#recorded-on-another-system`), and `docs-links.test.mjs` checks every link into the page names a heading it has: rename a heading only together with every link to it.
 
 In the Markdown, `# ` headings are parts (Getting started, Community, Team), `## ` headings are sections and `### ` are subsections. Sections in the Team part get a *Team* tag. Everything before the first `---` is the intro: its paragraphs become the lead, and the contents list is left out because the page makes its own.
 

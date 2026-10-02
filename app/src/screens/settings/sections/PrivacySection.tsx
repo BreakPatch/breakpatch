@@ -1,4 +1,5 @@
-// Settings → Privacy: what Breakpatch sends about how it's used (docs/manual.md "Privacy").
+// Settings → Privacy: what Breakpatch sends about how it's used (docs/manual.md "Privacy", on the
+// Documentation page at breakpatch.dev/docs/).
 // Community: anonymous daily totals, on unless turned off here. Team: counts go with the licence
 // check. Either way only numbers, and the next report is shown here exactly as it would be sent.
 import { useEffect, useState } from 'react';
@@ -8,7 +9,7 @@ import { pendingLine, usage, type UsageSettings } from '../../../lib/usage';
 import { openExternal } from '../../../platform';
 import { Section } from './common';
 
-const MANUAL = 'https://breakpatch.dev/manual/#privacy';
+export const PRIVACY_DOCS = 'https://breakpatch.dev/docs/#privacy';
 
 export function PrivacySection() {
   const [s, setS] = useState<UsageSettings | null>(null);
@@ -54,7 +55,7 @@ export function PrivacySection() {
       </div>
 
       {s && (s.enabled || !community) && <p className="set-note" data-testid="usage-pending">Waiting to be sent: {pendingLine(s.pending)}</p>}
-      <p className="set-note">{community ? 'You can also turn it off with the environment variable BREAKPATCH_NO_USAGE=1. ' : ''}<Button kind="link" size="sm" onClick={() => void openExternal(MANUAL)}>More in the manual</Button></p>
+      <p className="set-note">{community ? 'You can also turn it off with the environment variable BREAKPATCH_NO_USAGE=1. ' : ''}<Button kind="link" size="sm" onClick={() => void openExternal(PRIVACY_DOCS)}>More in the documentation</Button></p>
     </Section>
   );
 }

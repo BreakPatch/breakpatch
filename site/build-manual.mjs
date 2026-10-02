@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Builds site/manual/index.html from docs/manual.md. Node built-ins only, no install.
+// Builds the Documentation page, site/docs/index.html, from docs/manual.md. Node built-ins only,
+// no install. The old address, /manual/, redirects to /docs/ (firebase.json), anchors included.
 //
 //   node site/build-manual.mjs          write the page
 //   node site/build-manual.mjs --check  exit 1 if the page is out of date
 //
-// It understands the Markdown the manual uses: "# " parts, "## " sections, "### " subsections,
+// It understands the Markdown the documentation uses: "# " parts, "## " sections, "### " subsections,
 // paragraphs, lists (nested by indent), tables, fenced code, `code`, **bold**, *italic*, [links](…).
 // A paragraph that starts with <!-- prelaunch --> becomes the "Public release coming soon" note,
 // shown only while <html> has data-prelaunch (GitHub hides the comment and shows the text).
@@ -12,14 +13,14 @@
 // shown only while Solo isn't on sale (no <html data-solo>: assets/paddle-config.js asks the back office).
 // Everything before the first "---" is the intro: its paragraphs become the lead, and its
 // contents list is skipped (the page builds its own). Ids match GitHub's heading anchors, so
-// links like manual/#run-requests work on both.
-import { readFileSync, writeFileSync } from 'node:fs';
+// links like docs/#run-requests work on both.
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SRC = join(here, '..', 'docs', 'manual.md');
-const OUT = join(here, 'manual', 'index.html');
+const OUT = join(here, 'docs', 'index.html');
 
 const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -168,15 +169,15 @@ export function build(md) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Manual · Breakpatch</title>
-<meta name="description" content="The Breakpatch manual: install, the tests folder, recording and running tests, suites, and the Team edition's workspace, local runner and run requests.">
-<link rel="canonical" href="https://breakpatch.dev/manual/">
+<title>Breakpatch documentation</title>
+<meta name="description" content="The Breakpatch documentation: install, the tests folder, recording and running tests, suites, and the Team edition's workspace, local runner and run requests.">
+<link rel="canonical" href="https://breakpatch.dev/docs/">
 <meta name="theme-color" content="#171412" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#FBF7F3" media="(prefers-color-scheme: light)">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Breakpatch">
-<meta property="og:url" content="https://breakpatch.dev/manual/">
-<meta property="og:title" content="The Breakpatch manual">
+<meta property="og:url" content="https://breakpatch.dev/docs/">
+<meta property="og:title" content="Breakpatch documentation">
 <meta property="og:description" content="Everything about Breakpatch on one page: install, recording, the report, suites, and the Team edition.">
 <meta property="og:image" content="https://breakpatch.dev/assets/og.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -193,10 +194,10 @@ export function build(md) {
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="top"><a class="brand" href="/" aria-label="Breakpatch home"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a><nav aria-label="Main"><a href="/#ai">AI</a><a class="wide" href="/#how">How it works</a><a class="wide" href="/#features">Features</a><a href="/pricing/">Pricing</a><a href="/manual/" aria-current="page">Manual</a><a class="wide" href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a></nav><a class="btn" href="/#install">Install</a></header>
+<header class="top"><a class="brand" href="/" aria-label="Breakpatch home"><span class="ear" aria-hidden="true"></span><span><b>break</b>patch</span></a><nav aria-label="Main"><a href="/#ai">AI</a><a class="wide" href="/#how">How it works</a><a class="wide" href="/#features">Features</a><a href="/pricing/">Pricing</a><a href="/docs/" aria-current="page">Docs</a><a class="wide" href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a></nav><a class="btn" href="/#install">Install</a></header>
 <div class="docs">
 <aside class="toc" aria-label="Contents">${tocLinks}</aside>
-<main class="content" id="main"><h1>Manual</h1>
+<main class="content" id="main"><h1>Documentation</h1>
 ${leadHtml}
 ${mobileToc}
 ${content}
@@ -211,7 +212,7 @@ ${content}
       <p><a href="mailto:support@breakpatch.dev">support@breakpatch.dev</a></p>
     </div>
     <nav class="foot-links" aria-label="Footer">
-      <a href="/manual/">Manual</a>
+      <a href="/docs/">Docs</a>
       <a href="/pricing/">Pricing</a>
       <a href="https://github.com/BreakPatch/breakpatch" data-gh="">GitHub</a>
       <a href="https://github.com/BreakPatch/breakpatch/releases" data-gh="/releases">Releases</a>
@@ -235,9 +236,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (process.argv.includes('--check')) {
     let now = '';
     try { now = readFileSync(OUT, 'utf8'); } catch {}
-    if (now !== html) { console.error('site/manual/index.html is out of date. Run: node site/build-manual.mjs'); process.exit(1); }
-    console.log('site/manual/index.html is up to date.');
+    if (now !== html) { console.error('site/docs/index.html is out of date. Run: node site/build-manual.mjs'); process.exit(1); }
+    console.log('site/docs/index.html is up to date.');
   } else {
+    mkdirSync(dirname(OUT), { recursive: true });
     writeFileSync(OUT, html);
     console.log(`Wrote ${OUT}`);
   }

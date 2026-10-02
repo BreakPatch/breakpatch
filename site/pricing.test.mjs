@@ -512,7 +512,7 @@ function without(html, cls) {
 /** What a visitor can read or follow: text and links, without comments, scripts, styles or <head>. */
 const visible = html => html.replace(/<head>[\s\S]*?<\/head>/, '').replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/g, '');
 const HOME = read('./index.html');
-const MANUAL_PAGE = read('./manual/index.html');
+const MANUAL_PAGE = read('./docs/index.html');
 const SITE_CSS = read('./assets/site.css');
 const PRICING_CSS = read('./assets/pricing.css');
 

@@ -3,7 +3,7 @@
 # Runs one suite of a Breakpatch Team workspace with breakpatch-ci, as the `breakpatch` user: the
 # instance name is the suite's ID or name (breakpatch-suite@smoke-7f3a.service). Started by
 # breakpatch-suite@<suite>.timer, or by hand: sudo systemctl start breakpatch-suite@smoke-7f3a.
-# The manual's "Raspberry Pi runner" section (docs/manual.md) has the whole set-up.
+# The Documentation's "Raspberry Pi runner" section (docs/manual.md, breakpatch.dev/docs/) has the whole set-up.
 #
 # Secrets come in as systemd credentials, never as Environment= lines: they're readable by this
 # service only, and `systemctl show` doesn't print them. run-suite turns them into the variables
@@ -20,7 +20,7 @@ User=breakpatch
 Group=breakpatch
 WorkingDirectory=/home/breakpatch
 # BP_SANDBOX=1: Chromium's own sandbox (Raspberry Pi OS and Debian allow the user namespaces it
-# needs). BP_TIMINGS_SCALE=2: a Pi is slower than the Mac the tests were recorded on; see the manual.
+# needs). BP_TIMINGS_SCALE=2: a Pi is slower than the Mac the tests were recorded on; see the Documentation.
 Environment=BP_SANDBOX=1 BP_TIMINGS_SCALE=2
 # BREAKPATCH_CI_EMAIL, BREAKPATCH_MACHINE_ID, BREAKPATCH_WORKSPACE_FILE, BREAKPATCH_SUITE_OPTIONS:
 # not secret, one file for every suite.
