@@ -56,6 +56,10 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
 /* Where am I: the current page, and on the landing page the section you're reading. */
 .top nav a[aria-current]{color:var(--text);font-weight:600}
 .top nav a[aria-current]::after{content:"";position:absolute;left:0;right:0;bottom:2px;height:2px;border-radius:2px;background:var(--accent)}
+/* Phones fold the links into a Menu button (assets/site.js adds it; the @media (max-width:560px) rules below). */
+.nav-toggle{display:none;align-items:center;justify-content:center;width:44px;height:44px;flex:none;margin-left:auto;padding:0;border:1px solid var(--line2);border-radius:var(--r-sm);background:transparent;color:var(--text);cursor:pointer}
+.nav-toggle svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.nav-toggle[aria-expanded="true"]{border-color:var(--accent);color:var(--accent)}
 
 /* Buttons */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;cursor:pointer;font-family:var(--font);background:var(--accent);color:var(--on-accent);border-radius:var(--r-sm);padding:9px 16px;font-weight:700;font-size:0.9375rem;line-height:1.3;white-space:nowrap;transition:background .15s ease-out,scale .12s ease-out,box-shadow .15s ease-out}
@@ -113,6 +117,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 /* A short, secondary line with the technical detail, for developers. */
 .dev-note{font-size:0.8438rem!important;color:var(--faint)!important;letter-spacing:.01em;line-height:1.5}
 .dev-note b{font-weight:600;color:var(--muted)}
+.dev-note code{font-size:max(0.75rem,.9em)}
 .hero-shot{margin:64px auto 0;max-width:1120px}
 .window{border-radius:14px;overflow:hidden;box-shadow:var(--shadow);background:var(--surface)}
 .window img{width:100%}
@@ -121,8 +126,9 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 /* "AI on your Mac" badge in the hero */
 .ai-badge{display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px 9px;margin:0;padding:6px 15px 6px 11px;border-radius:999px;background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);color:var(--text);font-size:0.875rem;font-weight:600;line-height:1.35}
 .ai-badge svg{width:16px;height:16px;fill:var(--accent);flex:none}
-.ai-badge .sep{width:4px;height:4px;border-radius:50%;background:var(--faint);flex:none}
-.ai-badge .soft{color:var(--muted);font-weight:500}
+.ai-badge .soft{display:inline-flex;align-items:center;gap:9px;color:var(--muted);font-weight:500}
+/* The dot goes with the words after it, so a badge that wraps starts its second line with it, never ends the first. */
+.ai-badge .soft::before{content:"";width:4px;height:4px;border-radius:50%;background:var(--faint);flex:none}
 .sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
 .band{padding:112px 0}
@@ -409,11 +415,30 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .foot-links{grid-template-columns:repeat(2,auto);gap:10px 32px}
 }
 @media (max-width:560px){
-  .top .brand{font-size:1.125rem}
-  .top nav a{font-size:0.9062rem}
-  .install-cmd pre{padding:13px 14px 46px}
-  .install-cmd pre code{font-size:0.8125rem;white-space:pre-wrap;word-break:break-word}
-  .install-cmd .copy{top:auto;bottom:8px;transform:none}
+  .top .brand{font-size:1.125rem;min-height:44px}
+  .top .btn{min-height:44px}
+  /* Without JavaScript (no Menu button), the links stay in the bar and scroll sideways there. */
+  .top:not(.has-menu) nav{overflow-x:auto;scrollbar-width:none}
+  .top:not(.has-menu) nav a{padding:12px 0}
+  .top.has-menu nav{display:none}
+  .has-menu .nav-toggle{display:inline-flex}
+  .top.has-menu.open nav{display:flex;flex-direction:column;gap:0;position:absolute;top:100%;left:0;right:0;padding:4px 16px 12px;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:0 24px 40px -24px rgba(0,0,0,.55)}
+  .top.has-menu.open nav a,.top.has-menu.open nav a.wide{display:flex;align-items:center;min-height:48px;padding:0 4px;font-size:1.0625rem;border-top:1px solid var(--line)}
+  .top.has-menu.open nav a:first-child{border-top:0}
+  .top.has-menu.open nav a[aria-current]::after{left:4px;right:auto;width:24px;bottom:8px}
+  /* The install command stays on one line and scrolls sideways; Copy stays put at its end. */
+  .install-cmd pre{padding:0 0 0 14px;overflow-x:auto;scrollbar-width:none}
+  .install-cmd pre code{display:inline-block;padding-right:92px;line-height:56px;font-size:0.8125rem;white-space:pre}
+  .install-cmd .copy{top:1px;bottom:1px;right:1px;transform:none;min-width:68px;min-height:44px;border:0;border-left:1px solid var(--line2);border-radius:0 11px 11px 0;background:var(--surface)}
+  .install-cmd .copy::before{content:"";position:absolute;right:100%;top:0;bottom:0;width:24px;pointer-events:none;background:linear-gradient(to right,transparent,var(--surface))}
+  .copy{min-height:44px;min-width:44px}
+  .btn{min-height:44px}
+  .more{display:inline-flex;align-items:center;min-height:44px}
+  .foot-links a{display:inline-flex;align-items:center;min-height:44px}
+  .foot-brand .brand{min-height:44px}
+  .skip{min-height:44px;display:inline-flex;align-items:center}
+  .install-actions a{display:inline-flex;align-items:center;min-height:44px}
+  .toc-mobile a{display:flex;align-items:center;min-height:44px}
   .install-actions .btn{width:100%}
   [data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon{border-radius:14px;align-items:flex-start}
   .prelaunch .dot,.solo-soon .dot{margin-top:7px}
@@ -422,7 +447,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .copytext p{font-size:1.0312rem}
   .faq summary{font-size:1.0312rem;padding:16px 48px 16px 18px}
   .faq .a{padding:0 18px 16px}
-  .term{font-size:0.7188rem;width:92%;margin-top:-24px}
+  .term{font-size:0.75rem;width:92%;margin-top:-24px}
   .ai-card{border-radius:16px}
   .ai-card.wide .ai-media{padding:14px}
   .ai-text,.ai-card.wide .ai-text{padding:22px 20px 24px}
@@ -479,3 +504,5 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 @media (prefers-contrast:more) and (prefers-color-scheme:light){
   :root{--muted:#2E241E;--faint:#3E322A;--line:#A89585;--line2:#7F6B5C;--text2:#221A15}
 }
+/* Long inline code (addresses, commands, variables) wraps in running text instead of widening the page. */
+.content :is(p,li,td,dd) code{overflow-wrap:anywhere}

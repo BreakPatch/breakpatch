@@ -27,6 +27,7 @@ site/
   assets/og.png         social preview image (1200 × 630)
   assets/favicon.svg
   build-manual.mjs      builds manual/index.html from docs/manual.md
+  header-check.py       every page at phone widths in a real browser (header.test.mjs runs it)
 ```
 
 The pricing, thanks and legal pages (`pricing/`, `thanks/`, `terms/`, `privacy/`, `refunds/`, `assets/pricing.*`, `assets/paddle-config.js`) sit on top of `site.css`: keep `.edition`, `.price` and `.home` working when you change it. Every page, the manual included, has the same footer as `index.html` (`.site-foot.rich`): change it everywhere at once.
@@ -48,6 +49,10 @@ curl -fsSL https://breakpatch.dev/install | BREAKPATCH_GITHUB_TOKEN=<token> BREA
 `install-ci` takes the same `BREAKPATCH_GITHUB_TOKEN` and `BREAKPATCH_CHANNEL`. It's tested like `install`, by `scripts/test-install-ci.sh`, which also runs `install-ci.ps1` with PowerShell 7 (`pwsh`) on Linux when it's installed. `install-ci.ps1` takes the same variables (as `$env:NAME` before `irm … | iex`); its token path and the `.cmd` it writes need a check on a real Windows machine.
 
 The token is a fine-grained personal access token for `BreakPatch/breakpatch` only, Contents read-only, expiring in 7 days. The script sends it to `https://api.github.com` only, never prints it or puts it on a command line, and downloads through the API's asset addresses. `BREAKPATCH_CHANNEL=beta` picks the newest release, prereleases included (GitHub's `releases/latest` skips them). The main README's "Private beta" section has the details. Once the repository is public the token isn't needed: the plain command works, and the token mode can go.
+
+## Phones
+
+At 560 px and narrower, the header's links fold into a Menu button next to Install (`assets/site.js` adds the button to every page's `nav[aria-label="Main"]`, the manual's included; without JavaScript the links scroll sideways inside the bar). The install command stays on one line and scrolls, with Copy at its end, and buttons, footer links and Copy are at least 44 px tall. `node --test site/header.test.mjs` checks the rules, and runs `site/header-check.py` (Python Playwright; `BP_CHROMIUM` names the Chromium) for every page at 360, 390 and 430 px, light and dark: no sideways scroll, nothing in the header overlapping or sticking out, and the menu opening, closing on Esc and giving focus back.
 
 ## Screenshots
 

@@ -1,9 +1,46 @@
-// breakpatch.dev: GitHub links, copy buttons, where-you-are highlighting. No framework.
+// breakpatch.dev: GitHub links, the phone menu, copy buttons, where-you-are highlighting. No framework.
 
 // Every GitHub link on the site is <a data-gh="/path">. Change this one line to move them all
 // (the repository is private until the public release, so these 404 for visitors until then).
 const GITHUB = 'https://github.com/BreakPatch/breakpatch';
 document.querySelectorAll('[data-gh]').forEach(a => { a.href = GITHUB + a.dataset.gh; });
+
+// The header on phones (site.css, max-width 560px): the main links fold into a Menu button next to
+// Install. The button is added here, so every page's header (the manual's too, from
+// build-manual.mjs) gets it without markup of its own; without JavaScript the links stay in the bar
+// and scroll sideways there instead. Esc closes the menu and puts focus back on the button, a link
+// or a tap outside closes it, and so does focus leaving the header.
+const topBar = document.querySelector('header.top');
+const mainNav = topBar && topBar.querySelector('nav[aria-label="Main"]');
+if (mainNav) {
+  mainNav.id = mainNav.id || 'main-nav';
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'nav-toggle';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', mainNav.id);
+  toggle.setAttribute('aria-label', 'Menu');
+  toggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
+  mainNav.before(toggle);
+  topBar.classList.add('has-menu');
+  const isOpen = () => topBar.classList.contains('open');
+  const setOpen = (open, focus) => {
+    topBar.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Menu');
+    if (open && focus) mainNav.querySelector('a')?.focus();
+    if (!open && focus) toggle.focus();
+  };
+  // Opened from the keyboard (no pointer: detail 0), focus goes to the first link; a tap leaves it on the button.
+  toggle.addEventListener('click', e => setOpen(!isOpen(), e.detail === 0));
+  mainNav.addEventListener('click', e => { if (e.target.closest('a')) setOpen(false, false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen()) { e.preventDefault(); setOpen(false, true); } });
+  document.addEventListener('click', e => { if (isOpen() && !topBar.contains(e.target)) setOpen(false, false); });
+  topBar.addEventListener('focusout', e => { if (isOpen() && e.relatedTarget && !topBar.contains(e.relatedTarget)) setOpen(false, false); });
+  // Wider than a phone the links are back in the bar, so nothing stays open.
+  const wide = matchMedia('(min-width: 561px)');
+  if (wide.addEventListener) wide.addEventListener('change', m => { if (m.matches) setOpen(false, false); });
+}
 
 // Copy buttons. The label changes at once, and a polite live region says so for screen readers
 // (the install buttons have an aria-label, so their text change alone isn't announced).
