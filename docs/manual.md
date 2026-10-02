@@ -283,10 +283,12 @@ Passwords and emails that tests type in. Add them in Settings → **Saved secret
 
 A small AI model that runs only on your Mac. Your screens never leave it. It names what you click, and is unloaded when it's idle.
 
-On sites with good page structure (buttons, links and fields that say what they are), Breakpatch finds what you describe at once, from the names the page gives them, without the AI assistant. It uses the AI assistant when the page doesn't say, or draws everything itself, like Flutter apps and canvas pages. Either way it clicks a spot on the screen and checks the step on the screen.
+On sites with good page structure (buttons, links and fields that say what they are), Breakpatch names what you click at once, from the names the page gives them, without the AI assistant. It uses the AI assistant when the page doesn't say, or draws everything itself, like Flutter apps and canvas pages. Either way it clicks a spot on the screen and checks the step on the screen.
 
 - **Standard** is downloaded during setup (about 3 GB). It works well for almost every team.
 - **Larger** is optional on Macs with 32 GB of memory or more (about 5 GB). It's slower to load and rarely finds more.
+
+These are the only models for now. Bringing your own model, a local one through Ollama or LM Studio or a cloud model, isn't available yet.
 
 Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it to name what you click, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)) and explaining a failure ([Why did this fail?](#why-did-this-fail)) are Team only.
 

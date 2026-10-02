@@ -49,7 +49,7 @@
     <img src="site/assets/shots/recorder-dark@2x.webp" width="880" alt="The Breakpatch recorder. The web app being tested is on the left, the recorded steps are on the right, and the AI assistant asks “Is this the New project button?” with Confirm and Try again.">
   </picture>
   <br>
-  <sub>The recorder. You described a step, and the AI on your Mac found the button.</sub>
+  <sub>The recorder. You clicked on the page, and the AI on your Mac named the button.</sub>
 </p>
 
 ## Install
@@ -94,7 +94,8 @@ straight away.
   plain *What to look for* that you can edit.
 - **The AI runs on your Mac.** Qwen3-VL 4B, an open-weights model, on Apple Silicon through MLX.
   Your screens never leave the Mac, there are no API keys and no per-run fees, and it works
-  offline once it's downloaded.
+  offline once it's downloaded. It's the only model for now: bringing your own (a local one through
+  Ollama or LM Studio, or a cloud model) isn't available yet.
 - **Screen checks you don't set up.** After every step, Breakpatch checks that the screen changed
   the way it did when you recorded it. It's a perceptual comparison, not AI, so the same screen
   always gets the same answer, and it leaves out the parts that change by themselves, like clocks
