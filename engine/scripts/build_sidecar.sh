@@ -187,6 +187,7 @@ if [ "$compiler" = nuitka ]; then
     --include-module=scipy.fftpack \
     --include-package=imagehash \
     --include-package=rapidfuzz \
+    --include-package=truststore \
     --nofollow-import-to=tkinter --nofollow-import-to=matplotlib --nofollow-import-to=pytest \
     --assume-yes-for-downloads --remove-output \
     $mlx_flags \
@@ -202,6 +203,8 @@ fi
 # ---------------------------------------------------------------- pyinstaller (default)
 # rapidfuzz (the fast locator, dom/s0.py) picks its compiled or pure-Python implementation at
 # import time, by module name: both packagers are told to take all of it.
+# truststore (net.py: the system certificate store) is imported inside a function, with a fallback
+# when it's missing: both packagers are told to take it, so a release never quietly falls back.
 
 "$PYTHON" -c "import PyInstaller" 2>/dev/null || { echo "build_sidecar: PyInstaller missing: $PYTHON -m pip install -e '${engine_dir}[dev]'" >&2; exit 1; }
 
@@ -230,6 +233,7 @@ fi
   --collect-submodules imagehash \
   --collect-submodules rapidfuzz \
   --hidden-import scipy.fftpack \
+  --hidden-import truststore \
   --exclude-module tkinter --exclude-module matplotlib --exclude-module pytest \
   $extra \
   "$work/entry.py"
