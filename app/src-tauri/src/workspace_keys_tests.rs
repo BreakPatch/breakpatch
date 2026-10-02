@@ -251,6 +251,9 @@ fn a_typo_in_the_recovery_code_is_caught() {
     assert!(parse_recovery_code("bpmk1_abc").is_err());
     // The other secrets' shapes say what they are.
     assert!(parse_recovery_code(&format!("BPM1-{}-{}", "0".repeat(32), "1".repeat(64))).unwrap_err().contains("machine pass"));
+    let token = |p: &str| format!("{p}-{}-{}-{}", "k".repeat(28), "m".repeat(16), "c".repeat(64));
+    assert!(parse_recovery_code(&token("BPC1")).unwrap_err().starts_with("That's a CI token (BPC1-…), not the recovery code"));
+    assert!(parse_recovery_code(&token("BPM1")).unwrap_err().starts_with("That's a runner token (BPM1-…), not the recovery code"));
     assert!(parse_recovery_code("BP-2HC6-FWG8-CR0K-VBDB").unwrap_err().contains("licence key"));
     assert!(parse_recovery_code("bpmk1_abc").unwrap_err().contains("machine key"));
     assert!(parse_recovery_code(&text.replacen("BPR1", "BPR2", 1)).is_err());

@@ -1306,3 +1306,22 @@ async fn a_recovery_code_or_machine_key_typed_as_a_licence_key_is_never_sent() {
     assert_eq!(not_a_licence_key("BPM1-0123456789abcdef0123456789abcdef-00"), None, "the machine pass is a licence credential");
 }
 
+#[tokio::test]
+async fn a_runner_or_ci_token_typed_as_a_licence_key_says_which_it_is_and_is_never_sent() {
+    let l = licensing(MemStore::default(), "http://127.0.0.1:9", Arc::new(AtomicI64::new(IAT)));
+    let token = |p: &str| format!("{p}-{}-{}-{}", "k3v9x2m8q1w7e4r6t0y5u2i8o3p1", "m".repeat(16), "c".repeat(64));
+    let pass = format!("BPM1-{}-{}", "0a".repeat(16), "1b".repeat(32));
+    // A CI token (BPC1-): its own words, which name the runner's machine pass.
+    let f = l.activate(person(&token("BPC1"), "bo@acme.com")).await.unwrap_err();
+    assert_eq!(f.code, "bad_request");
+    assert!(f.message.starts_with("That's a CI token (BPC1-…), for breakpatch-ci. It isn't a licence key: the runner Mac takes its seat with its machine pass, which starts with BPM1-"), "{}", f.message);
+    let f = l.activate(person(&token("BPM1"), "bo@acme.com")).await.unwrap_err();
+    assert!(f.message.starts_with("That's a runner token (BPM1-…)"), "{}", f.message);
+    // Told apart however much of the paste a field kept; the pass itself goes through.
+    assert_eq!(machine_secret(&token("BPC1")[..30]), Some(MachineSecret::CiToken));
+    assert_eq!(machine_secret(&token("BPM1")[..30]), Some(MachineSecret::RunnerToken));
+    assert_eq!(machine_secret(&pass[..30]), Some(MachineSecret::MachinePass));
+    assert_eq!(machine_secret(&pass.to_lowercase()), Some(MachineSecret::MachinePass));
+    assert_eq!(machine_secret("BP-2HC6-FWG8-CR0K-VBDB"), None);
+    assert_eq!(not_a_licence_key(&pass), None);
+}

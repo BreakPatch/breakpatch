@@ -460,8 +460,17 @@ pub fn recovery_code_text(code: &[u8; 16]) -> String {
 pub fn parse_recovery_code(text: &str) -> Result<[u8; 16], String> {
     let bad = "That isn't a recovery code. It starts with BPR1- and has 27 letters and numbers after it.";
     let t = text.trim().to_ascii_uppercase();
-    if t.starts_with("BPM1-") {
-        return Err("That's the runner's machine pass, not the recovery code. The recovery code starts with BPR1-.".into());
+    match crate::licence::machine_secret(&t) {
+        Some(crate::licence::MachineSecret::CiToken) => {
+            return Err("That's a CI token (BPC1-…), not the recovery code. The recovery code starts with BPR1-.".into());
+        }
+        Some(crate::licence::MachineSecret::RunnerToken) => {
+            return Err("That's a runner token (BPM1-…), not the recovery code. The recovery code starts with BPR1-.".into());
+        }
+        Some(crate::licence::MachineSecret::MachinePass) => {
+            return Err("That's the runner's machine pass, not the recovery code. The recovery code starts with BPR1-.".into());
+        }
+        None => {}
     }
     if t.starts_with("BPMK1_") {
         return Err("That's the machine key, not the recovery code. The recovery code starts with BPR1-.".into());
