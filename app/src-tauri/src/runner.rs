@@ -149,7 +149,10 @@ pub fn reply_excerpt(text: &str) -> String {
 }
 
 fn send_error(e: reqwest::Error, timeout: Duration) -> String {
-    if e.is_timeout() {
+    if crate::net::is_cert_error(&e) {
+        // The address may be an intranet server with a certificate of its own: not "the network" for sure.
+        crate::net::tls_untrusted(e.url().and_then(|u| u.host_str()).unwrap_or("the address"))
+    } else if e.is_timeout() {
         format!("The address didn't answer within {} seconds", timeout.as_secs())
     } else {
         "Couldn't reach the address".to_string()
