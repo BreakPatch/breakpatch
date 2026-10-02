@@ -91,3 +91,12 @@ test('the sections other places link to by name keep their anchors', () => {
     assert.ok(IDS.has(id), id);
   }
 });
+
+test('notes render as notes, never as a comment in the text', () => {
+  assert.doesNotMatch(PAGE, /&lt;!--/);
+  // Team and Business aren't on sale yet: the Team part says so first, in a note that always shows.
+  const team = PAGE.slice(PAGE.indexOf('<header class="part" id="team">'), PAGE.indexOf('</header>', PAGE.indexOf('<header class="part" id="team">')));
+  assert.match(team, /<p class="soon" role="note"><span class="dot" aria-hidden="true"><\/span><span>Coming soon\. Team and Business aren't on sale yet\./);
+  assert.match(PAGE, /<section id="hosted-by-breakpatch" class="team">[\s\S]*?<p class="soon" role="note">/);
+  assert.throws(() => build('# T\n\nx\n\n---\n\n# P\n\n## S\n\n<!-- later --> Something.\n'), /Unknown note/);
+});

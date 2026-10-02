@@ -11,6 +11,8 @@
 // shown only while <html> has data-prelaunch (GitHub hides the comment and shows the text).
 // One that starts with <!-- solo-soon --> becomes a Solo "Coming soon" note, in the same style,
 // shown only while Solo isn't on sale (no <html data-solo>: assets/paddle-config.js asks the back office).
+// One that starts with <!-- soon --> is a note in the same style that always shows (Team and
+// Business aren't on sale yet, Hosted by Breakpatch opens soon): delete it when that changes.
 // Everything before the first "---" is the intro: its paragraphs become the lead, and its
 // contents list is skipped (the page builds its own). Ids match GitHub's heading anchors, so
 // links like docs/#run-requests work on both.
@@ -45,6 +47,7 @@ function inline(s) {
 
 const PRELAUNCH = /^<!--\s*prelaunch\s*-->\s*(.*)$/;
 const SOLO_SOON = /^<!--\s*solo-soon\s*-->\s*(.*)$/;
+const SOON = /^<!--\s*soon\s*-->\s*(.*)$/;
 const LIST = /^(\s*)(\d+\.|[-*])\s+(.*)$/;
 const indentOf = l => l.match(/^\s*/)[0].length;
 
@@ -106,9 +109,12 @@ function blocks(lines) {
     const para = [];
     for (; i < lines.length && lines[i].trim() && !LIST.test(lines[i]) && !/^\s*(```|\||#)/.test(lines[i]); i++) para.push(lines[i].trim());
     const pre = para.join(' ').match(PRELAUNCH);
-    const soon = para.join(' ').match(SOLO_SOON);
+    const soloSoon = para.join(' ').match(SOLO_SOON);
+    const soon = para.join(' ').match(SOON);
     if (pre) out.push(`<p class="prelaunch" role="note"><span class="dot" aria-hidden="true"></span><span>${inline(pre[1])}</span></p>`);
-    else if (soon) out.push(`<p class="solo-soon" role="note"><span class="dot" aria-hidden="true"></span><span>${inline(soon[1])}</span></p>`);
+    else if (soloSoon) out.push(`<p class="solo-soon" role="note"><span class="dot" aria-hidden="true"></span><span>${inline(soloSoon[1])}</span></p>`);
+    else if (soon) out.push(`<p class="soon" role="note"><span class="dot" aria-hidden="true"></span><span>${inline(soon[1])}</span></p>`);
+    else if (/^<!--/.test(para[0])) throw new Error(`Unknown note: ${para[0].slice(0, 40)} (prelaunch, solo-soon or soon)`);
     else out.push(`<p>${inline(para.join(' '))}</p>`);
   }
   return out;

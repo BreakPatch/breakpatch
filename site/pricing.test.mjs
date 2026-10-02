@@ -375,7 +375,7 @@ test('a company that has Team or Business is told to ask its admin for a seat, w
   assert.equal(q.$('solo-team').hidden, true);
 });
 
-test('support response times are the same on the pricing page, the terms and the manual', () => {
+test('support response times are the same on the pricing page and the terms; the documentation promises none yet', () => {
   const terms = read('./terms/index.html');
   const manual = read('../docs/manual.md');
   const card = name => HTML.slice(HTML.indexOf(`id="${name}-title"`), HTML.indexOf('</article>', HTML.indexOf(`id="${name}-title"`)));
@@ -384,7 +384,9 @@ test('support response times are the same on the pricing page, the terms and the
   const biz = HTML.slice(HTML.indexOf('<h2>Business</h2>'), HTML.indexOf('</article>', HTML.indexOf('<h2>Business</h2>')));
   assert.ok(biz.includes('Support answered within 4 business hours, Monday to Friday'));
   assert.ok(terms.includes('Solo: email support, answered within 5 business days. Team: email support, answered within 2 business days. Business: support answered within 4 business hours, Monday to Friday.'));
-  assert.ok(manual.includes('| Support | GitHub issues | Email, answered within 5 business days | Email, answered within 2 business days | Within 4 business hours, Monday to Friday |'));
+  // Team and Business aren't on sale yet: the documentation leaves their support to the pricing page.
+  assert.ok(manual.includes('| Support | GitHub issues | Set when it goes on sale | Set when they go on sale |'));
+  assert.doesNotMatch(manual, /business (days|hours)/);
   for (const page of [HTML, terms, manual]) assert.ok(!/Solo and Team: email support/.test(page));
 });
 
@@ -432,7 +434,9 @@ test('Solo in the FAQ, the terms, the refunds and the manual', () => {
   assert.match(MANUAL, /\| *Solo *\|/, 'manual editions');
   assert.ok(HOME.includes('<th scope="col" class="solo-only">Solo</th>'), 'home comparison table');
   // The same prices everywhere.
-  for (const [name, text] of [['home', HOME], ['manual', MANUAL]]) assert.match(text, /\$19/, name);
+  assert.match(HOME, /\$19/, 'home');
+  // The documentation names no prices while Solo, Team and Business aren't on sale.
+  assert.doesNotMatch(MANUAL, /\$\d/, 'manual');
 });
 
 test('a personal email is still sent only as its domain, and gets a checkout (the service never looks those up)', async () => {
@@ -646,6 +650,6 @@ test('the manual keeps its Solo section, marked Coming soon until Solo is on sal
   const built = MANUAL_PAGE.slice(MANUAL_PAGE.indexOf('<section id="solo"'), MANUAL_PAGE.indexOf('</section>', MANUAL_PAGE.indexOf('<section id="solo"')));
   assert.match(built, /<p class="solo-soon" role="note"><span class="dot" aria-hidden="true"><\/span><span>Coming soon\. Solo isn't on sale yet\./);
   // Shown while <html> has no data-solo, in the pre-launch notes' style.
-  assert.ok(SITE_CSS.includes('[data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon{display:flex;'));
+  assert.ok(SITE_CSS.includes('[data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon,.soon{display:flex;'));
   assert.ok(SITE_CSS.includes('.prelaunch,.solo-soon{display:none}'));
 });
