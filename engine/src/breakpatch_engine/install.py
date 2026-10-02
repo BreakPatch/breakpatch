@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import __version__, config, models
+from . import __version__, config, models, net
 from .protocol import EngineError
 
 log = logging.getLogger("breakpatch.setup")
@@ -42,6 +42,35 @@ def _driver() -> tuple[list[str], dict]:
     env = get_driver_env()
     env["PLAYWRIGHT_BROWSERS_PATH"] = str(config.browsers_dir())
     return cmd, env
+
+
+# Where Playwright fetches Chromium from (its first download host): the proxy is worked out for it.
+BROWSER_DOWNLOAD = "https://cdn.playwright.dev/"
+
+
+def download_env(cmd: list[str], env: dict) -> dict:
+    """The browser install's environment: Playwright's downloader (Node) reads HTTPS_PROXY but not
+    the Mac's proxy settings, and trusts Node's own certificates unless told --use-system-ca."""
+    node = cmd[0] if cmd else ""
+    return net.child_env(env, BROWSER_DOWNLOAD, system_ca=bool(node) and net.node_has_system_ca(node))
+
+
+# What the browser install prints when the network got in the way (Node's error codes).
+_INSTALL_CERT = ("UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+                 "CERT_UNTRUSTED", "DEPTH_ZERO_SELF_SIGNED_CERT", "unable to get local issuer certificate")
+
+
+def install_failure(tail: list[str], env: dict) -> str:
+    text = "\n".join(tail)
+    if any(c in text for c in _INSTALL_CERT):
+        return net.TLS_INTERCEPTED
+    proxy = env.get("HTTPS_PROXY") or env.get("https_proxy")
+    if "407" in text or "Proxy Authentication Required" in text:
+        return net.proxy_auth(proxy)
+    msg = "The browser couldn't be installed. Check your internet connection and try again."
+    if not proxy and net.auto_proxy():
+        msg += net.PAC_HINT
+    return msg
 
 
 def pinned_browser() -> dict:
@@ -118,6 +147,7 @@ class Setup:
         cmd, env = _driver()
         self.emit({"task": "browser", "state": "busy", "message": "Installing the browser"})
         try:
+            env = await asyncio.to_thread(download_env, cmd, env)
             t.proc = await asyncio.create_subprocess_exec(
                 *cmd, "install", "chromium", "--no-shell", env=env,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
@@ -150,8 +180,7 @@ class Setup:
                 raise EngineError("stopped", "The browser install is paused.")
             if code != 0:
                 self.emit({"task": "browser", "state": "failed", "message": "The browser couldn't be installed."})
-                raise EngineError("network", "The browser couldn't be installed. Check your internet connection and try again.",
-                                  "\n".join(tail))
+                raise EngineError("network", install_failure(tail, env), "\n".join(tail))
             status = browser_status()
             self.emit({"task": "browser", "state": "done"})
             return {"version": status.get("version", "Chromium")}
@@ -360,12 +389,18 @@ def download_main(repo: str, revision: str, dest: str, files: str | None = None)
         return 1
 
     try:
-        from huggingface_hub import HfApi, hf_hub_url
+        from huggingface_hub import HfApi, constants, hf_hub_url
         from huggingface_hub.utils import (HfHubHTTPError, RepositoryNotFoundError, RevisionNotFoundError,
                                            build_hf_headers, hf_raise_for_status, http_stream_backoff)
     except Exception as e:  # noqa: BLE001
         say({"error": "The downloader is missing from this build.", "details": str(e), "kind": "internal"})
         return 1
+    endpoint = constants.ENDPOINT
+    proxy = net.proxy_for(endpoint)
+    try:
+        net.use_for_hub(endpoint)       # the system trust store and proxy, not certifi's bundle alone
+    except Exception as e:  # noqa: BLE001 - huggingface_hub's own client still works, with certifi
+        say({"warning": f"the system certificate store couldn't be used for the download: {e}"})
 
     root = Path(dest)
     partial_dir = root / PARTIAL_DIR
@@ -455,10 +490,19 @@ def download_main(repo: str, revision: str, dest: str, files: str | None = None)
     except (RepositoryNotFoundError, RevisionNotFoundError) as e:
         say({"error": "That AI assistant version couldn't be found.", "details": str(e), "kind": "not_found"})
     except HfHubHTTPError as e:
-        say({"error": "The download stopped. Check your internet connection and try again.", "details": str(e)})
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        msg = "The download stopped. Check your internet connection and try again."
+        if status in (403, 451) and not getattr(getattr(e, "response", None), "headers", {}).get("x-error-code"):
+            msg = ("huggingface.co refused the download. On a company network, a web filter may be blocking "
+                   "huggingface.co: ask IT to allow it.")
+        say({"error": net.explain(e, "huggingface.co", proxy) or msg, "details": str(e)})
     except RuntimeError as e:
         say({"error": "The download didn't check out. Try again to fetch the damaged part.", "details": str(e)})
     except Exception as e:  # noqa: BLE001
-        say({"error": "The download stopped. Check your internet connection and try again.",
-             "details": f"{type(e).__name__}: {e}"})
+        msg = net.explain(e, "huggingface.co", proxy)
+        if msg is None:
+            msg = "The download stopped. Check your internet connection and try again."
+            if not proxy and net.auto_proxy():
+                msg += net.PAC_HINT
+        say({"error": msg, "details": f"{type(e).__name__}: {e}"})
     return 1

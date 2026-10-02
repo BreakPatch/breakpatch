@@ -21,7 +21,7 @@ from typing import Callable, Sequence
 
 import numpy as np
 
-from . import config, imaging
+from . import config, imaging, net
 from .protocol import EngineError
 from .sites import origin_of
 
@@ -430,7 +430,8 @@ class BrowserSession:
             if start and "Timeout" in type(e).__name__ + str(e):
                 raise EngineError("network", f"The start page at {url} didn't load in {round(limit)} seconds. "
                                              "Check the address, and that the site is up.", str(e))
-            raise EngineError("network", f"The page at {url} didn't load.", str(e))
+            because = net.browser_message(str(e), url)
+            raise EngineError("network", f"The page at {url} didn't load." + (f" {because}" if because else ""), str(e))
 
     async def navigate(self, nav: str, url: str | None = None) -> None:
         page = await self.live()
@@ -451,7 +452,8 @@ class BrowserSession:
         except EngineError:
             raise
         except Exception as e:  # noqa: BLE001
-            raise EngineError("network", "The page didn't load.", str(e))
+            because = net.browser_message(str(e), url or self.url)
+            raise EngineError("network", "The page didn't load." + (f" {because}" if because else ""), str(e))
 
     @property
     def url(self) -> str:

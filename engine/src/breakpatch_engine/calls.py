@@ -13,7 +13,11 @@ machine) can. The rules:
 - After DNS, every address must be public: no loopback, private, link-local, CGNAT, unique local,
   multicast or reserved address (IPv4 or IPv6, mapped IPv4 too), unless the app itself resolves to
   such addresses (a local or intranet app). The connection goes to the checked address, so DNS
-  can't change between the check and the request. It doesn't use a proxy.
+  can't change between the check and the request. Through a proxy (the system's, net.py), the
+  tunnel is opened to that checked address too, never to the name, so the proxy can't resolve it
+  somewhere else; this Mac must still be able to look the name up itself.
+- https checks the certificate against the system's trust store (net.py: the macOS Keychain, so a
+  company's TLS-inspection certificate installed there is trusted). Verification is never off.
 - `allowOtherHosts: true` (the test's "Allow other hosts") lifts the host and address rules. Cloud
   metadata addresses (169.254.169.254 and friends) stay blocked even then.
 - Headers may take their value from a saved secret (`{name, secretRef}`), under the same site rule
@@ -33,6 +37,7 @@ import time
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
+from . import net
 from .actions import Secret
 from .sites import origin_of, site_name
 
@@ -90,6 +95,7 @@ class Plan:
     target: str                        # path and query
     address: str                       # the checked IP address to connect to
     headers: dict[str, str] = field(default_factory=dict)
+    proxy: str | None = None           # the http proxy to tunnel through (https only), or None
 
 
 # ---------------------------------------------------------------- the rules
@@ -176,7 +182,8 @@ def call_secret_refs(call: dict | None) -> list[str]:
             if isinstance(h, dict) and h.get("secretRef")]
 
 
-def plan(call: dict, app_url: str | None, secrets: dict[str, Secret], resolver=resolve) -> Plan:
+def plan(call: dict, app_url: str | None, secrets: dict[str, Secret], resolver=resolve,
+         proxy_finder: net.Finder = net.proxy_for) -> Plan:
     """Checks a call against the rules and works out where it connects. Raises CallRefused."""
     if not isinstance(call, dict):
         raise CallRefused("The call couldn't be read.", "invalid")
@@ -227,7 +234,8 @@ def plan(call: dict, app_url: str | None, secrets: dict[str, Secret], resolver=r
                               "test to call it.")
     headers = _headers(call, origin_of(url), secrets)
     target = (u.path or "/") + (f"?{u.query}" if u.query else "")
-    return Plan(method, url, scheme, host, port, target, addrs[0], headers)
+    proxy = proxy_finder(url) if scheme == "https" and not is_loopback_host(host) else None
+    return Plan(method, url, scheme, host, port, target, addrs[0], headers, proxy)
 
 
 def _headers(call: dict, origin: str | None, secrets: dict[str, Secret]) -> dict[str, str]:
@@ -268,18 +276,24 @@ class _Pinned(http.client.HTTPConnection):
 
 
 class _PinnedTLS(http.client.HTTPSConnection):
-    def __init__(self, host, port, address, timeout):
-        super().__init__(host, port, timeout=timeout, context=ssl.create_default_context())
+    def __init__(self, host, port, address, timeout, proxy=None):
+        super().__init__(host, port, timeout=timeout, context=net.ssl_context())
         self._address = address
+        self._proxy = proxy
 
     def connect(self):
-        raw = socket.create_connection((self._address, self.port), self.timeout)
+        if self._proxy:
+            raw = net.tunnel(self._proxy, self._address, self.port, self.timeout)
+        else:
+            raw = socket.create_connection((self._address, self.port), self.timeout)
         self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
 
 
 def _send(p: Plan, timeout: float) -> int:
-    cls = _PinnedTLS if p.scheme == "https" else _Pinned
-    conn = cls(p.host, p.port, p.address, timeout)
+    if p.scheme == "https":
+        conn = _PinnedTLS(p.host, p.port, p.address, timeout, p.proxy)
+    else:
+        conn = _Pinned(p.host, p.port, p.address, timeout)
     try:
         body = b"" if p.method in ("POST", "PUT", "PATCH") else None
         headers = {"User-Agent": "Breakpatch", **p.headers}
@@ -294,24 +308,29 @@ def _send(p: Plan, timeout: float) -> int:
 
 
 async def make(call: dict, app_url: str | None, secrets: dict[str, Secret], timeout: float,
-               resolver=resolve) -> Reply:
+               resolver=resolve, proxy_finder: net.Finder = net.proxy_for) -> Reply:
     """One call under the rules. Never raises: the reply says what happened."""
     values = [s.value for s in secrets.values()]
     shown = f"{str((call or {}).get('method') or 'GET').upper()} {redact(str((call or {}).get('url') or ''), values)}"
     start = time.monotonic()
     try:
-        p = await asyncio.to_thread(plan, call, app_url, secrets, resolver)
+        p = await asyncio.to_thread(plan, call, app_url, secrets, resolver, proxy_finder)
     except CallRefused as e:
         return Reply(False, error=e.kind, message=e.message, info=f"{shown} refused: {e.message}")
     try:
         status = await asyncio.wait_for(asyncio.to_thread(_send, p, timeout), timeout + 5)
     except (asyncio.TimeoutError, socket.timeout, TimeoutError):
         return Reply(False, error="timeout", message=f"No reply after {int(timeout)} s.", info=f"{shown} timed out")
+    except net.ProxyError as e:
+        return Reply(False, error="unreachable", message=net.explain(e, p.host, p.proxy),
+                     info=f"{shown} failed: proxy {net.proxy_shown(p.proxy)} answered {e.status or 'nothing'}")
     except ssl.SSLError as e:
-        return Reply(False, error="unreachable", message=f"{p.host}'s certificate couldn't be checked.",
-                     info=f"{shown} failed: TLS {type(e).__name__}")
+        message = net.explain(e, p.host) or f"{p.host}'s certificate couldn't be checked."
+        return Reply(False, error="unreachable", message=message, info=f"{shown} failed: TLS {type(e).__name__}"
+                     + (" (certificate not trusted)" if net.is_cert_failure(e) else ""))
     except (OSError, http.client.HTTPException) as e:
-        return Reply(False, error="unreachable", message=f"Couldn't reach {p.host}.",
+        via = f" through the proxy at {net.proxy_shown(p.proxy)}" if p.proxy else ""
+        return Reply(False, error="unreachable", message=f"Couldn't reach {p.host}{via}.",
                      info=f"{shown} failed: {type(e).__name__}")
     ms = int((time.monotonic() - start) * 1000)
     if 300 <= status < 400:
