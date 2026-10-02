@@ -2,7 +2,7 @@ name: Website
 
 # Publishes site/ to https://breakpatch.dev (Firebase Hosting site `breakpatch-web`
 # in the `breakpatch-backoffice` project). Until the first Community release the
-# Deploys on every push that changes the site or the manual.
+# Deploys only when run by hand.
 #
 # Secret FIREBASE_HOSTING_SERVICE_ACCOUNT, in the `website` environment (deployment branch main
 # only): a service account that can only deploy Hosting (role "Firebase Hosting Admin"), so
@@ -11,11 +11,10 @@ name: Website
 # project is an owner step (README). firebase-tools is pinned exactly in site/package.json and
 # its lockfile, and installed without install scripts.
 
+# By hand only (Actions → Website → Run workflow on main), with the weekly deploy once the checks
+# are clean (QA, design review, docs, cold review): a push doesn't publish the site.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ["site/**", "docs/manual.md", ".github/workflows/website.yml"]
 
 permissions:
   contents: read

@@ -64,7 +64,7 @@ It starts `npm run dev` in `app/` if the preview isn't running, opens `?demo&rea
 
 The site is served by **Firebase Hosting**: the site `breakpatch-web` in the Firebase project `breakpatch-backoffice`, with the custom domain `breakpatch.dev`. The back office is the project's other Hosting site, at `https://account.breakpatch.dev`.
 
-The deploy workflow (`.github/workflows/website.yml`) publishes this folder on every push that changes `site/` or `docs/manual.md`, in the GitHub environment `website`. It uses the `firebase-tools` pinned exactly in `site/package.json` and `site/package-lock.json` (`npm ci --ignore-scripts`, then `npx firebase`); `firebase.json` keeps those files and `node_modules/` off the site. Moving the website to its own Firebase project, so its deploy account can't reach the back office's Hosting site, is an owner step (the main README, "Releases, CI and the website: owner settings"). A Hosting config along these lines does it:
+The deploy workflow (`.github/workflows/website.yml`) publishes this folder only when run by hand (Actions → **Website** → **Run workflow** on `main`), with the weekly deploy, in the GitHub environment `website`. It uses the `firebase-tools` pinned exactly in `site/package.json` and `site/package-lock.json` (`npm ci --ignore-scripts`, then `npx firebase`); `firebase.json` keeps those files and `node_modules/` off the site. Moving the website to its own Firebase project, so its deploy account can't reach the back office's Hosting site, is an owner step (the main README, "Releases, CI and the website: owner settings"). A Hosting config along these lines does it:
 
 ```json
 {

@@ -25,3 +25,16 @@ def browser_available() -> bool:
 
 
 needs_browser = pytest.mark.skipif(not browser_available(), reason="no Chromium available")
+
+
+def pytest_terminal_summary(terminalreporter):
+    """On GitHub Actions, each failure is also an annotation (`::error`), so it can be read from the
+    run's annotations without downloading the log."""
+    import os
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return
+    esc = lambda t: str(t).replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    for rep in terminalreporter.stats.get("failed", []) + terminalreporter.stats.get("error", []):
+        lines = [l for l in str(rep.longrepr).splitlines() if l.strip()]
+        last = next((l for l in reversed(lines) if l.startswith("E ")), lines[-1] if lines else "")
+        terminalreporter.write_line(f"::error title={esc(rep.nodeid)}::{esc(last.strip()[:400])}")
