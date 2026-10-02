@@ -1,7 +1,10 @@
 // In-memory backend for development, the browser preview and tests.
 // Behaves like the Firebase backend: live subscriptions, immutable versions, audit fields.
 import { edition } from '../../edition';
-import { AuthError, cleanDetails, detailsDiff, startUrlNote, upTo, type Backend, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type RunNotes, type TestDetails, type TrackerStore, type Unsubscribe } from '../backend';
+import {
+  AuthError, cleanDetails, detailsDiff, newestDeletedFirst, startUrlNote, upTo,
+  type Backend, type DeletedItem, type DeletedRef, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type RecentlyDeleted, type RunNotes, type TestDetails, type TrackerStore, type Unsubscribe,
+} from '../backend';
 import type {
   App, Explanation, Member, Person, QueueItem, RecordedOn, Role, Run, RunIssue, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Workspace,
 } from '../types';
@@ -30,7 +33,13 @@ interface State {
   suiteRuns: SuiteRun[];
   runRequests: RunRequest[];
   members: Member[];
+  /** Recently deleted: each item with what it took along, to put back. */
+  bin: Binned[];
 }
+
+/** An item in Recently deleted, with the documents it took out of the lists. */
+interface Binned { item: DeletedItem; apps?: App[]; tests?: Test[]; groups?: StepGroup[]; suites?: Suite[] }
+const sameRef = (a: DeletedRef, b: DeletedRef) => a.kind === b.kind && a.id === b.id && (a.appId ?? '') === (b.appId ?? '');
 
 export interface DemoOptions { empty?: boolean; signedIn?: boolean; delayMs?: number }
 
@@ -50,8 +59,8 @@ export class DemoBackend implements Backend {
     this.delay = opts.delayMs ?? 250;
     const t = seedTests(); const g = seedGroups();
     this.st = opts.empty
-      ? { user: opts.signedIn ? people.maria : null, apps: [], tests: [], versions: {}, groups: [], groupVersions: {}, runs: [], suites: [], runner: null, queue: [], suiteRuns: [], runRequests: [], members: [{ ...people.maria, role: 'admin', lastActive: Date.now() }] }
-      : { user: opts.signedIn ? people.maria : null, apps: seedApps(), tests: t.tests, versions: t.versions, groups: g.groups, groupVersions: g.versions, runs: seedRuns(t.tests), suites: seedSuites(), runner: seedRunner(), queue: seedQueue(), suiteRuns: seedSuiteRuns(), runRequests: [], members: seedMembers() };
+      ? { user: opts.signedIn ? people.maria : null, apps: [], tests: [], versions: {}, groups: [], groupVersions: {}, runs: [], suites: [], runner: null, queue: [], suiteRuns: [], runRequests: [], members: [{ ...people.maria, role: 'admin', lastActive: Date.now() }], bin: [] }
+      : { user: opts.signedIn ? people.maria : null, apps: seedApps(), tests: t.tests, versions: t.versions, groups: g.groups, groupVersions: g.versions, runs: seedRuns(t.tests), suites: seedSuites(), runner: seedRunner(), queue: seedQueue(), suiteRuns: seedSuiteRuns(), runRequests: [], members: seedMembers(), bin: [] };
     if (!opts.empty && edition.name === 'community') this.st = communityDemo(this.st);
   }
 
@@ -93,7 +102,15 @@ export class DemoBackend implements Backend {
     return this.wait(app);
   }
   async updateApp(id: string, patch: Partial<NewApp>) { this.mutate(s => { s.apps = s.apps.map(a => a.id === id ? { ...a, ...patch } : a); }); }
-  async deleteApp(id: string) { this.mutate(s => { s.apps = s.apps.filter(a => a.id !== id); s.tests = s.tests.filter(t => t.appId !== id); }); }
+  async deleteApp(id: string) {
+    const app = this.st.apps.find(a => a.id === id);
+    if (!app) return;
+    this.toBin({ kind: 'app', id, name: app.name, createdBy: app.createdBy }, s => {
+      const tests = s.tests.filter(t => t.appId === id), groups = s.groups.filter(g => g.appId === id);
+      s.apps = s.apps.filter(a => a.id !== id); s.tests = s.tests.filter(t => t.appId !== id); s.groups = s.groups.filter(g => g.appId !== id);
+      return { apps: [app], tests, groups };
+    });
+  }
 
   // ---- tests ----
   tests(appId: string, l: Listener<Test[]>) { return this.watch(() => this.st.tests.filter(t => t.appId === appId), l); }
@@ -144,7 +161,14 @@ export class DemoBackend implements Backend {
     if (last) await this.saveTest(appId, copy.id, last.steps, `Copied from ${src.name}`, last.recordedOn);
     return copy;
   }
-  async deleteTest(appId: string, testId: string) { this.mutate(s => { s.tests = s.tests.filter(t => !(t.appId === appId && t.id === testId)); }); }
+  async deleteTest(appId: string, testId: string) {
+    const t = this.st.tests.find(x => x.appId === appId && x.id === testId);
+    if (!t) return;
+    this.toBin({ kind: 'test', id: testId, appId, name: t.name, createdBy: t.createdBy, status: t.status }, s => {
+      s.tests = s.tests.filter(x => x !== t);
+      return { tests: [t] };
+    });
+  }
 
   // ---- shared steps ----
   stepGroups(appId: string, l: Listener<StepGroup[]>) { return this.watch(() => this.st.groups.filter(g => g.appId === appId), l); }
@@ -166,6 +190,63 @@ export class DemoBackend implements Backend {
     });
     return this.wait(v);
   }
+
+  async deleteGroup(appId: string, groupId: string) {
+    const g = this.st.groups.find(x => x.appId === appId && x.id === groupId);
+    if (!g) return;
+    this.toBin({ kind: 'group', id: groupId, appId, name: g.name, createdBy: g.createdBy }, s => {
+      s.groups = s.groups.filter(x => x !== g);
+      return { groups: [g] };
+    });
+  }
+
+  // ---- recently deleted ----
+  private toBin(item: Omit<DeletedItem, 'deletedAt' | 'deletedBy'>, take: (s: State) => Omit<Binned, 'item'>) {
+    const me = this.me();
+    this.mutate(s => { s.bin.push({ item: { ...item, deletedAt: Date.now(), deletedBy: me }, ...take(s) }); });
+  }
+  private binned(r: DeletedRef) {
+    const b = this.st.bin.find(x => sameRef(x.item, r));
+    if (!b) throw new Error('This is no longer in Recently deleted.');
+    return b;
+  }
+  /** Deletes the item's versions and, for an app, everything of it, including what was deleted in it before. */
+  private purge(s: State, b: Binned) {
+    const { kind, id, appId } = b.item;
+    if (kind === 'app') {
+      for (const k of Object.keys(s.versions)) if (k.startsWith(`${id}/`)) delete s.versions[k];
+      for (const k of Object.keys(s.groupVersions)) if (k.startsWith(`${id}/`)) delete s.groupVersions[k];
+      s.runs = s.runs.filter(r => r.appId !== id);
+      s.bin = s.bin.filter(x => x.item.appId !== id);
+    }
+    if (kind === 'test') delete s.versions[`${appId}/${id}`];
+    if (kind === 'group') delete s.groupVersions[`${appId}/${id}`];
+    if (kind === 'suite') this.addresses.delete(id);
+    s.bin = s.bin.filter(x => x !== b);
+  }
+  readonly recentlyDeleted: RecentlyDeleted = {
+    items: (l, appId) => this.watch(() => {
+      const live = new Map(this.st.apps.map(a => [a.id, a.name]));
+      return this.st.bin.map(b => b.item)
+        .filter(i => (appId ? i.appId === appId && live.has(appId) : !i.appId || live.has(i.appId)))
+        .map(i => (i.appId ? { ...i, appName: live.get(i.appId) } : i))
+        .sort(newestDeletedFirst);
+    }, l),
+    restore: async r => {
+      const b = this.binned(r);
+      if (b.item.appId && !this.st.apps.some(a => a.id === b.item.appId)) throw new Error('Its app was deleted. Restore the app first.');
+      this.mutate(s => {
+        s.bin = s.bin.filter(x => x !== b);
+        s.apps.push(...(b.apps ?? [])); s.tests.push(...(b.tests ?? [])); s.groups.push(...(b.groups ?? [])); s.suites.push(...(b.suites ?? []));
+      });
+      await this.wait(null);
+    },
+    deleteNow: async r => {
+      const b = this.binned(r);
+      this.mutate(s => this.purge(s, b));
+      await this.wait(null);
+    },
+  };
 
   // ---- runs ----
   runs(appId: string, l: Listener<Run[]>, limit?: Limit) { return this.watch(() => upTo(this.st.runs.filter(r => r.appId === appId).sort((a, b) => b.startedAt - a.startedAt), limit), l); }
@@ -227,7 +308,14 @@ export class DemoBackend implements Backend {
     settings: l => { this.trackerListeners.add(l); l(this.trackerSettings); return () => { this.trackerListeners.delete(l); }; },
     save: async t => { this.trackerSettings = t; this.trackerListeners.forEach(l => l(t)); },
   };
-  async deleteSuite(id: string) { this.mutate(s => { s.suites = s.suites.filter(x => x.id !== id); }); }
+  async deleteSuite(id: string) {
+    const suite = this.st.suites.find(x => x.id === id);
+    if (!suite) return;
+    this.toBin({ kind: 'suite', id, name: suite.name, createdBy: suite.createdBy }, s => {
+      s.suites = s.suites.filter(x => x !== suite);
+      return { suites: [suite] };
+    });
+  }
   runner(l: Listener<RunnerStatus | null>) {
     return this.watch(() => applyRunnerPreview(this.st.runner && { ...this.st.runner, lastSeen: this.st.runner.status === 'paused' ? this.st.runner.lastSeen : Date.now() }, this.runnerPreview()), l);
   }

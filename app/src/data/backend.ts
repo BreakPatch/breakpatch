@@ -4,7 +4,7 @@
 // Firestore database). Reads are live subscriptions; writes return promises.
 
 import type {
-  App, Explanation, HttpCall, Member, NotifyInput, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
+  App, Explanation, HttpCall, Member, Millis, NotifyInput, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
   RunIssue, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Viewport, Workspace,
 } from './types';
 
@@ -101,6 +101,58 @@ export interface NotifyStore {
   post?: (url: string, body: string) => Promise<{ ok: boolean; status: number; body?: string }>;
 }
 
+/**
+ * Recently deleted: deleting an app, a test, shared steps or a suite moves it here for
+ * KEEP_DELETED_DAYS, with everything in it, and it can be put back. After that (or on Delete now)
+ * it's deleted for good. Who may restore or delete it for good is who may delete it
+ * (canManageDeleted).
+ */
+export interface RecentlyDeleted {
+  /**
+   * What's in it, newest first: deleted apps and suites, and the deleted tests and shared steps of
+   * apps that aren't deleted themselves (a deleted app keeps its own, and they come back with it).
+   * With `appId`: only that app's tests and shared steps.
+   */
+  items(l: Listener<DeletedItem[]>, appId?: string): Unsubscribe;
+  /** Puts it back where it was. */
+  restore(r: DeletedRef): Promise<void>;
+  /** Deletes it for good now, with everything in it (an app's tests, versions and runs; a test's versions). */
+  deleteNow(r: DeletedRef): Promise<void>;
+}
+
+export type DeletedKind = 'app' | 'test' | 'group' | 'suite';
+/** Which item in Recently deleted. `appId`: a test's or shared steps' app. */
+export interface DeletedRef { kind: DeletedKind; id: string; appId?: string }
+export interface DeletedItem extends DeletedRef {
+  name: string;
+  /** A test's or shared steps' app. */
+  appName?: string;
+  deletedAt: Millis;
+  deletedBy: Person;
+  /** Who made it, and a test's status: a member may restore their own draft test (canManageDeleted). */
+  createdBy: Person;
+  status?: TestStatus;
+}
+
+/** How long deleted things stay in Recently deleted. */
+export const KEEP_DELETED_DAYS = 30;
+export const KEEP_DELETED_MS = KEEP_DELETED_DAYS * 86_400_000;
+/** When an item deleted at `deletedAt` is deleted for good. */
+export const purgeAtOf = (deletedAt: Millis) => deletedAt + KEEP_DELETED_MS;
+/** Days left in Recently deleted, counting the one it's in (30 just after it's deleted; 0 once it's due to go). */
+export function daysLeft(deletedAt: Millis, now = Date.now()): number {
+  return Math.max(0, Math.ceil((purgeAtOf(deletedAt) - now) / 86_400_000));
+}
+/**
+ * Who may restore an item or delete it for good: whoever may delete it. Admins anything; members
+ * their own draft tests (as the workspace rules say).
+ */
+export function canManageDeleted(item: Pick<DeletedItem, 'kind' | 'createdBy' | 'status'>, role: Role, uid: string | undefined): boolean {
+  if (role === 'admin') return true;
+  return role === 'member' && item.kind === 'test' && item.status !== 'published' && !!uid && item.createdBy.uid === uid;
+}
+export const newestDeletedFirst = (a: DeletedItem, b: DeletedItem) => b.deletedAt - a.deletedAt;
+
 /** Where Create issue sends issues (Team): the workspace's tracker settings. */
 export interface TrackerStore {
   settings(l: Listener<TrackerSettings>): Unsubscribe;
@@ -116,6 +168,8 @@ export interface Backend {
   readonly notify?: NotifyStore;
   /** Optional (Team): issue trackers (see TrackerStore). */
   readonly trackers?: TrackerStore;
+  /** Recently deleted (see RecentlyDeleted): where deleteApp, deleteTest, deleteGroup and deleteSuite move things. */
+  readonly recentlyDeleted?: RecentlyDeleted;
   /** The team workspace; null for a local tests folder. */
   readonly workspace: Workspace | null;
   /** The tests folder (kind 'local'). */
@@ -142,6 +196,7 @@ export interface Backend {
   apps(l: Listener<App[]>): Unsubscribe;
   addApp(a: NewApp): Promise<App>;
   updateApp(id: string, patch: Partial<NewApp>): Promise<void>;
+  /** Admins. To Recently deleted, with its tests, shared steps and runs. */
   deleteApp(id: string): Promise<void>;
 
   // Tests and versions
@@ -168,6 +223,7 @@ export interface Backend {
   /** Marks a saved version as the one CI runs with `--version released` (null clears it). Team workspaces only. */
   setReleasedVersion?(appId: string, testId: string, version: number | null): Promise<void>;
   duplicateTest(appId: string, testId: string): Promise<Test>;
+  /** To Recently deleted, with its versions (its runs stay in the app's runs). */
   deleteTest(appId: string, testId: string): Promise<void>;
 
   // Shared steps
@@ -176,6 +232,8 @@ export interface Backend {
   groupVersion(appId: string, groupId: string, n: number): Promise<Version | null>;
   createGroup(appId: string, name: string, description: string, steps: Step[]): Promise<StepGroup>;
   saveGroup(appId: string, groupId: string, steps: Step[], note?: string): Promise<Version>;
+  /** Admins. To Recently deleted, with its versions. The screens offer it only while no test uses them. */
+  deleteGroup(appId: string, groupId: string): Promise<void>;
 
   // Runs
   runs(appId: string, l: Listener<Run[]>, limit?: Limit): Unsubscribe;
@@ -190,6 +248,7 @@ export interface Backend {
   // Suites and local runner
   suites(l: Listener<Suite[]>): Unsubscribe;
   saveSuite(id: string | null, s: NewSuite): Promise<Suite>;
+  /** Admins. To Recently deleted, with its schedule and where its result goes (its suite runs stay). */
   deleteSuite(id: string): Promise<void>;
   runner(l: Listener<RunnerStatus | null>): Unsubscribe;
   queue(l: Listener<QueueItem[]>): Unsubscribe;

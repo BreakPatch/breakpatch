@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Backend } from '../backend';
+import { KEEP_DELETED_MS, type Backend, type DeletedItem } from '../backend';
 import type { Person, Run, Step, Test } from '../types';
 import { fromFileText, slugify, toFileText, uniqueSlug } from './format';
 import { checkWritable, firstNameOf, initFolder, inspectFolder } from './folder';
@@ -427,6 +427,105 @@ describe('LocalBackend', () => {
     await b.deleteApp(app.id);
     expect(await st.exists(`${ROOT}/apps/web-app`)).toBe(false);
     expect(await first(l => b.apps(l))).toEqual([]);
+  });
+});
+
+describe('Recently deleted', () => {
+  const bin = (b: LocalBackend, appId?: string) => first<DeletedItem[]>(l => b.recentlyDeleted.items(l, appId));
+  const entries = async (st: MemoryStorage) => (await st.list(`${ROOT}/deleted`)).map(e => e.name);
+
+  it('moves a deleted test and its last run into deleted/, and puts them back', async () => {
+    const { st, b } = await setup();
+    const { app, test } = await appWithTest(b);
+    await b.saveTest(app.id, test.id, steps);
+    await b.addRun({ appId: app.id, testId: test.id, testName: 'Log in', testVersion: 1, startedBy: ana, machine: 'This Mac', source: 'desktop', startedAt: Date.UTC(2026, 8, 25, 10), durationMs: 1, result: 'pass', healedCount: 0, steps: [] });
+    await b.deleteTest(app.id, test.id);
+    expect(await first(l => b.tests(app.id, l))).toEqual([]);
+    expect(await st.exists(`${ROOT}/apps/web-app/tests/log-in.json`)).toBe(false);
+    const [entry] = await entries(st);
+    expect(entry).toMatch(/^\d{8}-\d{6}-test-web-app-log-in$/);
+    expect(await read(st, `deleted/${entry}/apps/web-app/tests/log-in.json`)).toContain('"name": "Log in"');
+    expect(await read(st, `deleted/${entry}/apps/web-app/runs/log-in.json`)).toContain('"result": "pass"');
+    expect(fromFileText<Record<string, unknown>>((await read(st, `deleted/${entry}/deleted.json`))!)).toMatchObject({ kind: 'test', id: 'log-in', appId: 'web-app', name: 'Log in', deletedBy: { name: 'Ana Ruiz' } });
+    const items = await bin(b);
+    expect(items).toMatchObject([{ kind: 'test', id: 'log-in', appId: 'web-app', appName: 'Web app', name: 'Log in', deletedBy: { name: 'Ana Ruiz' }, status: 'draft' }]);
+    expect(await bin(b, 'other')).toEqual([]);
+    await b.recentlyDeleted.restore(items[0]);
+    expect(await first<Test[]>(l => b.tests(app.id, l))).toMatchObject([{ id: 'log-in', stepCount: 2, lastRun: { result: 'pass' } }]);
+    expect(await entries(st)).toEqual([]);
+    expect(await bin(b)).toEqual([]);
+  });
+
+  it('keeps an app with its tests and shared steps, which come back with it', async () => {
+    const { st, b } = await setup();
+    const { app, test } = await appWithTest(b);
+    await b.createGroup(app.id, 'Sign in', '', steps);
+    await b.deleteTest(app.id, test.id);
+    await b.deleteApp(app.id);
+    expect(await first(l => b.apps(l))).toEqual([]);
+    // The app's own deleted test waits inside it.
+    expect((await bin(b)).map(i => i.kind)).toEqual(['app']);
+    await b.recentlyDeleted.restore({ kind: 'app', id: app.id });
+    expect(await first<{ id: string }[]>(l => b.stepGroups(app.id, l))).toMatchObject([{ id: 'sign-in' }]);
+    expect((await bin(b)).map(i => `${i.kind}:${i.id}`)).toEqual(['test:log-in']);
+    // Deleted for good: the app, and what was deleted in it.
+    await b.deleteApp(app.id);
+    await b.recentlyDeleted.deleteNow({ kind: 'app', id: app.id });
+    expect(await entries(st)).toEqual([]);
+    expect(await bin(b)).toEqual([]);
+  });
+
+  it('restores under a new id when something else took its place, and not without its app', async () => {
+    const { b } = await setup();
+    const { app, test } = await appWithTest(b);
+    await b.deleteTest(app.id, test.id);
+    await b.createTest({ appId: app.id, name: 'Log in', startUrl: 'https://app.example.com/login', viewport: VP });
+    await b.recentlyDeleted.restore({ kind: 'test', id: test.id, appId: app.id });
+    expect((await first<Test[]>(l => b.tests(app.id, l))).map(t => t.id)).toEqual(['log-in', 'log-in-2']);
+    await b.deleteTest(app.id, 'log-in-2');
+    await b.deleteApp(app.id);
+    await expect(b.recentlyDeleted.restore({ kind: 'test', id: 'log-in-2', appId: app.id })).rejects.toThrow('Restore the app first');
+    await expect(b.recentlyDeleted.restore({ kind: 'suite', id: 'nope' })).rejects.toThrow('no longer in Recently deleted');
+  });
+
+  it('keeps a deleted suite and shared steps, and deletes them for good on Delete now', async () => {
+    const { st, b } = await setup();
+    const { app, test } = await appWithTest(b);
+    await b.saveSuite(null, { name: 'Smoke', tests: [{ appId: app.id, testId: test.id }], schedule: null });
+    const g = await b.createGroup(app.id, 'Sign in', '', steps);
+    await b.deleteSuite('smoke');
+    await b.deleteGroup(app.id, g.id);
+    expect(await first(l => b.suites(l))).toEqual([]);
+    expect(await first(l => b.stepGroups(app.id, l))).toEqual([]);
+    expect((await bin(b)).map(i => i.kind).sort()).toEqual(['group', 'suite']);
+    await b.recentlyDeleted.restore({ kind: 'suite', id: 'smoke' });
+    expect(await first<{ tests: unknown[] }[]>(l => b.suites(l))).toMatchObject([{ id: 'smoke', tests: [{ appId: 'web-app', testId: 'log-in' }] }]);
+    await b.recentlyDeleted.deleteNow({ kind: 'group', id: g.id, appId: app.id });
+    expect(await entries(st)).toEqual([]);
+  });
+
+  it('deletes what has been there 30 days for good when the folder is opened', async () => {
+    const { st, b } = await setup();
+    const { app, test } = await appWithTest(b);
+    await b.deleteTest(app.id, test.id);
+    await b.deleteApp(app.id);
+    const [old] = await entries(st);
+    b.close();
+    const later = Date.now() + KEEP_DELETED_MS - 60_000;
+    const again = await LocalBackend.open({ storage: st, path: ROOT, person: ana, live: false, now: () => later });
+    opened.push(again);
+    expect(await entries(st)).toHaveLength(2);
+    again.close();
+    const reopened = await LocalBackend.open({ storage: st, path: ROOT, person: ana, live: false, now: () => later + 120_000 });
+    opened.push(reopened);
+    expect(await entries(st)).toEqual([]);
+    expect(old).toBeTruthy();
+  });
+
+  it('skips a deleted.json it cannot use and says so', async () => {
+    const { b } = await setup({ 'deleted/x/deleted.json': toFileText({ kind: 'robot', id: 'x', name: 'X' }) });
+    expect(await bin(b)).toEqual([]);
+    expect(await first<string[]>(l => b.onWarnings(l))).toEqual(['deleted/x/deleted.json: not a Recently deleted entry, skipped']);
   });
 });
 
