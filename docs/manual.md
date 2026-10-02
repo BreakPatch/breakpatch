@@ -509,8 +509,9 @@ Settings → **Members** → **Invite people**: type their email addresses, choo
 
 A runner Mac and CI sign in with a token instead of an email. An admin makes one in Settings → **Local runner**:
 
-- **Set up a runner Mac**: name it, press **Make the token** and copy it. It's shown only this once. On the runner Mac choose **Connect a team workspace** → **Hosted by Breakpatch** → **This is a runner Mac**, and paste it. That Mac becomes the workspace's [local runner](#the-local-runner), and its runs show under its name. The runner's checklist in Settings → Local runner has the same **Set up a runner Mac** button.
-- **Add a CI token**: for [breakpatch-ci](#from-ci-with-breakpatch-ci). The window lists what CI needs, each with its own **Copy**. In CI, set `BREAKPATCH_WORKSPACE=hosted:<workspace>`, and the secrets `BREAKPATCH_WORKSPACE_TOKEN` (the token) and `BREAKPATCH_MACHINE_KEY` (the workspace's [machine key](#encryption-and-the-recovery-code)). There's no `.bpworkspace` file or CI account: `breakpatch-ci run --suite smoke-7f3a` signs in with the token.
+- **Set up a runner Mac**: name it, press **Make the token** and copy it. Runner tokens start with `BPM1-`. It's shown only this once. On the runner Mac choose **Connect a team workspace** → **Hosted by Breakpatch** → **This is a runner Mac**, and paste it. That Mac becomes the workspace's [local runner](#the-local-runner), and its runs show under its name. The runner's checklist in Settings → Local runner has the same **Set up a runner Mac** button.
+- **Add a CI token**: for [breakpatch-ci](#from-ci-with-breakpatch-ci). CI tokens start with `BPC1-`; one made earlier starts with `BPM1-` and keeps working. The window lists what CI needs, each with its own **Copy**. In CI, set `BREAKPATCH_WORKSPACE=hosted:<workspace>`, and the secrets `BREAKPATCH_WORKSPACE_TOKEN` (the token), `BREAKPATCH_MACHINE_KEY` (the workspace's [machine key](#encryption-and-the-recovery-code)) and `BREAKPATCH_LICENCE_KEY` (your licence key, for [the machine licence](#from-ci-with-breakpatch-ci)). There's no `.bpworkspace` file or CI account: `breakpatch-ci run --suite smoke-7f3a` signs in with the token.
+- **The wrong one in the wrong place** is refused before anything is sent, and the message says which it got and which goes there. A CI token pasted on the runner Mac says "That's a CI token, for breakpatch-ci. This Mac needs a runner token, which starts with BPM1-". A runner token or the runner's machine pass in `BREAKPATCH_WORKSPACE_TOKEN` says that breakpatch-ci needs a CI token, which starts with `BPC1-`. A token typed as a licence key says it isn't one. The runner's **machine pass** (also `BPM1-…`, but longer) is never typed: Breakpatch gives it to the runner.
 - The trash button next to a token stops it working at once. A workspace holds its machine licences plus 2 tokens.
 
 ### Plan, region and usage
@@ -827,8 +828,8 @@ breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --junit result
 
 **The machine licence.** Set these in the CI job's environment:
 
-- `BREAKPATCH_LICENCE_KEY`: your licence key, stored as a CI secret. It's used to take a machine licence and is never saved or typed into a page.
-- `BREAKPATCH_WORKSPACE`: your workspace's Firebase project ID, for example `acme-breakpatch`. Or pass `--workspace team.bpworkspace` (then you don't need it).
+- `BREAKPATCH_LICENCE_KEY`: your licence key, stored as a CI secret. It's used to take a machine licence and is never saved or typed into a page. A CI token, the machine key or the recovery code put there by mistake is refused and never sent: `breakpatch-ci` says which it is and where it goes.
+- `BREAKPATCH_WORKSPACE`: your workspace's Firebase project ID, for example `acme-breakpatch`. Or pass `--workspace team.bpworkspace` (then you don't need it). For a workspace [hosted by Breakpatch](#a-runner-mac-and-ci), `hosted:<workspace>`, as Settings → Local runner → **Add a CI token** shows it.
 - `BREAKPATCH_MACHINE_ID`: a fixed name for this pipeline, for example `github-acme-web`. CI machines are often new for every job; with a fixed name every job reuses the same machine licence instead of taking a new one.
 - `BREAKPATCH_LICENCE_FILE`: where the licence is kept between runs. Keep this file between jobs, with your CI's cache: then most runs don't need to check online, and the usage counts it collects get sent with the next check (see [Licences and seats](#licences-and-seats)).
 
