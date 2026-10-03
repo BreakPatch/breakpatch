@@ -4,5 +4,14 @@
   "description": "Deploy tooling for site/ only (not served: firebase.json ignores it). firebase-tools is pinned exactly; the lockfile holds its hashes.",
   "devDependencies": {
     "firebase-tools": "15.31.0"
+  },
+  "overrides": {
+    "basic-ftp": "^6.2.1",
+    "@google-cloud/pubsub": {
+      "@opentelemetry/core": "^2.8.0"
+    },
+    "gaxios": {
+      "uuid": "^11.1.1"
+    }
   }
 }
