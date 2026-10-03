@@ -43,7 +43,9 @@ test('the install command stays on one line on phones, with Copy at its end', ()
 
 test('the hero badge keeps its dot with the words after it', () => {
   const home = read('./index.html');
-  assert.ok(home.includes('AI on your Mac<span class="soft">no cloud, no per-run fees</span>'));
+  assert.ok(home.includes('AI on your Mac<span class="soft"><span>no cloud<a class="star" href="#no-cloud"'));
+  // The asterisk on "no cloud" leads to the note that says where the cloud does come in.
+  assert.ok(home.includes('<p class="cloud-note" id="no-cloud">'));
   assert.doesNotMatch(home, /class="sep"/);
   assert.ok(CSS.includes('.ai-badge .soft::before{content:"";width:4px;height:4px;border-radius:50%;'));
 });

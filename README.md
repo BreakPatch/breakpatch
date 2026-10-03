@@ -22,8 +22,10 @@
 <p align="center"><strong>Here to find what breaks.</strong></p>
 
 <p align="center">
-  AI-powered UI testing that runs on your Mac. Click through your web app, replay it any time, and see exactly what broke. No code, no selectors, no cloud.
+  AI-powered UI testing that runs on your Mac. Click through your web app, replay it any time, and see exactly what broke. No code, no selectors, no cloud.*
 </p>
+
+<p align="center"><sub>* Mostly sunny, with a light chance of cloud. The AI and your screens never leave your Mac. The internet is only needed to download the model once and to get updates. Team workspaces (coming later) sync through the cloud, because that's how a team shares tests.</sub></p>
 
 <p align="center">
   <a href="https://github.com/BreakPatch/breakpatch/actions/workflows/ci.yml"><img src="https://github.com/BreakPatch/breakpatch/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>

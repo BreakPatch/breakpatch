@@ -17,7 +17,7 @@ Read "Before you post" first.
 
 > Flutter web has a testing problem. The whole UI is painted onto a canvas, so tools that find buttons by selector have nothing to grab. (On a plain Flutter web build, a Playwright `getByText("New project")` finds nothing.)
 >
-> We've been building Breakpatch for exactly this kind of app. You click through your web app, and a vision model that runs on your Mac names each step and finds it on the screen again. Every step is checked against the screen as you recorded it. No selectors, no code, no cloud, no per-run fees.
+> We've been building Breakpatch for exactly this kind of app. You click through your web app, and a vision model that runs on your Mac names each step and finds it on the screen again. Every step is checked against the screen as you recorded it. No selectors, no code, no cloud AI, no per-run fees.
 >
 > It isn't only for Flutter: it works with React, Vue, Angular and anything else a browser can open.
 >
@@ -31,7 +31,7 @@ Read "Before you post" first.
 
 ## General (attach `tease-find-what-breaks.mp4`, or `tease-fixes-itself.mp4` for Team)
 
-> Here to find what breaks. Breakpatch: AI-powered UI testing that runs on your Mac. Click through your app, a vision model names each step, replay it any time and see exactly what broke. No code, no cloud. Free and open source. Public release coming soon.
+> Here to find what breaks. Breakpatch: AI-powered UI testing that runs on your Mac. Click through your app, a vision model names each step, replay it any time and see exactly what broke. No code, no cloud AI. Free and open source. Public release coming soon.
 
 ## Before you post
 

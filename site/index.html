@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Breakpatch: AI UI testing on your Mac</title>
-<meta name="description" content="AI UI testing for web apps that runs on your Mac. Click through your app and a local vision model names each step. No code, no cloud, no per-run fees. Free and open source.">
+<meta name="description" content="AI UI testing for web apps that runs on your Mac. Click through your app and a local vision model names each step. No code, no cloud AI, no per-run fees. Free and open source.">
 <link rel="canonical" href="https://breakpatch.dev/">
 <meta name="theme-color" content="#171412" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#FBF7F3" media="(prefers-color-scheme: light)">
@@ -13,7 +13,7 @@
 <meta property="og:site_name" content="Breakpatch">
 <meta property="og:url" content="https://breakpatch.dev/">
 <meta property="og:title" content="Breakpatch: AI UI testing on your Mac">
-<meta property="og:description" content="Record UI tests by clicking through your web app. A vision AI model on your Mac names each step, and screen checks show what broke. No cloud, no per-run fees. Free and open source.">
+<meta property="og:description" content="Record UI tests by clicking through your web app. A vision AI model on your Mac names each step, and screen checks show what broke. No cloud AI, no per-run fees. Free and open source.">
 <meta property="og:image" content="https://breakpatch.dev/assets/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -21,7 +21,7 @@
 <meta property="og:locale" content="en_GB">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Breakpatch: AI UI testing on your Mac">
-<meta name="twitter:description" content="Record UI tests by clicking through your web app. A vision AI model on your Mac names each step, and screen checks show what broke. No cloud, no per-run fees. Free and open source.">
+<meta name="twitter:description" content="Record UI tests by clicking through your web app. A vision AI model on your Mac names each step, and screen checks show what broke. No cloud AI, no per-run fees. Free and open source.">
 <meta name="twitter:image" content="https://breakpatch.dev/assets/og.png">
 <meta name="twitter:image:alt" content="Breakpatch: AI UI testing that runs on your Mac. A run report where the AI found a button that had moved, with its old and new positions.">
 <link rel="icon" href="/favicon.ico" sizes="32x32">
@@ -35,7 +35,7 @@
 <script src="/assets/paddle-config.js"></script>
 <link rel="preload" as="image" href="/assets/shots/recorder-dark.webp" imagesrcset="/assets/shots/recorder-dark.webp 1280w, /assets/shots/recorder-dark@2x.webp 2560w" imagesizes="(min-width: 1184px) 1120px, calc(100vw - 32px)" media="(prefers-color-scheme: dark) and (min-width: 561px)">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Breakpatch","url":"https://breakpatch.dev/","applicationCategory":"DeveloperApplication","operatingSystem":"macOS 14 or later (Apple Silicon)","description":"AI UI testing for web apps that runs on your Mac: record by clicking, with an on-device vision model (Qwen3-VL through MLX) naming each step, replay with screen checks, and see what broke. No cloud and no per-run fees.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Community edition, free and open source"}}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Breakpatch","url":"https://breakpatch.dev/","applicationCategory":"DeveloperApplication","operatingSystem":"macOS 14 or later (Apple Silicon)","description":"AI UI testing for web apps that runs on your Mac: record by clicking, with an on-device vision model (Qwen3-VL through MLX) naming each step, replay with screen checks, and see what broke. No cloud AI and no per-run fees.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"Community edition, free and open source"}}
 </script>
 </head>
 <body>
@@ -57,7 +57,7 @@
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap">
       <div class="hero-text">
-        <p class="ai-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>AI on your Mac<span class="soft">no cloud, no per-run fees</span></p>
+        <p class="ai-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z"/></svg>AI on your Mac<span class="soft"><span>no cloud<a class="star" href="#no-cloud" aria-label="About “no cloud”">*</a>, no per-run fees</span></span></p>
         <h1 id="hero-title">AI-powered UI testing that <em>runs on your Mac.</em></h1>
         <p class="sub">Click through your web app. A vision AI model on your Mac names what you click. Replay any time and see exactly what broke. No code to write.</p>
         <div class="install" id="install">
@@ -67,6 +67,7 @@
             <a href="/docs/#install">What the command does</a>
           </div>
           <p class="reqs">Free and open source · Apple Silicon · macOS 14 or later · 16 GB memory</p>
+          <p class="cloud-note" id="no-cloud"><b>* No cloud?</b> Mostly sunny, with a light chance of cloud. The AI and your screens never leave your Mac. The internet is only needed to download the model once and to get updates. Team workspaces (coming later) sync through the cloud, because that's how a team shares tests.</p>
           <p class="runs-count" id="runs-count" hidden><b id="runs-count-n"></b> tests run with Breakpatch</p>
         </div>
       </div>
