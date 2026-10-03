@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use crate::os_words::os_string;
 #[cfg(test)]
 use std::path::Path;
 use std::path::PathBuf;
@@ -489,7 +490,7 @@ impl<S: SecretStore> Secrets<S> {
         let origins = normalize_origins(&origins)?;
         let _g = self.lock.lock().unwrap();
         if !self.index.load().contains_key(name) {
-            return Err(format!("There's no saved secret {name} on this Mac."));
+            return Err(os_string(format!("There's no saved secret {name} on this Mac.")));
         }
         self.index.put(name, Some(Policy { origins, runner_can_use }))
     }

@@ -167,6 +167,13 @@ export async function pickFolder(title = 'Choose a folder for your tests'): Prom
   return typeof path === 'string' ? path : null;
 }
 
+/** Keeps the computer awake while runner mode is on, or lets it sleep again (shell command
+ *  `runner_keep_awake`: caffeinate, systemd-inhibit or a Windows power request). Rejects with the
+ *  shell's reason when it can't. Nothing to do in a browser. */
+export async function keepAwake(on: boolean): Promise<void> {
+  if (isTauri()) await tauriInvoke('runner_keep_awake', { on });
+}
+
 /** Shows the folder in Finder. */
 export async function revealInFinder(path: string): Promise<void> {
   if (isTauri()) await tauriInvoke('reveal_in_finder', { path });

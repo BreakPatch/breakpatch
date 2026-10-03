@@ -501,7 +501,7 @@ fn a_withdrawn_admin_is_not_trusted_from_then_on_and_the_others_stay() {
     assert!(ana.import_invite(WS, &first.invite(WS).unwrap(), &docs.0).is_err());
     // An announcement the first admin made is refused too, until the second admin signs it again.
     let again = second.grant(WS, &dev.id, &dev.public_key).unwrap();
-    assert!(ana.accept(WS, &again, &docs.0).unwrap_err().contains("wasn't announced by an admin this Mac trusts"));
+    assert!(ana.accept(WS, &again, &docs.0).unwrap_err().contains(&*os_text("wasn't announced by an admin this Mac trusts")));
     for kid in [1, 2] {
         docs.announce(second.announce(WS, kid).unwrap());
     }

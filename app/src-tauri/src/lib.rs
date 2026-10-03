@@ -10,6 +10,7 @@ mod folder;
 mod licence;
 mod migration;
 mod net;
+mod os_words;
 mod results;
 mod runner;
 mod secrets;
@@ -703,6 +704,20 @@ mod config_tests {
             let src = security[csp]["connect-src"].as_str().unwrap();
             assert!(src.split(' ').any(|h| h == "https://europe-west1-breakpatch-cloud.cloudfunctions.net"), "{csp}");
         }
+    }
+
+    /// The Linux packages hand an opened workspace file or breakpatch:// link to the app (`%u`
+    /// in the desktop entry) and bring the tools that register them (xdg-mime,
+    /// update-desktop-database).
+    #[test]
+    fn linux_packages_pass_links_to_the_app_and_can_register_them() {
+        let linux: Value = serde_json::from_str(include_str!("../tauri.linux.conf.json")).unwrap();
+        let deb = &linux["bundle"]["linux"]["deb"];
+        assert_eq!(deb["depends"], serde_json::json!(["xdg-utils", "desktop-file-utils"]));
+        assert_eq!(deb["desktopTemplate"], "linux/breakpatch.desktop");
+        let entry = include_str!("../linux/breakpatch.desktop");
+        assert!(entry.lines().any(|l| l == "Exec={{exec}} %u"), "{entry}");
+        assert!(entry.contains("MimeType={{mime_type}}"));
     }
 
     /// The UI may show local notifications when a run finishes (lib/notify.ts).

@@ -60,6 +60,7 @@ use serde_json::{json, Value};
 
 use crate::secrets::SecretStore;
 use crate::usage::UsageStore;
+use crate::os_words::os_text;
 
 pub const KEYCHAIN_SERVICE: &str = "dev.breakpatch.licence";
 /// The one entry of versions before licences per workspace; moved by [`Licensing::select`].
@@ -401,10 +402,16 @@ pub const SOLO: &str = "solo";
 /// [`message_for`], in Solo's words when `solo`: one person on one Mac, nobody to ask, and the
 /// account page to free the Mac or renew. A Solo refusal's own message from the service is kept.
 pub fn message_for_tier(code: &str, service_message: Option<&str>, solo: bool) -> String {
-    if !solo {
-        return message_for(code, service_message);
+    match solo_words(code) {
+        Some(m) if solo => os_text(m).into_owned(),
+        _ => message_for(code, service_message),
     }
-    let m = match code {
+}
+
+/// Solo's own words for a code, as on a Mac (os_words.rs says them for this computer).
+/// Solo's other refusals (solo_no_members, solo_needs_update) keep the service's own words.
+fn solo_words(code: &str) -> Option<&'static str> {
+    Some(match code {
         "revoked" => "This Solo licence is no longer active. Contact Breakpatch at support@breakpatch.dev.",
         "expired" => "Your Solo licence has expired. Renew it at account.breakpatch.dev.",
         "out_of_seats" => "This Solo licence is already used by someone else. Solo is for one person: for more people, choose Team.",
@@ -415,16 +422,22 @@ pub fn message_for_tier(code: &str, service_message: Option<&str>, solo: bool) -
         "other_device" => "This Solo licence was activated on another Mac. Free it at account.breakpatch.dev, then activate it here.",
         "grace" => "Breakpatch couldn't check your Solo licence lately. Reconnect soon to keep Solo features.",
         "invalid_token" => "This Solo licence couldn't be checked. Activate it again.",
-        // Solo's other refusals (solo_no_members, solo_needs_update): the service's own words.
-        _ => return message_for(code, service_message),
-    };
-    m.to_string()
+        _ => return None,
+    })
 }
 
 /// Plain words for each code. Service codes first (they never change; new ones may be added),
 /// then the app's own.
 pub fn message_for(code: &str, service_message: Option<&str>) -> String {
-    let m = match code {
+    match team_words(code) {
+        Some(m) => os_text(m).into_owned(),
+        None => service_message.map(str::to_string).unwrap_or_else(|| "The licence couldn't be checked.".into()),
+    }
+}
+
+/// The words for a code, as on a Mac (os_words.rs says them for this computer).
+fn team_words(code: &str) -> Option<&'static str> {
+    Some(match code {
         "bad_request" => "Something is missing from the request. Update Breakpatch and try again.",
         "unknown_key" => "This licence key isn't recognised. Check it and try again.",
         "revoked" => "This licence is no longer active. Ask your admin for help.",
@@ -446,9 +459,8 @@ pub fn message_for(code: &str, service_message: Option<&str>) -> String {
         "unavailable" => "Licences aren't available in this edition of Breakpatch.",
         "needs_workspace" => "This is a Team licence key. Team licences are used in a workspace: connect or create one, then enter the key there.",
         "no_device" => "Breakpatch couldn't tell which Mac this is, so a Solo licence can't be activated here.",
-        _ => return service_message.map(str::to_string).unwrap_or_else(|| "The licence couldn't be checked.".into()),
-    };
-    m.to_string()
+        _ => return None,
+    })
 }
 
 /// The status of what's stored, at `now` (Unix seconds). `workspace`: the open workspace's
@@ -579,7 +591,7 @@ impl Service {
     /// The words for "offline": the TLS-inspection sentence when that's what it was.
     fn offline_message(&self) -> String {
         if self.cert_failed.load(std::sync::atomic::Ordering::Relaxed) {
-            crate::net::TLS_INTERCEPTED.to_string()
+            os_text(crate::net::TLS_INTERCEPTED).into_owned()
         } else {
             message_for("offline", None)
         }
@@ -1055,7 +1067,7 @@ impl<S: SecretStore> Licensing<S> {
             k => {
                 // The workspace's recovery code or machine key pasted as a licence key: never sent.
                 if let Some(msg) = not_a_licence_key(k) {
-                    return Err(Failure { code: "bad_request".into(), message: msg.into(), tier: None });
+                    return Err(Failure { code: "bad_request".into(), message: os_text(msg).into_owned(), tier: None });
                 }
                 k.to_string()
             }

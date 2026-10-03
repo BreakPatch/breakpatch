@@ -8,7 +8,12 @@
     "shortDescription": "Record and replay web UI tests on your computer",
     "linux": {
       "deb": {
-        "section": "devel"
+        "section": "devel",
+        "depends": [
+          "xdg-utils",
+          "desktop-file-utils"
+        ],
+        "desktopTemplate": "linux/breakpatch.desktop"
       }
     }
   },

@@ -71,6 +71,15 @@ describe('Ctrl shortcuts on Windows and Linux', () => {
     });
   }
 
+  it('on a Mac, ⌘ with Ctrl held does nothing, as before', () => {
+    const onNew = vi.fn();
+    at(<Screen onNew={onNew} />);
+    fireEvent.keyDown(window, { key: 'n', metaKey: true, ctrlKey: true });
+    fireEvent.keyDown(window, { key: ',', metaKey: true, ctrlKey: true });
+    expect(onNew).not.toHaveBeenCalled();
+    expect(screen.getByTestId('where')).toHaveTextContent('/');
+  });
+
   it('on a Mac, Ctrl alone is not the shortcut key', () => {
     const onNew = vi.fn();
     at(<Screen onNew={onNew} />);
