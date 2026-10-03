@@ -171,6 +171,9 @@ function groupRefs(steps: Step[], out: { groupId: string; version: number | 'lat
   return out;
 }
 
+/** Where a deleted suite's result address waits in the address store: its Recently deleted entry's name. */
+const binAddressKey = (entry: string) => `deleted.${entry}`;
+
 function stamp(t: number): string {
   return new Date(t).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
 }
@@ -692,13 +695,17 @@ export class LocalBackend implements Backend {
   }
   /** Writes the entry's deleted.json, moves the item's files in with `move`, and reads the folder again. */
   private async toBin(item: Omit<DeletedItem, 'deletedAt' | 'deletedBy' | 'appName'>, move: (entry: string) => Promise<void>) {
-    const at = this.now();
+    // Never two at the same time: an app restored under a new id tells its own deleted tests from
+    // the next app's by when each was deleted (restoreRec).
+    const at = Math.max(this.now(), this.lastBinAt + 1);
+    this.lastBinAt = at;
     const name = `${stamp(at)}-${item.kind}-${item.appId ? `${item.appId}-` : ''}${item.id}`;
     const entry = `${DELETED_DIR}/${uniqueSlug(name, x => this.model.bin.has(x) || this.texts.has(`${DELETED_DIR}/${x}/deleted.json`))}`;
     await this.put(`${entry}/deleted.json`, { ...item, deletedAt: at, deletedBy: this.me });
     try { await move(entry); }
     finally { this.texts = await this.scan(); }
   }
+  private lastBinAt = 0;
   /** The newest entry for this item. */
   private binRec(r: DeletedRef): BinRec {
     const found = [...this.model.bin.values()].filter(b => b.item.kind === r.kind && b.item.id === r.id && (b.item.appId ?? '') === (r.appId ?? ''))
@@ -716,6 +723,16 @@ export class LocalBackend implements Backend {
       if (kind === 'app') {
         const to = uniqueSlug(id, x => this.model.apps.has(x) || this.texts.has(`apps/${x}/app.json`));
         await this.moveDir(`${from}/apps/${id}`, `apps/${to}`);
+        // Under a new id: its own tests and shared steps in Recently deleted (deleted before it was)
+        // go with it. The ones deleted later are the other app's, which has its id now.
+        if (to !== id) {
+          for (const x of [...this.model.bin.values()]) {
+            if (x.item.appId !== id || x.item.deletedAt > b.item.deletedAt) continue;
+            const dir = `${DELETED_DIR}/${x.entry}`;
+            await this.put(`${dir}/deleted.json`, { ...x.item, appId: to });
+            if (await this.st.exists(this.abs(`${dir}/apps/${id}`))) await this.moveDir(`${dir}/apps/${id}`, `${dir}/apps/${to}`);
+          }
+        }
       } else if (kind === 'test') {
         const to = app!.tests.has(id) ? uniqueSlug(name, x => app!.tests.has(x) || app!.runs.has(x)) : id;
         for (const sub of ['tests', 'runs']) await this.moveFile(`${from}/apps/${appId}/${sub}/${id}.json`, `apps/${appId}/${sub}/${to}.json`);
@@ -725,9 +742,15 @@ export class LocalBackend implements Backend {
       } else {
         const to = this.model.suites.has(id) ? uniqueSlug(name, x => this.model.suites.has(x)) : id;
         await this.moveFile(`${from}/suites/${id}.json`, `suites/${to}.json`);
-        if (to !== id && this.addresses) {
-          const url = await this.addresses.get(this.connectionId, id).catch(() => null);
-          if (url) await this.addresses.set(this.connectionId, to, url);
+        // Its result address, kept with the entry (deleteSuite). An entry from before that has it
+        // under the suite's id still, which is right only while the id is its own again.
+        if (this.addresses) {
+          const kept = binAddressKey(b.entry);
+          const url = await this.addresses.get(this.connectionId, kept).catch(() => null);
+          if (url) {
+            await this.addresses.set(this.connectionId, to, url);
+            await this.addresses.set(this.connectionId, kept, null).catch(() => {});
+          }
         }
       }
       await this.drop(from);
@@ -738,7 +761,11 @@ export class LocalBackend implements Backend {
     await this.drop(`${DELETED_DIR}/${b.entry}`);
     // An app's own deleted tests and shared steps go with it.
     if (b.item.kind === 'app') for (const x of this.model.bin.values()) if (x.item.appId === b.item.id && !this.model.apps.has(b.item.id)) await this.drop(`${DELETED_DIR}/${x.entry}`);
-    if (b.item.kind === 'suite' && this.addresses && !this.model.suites.has(b.item.id)) await this.addresses.set(this.connectionId, b.item.id, null).catch(() => {});
+    if (b.item.kind === 'suite' && this.addresses) {
+      await this.addresses.set(this.connectionId, binAddressKey(b.entry), null).catch(() => {});
+      // An entry from before the address went with it: under the suite's id, unless a suite has it now.
+      if (!this.model.suites.has(b.item.id)) await this.addresses.set(this.connectionId, b.item.id, null).catch(() => {});
+    }
   }
   /** Deletes for good what has been in Recently deleted for KEEP_DELETED_DAYS (when the folder is opened). */
   emptyBin(): Promise<number> {
@@ -807,12 +834,25 @@ export class LocalBackend implements Backend {
       return clone({ ...stamped, id: sid, schedule, lastRun: this.suiteLast.get(sid) });
     });
   }
-  /** Its result address stays in the Keychain until it's deleted for good. */
+  /**
+   * Its result address stays in the Keychain until it's deleted for good, kept with its entry in
+   * Recently deleted rather than under its id: a new suite of the same name gets the id and none
+   * of the address, and restoring puts the address back on the suite it belonged to.
+   */
   deleteSuite(id: string) {
     return this.write(async () => {
       const s = this.model.suites.get(id);
       if (!s) throw new Error('Suite not found');
-      await this.toBin({ kind: 'suite', id, name: s.name, createdBy: s.createdBy }, async entry => { await this.moveFile(`suites/${id}.json`, `${entry}/suites/${id}.json`); });
+      await this.toBin({ kind: 'suite', id, name: s.name, createdBy: s.createdBy }, async entry => {
+        await this.moveFile(`suites/${id}.json`, `${entry}/suites/${id}.json`);
+        if (!this.addresses) return;
+        const url = await this.addresses.get(this.connectionId, id).catch(() => null);
+        if (!url) return;
+        try {
+          await this.addresses.set(this.connectionId, binAddressKey(entry.slice(DELETED_DIR.length + 1)), url);
+          await this.addresses.set(this.connectionId, id, null);
+        } catch { /* kept under its id, as before: a restore with the same id still finds it */ }
+      });
       this.suiteLast.delete(id);
     });
   }

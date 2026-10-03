@@ -1032,12 +1032,14 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     /// of the admins still there; only those this Mac trusts are named, with its own.
     pub fn revoke(&self, ws: &str, sign_key: &str, keep: &[String], trust: &Trust) -> Result<Revocation, String> {
         parse_signer(sign_key)?;
+        // The workspace's revocations first (kept in the ring), so a Mac whose own key the
+        // workspace withdrew finds out here and signs nothing.
+        let trusted = self.trusted(ws, trust, None)?;
         let d = self.signing(ws)?;
         let own = d.signer();
         if sign_key == own {
             return Err("This Mac can't withdraw its own signing key.".into());
         }
-        let trusted = self.trusted(ws, trust, None)?;
         let mut kept: BTreeSet<String> = keep.iter().filter(|k| *k != sign_key && trusted.contains(*k)).cloned().collect();
         kept.insert(own.clone());
         let keep: Vec<String> = kept.into_iter().collect();

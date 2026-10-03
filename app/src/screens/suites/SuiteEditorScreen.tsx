@@ -10,6 +10,7 @@ import { KEEP_DELETED_DAYS, type DeletedItem } from '../../data/backend';
 import type { App, Suite } from '../../data/types';
 import { plural } from '../../components/common/format';
 import { useAllTests } from './useAllTests';
+import { swapTests } from './suiteOrder';
 import { edition, type SuiteExtras } from '../../edition';
 import './suites.css';
 
@@ -68,7 +69,8 @@ export default function SuiteEditorScreen() {
   };
   const move = (i: number, d: -1 | 1) => {
     setDirty(true);
-    setPicked(p => { const list = [...present]; const j = i + d; [list[i], list[j]] = [list[j], list[i]]; return [...list, ...p.filter(r => !findTest(r))]; });
+    const [a, b] = [present[i], present[i + d]];
+    if (a && b) setPicked(p => swapTests(p, a, b));
   };
 
   const problems = {

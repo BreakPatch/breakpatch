@@ -565,6 +565,25 @@ fn what_a_withdrawn_admin_endorsed_after_is_not_followed() {
 }
 
 #[test]
+fn a_mac_whose_key_the_workspace_withdrew_cant_withdraw_another_before_reviewing() {
+    let (first, second, _ana, mut docs) = team_of_two_admins();
+    docs.revoke(second.revoke(WS, &signer(&first), &[signer(&second)], &docs.0).unwrap());
+    // The first Mac hasn't reviewed the workspace yet: revoke applies what it says before signing.
+    let err = first.revoke(WS, &signer(&second), &[], &docs.0).unwrap_err();
+    assert!(err.contains("withdrawn"), "{err}");
+    assert!(first.status(WS).unwrap().withdrawn);
+}
+
+/// A device document's id (`devices/<id>`) from its device key. The Team app checks a document's
+/// id against its key with the same vector (encryption/deviceId.test.ts).
+#[test]
+fn a_device_id_is_derived_from_its_device_key() {
+    let pk: [u8; 32] = core::array::from_fn(|i| i as u8);
+    assert_eq!(STANDARD.encode(pk), "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=");
+    assert_eq!(device_id(&pk), "c16185034a809d23");
+}
+
+#[test]
 fn two_admins_withdrawing_each_other_both_lose_trust() {
     let (first, second, ana, mut docs) = team_of_two_admins();
     docs.revoke(second.revoke(WS, &signer(&first), &[], &docs.0).unwrap());

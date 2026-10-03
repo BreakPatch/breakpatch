@@ -504,6 +504,64 @@ describe('Recently deleted', () => {
     expect(await entries(st)).toEqual([]);
   });
 
+  it('keeps a deleted suite’s result address with it: a new suite of the same name doesn’t get it, and restoring puts it back', async () => {
+    const kept = new Map<string, string>();
+    const addresses = {
+      async get(ws: string, id: string) { return kept.get(`${ws}/${id}`) ?? null; },
+      async set(ws: string, id: string, url: string | null) { if (url) kept.set(`${ws}/${id}`, url); else kept.delete(`${ws}/${id}`); },
+    };
+    const { st: folder } = await setup();
+    const b = await LocalBackend.open({ storage: folder, path: ROOT, person: ana, live: false, addresses });
+    opened.push(b);
+    const { app, test } = await appWithTest(b);
+    const tests = [{ appId: app.id, testId: test.id }];
+    const url1 = 'https://hooks.slack.com/services/T0/B0/first', url2 = 'https://hooks.slack.com/services/T0/B0/second';
+    await b.saveSuite(null, { name: 'Smoke', tests, schedule: null, notify: { kind: 'slack', when: 'every', url: url1 } });
+    await b.deleteSuite('smoke');
+    // Made again with the same name: the same id, none of the old one's address.
+    await b.saveSuite(null, { name: 'Smoke', tests, schedule: null });
+    expect(await b.notify.address('smoke')).toBeNull();
+    await b.recentlyDeleted.restore({ kind: 'suite', id: 'smoke' });
+    expect(await b.notify.address('smoke-2')).toBe(url1);
+    expect(await b.notify.address('smoke')).toBeNull();
+    // The new one with an address of its own, deleted and restored: each keeps its own.
+    await b.saveSuite('smoke', { name: 'Smoke', tests, schedule: null, notify: { kind: 'slack', when: 'every', url: url2 } });
+    await b.deleteSuite('smoke-2');
+    await b.saveSuite(null, { name: 'Smoke 2', tests, schedule: null });
+    await b.recentlyDeleted.restore({ kind: 'suite', id: 'smoke-2' });
+    expect(await b.notify.address('smoke')).toBe(url2);
+    expect(await b.notify.address('smoke-2')).toBeNull();
+    expect(await b.notify.address('smoke-3')).toBe(url1);
+    // Deleted for good: its address goes, the others stay.
+    await b.deleteSuite('smoke-3');
+    await b.recentlyDeleted.deleteNow({ kind: 'suite', id: 'smoke-3' });
+    expect([...kept.values()]).toEqual([url2]);
+  });
+
+  it('gives an app restored under a new id its own deleted tests and shared steps', async () => {
+    const { b } = await setup();
+    const { app, test } = await appWithTest(b);
+    const g = await b.createGroup(app.id, 'Sign in', '', steps);
+    await b.deleteTest(app.id, test.id);
+    await b.deleteGroup(app.id, g.id);
+    await b.deleteApp(app.id);
+    // Another app takes its id, and deletes a test of its own.
+    const other = await b.addApp({ name: 'Web app', baseUrl: 'https://other.example.com', defaultViewport: VP });
+    expect(other.id).toBe(app.id);
+    const mine = await b.createTest({ appId: other.id, name: 'Other test', startUrl: 'https://other.example.com', viewport: VP });
+    await b.deleteTest(other.id, mine.id);
+    await b.recentlyDeleted.restore({ kind: 'app', id: app.id });
+    const apps = await first<{ id: string; baseUrl: string }[]>(l => b.apps(l));
+    const restored = apps.find(a => a.baseUrl === 'https://app.example.com')!;
+    expect(restored.id).toBe('web-app-2');
+    expect((await bin(b, restored.id)).map(i => `${i.kind}:${i.id}`).sort()).toEqual(['group:sign-in', 'test:log-in']);
+    expect((await bin(b, other.id)).map(i => `${i.kind}:${i.id}`)).toEqual(['test:other-test']);
+    await b.recentlyDeleted.restore({ kind: 'test', id: test.id, appId: restored.id });
+    await b.recentlyDeleted.restore({ kind: 'group', id: g.id, appId: restored.id });
+    expect(await first<Test[]>(l => b.tests(restored.id, l))).toMatchObject([{ id: 'log-in', name: 'Log in' }]);
+    expect(await first<{ id: string }[]>(l => b.stepGroups(restored.id, l))).toMatchObject([{ id: 'sign-in' }]);
+  });
+
   it('deletes what has been there 30 days for good when the folder is opened', async () => {
     const { st, b } = await setup();
     const { app, test } = await appWithTest(b);

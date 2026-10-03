@@ -272,15 +272,24 @@ def _headers(call: dict, origin: str | None, secrets: dict[str, Secret]) -> dict
 
 # ---------------------------------------------------------------- making the call
 
+# A proxy's answers that refuse the connection by policy (a password it wants, a web filter): the
+# same for every address of the host, so the next one isn't tried. Any other answer (502 or 504
+# when that address doesn't answer it, or none at all) is about that address.
+PROXY_POLICY_REFUSALS = frozenset({401, 403, 407, 451})
+
+
 def _connect_any(addresses: list[str], port: int, timeout: float, open_one) -> socket.socket:
     """Opens the first of the checked addresses that answers (as create_connection does for a name).
-    A refused or unreachable address moves on to the next; the last error is raised."""
+    A refused or unreachable address moves on to the next, through a proxy too; the last error is
+    raised. A proxy's policy refusal is raised at once."""
     last: OSError | None = None
     for a in addresses:
         try:
             return open_one(a)
-        except net.ProxyError:
-            raise                      # the proxy's answer is the same for every address
+        except net.ProxyError as e:
+            if e.status in PROXY_POLICY_REFUSALS:
+                raise
+            last = e
         except OSError as e:
             last = e
     raise last or OSError("no address to connect to")

@@ -31,32 +31,51 @@ from urllib.parse import unquote, urlsplit
 
 log = logging.getLogger("breakpatch.net")
 
-# A host whose certificate is a public one, so a certificate this Mac doesn't trust means something
-# on the way replaced it (the model download, the browser download, Breakpatch's own services).
+# A host whose certificate is a public one, so a certificate this computer doesn't trust means
+# something on the way replaced it (the model download, the browser download, Breakpatch's own services).
 KNOWN_PUBLIC = ("huggingface.co", "hf.co", "breakpatch.dev", "playwright.dev", "playwright.azureedge.net",
                 "microsoft.com")
 
-TLS_INTERCEPTED = ("Your network replaced the website's certificate (common on company networks). Breakpatch "
-                   "trusts the certificates your Mac trusts; ask IT to install the network's certificate on this Mac.")
+
+def machine_words(platform: str | None = None) -> tuple[str, str]:
+    """What the messages call the machine and where its proxy is set: ("this Mac", System Settings)
+    on macOS, ("this computer", the system's own place) elsewhere."""
+    platform = platform or sys.platform
+    if platform == "darwin":
+        return "this Mac", "System Settings > Network > Details > Proxies"
+    if platform == "win32":
+        return "this computer", "Settings > Network & internet > Proxy"
+    return "this computer", "your system's network proxy settings"
 
 
-def tls_untrusted(host: str) -> str:
+def tls_intercepted(platform: str | None = None) -> str:
+    this, _ = machine_words(platform)
+    return ("Your network replaced the website's certificate (common on company networks). Breakpatch "
+            f"trusts the certificates {this} trusts; ask IT to install the network's certificate on {this}.")
+
+
+TLS_INTERCEPTED = tls_intercepted()
+
+
+def tls_untrusted(host: str, platform: str | None = None) -> str:
     """For a host that may have a certificate of its own making (a staging app)."""
-    return (f"This Mac doesn't trust {host}'s certificate. If you're on a company network, it may have replaced "
-            "the certificate: Breakpatch trusts the certificates your Mac trusts, so ask IT to install the "
-            "network's certificate on this Mac. If it's your own test server, its certificate needs to be "
-            "trusted on this Mac too.")
+    this, _ = machine_words(platform)
+    return (f"{this[0].upper()}{this[1:]} doesn't trust {host}'s certificate. If you're on a company network, it may "
+            f"have replaced the certificate: Breakpatch trusts the certificates {this} trusts, so ask IT to install "
+            f"the network's certificate on {this}. If it's your own test server, its certificate needs to be "
+            f"trusted on {this} too.")
 
 
-def proxy_auth(proxy: str | None) -> str:
+def proxy_auth(proxy: str | None, platform: str | None = None) -> str:
+    this, _ = machine_words(platform)
     return (f"Your network's proxy{_at(proxy)} asks for a password, which Breakpatch can't send. Ask IT to let "
-            "this Mac through without one (for example by its address), or for the proxy address with the "
+            f"{this} through without one (for example by its address), or for the proxy address with the "
             "user name and password in it (see Using Breakpatch on a company network in the Breakpatch documentation).")
 
 
-def proxy_failed(proxy: str | None) -> str:
-    return (f"Couldn't connect through your network's proxy{_at(proxy)}. Check the proxy in System Settings > "
-            "Network > Details > Proxies, or ask IT.")
+def proxy_failed(proxy: str | None, platform: str | None = None) -> str:
+    _, settings = machine_words(platform)
+    return f"Couldn't connect through your network's proxy{_at(proxy)}. Check the proxy in {settings}, or ask IT."
 
 
 def proxy_refused(proxy: str | None, status: int | None) -> str:
@@ -65,8 +84,13 @@ def proxy_refused(proxy: str | None, status: int | None) -> str:
             "blocking the address: ask IT to allow it.")
 
 
-PAC_HINT = (" This Mac uses an automatic proxy configuration, which Breakpatch's own downloads can't read: "
-            "see Using Breakpatch on a company network in the Breakpatch documentation.")
+def pac_hint(platform: str | None = None) -> str:
+    this, _ = machine_words(platform)
+    return (f" {this[0].upper()}{this[1:]} uses an automatic proxy configuration, which Breakpatch's own downloads "
+            "can't read: see Using Breakpatch on a company network in the Breakpatch documentation.")
+
+
+PAC_HINT = pac_hint()
 
 
 def _at(proxy: str | None) -> str:
@@ -318,6 +342,19 @@ def is_cert_failure(exc: BaseException) -> bool:
     return False
 
 
+@functools.lru_cache(maxsize=1)
+def _httpx_proxy_errors() -> tuple[type[BaseException], ...]:
+    """httpx's and httpcore's ProxyError (the model download's client), where they're installed.
+    Imported when first needed, not with this module."""
+    out: list[type[BaseException]] = []
+    for mod in ("httpx", "httpcore"):
+        try:
+            out.append(getattr(__import__(mod), "ProxyError"))
+        except (ImportError, AttributeError):
+            pass
+    return tuple(out)
+
+
 def explain(exc: BaseException, host: str | None = None, proxy: str | None = None) -> str | None:
     """A sentence for a certificate or proxy failure, or None when it's neither."""
     if is_cert_failure(exc):
@@ -329,7 +366,7 @@ def explain(exc: BaseException, host: str | None = None, proxy: str | None = Non
             if e.status:
                 return proxy_refused(e.proxy, e.status)
             return proxy_failed(e.proxy)
-        if type(e).__name__ == "ProxyError":              # httpx / httpcore
+        if isinstance(e, _httpx_proxy_errors()):
             text = str(e)
             if "407" in text:
                 return proxy_auth(proxy)
@@ -369,5 +406,5 @@ def browser_message(error: str, url: str) -> str | None:
                 return (f"Your network's proxy wouldn't connect to {host}. A company web filter may be blocking "
                         "it: ask IT to allow it.")
             if kind == "blocked":
-                return f"{host} is blocked on this Mac by an administrator's policy."
+                return f"{host} is blocked on {machine_words()[0]} by an administrator's policy."
     return None
