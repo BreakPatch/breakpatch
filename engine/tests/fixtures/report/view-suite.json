@@ -68,6 +68,10 @@
           "v": "QA Mac mini"
         },
         {
+          "k": "Runner",
+          "v": "Full runner: 16 GB of memory and a processor 6.2× as fast as a Raspberry Pi 4"
+        },
+        {
           "k": "When",
           "v": "24 Sep 2026, 14:00 UTC"
         },

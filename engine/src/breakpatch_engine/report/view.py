@@ -299,7 +299,9 @@ def run_by(run: dict) -> str:
 def run_meta(run: dict, offset: int) -> list[dict]:
     meta = [{"k": "Took", "v": took_text(run.get("durationMs"))}, {"k": "Run by", "v": run_by(run)},
             {"k": "Where", "v": WHERE.get(run.get("source"), str(run.get("source") or ""))},
-            {"k": "Machine", "v": str(run.get("machine") or "")}, {"k": "When", "v": when_text(run.get("startedAt"), offset)}]
+            {"k": "Machine", "v": str(run.get("machine") or "")},
+            # breakpatch-ci's tier on that machine (systems.Tier.summary): "Simple runner: 4 GB of memory, …"
+            {"k": "Runner", "v": str(run.get("runner") or "")}, {"k": "When", "v": when_text(run.get("startedAt"), offset)}]
     if run.get("testVersion") is not None:
         meta.append({"k": "Version", "v": str(run.get("testVersion"))})
     if run.get("id"):

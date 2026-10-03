@@ -81,6 +81,7 @@
         ],
         "run": {
           "id": "rn-1", "testName": "Sign in", "testVersion": 2, "startedBy": { "serviceAccount": "QA Mac mini" }, "machine": "QA Mac mini",
+          "runner": "Full runner: 16 GB of memory and a processor 6.2× as fast as a Raspberry Pi 4",
           "source": "runner", "startedAt": 1790258400000, "durationMs": 21400, "result": "pass", "healedCount": 0,
           "steps": [
             { "stepId": "a1", "result": "passed", "timings": { "preMs": 120, "actionMs": 300, "settleMs": 450, "postMs": 30 } },
