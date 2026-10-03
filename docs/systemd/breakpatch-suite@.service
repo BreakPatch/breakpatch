@@ -1,9 +1,10 @@
 # /etc/systemd/system/breakpatch-suite@.service
 #
 # Runs one suite of a Breakpatch Team workspace with breakpatch-ci, as the `breakpatch` user: the
-# instance name is the suite's ID or name (breakpatch-suite@smoke-7f3a.service). Started by
+# instance name is the suite's ID (breakpatch-suite@smoke-7f3a.service). Started by
 # breakpatch-suite@<suite>.timer, or by hand: sudo systemctl start breakpatch-suite@smoke-7f3a.
-# The Documentation's "Raspberry Pi runner" section (docs/manual.md, breakpatch.dev/docs/) has the whole set-up.
+# `breakpatch-ci service` writes it; the Documentation's "Raspberry Pi runner" section
+# (docs/manual.md, breakpatch.dev/docs/) has the whole set-up.
 #
 # Secrets come in as systemd credentials, never as Environment= lines: they're readable by this
 # service only, and `systemctl show` doesn't print them. run-suite turns them into the variables
@@ -20,14 +21,16 @@ User=breakpatch
 Group=breakpatch
 WorkingDirectory=/home/breakpatch
 # BP_SANDBOX=1: Chromium's own sandbox (Raspberry Pi OS and Debian allow the user namespaces it
-# needs). BP_TIMINGS_SCALE=2: a Pi is slower than the Mac the tests were recorded on; see the Documentation.
-Environment=BP_SANDBOX=1 BP_TIMINGS_SCALE=2
-# BREAKPATCH_CI_EMAIL, BREAKPATCH_MACHINE_ID, BREAKPATCH_WORKSPACE_FILE, BREAKPATCH_SUITE_OPTIONS:
-# not secret, one file for every suite.
+# needs). BP_TIMINGS_SCALE isn't set, so breakpatch-ci picks it from this machine's tier (2 on a
+# Raspberry Pi 4); set it in breakpatch.env to choose. See the Documentation.
+Environment=BP_SANDBOX=1
+# BREAKPATCH_CI_EMAIL, BREAKPATCH_MACHINE_ID, BREAKPATCH_WORKSPACE_FILE: not secret, one file for
+# every suite.
 EnvironmentFile=/etc/breakpatch/breakpatch.env
 LoadCredential=licence-key:/etc/breakpatch/licence-key
 LoadCredential=ci-password:/etc/breakpatch/ci-password
-# One per saved secret the suite uses: secret.NAME becomes BP_SECRET_NAME.
+# Each suite's drop-in (breakpatch-suite@<suite>.service.d/override.conf) adds its options and one
+# line per saved secret it uses: secret.NAME becomes BP_SECRET_NAME. For example
 #LoadCredential=secret.STAGING_PASSWORD:/etc/breakpatch/secret.STAGING_PASSWORD
 ExecStart=/usr/local/lib/breakpatch/run-suite %i
 # A oneshot unit otherwise gets 90 seconds; a suite on a Pi takes minutes.

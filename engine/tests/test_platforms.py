@@ -298,3 +298,110 @@ def test_timings_scale_values():
     assert config.timings_scale({}) == 1.0
     assert config.timings_scale({"BP_TIMINGS_SCALE": " 3 "}) == 3.0
     assert config.timings_scale({"BP_TIMINGS_SCALE": "10"}) == 10.0
+
+
+# ---------------------------------------------------------------- runner tiers (plan P4.6)
+
+def test_a_4_gb_raspberry_pi_4_is_the_simple_runner():
+    t = systems.pick_tier(4, 1.0)
+    assert t.name == "simple" and t.simple and not t.overridden
+    assert t.timings_scale == 2.0
+    assert t.summary() == ("Simple runner: 4 GB of memory and a processor 1.0× as fast as a Raspberry Pi 4; "
+                           "the full tier needs 6 GB and a faster processor")
+    assert t.to_json() == {"tier": "simple", "reason": t.reason, "memoryGb": 4, "timingsScale": 2.0, "cpuSpeed": 1.0}
+
+
+def test_an_8_gb_pi_4_is_simple_for_its_processor():
+    t = systems.pick_tier(8, 1.1)
+    assert t.name == "simple" and t.timings_scale == 2.0
+    assert t.reason == "a processor 1.1× as fast as a Raspberry Pi 4; the full tier needs one at least 1.6× as fast"
+
+
+def test_a_fast_machine_with_little_memory_is_simple_with_a_shorter_scale():
+    t = systems.pick_tier(4, 5.0)
+    assert t.name == "simple" and t.timings_scale == 1.5
+    assert t.reason == "4 GB of memory, under the 6 GB the full tier needs"
+
+
+def test_slower_than_a_pi_4_waits_longer_still():
+    assert systems.pick_tier(2, 0.4).timings_scale == 3.0
+
+
+@pytest.mark.parametrize("memory,speed", [(6, 1.6), (8, 2.4), (16, 4.0), (7, 9.9)])
+def test_6_gb_and_a_fast_enough_processor_is_the_full_tier(memory, speed):
+    t = systems.pick_tier(memory, speed)
+    assert t.name == "full" and not t.simple and t.timings_scale == 1.0
+    assert t.summary().startswith(f"Full runner: {memory:g} GB of memory and a processor")
+
+
+def test_unknown_values_never_make_a_machine_simple_on_their_own():
+    assert systems.pick_tier(0, 3.0).name == "full"                # memory couldn't be read
+    assert systems.pick_tier(16, None).name == "full"              # processor not measured
+    t = systems.pick_tier(0, None)
+    assert t.name == "full" and t.reason == "this machine's memory and processor couldn't be measured"
+    assert systems.pick_tier(4, None).timings_scale == 2.0         # simple, speed unknown: a Pi's scale
+
+
+def test_the_tier_can_be_set():
+    t = systems.pick_tier(16, 5.0, "simple")
+    assert t.name == "simple" and t.overridden and t.reason == "set by BREAKPATCH_TIER=simple"
+    assert t.timings_scale == 1.5
+    assert systems.pick_tier(4, 1.0, "full").name == "full"
+    assert systems.pick_tier(4, 1.0, "full").timings_scale == 1.0
+
+
+@pytest.mark.parametrize("raw,want,warned", [("", None, False), (None, None, False), ("simple", "simple", False),
+                                             (" FULL ", "full", False), ("fast", None, True)])
+def test_tier_override_values(raw, want, warned):
+    got, problem = systems.tier_override(raw)
+    assert got == want and bool(problem) == warned
+    if warned:
+        assert problem == "BREAKPATCH_TIER='fast' ignored: it's simple or full"
+
+
+def test_runner_tier_measures_memory_and_the_processor():
+    calls = []
+    t, warnings = systems.runner_tier({}, memory=lambda: 4, benchmark=lambda: calls.append(1) or 0.97)
+    assert (t.name, t.memory_gb, t.cpu_speed, warnings, calls) == ("simple", 4.0, 1.0, [], [1])
+
+
+def test_runner_tier_flag_wins_over_the_variable_and_bad_values_are_said():
+    t, warnings = systems.runner_tier({"BREAKPATCH_TIER": "simple"}, override="full", memory=lambda: 4, benchmark=lambda: 1.0)
+    assert t.name == "full" and t.reason == "set by --tier full" and t.overridden and warnings == []
+    t, warnings = systems.runner_tier({"BREAKPATCH_TIER": "huge"}, memory=lambda: 16, benchmark=lambda: 4.0)
+    assert t.name == "full" and not t.overridden and warnings == ["BREAKPATCH_TIER='huge' ignored: it's simple or full"]
+    t, warnings = systems.runner_tier({}, override="tiny", memory=lambda: 16, benchmark=lambda: 4.0)
+    assert warnings == ["--tier='tiny' ignored: it's simple or full"]
+
+
+def test_runner_tier_skips_the_benchmark_when_nothing_would_use_it():
+    def no(): raise AssertionError("measured")
+    t, _ = systems.runner_tier({"BREAKPATCH_TIER": "simple", "BP_TIMINGS_SCALE": "3"}, memory=lambda: 4, benchmark=no)
+    assert t.name == "simple" and t.cpu_speed is None
+    # An invalid scale is ignored by config.timings_scale, so the tier's default is needed.
+    t, _ = systems.runner_tier({"BREAKPATCH_TIER": "simple", "BP_TIMINGS_SCALE": "99"}, memory=lambda: 4, benchmark=lambda: 1.0)
+    assert t.cpu_speed == 1.0
+
+
+def test_a_failing_benchmark_doesnt_stop_a_run():
+    def boom(): raise OSError("no")
+    t, _ = systems.runner_tier({}, memory=lambda: 16, benchmark=boom)
+    assert t.name == "full" and t.cpu_speed is None
+
+
+def test_cpu_benchmark_keeps_the_best_window_in_pi_4_units():
+    now = [0.0]
+    # Three windows of 0.5 s: 2 rounds (4/s), 4 rounds (8/s), 1 round (2/s). Binary fractions, so exact.
+    durations = iter([0.25, 0.25, 0.125, 0.125, 0.125, 0.125, 0.5])
+
+    def work(_data):
+        now[0] += next(durations)
+    speed = systems.cpu_benchmark(window=0.5, windows=3, clock=lambda: now[0], work=work)
+    assert speed == 8 / systems.PI4_ROUNDS_PER_SECOND
+
+
+def test_cpu_benchmark_is_quick():
+    import time
+    start = time.perf_counter()
+    assert systems.cpu_benchmark() > 0
+    assert time.perf_counter() - start < 1.0

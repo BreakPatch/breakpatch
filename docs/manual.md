@@ -841,7 +841,7 @@ Keep the sites to your own test environments. A workspace member who can edit te
 **Options**
 
 - `--screenshots DIR` keeps a screenshot of the step that failed, to upload as a build artifact.
-- `--auto-fix` lets the AI assistant find a button that moved, as [Fixed automatically](#fixed-automatically) does in the app. It only works on a self-hosted Mac where Breakpatch is installed and its AI assistant is downloaded (Settings → AI assistant), with a licence that includes Fixed automatically. Anywhere else the run carries on without fixing and says so.
+- `--auto-fix` lets the AI assistant find a button that moved, as [Fixed automatically](#fixed-automatically) does in the app. It only works on a self-hosted Mac where Breakpatch is installed and its AI assistant is downloaded (Settings → AI assistant), with a licence that includes Fixed automatically. Anywhere else the run carries on without fixing and says so. A [simple runner](#runner-tiers) never fixes.
 - `--fail-on-fix` fails the run when a step needed fixing.
 - `--strict-systems` turns off **Allow for small differences between systems** for this run (see below).
 - `--notify-url URL` sends the result to Slack, Microsoft Teams or any web address when the run ends, as the local runner does (see [Result messages](#result-messages)). Anyone with the address can post to your channel, so keep it in a CI secret and set it as `BREAKPATCH_NOTIFY_URL` instead: then it never shows in the log. `--notify-kind slack|teams|webhook` says which format to send (Breakpatch picks it from the address), and `--notify-when failures` sends only failed runs (the default is `every`). The JSON gets `"notified"`, with what Slack or Teams said if it didn't work; the exit code is still the test's result. *When it starts failing, and when it passes again* isn't available in CI, since the CI account can't read the suite's last result.
@@ -1020,20 +1020,50 @@ jobs:
 
 The install command adds its folder to `GITHUB_PATH`, so the next steps can run `breakpatch-ci`.
 
-**A Windows PC as a runner.** To run a suite on a schedule without the app, use Task Scheduler: a task that runs `breakpatch-ci run --workspace … --suite …` at the times you want, as a local account made for it, set to *Run whether user is logged on or not*. Give it the same variables as a CI job (System → Advanced system settings → Environment Variables, for that account only). Chromium runs without a desktop.
+**A Windows PC as a runner.** To run a suite on a schedule without the app, use Task Scheduler. `breakpatch-ci service` writes the task for you:
+
+```powershell
+breakpatch-ci service --windows --suite smoke-7f3a --workspace C:\breakpatch\team.bpworkspace --schedule "Mon..Fri 06:00" --version released --xml smoke.xml
+schtasks /Create /TN "Breakpatch\smoke-7f3a" /XML smoke.xml /RU breakpatch /RP *
+```
+
+The task runs `breakpatch-ci run --workspace … --suite …` at those times, as the account you give (`breakpatch` here, a local account made for it), whether or not it's logged on. `schtasks` asks for that account's password. `--schedule` takes days and a time, such as `Mon..Fri 06:00` or `Sat,Sun 08:15`, or `hourly`. Give the account the same variables as a CI job: sign in as it, then System → Advanced system settings → Environment Variables. The task itself holds no secrets. Chromium runs without a desktop. To remove the task: `schtasks /Delete /TN "Breakpatch\smoke-7f3a" /F`.
 
 ### Raspberry Pi runner
 
-A Raspberry Pi makes a cheap, always-on machine that replays your workspace's suites on a schedule and reports into the workspace, like a CI job that never stops. It's `breakpatch-ci` on Linux, so it's a preview too, and it isn't a runner of its own yet: a systemd timer starts each run (below). It replays tests. It doesn't record them (record on a Mac) and doesn't fix moved buttons: the AI assistant takes minutes per look on a Pi, so leave `--auto-fix` off.
+A Raspberry Pi makes a cheap, always-on machine that replays your workspace's suites on a schedule and reports into the workspace, like a CI job that never stops. It's `breakpatch-ci` on Linux, so it's a preview too, and it isn't a runner of its own yet: a systemd timer starts each run (below). It replays tests. It doesn't record them (record on a Mac).
 
 **Which Pi.** These are our recommendations; we haven't measured every model yet.
 
-- **Raspberry Pi 4 with 8 GB:** should be fine for nightly and hourly replays of normal web pages. A 4 GB Pi 4 hasn't been tested yet.
+- **Raspberry Pi 4 with 4 GB:** a [simple runner](#runner-tiers). It replays tests, checks the screen and runs suites on a schedule. It doesn't fix moved buttons.
+- **Raspberry Pi 4 with 8 GB:** should be fine for nightly and hourly replays of normal web pages. It's a simple runner too: its processor is too slow for the AI assistant.
 - **Raspberry Pi 5 with 8 GB:** faster, and the better buy if you're buying one now.
 - **A small x64 mini PC** (for example one with an Intel N100): faster again, and the best choice for Flutter apps (below). It uses the same Linux install as any CI machine.
 - Use an **SSD** over USB 3 (or NVMe on a Pi 5) rather than an SD card, which wears out with screenshots and logs. Give it cooling (a Pi 4 slows down at 80 °C) and the official power supply (27 W on a Pi 5).
 - Install a **64-bit** system: Raspberry Pi OS Bookworm (64-bit) or later, or Ubuntu 24.04 for arm64.
 - On a Pi 5, the standard kernel uses 16 KB memory pages. If Chromium misbehaves, add `kernel=kernel8.img` to `/boot/firmware/config.txt` and restart: that kernel uses 4 KB pages.
+
+#### Runner tiers
+
+Each time `breakpatch-ci` starts a run, it checks how much memory the machine has and how fast its processor is. That takes less than a second. Then it picks a tier, and the first lines of the log say which and why, for example:
+
+```
+breakpatch-ci: simple runner (4 GB of memory and a processor 1.0× as fast as a Raspberry Pi 4; the full tier needs 6 GB and a faster processor). Replay, screen checks and schedules only: no AI assistant and no fixing. Waits are 2× as long (BP_TIMINGS_SCALE changes that).
+```
+
+| | Simple runner | Full runner |
+|---|---|---|
+| **When** | Under 6 GB of memory, or a processor about as fast as a Raspberry Pi 4 | 6 GB or more, and a faster processor (a Pi 5, a mini PC, a Mac, a CI machine) |
+| **Replay and screen checks** | Yes | Yes |
+| **Suites on a schedule** | Yes | Yes |
+| **AI assistant and fixing** (`--auto-fix`) | No. `--auto-fix` is ignored, and the log says why in one line | Where the AI assistant is installed (today, a Mac) |
+| **Waits** (when `BP_TIMINGS_SCALE` isn't set) | Longer: 2× on a Pi 4, 3× on anything slower, 1.5× on a fast machine with little memory | As set |
+
+A Raspberry Pi 4 with 4 GB is a simple runner. So is a Pi 4 with 8 GB: it has the memory, but not the speed.
+
+The tier is also in the JSON result, as `runner` (`tier`, `reason`, `memoryGb`, `cpuSpeed` and `timingsScale`), and in the `--html` report, on the *Runner* line under *Machine*.
+
+To try the other tier, set `BREAKPATCH_TIER=simple` or `BREAKPATCH_TIER=full`, or add `--tier simple` to `breakpatch-ci run`. That's for testing: a full runner on a Pi 4 still can't run the AI assistant in good time.
 
 **Flutter web apps.** Replay works, because it compares the screen and needs no AI assistant, but Flutter is the hardest case for a Pi:
 
@@ -1043,7 +1073,7 @@ A Raspberry Pi makes a cheap, always-on machine that replays your workspace's su
 
 A Pi 4 with 8 GB suits nightly Flutter runs, a Pi 5 is better, and an x64 mini PC is best.
 
-**Slow machines.** `BP_TIMINGS_SCALE=2` doubles how long a run waits for a page to settle, for a step's first check to match, for pages to load and for the start page. It doesn't stretch the watch for moving parts before each step. Use a number from 1 to 10: 2 for a Pi 5 or a Pi 4 with normal pages, 3 for a Pi 4 with Flutter. If steps fail with "didn't settle" or "not there yet", raise it.
+**Slow machines.** A simple runner waits longer for a page to settle, for a step's first check to match, for pages to load and for the start page: 2× on a Pi 4. It doesn't stretch the watch for moving parts before each step, so a page that's ready on time costs nothing extra. To choose yourself, set `BP_TIMINGS_SCALE` to a number from 1 to 10: it wins over the tier's. Use 2 for a Pi 5 and 3 for a Pi 4 with Flutter. If steps fail with "didn't settle" or "not there yet", raise it. For a runner set up as below, put the line `BP_TIMINGS_SCALE=3` in `/etc/breakpatch/breakpatch.env`.
 
 **Set it up**
 
@@ -1055,30 +1085,31 @@ A Pi 4 with 8 GB suits nightly Flutter runs, a Pi 5 is better, and an x64 mini P
    sudo /home/breakpatch/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
    ```
 
-2. Give it a **machine licence**, the workspace and a **CI account**, as for any CI machine (see [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)). Keep the secrets in files only root can read:
+2. Have ready a **machine licence**, the workspace file and a **CI account**, as for any CI machine (see [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)). Then let `breakpatch-ci service` write the service and its timer:
 
    ```sh
-   sudo install -d -m 700 /etc/breakpatch
-   sudo cp team.bpworkspace /etc/breakpatch/
-   sudo sh -c 'umask 077; printf %s "BP-XXXX-XXXX" > /etc/breakpatch/licence-key; printf %s "the CI account password" > /etc/breakpatch/ci-password'
+   sudo /home/breakpatch/.local/bin/breakpatch-ci service --suite smoke-7f3a --workspace team.bpworkspace \
+     --email ci@yourcompany.com --machine-id pi-runner-1 --schedule "Mon..Fri 06:00" \
+     --version released --secret STAGING_PASSWORD=https://staging.acme.com
    ```
 
-   `/etc/breakpatch/breakpatch.env` holds the rest: `BREAKPATCH_CI_EMAIL`, a fixed `BREAKPATCH_MACHINE_ID` such as `pi-runner-1`, and the suite options, for example `BREAKPATCH_SUITE_OPTIONS=--version released --secret STAGING_PASSWORD=https://staging.acme.com`. A saved secret goes in its own file, `/etc/breakpatch/secret.STAGING_PASSWORD`, with a `LoadCredential=` line for it in the service.
+   It asks for the licence key, the CI account's password, the machine key (only for an encrypted workspace) and each saved secret you name with `--secret`. What you type isn't shown, and it never goes on the command line. It keeps each one in a file of its own in `/etc/breakpatch` that only root can read. Then it starts the timer.
 
-3. Install the service and its timer. The files are in the Breakpatch repository, in `docs/systemd/`: `breakpatch-suite@.service`, `breakpatch-suite@.timer`, `run-suite` and an example `breakpatch.env`.
+   `--suite` takes the suite's ID (on the suite, under *Start it from anywhere*). `--schedule` takes systemd's `OnCalendar=` form: `Mon..Fri 06:00` (the default), `*-*-* 02:30` for every night, or `hourly`. For more suites, run it again with another `--suite`. The workspace, the licence key and the password are kept from the first time.
+
+3. Start a first run now, and read its log:
 
    ```sh
-   sudo install -D -m 755 run-suite /usr/local/lib/breakpatch/run-suite
-   sudo install -m 644 breakpatch-suite@.service breakpatch-suite@.timer /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl start breakpatch-suite@smoke-7f3a         # a first run, now
-   journalctl -u breakpatch-suite@smoke-7f3a                # its log and result
-   sudo systemctl enable --now breakpatch-suite@smoke-7f3a.timer
+   sudo systemctl start breakpatch-suite@smoke-7f3a        # waits until the suite has run
+   journalctl -u breakpatch-suite@smoke-7f3a               # its log and result
+   systemctl list-timers 'breakpatch-*'                    # the next runs
    ```
 
-   The instance name (after the `@`) is the suite's ID or name. The timer runs it on weekdays at 06:00. To change that for one suite, run `sudo systemctl edit breakpatch-suite@smoke-7f3a.timer` and set your own `OnCalendar=` (an empty `OnCalendar=` line first clears the default). `systemctl list-timers 'breakpatch-*'` shows the next runs.
+The service passes the licence key, the CI account's password and saved secrets as systemd credentials: only the run can read them, and they never appear in `systemctl show` or the log. It turns on Chromium's sandbox (`BP_SANDBOX=1`). Failure screenshots go to `/home/breakpatch/breakpatch-shots`. The files it writes are the ones in the Breakpatch repository's `docs/systemd/`, if you'd like to read them first. `--root DIR` writes them under a folder of your choice instead and starts nothing.
 
-The service passes the licence key, the CI account's password and saved secrets as systemd credentials: only the run can read them, and they never appear in `systemctl show` or the log. It turns on Chromium's sandbox (`BP_SANDBOX=1`) and sets `BP_TIMINGS_SCALE=2`. Failure screenshots go to `/home/breakpatch/breakpatch-shots`.
+**Without root.** `breakpatch-ci service --user …` writes the service in your own account instead (`~/.config/systemd/user`), with the secrets in `~/.config/breakpatch/secrets.env`, which only you can read. Use `systemctl --user` and `journalctl --user` in place of `sudo systemctl` and `journalctl`. So that it runs while you're logged out, run `sudo loginctl enable-linger $USER` once.
+
+**Remove it.** `sudo breakpatch-ci service --suite smoke-7f3a --remove` stops the suite's timer and removes its files. After the last suite, it also removes the service, the settings and the secrets.
 
 **What's different from the app's local runner**
 
@@ -1086,7 +1117,7 @@ The service passes the licence key, the CI account's password and saved secrets 
 - Runs show in the run history marked *CI*, not as the local runner's.
 - There's no **Run now** from the app, and the app shows the runner as offline.
 
-**Copying the SD card or SSD.** Each Pi needs its own machine ID. If you copy a system that has already started once, run `sudo rm /etc/machine-id && sudo systemd-machine-id-setup` on the copy, and give it its own `BREAKPATCH_MACHINE_ID`. Otherwise both Pis use one machine licence and push each other out.
+**Copying the SD card or SSD.** Each Pi needs its own machine ID. If you copy a system that has already started once, run `sudo rm /etc/machine-id && sudo systemd-machine-id-setup` on the copy, and give it its own `BREAKPATCH_MACHINE_ID` (`--machine-id`). Otherwise both Pis use one machine licence and push each other out.
 
 ## Result messages
 

@@ -1,42 +1,54 @@
 #!/bin/sh
-# /usr/local/lib/breakpatch/run-suite SUITE: runs a workspace suite with breakpatch-ci, for
-# breakpatch-suite@.service. It reads the service's credentials ($CREDENTIALS_DIRECTORY) into the
-# variables breakpatch-ci takes them from, which only breakpatch-ci's process gets:
+# run-suite SUITE: runs a workspace suite with breakpatch-ci, for breakpatch-suite@.service
+# (written by `breakpatch-ci service`). A system unit hands it the secrets as credentials
+# ($CREDENTIALS_DIRECTORY), which it turns into the variables breakpatch-ci reads, for
+# breakpatch-ci's process only:
 #   licence-key          → BREAKPATCH_LICENCE_KEY
 #   ci-password          → BREAKPATCH_CI_PASSWORD
+#   machine-key          → BREAKPATCH_MACHINE_KEY (an encrypted workspace; optional)
 #   secret.NAME          → BP_SECRET_NAME (a saved secret; - and . in NAME written as _)
-# and from /etc/breakpatch/breakpatch.env (EnvironmentFile=):
+# A user unit (--user) sets those variables from secrets.env (mode 0600) instead.
+# From breakpatch.env (EnvironmentFile=):
 #   BREAKPATCH_CI_EMAIL          the workspace's CI account
 #   BREAKPATCH_WORKSPACE_FILE    the .bpworkspace file (default /etc/breakpatch/team.bpworkspace)
 #   BREAKPATCH_MACHINE_ID        a fixed name for this machine's licence (default: the host name)
-#   BREAKPATCH_SUITE_OPTIONS     more options, e.g. --version released --secret STAGING_PASSWORD=https://staging.acme.com
 #   BREAKPATCH_CI                the command (default ~/.local/bin/breakpatch-ci, where install-ci links it)
+# and from the suite's drop-in (Environment=):
+#   BREAKPATCH_SUITE_OPTIONS     more options, e.g. --version released --secret STAGING_PASSWORD=https://staging.acme.com
 # Failure screenshots go to ~/breakpatch-shots/<suite>/<date and time>/; the JSON result is on
 # stdout, so in the journal (journalctl -u breakpatch-suite@SUITE).
 set -eu
 
 suite=${1:?usage: run-suite SUITE}
 creds=${CREDENTIALS_DIRECTORY:-}
-if [ -z "$creds" ] || [ ! -d "$creds" ]; then echo "run-suite: no credentials; run it from breakpatch-suite@.service" >&2; exit 2; fi
 
 read_cred() { # <name>: the credential's first line, without its newline
   [ -r "$creds/$1" ] || { echo "run-suite: the credential $1 is missing (LoadCredential=$1:…)" >&2; exit 2; }
   head -n 1 "$creds/$1" | tr -d '\r\n'
 }
 
-BREAKPATCH_LICENCE_KEY=$(read_cred licence-key)
-BREAKPATCH_CI_PASSWORD=$(read_cred ci-password)
+if [ -n "$creds" ] && [ -d "$creds" ]; then
+  BREAKPATCH_LICENCE_KEY=$(read_cred licence-key)
+  BREAKPATCH_CI_PASSWORD=$(read_cred ci-password)
+  if [ -e "$creds/machine-key" ]; then
+    BREAKPATCH_MACHINE_KEY=$(read_cred machine-key)
+    export BREAKPATCH_MACHINE_KEY
+  fi
+  for f in "$creds"/secret.*; do
+    [ -e "$f" ] || continue
+    name=${f##*/secret.}
+    case "$name" in *[!A-Za-z0-9_.-]*) echo "run-suite: $f isn't a secret's name" >&2; exit 2 ;; esac
+    var=BP_SECRET_$(printf '%s' "$name" | tr '.-' '__')
+    value=$(read_cred "secret.$name")
+    export "$var=$value"
+  done
+elif [ -z "${BREAKPATCH_LICENCE_KEY:-}" ] || [ -z "${BREAKPATCH_CI_PASSWORD:-}" ]; then
+  echo "run-suite: no secrets; run it from breakpatch-suite@.service (breakpatch-ci service writes it)" >&2
+  exit 2
+fi
 export BREAKPATCH_LICENCE_KEY BREAKPATCH_CI_PASSWORD
-for f in "$creds"/secret.*; do
-  [ -e "$f" ] || continue
-  name=${f##*/secret.}
-  case "$name" in *[!A-Za-z0-9_.-]*) echo "run-suite: $f isn't a secret's name" >&2; exit 2 ;; esac
-  var=BP_SECRET_$(printf '%s' "$name" | tr '.-' '__')
-  value=$(read_cred "secret.$name")
-  export "$var=$value"
-done
 
-: "${BREAKPATCH_CI_EMAIL:?set BREAKPATCH_CI_EMAIL in /etc/breakpatch/breakpatch.env}"
+: "${BREAKPATCH_CI_EMAIL:?set BREAKPATCH_CI_EMAIL in breakpatch.env}"
 export BREAKPATCH_CI_EMAIL
 BREAKPATCH_MACHINE_ID=${BREAKPATCH_MACHINE_ID:-$(hostname)}
 export BREAKPATCH_MACHINE_ID

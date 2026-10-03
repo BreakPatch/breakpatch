@@ -10,7 +10,8 @@ import { CAUSE_TEXT, SUGGESTION_TEXT } from '../explain';
 /** A screenshot, as a WebP data: URI (the engine's `report.images`). */
 export interface ReportImage { src: string; width: number; height: number }
 export type ReportStepRun = StepRun & { image?: ReportImage };
-export type ReportRun = Omit<Run, 'steps' | 'appId' | 'testId'> & Partial<Pick<Run, 'appId' | 'testId'>> & { steps: ReportStepRun[] };
+/** `runner`: the tier breakpatch-ci ran on ("Simple runner: 4 GB of memory, …"); runs from the app have none. */
+export type ReportRun = Omit<Run, 'steps' | 'appId' | 'testId'> & Partial<Pick<Run, 'appId' | 'testId'>> & { steps: ReportStepRun[]; runner?: string };
 
 export interface ReportTestInput {
   appName: string;
@@ -208,7 +209,9 @@ function runMeta(run: ReportRun, offset: number): Meta[] {
   const meta: Meta[] = [
     { k: 'Took', v: tookText(int(run.durationMs)) }, { k: 'Run by', v: runBy(run) },
     { k: 'Where', v: WHERE[run.source]?.label ?? String(run.source ?? '') },
-    { k: 'Machine', v: String(run.machine ?? '') }, { k: 'When', v: whenText(run.startedAt, offset) },
+    { k: 'Machine', v: String(run.machine ?? '') },
+    // breakpatch-ci's tier on that machine (engine systems.Tier.summary): "Simple runner: 4 GB of memory, …"
+    { k: 'Runner', v: String(run.runner ?? '') }, { k: 'When', v: whenText(run.startedAt, offset) },
   ];
   if (run.testVersion !== undefined && run.testVersion !== null) meta.push({ k: 'Version', v: String(run.testVersion) });
   if (run.id) meta.push({ k: 'Run ID', v: String(run.id) });

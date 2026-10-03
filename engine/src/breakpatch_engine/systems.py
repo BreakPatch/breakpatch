@@ -15,10 +15,14 @@ Tests without `recordedOn` (recorded before it existed) never mismatch.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import subprocess
 import sys
+import time
+import zlib
+from dataclasses import dataclass
 from pathlib import Path
 
 OS_NAMES = {"darwin": "macOS", "linux": "Linux", "win32": "Windows", "cygwin": "Windows"}
@@ -280,3 +284,198 @@ def os_name() -> str:
         release, build = windows_release()
         return f"Windows {release} (build {build})" if build else f"Windows {release}"
     return f"{platform.system()} {platform.release()}"
+
+
+# ---------------------------------------------------------------- runner tiers
+# (plan docs/linux-windows-plan.md P4.6; docs/manual.md "Raspberry Pi runner"). When breakpatch-ci
+# starts a run it measures this machine's memory and processor and picks a tier:
+#
+# - simple: under 6 GB of memory, or a processor about as fast as a Raspberry Pi 4. Replay, screen
+#   checks and schedules only: no AI assistant, so no fixing. Waits are longer by default.
+# - full: 6 GB or more and a processor clearly faster than a Pi 4 (a Pi 5, a mini PC, a Mac, a CI
+#   machine). Everything breakpatch-ci does, as before tiers existed.
+#
+# `pick_tier` is pure (tests give it made-up numbers); `runner_tier` measures and calls it.
+# BREAKPATCH_TIER=simple|full (or breakpatch-ci's --tier) sets the tier, for testing.
+
+TIER_SIMPLE, TIER_FULL = "simple", "full"
+TIERS = (TIER_SIMPLE, TIER_FULL)
+TIER_VAR = "BREAKPATCH_TIER"
+FULL_MIN_MEMORY_GB = 6
+# cpu_benchmark's speed, where 1 is a Raspberry Pi 4 (4 × Cortex-A72 at 1.8 GHz). The plan's
+# estimates (§3.3): a Pi 5 is 2–3, an Intel N100 mini PC 3–4, an Apple Silicon Mac more. 1.6 sits
+# between the Pi 4 and the Pi 5, away from both, so a machine doesn't change tier from run to run.
+FULL_MIN_CPU_SPEED = 1.6
+# Below this a machine is slower than a Pi 4 (a Pi 3, or a Pi 4 that's throttling when hot).
+VERY_SLOW_CPU_SPEED = 0.6
+# The timing scale (config.timings_scale) a tier uses when BP_TIMINGS_SCALE isn't set. The manual
+# said 2 for a Pi 4 with normal pages and 3 for Flutter before tiers existed (P4.1): a Pi 4 gets 2,
+# anything slower 3, and a fast processor with little memory 1.5 (Chromium has less room, so pages
+# can be slower to settle). Only the longest waits grow (config.SCALED_TIMINGS), so a page that's
+# ready on time costs nothing extra. The full tier keeps 1: nothing changes on a fast machine.
+SCALE_SIMPLE_VERY_SLOW, SCALE_SIMPLE_SLOW, SCALE_SIMPLE_FAST = 3.0, 2.0, 1.5
+
+# The benchmark's work rate on a Pi 4, in rounds per second. Estimated, not measured yet: a 2.1 GHz
+# Xeon cloud core did 300–340 while busy (so somewhat more when quiet), and single-core benchmarks
+# put the Cortex-A72 at 4–5 times slower, with CPython on it slower still: about a fifth of ~470.
+# Replace with what a Pi 4 does (`cpuSpeed` in breakpatch-ci's JSON × this) once measured (P4.1).
+PI4_ROUNDS_PER_SECOND = 95.0
+
+
+@dataclass(frozen=True)
+class Tier:
+    """The tier a run uses, and why, in words for the log and the report."""
+    name: str                      # "simple" or "full"
+    reason: str                    # "4 GB of memory, under the 6 GB the full tier needs"
+    memory_gb: float               # 0 when it couldn't be read
+    cpu_speed: float | None        # 1 = a Raspberry Pi 4; None when not measured
+    timings_scale: float           # the scale to use when BP_TIMINGS_SCALE isn't set
+    overridden: bool = False       # set by BREAKPATCH_TIER or --tier
+
+    @property
+    def simple(self) -> bool:
+        return self.name == TIER_SIMPLE
+
+    @property
+    def title(self) -> str:
+        return "Simple runner" if self.simple else "Full runner"
+
+    def summary(self) -> str:
+        """One line: "Simple runner: 4 GB of memory, under the 6 GB the full tier needs"."""
+        return f"{self.title}: {self.reason}"
+
+    def to_json(self) -> dict:
+        out = {"tier": self.name, "reason": self.reason, "memoryGb": self.memory_gb,
+               "timingsScale": self.timings_scale}
+        if self.cpu_speed is not None:
+            out["cpuSpeed"] = self.cpu_speed
+        if self.overridden:
+            out["overridden"] = True
+        return out
+
+
+def _gb(memory: float) -> str:
+    return f"{memory:g} GB of memory"
+
+
+def _speed_words(speed: float) -> str:
+    return f"a processor {speed:.1f}× as fast as a Raspberry Pi 4"
+
+
+def default_timings_scale(tier: str, cpu_speed: float | None) -> float:
+    if tier == TIER_FULL:
+        return 1.0
+    if cpu_speed is not None and cpu_speed < VERY_SLOW_CPU_SPEED:
+        return SCALE_SIMPLE_VERY_SLOW
+    if cpu_speed is None or cpu_speed < FULL_MIN_CPU_SPEED:
+        return SCALE_SIMPLE_SLOW
+    return SCALE_SIMPLE_FAST
+
+
+def pick_tier(memory_gb: float, cpu_speed: float | None, override: str | None = None) -> Tier:
+    """The tier for this much memory (GB, 0 = unknown) and this processor speed (1 = a Pi 4,
+    None = unknown). `override` ("simple" or "full") wins. Unknown values never make a machine
+    simple on their own: a machine whose memory can't be read is judged by its processor."""
+    speed = None if cpu_speed is None else round(cpu_speed, 1)
+    if override in TIERS:
+        return Tier(override, f"set by {TIER_VAR}={override}", memory_gb, speed,
+                    default_timings_scale(override, speed), overridden=True)
+    low_memory = 0 < memory_gb < FULL_MIN_MEMORY_GB
+    slow_cpu = speed is not None and speed < FULL_MIN_CPU_SPEED
+    if low_memory and slow_cpu:
+        reason = f"{_gb(memory_gb)} and {_speed_words(speed)}; the full tier needs {FULL_MIN_MEMORY_GB} GB and a faster processor"
+    elif low_memory:
+        reason = f"{_gb(memory_gb)}, under the {FULL_MIN_MEMORY_GB} GB the full tier needs"
+    elif slow_cpu:
+        reason = f"{_speed_words(speed)}; the full tier needs one at least {FULL_MIN_CPU_SPEED:g}× as fast"
+    else:
+        have = [s for s in ((_gb(memory_gb) if memory_gb > 0 else ""), (_speed_words(speed) if speed is not None else "")) if s]
+        reason = " and ".join(have) if have else "this machine's memory and processor couldn't be measured"
+        return Tier(TIER_FULL, reason, memory_gb, speed, 1.0)
+    return Tier(TIER_SIMPLE, reason, memory_gb, speed, default_timings_scale(TIER_SIMPLE, speed))
+
+
+def tier_override(value: str | None) -> tuple[str | None, str | None]:
+    """BREAKPATCH_TIER's (or --tier's) value: (the tier, None), (None, None) when it's not set, or
+    (None, a sentence saying it's ignored) when it isn't simple or full."""
+    v = (value or "").strip().lower()
+    if not v:
+        return None, None
+    if v in TIERS:
+        return v, None
+    return None, f"{TIER_VAR}={value.strip()!r} ignored: it's simple or full"
+
+
+def _bench_round(data: bytes) -> None:
+    """One round of work like a run's: compressing (PNG screenshots are zlib) and plain Python."""
+    zlib.compress(data, 6)
+    s = 0
+    for i in range(3000):
+        s += (i * i) % 7
+    hashlib.blake2b(data[:4096]).digest()
+
+
+def _bench_data() -> bytes:
+    """64 KB that compress like a screenshot's rows: mostly smooth, with a little noise."""
+    out = bytearray(65536)
+    seed = 12345
+    for i in range(len(out)):
+        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
+        out[i] = ((i % 1024) // 8 + (seed >> 16) % 6) & 0xFF
+    return bytes(out)
+
+
+def cpu_benchmark(window: float = 0.12, windows: int = 3, clock=time.perf_counter, work=_bench_round) -> float:
+    """This processor's speed, where 1 is a Raspberry Pi 4 (PI4_ROUNDS_PER_SECOND). Counts rounds
+    of `work` in `windows` short windows and keeps the best, so a busy moment or a processor still
+    waking up doesn't count against it. Takes about window × windows seconds (0.4 s), under 1 s
+    even on a slow machine, since a round takes a few milliseconds there."""
+    data = _bench_data()
+    best = 0.0
+    for _ in range(windows):
+        start = clock()
+        rounds = 0
+        while True:
+            work(data)
+            rounds += 1
+            took = clock() - start
+            if took >= window:
+                break
+        best = max(best, rounds / took if took > 0 else 0.0)
+    return best / PI4_ROUNDS_PER_SECOND
+
+
+def timings_scale_set(env) -> bool:
+    """Whether BP_TIMINGS_SCALE holds a scale config.timings_scale takes (1 to 10). When it does,
+    it wins over the tier's default."""
+    from .config import MAX_TIMINGS_SCALE
+    try:
+        return 1.0 <= float((env.get("BP_TIMINGS_SCALE") or "").strip()) <= MAX_TIMINGS_SCALE
+    except ValueError:
+        return False
+
+
+def runner_tier(env=None, override: str | None = None, memory=None, benchmark=None) -> tuple[Tier, list[str]]:
+    """Measures this machine and picks its tier. `override` (breakpatch-ci's --tier) wins over
+    BREAKPATCH_TIER. Returns the tier and any warnings (a value that isn't a tier). The processor
+    isn't measured when the tier is set and BP_TIMINGS_SCALE is too: nothing would use the number."""
+    env = os.environ if env is None else env
+    warnings = []
+    chosen, problem = tier_override(override)
+    if problem:
+        warnings.append(problem.replace(TIER_VAR, "--tier", 1))
+    if chosen is None:
+        chosen, problem = tier_override(env.get(TIER_VAR))
+        if problem:
+            warnings.append(problem)
+    mem = float((memory or memory_gb)() or 0)
+    speed = None
+    if chosen is None or not timings_scale_set(env):
+        try:
+            speed = float((benchmark or cpu_benchmark)())
+        except Exception:  # noqa: BLE001 - never stop a run over the measurement
+            speed = None
+    tier = pick_tier(mem, speed, chosen)
+    if chosen and override and override.strip().lower() == chosen:
+        tier = Tier(tier.name, f"set by --tier {chosen}", tier.memory_gb, tier.cpu_speed, tier.timings_scale, True)
+    return tier, warnings
