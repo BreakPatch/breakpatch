@@ -24,7 +24,7 @@ site/
   assets/site.css       styles (dark, follows light mode automatically)
   assets/site.js        GitHub links, copy buttons, contents highlighting
   assets/shots/         app screenshots, WebP, 1x and 2x, dark and light
-  assets/og.png         social preview image (1200 × 630)
+  assets/og.png         social preview image (1200 × 630), made by scripts/og/render.py
   assets/favicon.svg
   build-manual.mjs      builds manual/index.html from docs/manual.md
   header-check.py       every page at phone widths in a real browser (header.test.mjs runs it)
