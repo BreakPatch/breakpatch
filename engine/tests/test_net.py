@@ -55,10 +55,12 @@ def untrusted_https(tmp_path_factory):
 
 
 class FakeProxy:
-    """An http proxy that answers CONNECT with `status`, then relays to the address it was asked for."""
+    """An http proxy that answers CONNECT with `status` (or `by_address[<address>]`), then relays to
+    the address it was asked for."""
 
-    def __init__(self, status=200):
+    def __init__(self, status=200, by_address: dict[str, int] | None = None):
         self.status = status
+        self.by_address = by_address or {}
         self.requests: list[bytes] = []
         self.srv = socket.create_server(("127.0.0.1", 0))
         self.port = self.srv.getsockname()[1]
@@ -81,10 +83,11 @@ class FakeProxy:
                 return conn.close()
             head += chunk
         self.requests.append(head)
-        if self.status != 200:
-            conn.sendall(f"HTTP/1.1 {self.status} No\r\nContent-Length: 0\r\n\r\n".encode())
-            return conn.close()
         host, port = head.split(b" ")[1].decode().rsplit(":", 1)
+        status = self.by_address.get(host.strip("[]"), self.status)
+        if status != 200:
+            conn.sendall(f"HTTP/1.1 {status} No\r\nContent-Length: 0\r\n\r\n".encode())
+            return conn.close()
         up = socket.create_connection((host.strip("[]"), int(port)))
         conn.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
 
@@ -139,7 +142,7 @@ async def test_a_certificate_the_mac_doesnt_trust_says_so_for_a_call(untrusted_h
     r = await calls.make({"method": "POST", "url": url}, f"https://localhost:{untrusted_https}/", {}, 5)
     assert not r.ok and r.error == "unreachable"
     assert "doesn't trust localhost's certificate" in r.message and "company network" in r.message
-    assert "ask IT to install the network's certificate on this Mac" in r.message
+    assert f"ask IT to install the network's certificate on {net.machine_words()[0]}" in r.message
     assert "certificate not trusted" in r.info and "SSL" not in r.message
 
 
@@ -214,6 +217,34 @@ def test_a_call_tunnels_to_the_checked_address_with_the_real_name_for_tls(untrus
         proxy.close()
 
 
+def test_an_address_the_proxy_cant_reach_moves_on_to_the_next(untrusted_https):
+    """A 502 (or no answer) is about that address: the next checked address is tried through the proxy."""
+    for status in (502, 504):
+        proxy = FakeProxy(by_address={"192.0.2.1": status})
+        try:
+            p = Plan("GET", f"https://localhost:{untrusted_https}/", "https", "localhost", untrusted_https, "/",
+                     "192.0.2.1", {}, proxy.url, ["192.0.2.1", "127.0.0.1"])
+            with pytest.raises(ssl.SSLCertVerificationError):
+                calls._send(p, 5)               # reached the server through the second address
+            assert [r.split(b"\r\n", 1)[0] for r in proxy.requests] == [
+                b"CONNECT 192.0.2.1:%d HTTP/1.1" % untrusted_https, b"CONNECT 127.0.0.1:%d HTTP/1.1" % untrusted_https]
+        finally:
+            proxy.close()
+
+
+def test_a_proxy_policy_refusal_isnt_tried_again_on_the_next_address():
+    for status in sorted(calls.PROXY_POLICY_REFUSALS):
+        proxy = FakeProxy(status=status)
+        try:
+            p = Plan("GET", "https://api.acme.com/", "https", "api.acme.com", 443, "/", "93.184.216.34", {},
+                     proxy.url, ["93.184.216.34", "93.184.216.35"])
+            with pytest.raises(net.ProxyError) as e:
+                calls._send(p, 5)
+            assert e.value.status == status and len(proxy.requests) == 1
+        finally:
+            proxy.close()
+
+
 def test_ipv6_addresses_are_bracketed_and_proxy_credentials_are_sent():
     proxy = FakeProxy(status=403)
     try:
@@ -241,12 +272,32 @@ def test_a_proxy_that_wants_a_password_or_refuses_says_so():
 
 
 def test_httpx_proxy_errors_are_worded_too():
-    class ProxyError(Exception):
+    import httpcore
+    import httpx
+    for ProxyError in (httpx.ProxyError, httpcore.ProxyError):
+        assert "asks for a password" in net.explain(ProxyError("407 Proxy Authentication Required"), "huggingface.co",
+                                                    "http://proxy.corp:8080")
+        assert "Couldn't connect through your network's proxy (proxy.corp:8080)" in net.explain(
+            ProxyError("connection refused"), "huggingface.co", "http://proxy.corp:8080")
+
+    class ProxyError(Exception):                # only the libraries' own class, not its name
         pass
-    assert "asks for a password" in net.explain(ProxyError("407 Proxy Authentication Required"), "huggingface.co",
-                                                "http://proxy.corp:8080")
-    assert "Couldn't connect through your network's proxy (proxy.corp:8080)" in net.explain(
-        ProxyError("connection refused"), "huggingface.co", "http://proxy.corp:8080")
+    assert net.explain(ProxyError("407 Proxy Authentication Required"), "huggingface.co", "http://proxy.corp:8080") is None
+
+
+def test_the_words_name_the_machine_and_its_proxy_settings_for_its_system():
+    mac = [net.tls_intercepted("darwin"), net.tls_untrusted("app.test", "darwin"), net.proxy_auth(None, "darwin"),
+           net.proxy_failed(None, "darwin"), net.pac_hint("darwin")]
+    assert all("Mac" in m or "System Settings" in m for m in mac)
+    assert "System Settings > Network > Details > Proxies" in net.proxy_failed(None, "darwin")
+    for platform in ("linux", "win32"):
+        words = [net.tls_intercepted(platform), net.tls_untrusted("app.test", platform), net.proxy_auth(None, platform),
+                 net.proxy_failed(None, platform), net.pac_hint(platform)]
+        assert not any("Mac" in m or "System Settings" in m for m in words), words
+        assert "this computer" in net.tls_untrusted("app.test", platform)
+        assert net.tls_untrusted("app.test", platform).startswith("This computer doesn't trust app.test's certificate.")
+    assert "Settings > Network & internet > Proxy" in net.proxy_failed(None, "win32")
+    assert net.TLS_INTERCEPTED == net.tls_intercepted(sys.platform)
 
 
 def test_the_hub_client_uses_the_system_store_and_the_proxy():
