@@ -18,6 +18,7 @@ import type { App } from '../../data/types';
 import { backendGroupLoader, callSecretNames, preorder, resolveSteps, secretNames } from './resolve';
 import { INITIAL_RUN, runReducer } from './runState';
 import { demoFailIds, demoSeen } from './demo';
+import { computer, ThisComputer } from '../../lib/osWords';
 
 export interface Finished { ended: RunEnded; run: Run | null; steps: Step[] }
 
@@ -30,8 +31,8 @@ export async function prepareTest(backend: Backend, test: Test): Promise<{ steps
 /** Where a run from this Mac says it ran. The demo matches the sample runs ("Maria's MacBook Pro"). */
 export function machineName(user: Person | null): string {
   const first = user?.name.split(/\s+/)[0];
-  if (!first) return 'This Mac';
-  return demoEngine() ? `${first}'s MacBook Pro` : `${first}'s Mac`;
+  if (!first) return ThisComputer();
+  return demoEngine() ? `${first}'s MacBook Pro` : `${first}'s ${computer()}`;
 }
 
 let seq = 0;

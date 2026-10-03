@@ -6,6 +6,7 @@ import { getEngine } from '../../engine';
 import { LiveView } from '../../components/live/LiveView';
 import { keyName } from '../../components/live/geometry';
 import { StepsPanel } from '../../components/steps';
+import { setOsForTests } from '../../lib/osWords';
 import { addStepHint } from './editorRun';
 import screenSource from './RecorderScreen.tsx?raw';
 import { useRecorder } from './useRecorder';
@@ -54,6 +55,35 @@ describe('Use the page', () => {
     expect(onInput.mock.calls[3][0]).toEqual({ kind: 'text', text: 'a' });
     expect(onInput.mock.calls[5][0]).toEqual({ kind: 'key', key: 'Escape' });
     expect(onPoint).not.toHaveBeenCalled();
+  });
+
+  // Pinned: on a Mac, any ⌘E leaves the mode, with Ctrl held or not, exactly as before Windows
+  // and Linux were added; Ctrl+E alone is a key for the page. Off the Mac it's the other way round.
+  it('leaves on ⌘E and on Ctrl+⌘E on a Mac, and sends Ctrl+E to the page', () => {
+    const onInput = vi.fn();
+    const r = render(<LiveView address="x" viewport={vp} source="sample" passThrough onInput={onInput} onPoint={() => undefined} />);
+    const hit = r.container.querySelector('.live-hit')!;
+    fireEvent.keyDown(hit, { key: 'e', metaKey: true });
+    fireEvent.keyDown(hit, { key: 'e', metaKey: true, ctrlKey: true });
+    fireEvent.keyDown(hit, { key: 'E', metaKey: true, shiftKey: true });
+    expect(onInput).not.toHaveBeenCalled();
+    fireEvent.keyDown(hit, { key: 'e', ctrlKey: true });
+    expect(onInput.mock.calls).toEqual([[{ kind: 'key', key: 'Control+e' }]]);
+  });
+
+  it('leaves on Ctrl+E on Windows and Linux, and sends ⌘E to the page', () => {
+    for (const os of ['windows', 'linux'] as const) {
+      setOsForTests(os);
+      const onInput = vi.fn();
+      const r = render(<LiveView address="x" viewport={vp} source="sample" passThrough onInput={onInput} onPoint={() => undefined} />);
+      const hit = r.container.querySelector('.live-hit')!;
+      fireEvent.keyDown(hit, { key: 'e', ctrlKey: true });
+      expect(onInput).not.toHaveBeenCalled();
+      fireEvent.keyDown(hit, { key: 'e', metaKey: true });
+      expect(onInput).toHaveBeenCalledOnce();
+      r.unmount();
+      setOsForTests(null);
+    }
   });
 
   it('names keys the way the browser takes them', () => {

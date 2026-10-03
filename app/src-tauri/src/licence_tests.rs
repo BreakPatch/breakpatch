@@ -570,6 +570,39 @@ fn a_generated_machine_id_is_stable() {
     assert_ne!(stored_id(other.path()), a);
 }
 
+#[test]
+fn linux_machine_id_is_32_hex_digits_and_not_a_placeholder() {
+    assert_eq!(parse_machine_id("4C4C4544004B4C108035B2C04F334E32\n").as_deref(), Some("4c4c4544004b4c108035b2c04f334e32"));
+    assert_eq!(parse_machine_id("uninitialized\n"), None);
+    assert_eq!(parse_machine_id(&"0".repeat(32)), None);
+    assert_eq!(parse_machine_id("abc"), None);
+    assert_eq!(parse_machine_id(""), None);
+}
+
+/// This machine's own id and name, as the runner's machine licence sends them.
+#[cfg(any(target_os = "linux", windows))]
+#[test]
+fn this_machine_has_a_name_and_a_hashed_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let (id, name) = machine_identity(dir.path());
+    assert_eq!(id.len(), 32);
+    assert_eq!(machine_identity(dir.path()).0, id, "the id is stable");
+    let name = name.expect("a host or computer name");
+    assert!(!name.trim().is_empty() && name.chars().count() <= 80);
+    // Where the platform has an id, it's the one used, and nothing is written.
+    if let Some(raw) = platform_uuid() {
+        assert_eq!(id, hash_id(&raw));
+        assert!(!dir.path().join("machine-id").exists());
+    }
+}
+
+#[test]
+fn machine_names_are_trimmed_and_capped() {
+    assert_eq!(clean_machine_name("  build-box \n").as_deref(), Some("build-box"));
+    assert_eq!(clean_machine_name(" \n"), None);
+    assert_eq!(clean_machine_name(&"é".repeat(100)).unwrap().chars().count(), 80);
+}
+
 // ---- Usage counts with the refresh (usage.rs) ----
 
 fn with_usage(l: Licensing<MemStore>) -> (Licensing<MemStore>, Arc<UsageStore>) {
@@ -678,7 +711,7 @@ fn a_token_bound_to_another_mac_is_invalid_here() {
     let st = evaluate(Some(&mine), &t, IAT + 1, None, Some("ffffffffffffffffffffffffffffffff"));
     assert_eq!((st.state, st.code.as_deref()), (State::Invalid, Some("other_device")));
     assert!(st.features.is_empty());
-    assert_eq!(st.message.as_deref(), Some("This licence was activated on another Mac. Sign in again on this one."));
+    assert_eq!(st.message.as_deref(), Some(&*os_text("This licence was activated on another Mac. Sign in again on this one.")));
     // The raw deviceId in `dev` counts too; a token without `dev` works on any Mac (older service).
     p["dev"] = json!(DEVICE);
     assert_eq!(
@@ -730,11 +763,11 @@ async fn a_token_for_another_device_in_an_answer_is_not_stored() {
 async fn over_seats_and_too_many_devices_say_so_plainly() {
     assert_eq!(
         message_for("over_seats", None),
-        "Your team is using more seats than it pays for, so this Mac's seat was freed. Ask your admin to add seats, then sign in again."
+        os_text("Your team is using more seats than it pays for, so this Mac's seat was freed. Ask your admin to add seats, then sign in again.")
     );
     assert_eq!(
         message_for("too_many_devices", None),
-        "Your seat is already used on too many Macs. Ask your admin to free one, then sign in again."
+        os_text("Your seat is already used on too many Macs. Ask your admin to free one, then sign in again.")
     );
     // A refresh refused with over_seats leaves this Mac without a token, and says why.
     let store = MemStore::default();
@@ -763,7 +796,7 @@ fn a_clock_set_back_makes_the_licence_invalid_until_an_online_refresh() {
     assert!(st.features.is_empty());
     assert_eq!(
         st.message.as_deref(),
-        Some("This Mac's clock is behind. Set the right date and time, then reconnect to check your licence.")
+        Some(&*os_text("This Mac's clock is behind. Set the right date and time, then reconnect to check your licence."))
     );
     assert_eq!(l.engine_token(), None, "the engine doesn't get it either");
     // Putting the clock forward again isn't enough; it stays invalid, even after a restart.
@@ -1157,7 +1190,7 @@ async fn a_team_key_on_a_tests_folder_says_it_belongs_in_a_workspace() {
 
 #[tokio::test]
 async fn solo_refusals_keep_the_services_solo_words() {
-    let msg = "This Solo licence is in use on another Mac. Free it at account.breakpatch.dev, then try again.";
+    let msg = &*os_text("This Solo licence is in use on another Mac. Free it at account.breakpatch.dev, then try again.");
     let refused = json!({ "ok": false, "error": { "code": "solo_too_many_devices", "message": "Words the app doesn't read.", "tier": "solo" } });
     let (url, _) = canned(vec![(409, refused)]).await;
     let l = unselected(MemStore::default(), &url, Arc::new(AtomicI64::new(IAT)));
@@ -1314,7 +1347,7 @@ async fn a_runner_or_ci_token_typed_as_a_licence_key_says_which_it_is_and_is_nev
     // A CI token (BPC1-): its own words, which name the runner's machine pass.
     let f = l.activate(person(&token("BPC1"), "bo@acme.com")).await.unwrap_err();
     assert_eq!(f.code, "bad_request");
-    assert!(f.message.starts_with("That's a CI token (BPC1-…), for breakpatch-ci. It isn't a licence key: the runner Mac takes its seat with its machine pass, which starts with BPM1-"), "{}", f.message);
+    assert!(f.message.starts_with(&*os_text("That's a CI token (BPC1-…), for breakpatch-ci. It isn't a licence key: the runner Mac takes its seat with its machine pass, which starts with BPM1-")), "{}", f.message);
     let f = l.activate(person(&token("BPM1"), "bo@acme.com")).await.unwrap_err();
     assert!(f.message.starts_with("That's a runner token (BPM1-…)"), "{}", f.message);
     // Told apart however much of the paste a field kept; the pass itself goes through.
@@ -1341,5 +1374,127 @@ fn machine_secrets_are_told_apart_as_the_team_app_and_breakpatch_ci_do() {
             other => panic!("unknown shape {other}"),
         };
         assert_eq!(machine_secret(c["text"].as_str().unwrap()), Some(want), "{}", c["why"]);
+    }
+}
+
+// ---- Credential Manager's limit (Windows) ----
+
+/// The licence entry at its longest, with a real signed token, through the split store Windows
+/// uses (secrets.rs `split`): Credential Manager holds 2,560 bytes an entry, and `set_password`'s
+/// UTF-16 would halve that. Every field is longer than the service ever makes it.
+#[test]
+fn worst_case_licence_entry_survives_credential_managers_limit() {
+    use crate::secrets::split::{self, MemBlobs, WINDOWS_LIMIT};
+
+    let ws = format!("team:{}/{}", "p".repeat(30), "d".repeat(63));
+    let mut claims = payload(&ws, IAT);
+    claims["licenceId"] = json!("L".repeat(40));
+    claims["activationId"] = json!("a".repeat(40));
+    claims["subjectHash"] = json!("f".repeat(64));
+    claims["features"] = json!(["collaboration", "versions", "runner", "fixing", "explain", "trackers", "schedules"]);
+    claims["dev"] = json!("0".repeat(32));
+    claims["parallelRuns"] = json!(1);
+    let token = sign("2026-09", &claims);
+    let s = Stored {
+        key: "BP-2HC6-FWG8-CR0K-VBDB".into(),
+        subject: format!("{}@{}.example", "n".repeat(64), "d".repeat(180)),
+        kind: Kind::Person,
+        workspace_project_id: ws.clone(),
+        machine_name: Some("Ñ".repeat(80)),
+        token: Some(token.clone()),
+        seats_used: Some(u32::MAX),
+        machines_used: Some(u32::MAX),
+        customer_name: Some("Ä".repeat(200)),
+        error: Some("licence_machine_mismatch".into()),
+        seen_at: Some(i64::MAX),
+        clock_back: true,
+        tier: Some("team".into()),
+    };
+    let text = serde_json::to_string(&s).unwrap();
+    assert!(text.encode_utf16().count() * 2 > WINDOWS_LIMIT, "worst case should be over the UTF-16 limit");
+
+    let store = MemBlobs::new(WINDOWS_LIMIT);
+    split::set(&store, WINDOWS_LIMIT, &entry_for(&ws), &text).unwrap();
+    let back: Stored = serde_json::from_str(&split::get(&store, WINDOWS_LIMIT, &entry_for(&ws)).unwrap().unwrap()).unwrap();
+    assert_eq!(back.token.as_deref(), Some(token.as_str()));
+    assert_eq!(back.customer_name, s.customer_name);
+    // A typical entry (the shape the other tests use) stays in one entry.
+    let typical = serde_json::to_string(&stored(Some(sign("2026-09", &payload(WS, IAT))))).unwrap();
+    assert!(typical.len() <= WINDOWS_LIMIT, "a typical entry is {} bytes", typical.len());
+}
+
+/// macOS keeps every licence message byte for byte: the words below are the shell's from before
+/// Windows and Linux (os_words.rs). On a Mac `os_text` hands them back untouched, and
+/// os_words.rs's tests check that it does.
+mod mac_words_unchanged {
+    use super::*;
+    use crate::os_words::{os_text_for, Os};
+
+    const SOLO: &[(&str, &str)] = &[
+        ("revoked", "This Solo licence is no longer active. Contact Breakpatch at support@breakpatch.dev."),
+        ("expired", "Your Solo licence has expired. Renew it at account.breakpatch.dev."),
+        ("out_of_seats", "This Solo licence is already used by someone else. Solo is for one person: for more people, choose Team."),
+        ("out_of_machines", "This Solo licence's machine licence is in use. Free it at account.breakpatch.dev, then try again."),
+        ("released", "This Mac's Solo seat was freed. Activate again to use Solo here."),
+        ("over_seats", "This Mac's Solo seat was freed. Activate again to use Solo here."),
+        ("too_many_devices", "This Solo licence is in use on another Mac. Free it at account.breakpatch.dev, then try again."),
+        ("other_device", "This Solo licence was activated on another Mac. Free it at account.breakpatch.dev, then activate it here."),
+        ("grace", "Breakpatch couldn't check your Solo licence lately. Reconnect soon to keep Solo features."),
+        ("invalid_token", "This Solo licence couldn't be checked. Activate it again."),
+    ];
+
+    const TEAM: &[(&str, &str)] = &[
+        ("bad_request", "Something is missing from the request. Update Breakpatch and try again."),
+        ("unknown_key", "This licence key isn't recognised. Check it and try again."),
+        ("revoked", "This licence is no longer active. Ask your admin for help."),
+        ("expired", "Your licence has expired. Ask your admin to renew it."),
+        ("out_of_seats", "Your team is out of seats. Ask your admin to add one."),
+        ("out_of_machines", "Your team has no machine licences left. Ask your admin to add one."),
+        ("invalid_token", "This licence couldn't be checked. Sign in again."),
+        ("released", "This seat was freed. Sign in again to take a seat."),
+        ("rate_limited", "Too many tries. Wait a few minutes and try again."),
+        ("over_seats", "Your team is using more seats than it pays for, so this Mac's seat was freed. Ask your admin to add seats, then sign in again."),
+        ("too_many_devices", "Your seat is already used on too many Macs. Ask your admin to free one, then sign in again."),
+        ("internal", "Something went wrong on our side. Try again in a minute."),
+        ("offline", "Couldn't reach the licence service. Check your connection and try again."),
+        ("offline_too_long", "Reconnect to check your licence."),
+        ("grace", "Breakpatch couldn't check your licence lately. Reconnect soon to keep Team features."),
+        ("other_workspace", "This licence is for another workspace."),
+        ("other_device", "This licence was activated on another Mac. Sign in again on this one."),
+        ("clock_back", "This Mac's clock is behind. Set the right date and time, then reconnect to check your licence."),
+        ("unavailable", "Licences aren't available in this edition of Breakpatch."),
+        ("needs_workspace", "This is a Team licence key. Team licences are used in a workspace: connect or create one, then enter the key there."),
+        ("no_device", "Breakpatch couldn't tell which Mac this is, so a Solo licence can't be activated here."),
+    ];
+
+    #[test]
+    fn every_licence_message_is_the_macs_own() {
+        for (code, want) in SOLO {
+            assert_eq!(solo_words(code), Some(*want), "{code}");
+            assert_eq!(os_text_for(Os::Mac, want), *want);
+        }
+        for (code, want) in TEAM {
+            assert_eq!(team_words(code), Some(*want), "{code}");
+            assert_eq!(os_text_for(Os::Mac, want), *want);
+        }
+        // No code was added or dropped on the way.
+        assert_eq!(solo_words("solo_no_members"), None);
+        assert_eq!(team_words("no_such_code"), None);
+        #[cfg(target_os = "macos")]
+        for (code, want) in TEAM {
+            assert_eq!(message_for(code, None), *want);
+        }
+    }
+
+    #[test]
+    fn other_systems_name_their_own_computer() {
+        assert_eq!(
+            os_text_for(Os::Windows, team_words("clock_back").unwrap()),
+            "This PC's clock is behind. Set the right date and time, then reconnect to check your licence."
+        );
+        assert_eq!(
+            os_text_for(Os::Linux, solo_words("too_many_devices").unwrap()),
+            "This Solo licence is in use on another computer. Free it at account.breakpatch.dev, then try again."
+        );
     }
 }

@@ -10,6 +10,7 @@ import { isTauri, revealInFinder } from '../../../platform';
 import { useSession } from '../../../state/session';
 import { useChooseFolder } from '../../welcome/useChooseFolder';
 import { Section } from './common';
+import { showInFileManager } from '../../../lib/osWords';
 
 function useCounts() {
   const backend = useBackend();
@@ -37,7 +38,7 @@ export function FolderSection() {
           </div>
         </div>
         <div className="row" style={{ gap: 10 }}>
-          {isTauri() && <Button icon="folder_open" onClick={() => void revealInFinder(local.path)}>Show in Finder</Button>}
+          {isTauri() && <Button icon="folder_open" onClick={() => void revealInFinder(local.path)}>{showInFileManager()}</Button>}
           <Button icon="drive_file_move" busy={busy} onClick={() => setAsking(true)}>Change folder</Button>
         </div>
       </div>

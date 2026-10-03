@@ -1,39 +1,44 @@
-//! Local runner helpers (spec §12.4): keep the Mac awake, open at login, memory size,
+//! Local runner helpers (spec §12.4): keep the computer awake, open at login, memory size,
 //! and posting result messages (kept out of the webview so the CSP stays strict).
 
 use std::sync::Mutex;
 use std::time::Duration;
 
 use serde_json::Value;
+use crate::os_words::os_text;
 
-/// Holds the `caffeinate` process while runner mode keeps the Mac awake.
+/// Keeps the computer awake while runner mode is on: `caffeinate` on macOS (as it always has),
+/// `systemd-inhibit` on Linux, a power request on Windows. Released by `set(false)`, on drop and
+/// when the app exits (lib.rs `RunEvent::Exit`); the macOS and Linux holders also end with the app.
 #[derive(Default)]
 pub struct KeepAwake {
-    child: Mutex<Option<std::process::Child>>,
+    hold: Mutex<Option<Hold>>,
 }
 
 impl KeepAwake {
     pub fn set(&self, on: bool) -> Result<(), String> {
-        let mut guard = self.child.lock().unwrap();
+        let mut guard = self.hold.lock().unwrap();
         if !on {
-            if let Some(mut c) = guard.take() {
-                let _ = c.kill();
-                let _ = c.wait();
+            if let Some(h) = guard.take() {
+                h.release();
             }
             return Ok(());
         }
-        if let Some(c) = guard.as_mut() {
-            if matches!(c.try_wait(), Ok(None)) {
-                return Ok(()); // already running
+        if let Some(h) = guard.as_mut() {
+            if h.alive() {
+                return Ok(()); // already held
+            }
+            if let Some(dead) = guard.take() {
+                dead.release();
             }
         }
-        *guard = spawn_caffeinate()?;
+        *guard = Hold::take()?;
         Ok(())
     }
 
     #[cfg(test)]
     pub fn is_on(&self) -> bool {
-        self.child.lock().unwrap().as_mut().is_some_and(|c| matches!(c.try_wait(), Ok(None)))
+        self.hold.lock().unwrap().as_mut().is_some_and(Hold::alive)
     }
 }
 
@@ -43,22 +48,173 @@ impl Drop for KeepAwake {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn spawn_caffeinate() -> Result<Option<std::process::Child>, String> {
-    // -d display, -i idle, -m disk, -s system (on AC), -u user active; -w ends it with us.
-    std::process::Command::new("/usr/bin/caffeinate")
-        .args(["-dimsu", "-w", &std::process::id().to_string()])
-        .spawn()
-        .map(Some)
-        .map_err(|e| format!("Couldn't keep this Mac awake: {e}"))
+/// What keeps the computer awake: a helper process on macOS and Linux, a power request on Windows.
+enum Hold {
+    #[cfg_attr(not(unix), allow(dead_code))]
+    Process(std::process::Child),
+    /// The power request's HANDLE, as an integer so the hold is `Send`.
+    #[cfg(windows)]
+    Power(usize),
 }
 
-#[cfg(not(target_os = "macos"))]
-fn spawn_caffeinate() -> Result<Option<std::process::Child>, String> {
-    Ok(None)
+impl Hold {
+    fn alive(&mut self) -> bool {
+        match self {
+            Hold::Process(c) => matches!(c.try_wait(), Ok(None)),
+            #[cfg(windows)]
+            Hold::Power(_) => true,
+        }
+    }
+
+    fn release(self) {
+        match self {
+            Hold::Process(mut c) => {
+                // On Linux the helper leads its own process group: end the whole group, so
+                // `systemd-inhibit`'s child goes too. SIGTERM lets it drop the lock cleanly.
+                #[cfg(target_os = "linux")]
+                if let Ok(pid) = i32::try_from(c.id()) {
+                    unsafe { libc::kill(-pid, libc::SIGTERM) };
+                    for _ in 0..20 {
+                        if !matches!(c.try_wait(), Ok(None)) {
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    unsafe { libc::kill(-pid, libc::SIGKILL) };
+                }
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            #[cfg(windows)]
+            Hold::Power(h) => windows_power::clear(h),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn take() -> Result<Option<Hold>, String> {
+        // -d display, -i idle, -m disk, -s system (on AC), -u user active; -w ends it with us.
+        std::process::Command::new("/usr/bin/caffeinate")
+            .args(["-dimsu", "-w", &std::process::id().to_string()])
+            .spawn()
+            .map(|c| Some(Hold::Process(c)))
+            .map_err(|e| format!("Couldn't keep this Mac awake: {e}"))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn take() -> Result<Option<Hold>, String> {
+        use std::os::unix::process::CommandExt;
+        let (program, args) = linux_inhibit_command(std::process::id());
+        let mut child = std::process::Command::new(program)
+            .args(&args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    "Couldn't keep this computer awake: systemd-inhibit isn't installed. Turn off sleep in your system settings instead.".to_string()
+                } else {
+                    format!("Couldn't keep this computer awake: {e}")
+                }
+            })?;
+        // systemd-inhibit gives up at once when there's no logind or it may not take the lock:
+        // say so, instead of reporting a lock nobody holds.
+        std::thread::sleep(Duration::from_millis(200));
+        if let Ok(Some(status)) = child.try_wait() {
+            let mut why = String::new();
+            if let Some(mut err) = child.stderr.take() {
+                use std::io::Read;
+                let _ = err.read_to_string(&mut why);
+            }
+            let why = why.trim();
+            return Err(format!(
+                "Couldn't keep this computer awake: systemd-inhibit stopped ({}). Turn off sleep in your system settings instead.",
+                if why.is_empty() { status.to_string() } else { why.to_string() }
+            ));
+        }
+        Ok(Some(Hold::Process(child)))
+    }
+
+    #[cfg(windows)]
+    fn take() -> Result<Option<Hold>, String> {
+        windows_power::request().map(|h| Some(Hold::Power(h)))
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+    fn take() -> Result<Option<Hold>, String> {
+        Ok(None)
+    }
 }
 
-/// Installed memory in whole GB (16 GB Mac → 16). 0 if unknown.
+/// `systemd-inhibit` holding off sleep and the idle action (the screen blanking or locking, as
+/// `caffeinate -d -i` does) for as long as its child lives. The child is `tail --pid`, which ends
+/// when Breakpatch does, so a crash doesn't leave the lock behind.
+#[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+fn linux_inhibit_command(app_pid: u32) -> (&'static str, Vec<String>) {
+    let args = [
+        "--what=sleep:idle",
+        "--who=Breakpatch",
+        "--why=Runner mode is on: suites run on a schedule",
+        "--mode=block",
+        "tail",
+        "-f",
+        "/dev/null",
+    ];
+    let mut v: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    v.insert(5, format!("--pid={app_pid}"));
+    ("systemd-inhibit", v)
+}
+
+#[cfg(windows)]
+mod windows_power {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::System::Power::{
+        PowerClearRequest, PowerCreateRequest, PowerRequestDisplayRequired, PowerRequestSystemRequired, PowerSetRequest,
+    };
+    use windows_sys::Win32::System::Threading::{
+        POWER_REQUEST_CONTEXT_SIMPLE_STRING, REASON_CONTEXT, REASON_CONTEXT_0,
+    };
+
+    /// `POWER_REQUEST_CONTEXT_VERSION` (winnt.h, in windows-sys's large SystemServices feature).
+    const POWER_REQUEST_CONTEXT_VERSION: u32 = 0;
+
+    /// A power request keeping the system and the display on (`powercfg /requests` lists it,
+    /// with the reason). Windows ends it with the process too.
+    pub fn request() -> Result<usize, String> {
+        let mut why: Vec<u16> = "Breakpatch runner mode: suites run on a schedule".encode_utf16().chain([0]).collect();
+        let ctx = REASON_CONTEXT {
+            Version: POWER_REQUEST_CONTEXT_VERSION,
+            Flags: POWER_REQUEST_CONTEXT_SIMPLE_STRING,
+            Reason: REASON_CONTEXT_0 { SimpleReasonString: why.as_mut_ptr() },
+        };
+        let h = unsafe { PowerCreateRequest(&ctx) };
+        if h.is_null() || h == INVALID_HANDLE_VALUE {
+            return Err(format!("Couldn't keep this PC awake: {}", std::io::Error::last_os_error()));
+        }
+        let ok = unsafe { PowerSetRequest(h, PowerRequestSystemRequired) != 0 };
+        if !ok {
+            let e = std::io::Error::last_os_error();
+            unsafe { CloseHandle(h) };
+            return Err(format!("Couldn't keep this PC awake: {e}"));
+        }
+        // The display request is a nicety: the system one is what keeps runs going.
+        unsafe { PowerSetRequest(h, PowerRequestDisplayRequired) };
+        Ok(h as usize)
+    }
+
+    pub fn clear(h: usize) {
+        let h = h as windows_sys::Win32::Foundation::HANDLE;
+        unsafe {
+            PowerClearRequest(h, PowerRequestDisplayRequired);
+            PowerClearRequest(h, PowerRequestSystemRequired);
+            CloseHandle(h);
+        }
+    }
+}
+
+/// Installed memory in whole GB (16 GB Mac → 16): `hw.memsize` on macOS, `/proc/meminfo` on
+/// Linux, `GlobalMemoryStatusEx` on Windows. 0 if unknown.
 pub fn memory_gb() -> u32 {
     let bytes = memory_bytes().unwrap_or(0);
     ((bytes as f64) / (1u64 << 30) as f64).round() as u32
@@ -80,7 +236,17 @@ fn memory_bytes() -> Option<u64> {
     parse_meminfo(&std::fs::read_to_string("/proc/meminfo").ok()?)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(windows)]
+fn memory_bytes() -> Option<u64> {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    // SAFETY: MEMORYSTATUSEX is plain data; dwLength must be set before the call.
+    let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+    status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+    // SAFETY: `status` is a valid, sized MEMORYSTATUSEX.
+    (unsafe { GlobalMemoryStatusEx(&mut status) } != 0).then_some(status.ullTotalPhys)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 fn memory_bytes() -> Option<u64> {
     None
 }
@@ -179,7 +345,7 @@ pub const SHOT_MAX_BYTES: u64 = 15 * 1024 * 1024;
 pub fn read_screenshot(base: &std::path::Path, path: &str) -> Result<Vec<u8>, String> {
     let refused = || "That isn't one of Breakpatch's screenshots.".to_string();
     let base = base.canonicalize().map_err(|_| refused())?;
-    let file = std::path::Path::new(path).canonicalize().map_err(|_| "The screenshot isn't on this Mac any more.".to_string())?;
+    let file = std::path::Path::new(path).canonicalize().map_err(|_| os_text("The screenshot isn't on this Mac any more.").into_owned())?;
     if !file.starts_with(&base) {
         return Err(refused());
     }
@@ -212,7 +378,7 @@ mod tests {
 
     #[test]
     fn memory_is_reported_here() {
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
         assert!(memory_gb() > 0);
     }
 
@@ -400,5 +566,84 @@ mod tests {
         let k = KeepAwake::default();
         k.set(false).unwrap();
         assert!(!k.is_on());
+    }
+
+    #[test]
+    fn linux_holds_sleep_and_idle_until_the_app_ends() {
+        let (program, args) = linux_inhibit_command(4242);
+        assert_eq!(program, "systemd-inhibit");
+        assert_eq!(
+            args,
+            [
+                "--what=sleep:idle",
+                "--who=Breakpatch",
+                "--why=Runner mode is on: suites run on a schedule",
+                "--mode=block",
+                "tail",
+                "--pid=4242",
+                "-f",
+                "/dev/null"
+            ]
+        );
+    }
+
+    /// Releasing ends the helper's whole process group, so systemd-inhibit's child doesn't linger.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_release_ends_the_helper_and_its_child() {
+        use std::os::unix::process::CommandExt;
+        let c = std::process::Command::new("sh")
+            .args(["-c", "sleep 30 & echo $! ; wait"])
+            .stdout(std::process::Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut c = c;
+        let mut line = String::new();
+        {
+            use std::io::BufRead;
+            std::io::BufReader::new(c.stdout.take().unwrap()).read_line(&mut line).unwrap();
+        }
+        let grandchild: i32 = line.trim().parse().unwrap();
+        let alive = |pid: i32| unsafe { libc::kill(pid, 0) } == 0;
+        assert!(alive(grandchild));
+        let mut hold = Hold::Process(c);
+        assert!(hold.alive());
+        hold.release();
+        std::thread::sleep(Duration::from_millis(100));
+        // Reaped by init or a zombie at most: either way, not running `sleep` any more.
+        let stat = std::fs::read_to_string(format!("/proc/{grandchild}/stat")).unwrap_or_default();
+        assert!(!alive(grandchild) || stat.contains(") Z "), "{stat}");
+    }
+
+    /// Without a logind (a container, say) taking the lock fails, and says why.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "needs systemd-inhibit and no logind on the system bus"]
+    fn linux_keep_awake_says_why_it_failed() {
+        let k = KeepAwake::default();
+        let e = k.set(true).unwrap_err();
+        assert!(e.starts_with("Couldn't keep this computer awake: systemd-inhibit stopped ("), "{e}");
+        assert!(!k.is_on());
+    }
+
+    /// On, on again (one holder), off: needs systemd-inhibit and a logind it may talk to.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "needs systemd-inhibit with a running logind"]
+    fn linux_keep_awake_takes_and_releases_the_lock() {
+        let list = || {
+            String::from_utf8_lossy(&std::process::Command::new("systemd-inhibit").arg("--list").output().unwrap().stdout).to_string()
+        };
+        let k = KeepAwake::default();
+        k.set(true).unwrap();
+        k.set(true).unwrap();
+        assert!(k.is_on());
+        std::thread::sleep(Duration::from_millis(300));
+        assert_eq!(list().matches("Breakpatch").count(), 1, "{}", list());
+        k.set(false).unwrap();
+        assert!(!k.is_on());
+        std::thread::sleep(Duration::from_millis(300));
+        assert!(!list().contains("Breakpatch"), "{}", list());
     }
 }

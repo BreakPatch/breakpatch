@@ -337,7 +337,7 @@ async fn a_token_is_kept_only_after_it_works_and_never_in_the_index() {
     assert_eq!(t.get(Provider::Jira).unwrap(), ("secret-token".to_string(), who));
     let index = fs::read_to_string(dir.path().join("trackers.json")).unwrap();
     assert!(!index.contains("secret-token"));
-    assert!(t.get(Provider::Github).unwrap_err().contains("isn't set up on this Mac"));
+    assert!(t.get(Provider::Github).unwrap_err().contains(&*os_text("isn't set up on this Mac")));
     t.forget(Provider::Jira).unwrap();
     assert!(t.status().is_empty() && t.store.get("jira").unwrap().is_none());
     assert_eq!(Provider::parse("linear").unwrap(), Provider::Linear);
@@ -350,7 +350,7 @@ async fn jira_issues_go_only_to_the_site_the_token_was_saved_for() {
     let (c, e, w) = (client().unwrap(), f.endpoints(), who(Provider::Jira));
     let r = |site: &str| IssueRequest { title: "T".into(), project: Some("WEB".into()), site: Some(site.into()), ..Default::default() };
     let err = create_issue(&c, &e, Provider::Jira, "t", &w, &r("globex.atlassian.net"), None).await.unwrap_err();
-    assert_eq!(err, "The Jira token on this Mac is for acme.atlassian.net, but the workspace sends issues to globex.atlassian.net. Save a token for globex.atlassian.net in Settings → Issue trackers.");
+    assert_eq!(err, os_text("The Jira token on this Mac is for acme.atlassian.net, but the workspace sends issues to globex.atlassian.net. Save a token for globex.atlassian.net in Settings → Issue trackers."));
     assert!(f.got().is_empty(), "nothing was sent");
     let out = create_issue(&c, &e, Provider::Jira, "t", &w, &r("https://Acme.atlassian.net/jira"), None).await.unwrap();
     assert_eq!(out.url, "https://acme.atlassian.net/browse/WEB-8");

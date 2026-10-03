@@ -10,6 +10,7 @@ mod folder;
 mod licence;
 mod migration;
 mod net;
+mod os_words;
 mod results;
 mod runner;
 mod secrets;
@@ -315,7 +316,7 @@ fn workspace_file_take(inbox: State<'_, WorkspaceInbox>) -> Option<String> {
 
 // ---- Tests folder (Community) ----------------------------------------------------------
 
-/// The macOS full name, for "saved by" in the tests folder. None when the shell can't tell.
+/// The person's full name, for "saved by" in the tests folder (folder.rs). None when the shell can't tell.
 #[tauri::command]
 async fn system_full_name() -> Option<String> {
     tauri::async_runtime::spawn_blocking(folder::full_user_name).await.ok().flatten()
@@ -336,7 +337,13 @@ fn screenshots_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String>
             return Ok(std::path::PathBuf::from(d));
         }
     }
-    Ok(app.path().data_dir().map_err(|e| e.to_string())?.join("Breakpatch").join("screenshots"))
+    // The engine's folder (config.app_home): the local, not roaming, app data on Windows, the same
+    // as the asset scope's $LOCALDATA there (tauri.windows.conf.json).
+    #[cfg(windows)]
+    let base = app.path().local_data_dir();
+    #[cfg(not(windows))]
+    let base = app.path().data_dir();
+    Ok(base.map_err(|e| e.to_string())?.join("Breakpatch").join("screenshots"))
 }
 
 /// Moves allowed items to the Trash. `place` "folder": `names` among breakpatch.json, apps and
@@ -545,6 +552,11 @@ pub fn run() {
                 KeyringStore::new(trackers::SERVICE),
                 data_dir.join("trackers.json"),
             )));
+            // The fallback machine id belongs to this PC: on Windows the local app data folder, as
+            // the roaming one follows a domain user to other PCs (licence.rs machine_identity).
+            #[cfg(windows)]
+            let machine_dir = app.path().app_local_data_dir()?;
+            #[cfg(not(windows))]
             let machine_dir = data_dir.clone();
             let keys = KeyTable::compiled();
             let edition = if keys.is_empty() { usage::Edition::Community } else { usage::Edition::Team };
@@ -692,6 +704,20 @@ mod config_tests {
             let src = security[csp]["connect-src"].as_str().unwrap();
             assert!(src.split(' ').any(|h| h == "https://europe-west1-breakpatch-cloud.cloudfunctions.net"), "{csp}");
         }
+    }
+
+    /// The Linux packages hand an opened workspace file or breakpatch:// link to the app (`%u`
+    /// in the desktop entry) and bring the tools that register them (xdg-mime,
+    /// update-desktop-database).
+    #[test]
+    fn linux_packages_pass_links_to_the_app_and_can_register_them() {
+        let linux: Value = serde_json::from_str(include_str!("../tauri.linux.conf.json")).unwrap();
+        let deb = &linux["bundle"]["linux"]["deb"];
+        assert_eq!(deb["depends"], serde_json::json!(["xdg-utils", "desktop-file-utils"]));
+        assert_eq!(deb["desktopTemplate"], "linux/breakpatch.desktop");
+        let entry = include_str!("../linux/breakpatch.desktop");
+        assert!(entry.lines().any(|l| l == "Exec={{exec}} %u"), "{entry}");
+        assert!(entry.contains("MimeType={{mime_type}}"));
     }
 
     /// The UI may show local notifications when a run finishes (lib/notify.ts).

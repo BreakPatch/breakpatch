@@ -4,6 +4,7 @@ import { Button, Switch } from '../../../components/ui';
 import { openExternal } from '../../../platform';
 import { useSession } from '../../../state/session';
 import { Section } from './common';
+import { thisComputer } from '../../../lib/osWords';
 
 /** The Documentation's section on this setting (docs/manual.md "Recorded on another system"). */
 export const SCREEN_CHECKS_DOCS = 'https://breakpatch.dev/docs/#recorded-on-another-system';
@@ -22,7 +23,7 @@ export function ScreenChecksSection() {
         </div>
         <Switch checked={on} onChange={v => set({ allowSystemDifferences: v })} label={ALLOW_DIFFERENCES} />
       </div>
-      <p className="set-note">This applies to runs on this Mac. <Button kind="link" size="sm" onClick={() => void openExternal(SCREEN_CHECKS_DOCS)}>More in the documentation</Button></p>
+      <p className="set-note">This applies to runs on {thisComputer()}. <Button kind="link" size="sm" onClick={() => void openExternal(SCREEN_CHECKS_DOCS)}>More in the documentation</Button></p>
     </Section>
   );
 }

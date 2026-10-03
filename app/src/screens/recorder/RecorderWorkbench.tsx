@@ -14,6 +14,7 @@ import { FileChooserDialog } from './FileChooserDialog';
 import { toolFor } from './actions';
 import { localId, type Recorder } from './useRecorder';
 import './recorder.css';
+import { osText, shortcutKeyDown } from '../../lib/osWords';
 
 export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, loading, onEditGroup, run }: {
   rec: Recorder; appId: string; address: string; viewport: Pick<Viewport, 'width' | 'height'>;
@@ -40,13 +41,13 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
   const engineLive = getEngine().liveMode === 'frames';
   const canHand = !loading && engineLive && !run?.running && !rec.busy;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.metaKey && e.key.toLowerCase() === 'e' && (canHand || rec.hand)) { e.preventDefault(); void rec.setHand(!rec.hand); } };
+    const onKey = (e: KeyboardEvent) => { if (shortcutKeyDown(e) && e.key.toLowerCase() === 'e' && (canHand || rec.hand)) { e.preventDefault(); void rec.setHand(!rec.hand); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [canHand, rec]);
   const handBtn = (
     <button type="button" className={'live-hand-btn' + (rec.hand ? ' on' : '')} aria-pressed={rec.hand} disabled={!canHand && !rec.hand}
-      title="Use the page directly, without recording (⌘E)" onClick={() => void rec.setHand(!rec.hand)}>
+      title={osText('Use the page directly, without recording (⌘E)')} onClick={() => void rec.setHand(!rec.hand)}>
       <Icon name="back_hand" size={16} />Use the page
     </button>
   );

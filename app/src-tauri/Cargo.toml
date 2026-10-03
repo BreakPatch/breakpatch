@@ -42,8 +42,7 @@ tokio = { version = "1", features = ["sync", "time", "macros", "rt"] }
 log = "0.4"
 url = "2"
 reqwest = { version = "0.13", features = ["json"] }
-# Keychain on macOS; kernel keyutils on Linux (dev only), Credential Manager on Windows.
-keyring = { version = "3", features = ["apple-native", "linux-native", "windows-native"] }
+# The OS credential store (secrets.rs) is per platform: see the [target.…dependencies] below.
 # Licence tokens (licence.rs): Ed25519 JWS checked offline against keys built in at compile time.
 ed25519-dalek = "2"
 base64 = "0.22"
@@ -54,11 +53,45 @@ chacha20poly1305 = "0.10"
 hkdf = "0.12"
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 zeroize = "1"
-# Upgrade to Team moves the copied tests folder to the macOS Trash (migration.rs), so Put Back undoes it.
+# Upgrade to Team moves the copied tests folder to the Trash (migration.rs; the Recycle Bin on
+# Windows), so Put Back (Restore) undoes it.
 trash = "5"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# Keychain on macOS.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+# The Secret Service over D-Bus on Linux (GNOME Keyring, KWallet): zbus is pure Rust, so there's
+# no libdbus to build against, and async-io runs its own executor, so it can be called from any
+# thread, tokio's or not. Not the kernel keyring (linux-native): it doesn't survive a reboot.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["async-secret-service", "async-io", "crypto-rust"] }
+
+# Credential Manager on Windows: 2,560 bytes a credential, so secrets.rs splits longer values.
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authentication_Identity",
+  "Win32_System_JobObjects",
+  "Win32_System_Power",
+  "Win32_System_Registry",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+] }
+
+# Anywhere else (a BSD, say) the shell still builds, with keyring's in-memory store.
+[target.'cfg(not(any(target_os = "macos", target_os = "linux", windows)))'.dependencies]
+keyring = "3"
+
+# Show in folder on Windows (explorer /select,) and Linux (FileManager1.ShowItems, with a
+# fallback). macOS keeps `open -R` (folder.rs).
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+tauri-plugin-opener = "2"
 
 [dev-dependencies]
 tempfile = "3"

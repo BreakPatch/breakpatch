@@ -6,9 +6,18 @@ import { openExternal } from '../../../platform';
 import { NOTIFY_DEFAULTS, notifyPermission, type Permission } from '../../../lib/notify';
 import { useSession } from '../../../state/session';
 import { Section } from './common';
+import { currentOs, osText, thisComputer } from '../../../lib/osWords';
 
 /** macOS System Settings, on the Notifications pane (the shell's open scope allows exactly this). */
 export const NOTIFICATION_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.notifications';
+
+/** The system's notification settings for this computer: the Mac's pane, Windows' Settings page
+ *  (the shell's open scope allows each on its own system), or none on Linux, where each desktop
+ *  has its own. */
+export function notificationSettingsUrl(): string | null {
+  const os = currentOs();
+  return os === 'mac' ? NOTIFICATION_SETTINGS_URL : os === 'windows' ? 'ms-settings:notifications' : null;
+}
 
 export function NotificationsSection() {
   const prefs = useSession(s => s.prefs);
@@ -20,18 +29,19 @@ export function NotificationsSection() {
   // Turned off in macOS: say so first, with the way to fix it, and show the switches as blocked
   // (they keep their setting for when macOS allows it again) (DES-09).
   const blocked = perm === 'denied';
-  const note = blocked ? <div className="set-blocked-note">Blocked by macOS</div> : null;
+  const settingsUrl = notificationSettingsUrl();
+  const note = blocked ? <div className="set-blocked-note">{osText('Blocked by macOS')}</div> : null;
   return (
     <Section title="Notifications">
-      <p className="set-lead" style={{ maxWidth: 560 }}>When a run finishes while Breakpatch is in the background, this Mac can tell you. Notifications stay on this Mac.</p>
+      <p className="set-lead" style={{ maxWidth: 560 }}>When a run finishes while Breakpatch is in the background, {thisComputer()} can tell you. Notifications stay on {thisComputer()}.</p>
       {blocked && (
         <div className="banner banner-fixed set-banner" role="status">
           <Icon name="block" />
           <div className="grow col" style={{ gap: 2 }}>
-            <span className="banner-title">macOS isn't letting Breakpatch show notifications</span>
-            <span className="banner-text">In System Settings, open Notifications, then Breakpatch, and turn on Allow notifications.</span>
+            <span className="banner-title">{osText("macOS isn't letting Breakpatch show notifications")}</span>
+            <span className="banner-text">{osText('In System Settings, open Notifications, then Breakpatch, and turn on Allow notifications.')}</span>
           </div>
-          <Button iconAfter="open_in_new" onClick={() => void openExternal(NOTIFICATION_SETTINGS_URL).catch(() => undefined)}>Open System Settings</Button>
+          {settingsUrl && <Button iconAfter="open_in_new" onClick={() => void openExternal(settingsUrl).catch(() => undefined)}>{osText('Open System Settings')}</Button>}
         </div>
       )}
       <div className={'set-toggle' + (blocked ? ' blocked' : '')}>

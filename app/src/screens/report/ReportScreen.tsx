@@ -23,6 +23,7 @@ import { tookText } from './reportData';
 import { useReport } from './useReport';
 import '../run/run.css';
 import './report.css';
+import { osText } from '../../lib/osWords';
 
 const ROW: Record<Run['steps'][number]['result'], RowStatus> = { passed: 'passed', healed: 'fixed', failed: 'failed', notRun: 'notRun' };
 
@@ -55,7 +56,7 @@ export default function ReportScreen() {
   if (missing) {
     return (
       <AppFrame back={back} crumb={app?.name} title="Run report">
-        <EmptyState icon="search_off" title="This run isn't here any more." text="Only the last run of each test is kept on this Mac. Run the test again for a new report."
+        <EmptyState icon="search_off" title="This run isn't here any more." text={osText('Only the last run of each test is kept on this Mac. Run the test again for a new report.')}
           action={<Button kind="primary" onClick={() => navigate(`/apps/${appId}`)}>Back to {app?.name ?? 'the app'}</Button>} />
       </AppFrame>
     );

@@ -1,6 +1,7 @@
 import type { KeyboardEvent } from 'react';
 import { useSession, type Theme } from '../../../state/session';
 import { Section } from './common';
+import { osText, thisComputer } from '../../../lib/osWords';
 
 const OPTIONS: { value: Theme; t: string; d: string; pv: ('dark' | 'light')[] }[] = [
   { value: 'dark', t: 'Dark', d: 'Default', pv: ['dark'] },
@@ -31,7 +32,7 @@ export function AppearanceSection() {
   };
   return (
     <Section title="Appearance">
-      <p className="set-lead">Changes the look straight away, for this Mac only.</p>
+      <p className="set-lead">Changes the look straight away, for {thisComputer()} only.</p>
       <div className="set-looks" role="radiogroup" aria-label="Appearance">
         {OPTIONS.map((o, i) => (
           <button key={o.value} className="set-look" role="radio" aria-checked={theme === o.value} tabIndex={theme === o.value ? 0 : -1}
@@ -40,8 +41,8 @@ export function AppearanceSection() {
             <div className="row">
               <span className="set-radio" aria-hidden />
               <div className="col" style={{ gap: 1 }}>
-                <div className="set-look-t">{o.t}</div>
-                <div className="set-look-d">{o.d}</div>
+                <div className="set-look-t">{osText(o.t)}</div>
+                <div className="set-look-d">{osText(o.d)}</div>
               </div>
             </div>
           </button>

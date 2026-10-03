@@ -60,6 +60,7 @@ use serde_json::{json, Value};
 
 use crate::secrets::SecretStore;
 use crate::usage::UsageStore;
+use crate::os_words::os_text;
 
 pub const KEYCHAIN_SERVICE: &str = "dev.breakpatch.licence";
 /// The one entry of versions before licences per workspace; moved by [`Licensing::select`].
@@ -401,10 +402,16 @@ pub const SOLO: &str = "solo";
 /// [`message_for`], in Solo's words when `solo`: one person on one Mac, nobody to ask, and the
 /// account page to free the Mac or renew. A Solo refusal's own message from the service is kept.
 pub fn message_for_tier(code: &str, service_message: Option<&str>, solo: bool) -> String {
-    if !solo {
-        return message_for(code, service_message);
+    match solo_words(code) {
+        Some(m) if solo => os_text(m).into_owned(),
+        _ => message_for(code, service_message),
     }
-    let m = match code {
+}
+
+/// Solo's own words for a code, as on a Mac (os_words.rs says them for this computer).
+/// Solo's other refusals (solo_no_members, solo_needs_update) keep the service's own words.
+fn solo_words(code: &str) -> Option<&'static str> {
+    Some(match code {
         "revoked" => "This Solo licence is no longer active. Contact Breakpatch at support@breakpatch.dev.",
         "expired" => "Your Solo licence has expired. Renew it at account.breakpatch.dev.",
         "out_of_seats" => "This Solo licence is already used by someone else. Solo is for one person: for more people, choose Team.",
@@ -415,16 +422,22 @@ pub fn message_for_tier(code: &str, service_message: Option<&str>, solo: bool) -
         "other_device" => "This Solo licence was activated on another Mac. Free it at account.breakpatch.dev, then activate it here.",
         "grace" => "Breakpatch couldn't check your Solo licence lately. Reconnect soon to keep Solo features.",
         "invalid_token" => "This Solo licence couldn't be checked. Activate it again.",
-        // Solo's other refusals (solo_no_members, solo_needs_update): the service's own words.
-        _ => return message_for(code, service_message),
-    };
-    m.to_string()
+        _ => return None,
+    })
 }
 
 /// Plain words for each code. Service codes first (they never change; new ones may be added),
 /// then the app's own.
 pub fn message_for(code: &str, service_message: Option<&str>) -> String {
-    let m = match code {
+    match team_words(code) {
+        Some(m) => os_text(m).into_owned(),
+        None => service_message.map(str::to_string).unwrap_or_else(|| "The licence couldn't be checked.".into()),
+    }
+}
+
+/// The words for a code, as on a Mac (os_words.rs says them for this computer).
+fn team_words(code: &str) -> Option<&'static str> {
+    Some(match code {
         "bad_request" => "Something is missing from the request. Update Breakpatch and try again.",
         "unknown_key" => "This licence key isn't recognised. Check it and try again.",
         "revoked" => "This licence is no longer active. Ask your admin for help.",
@@ -446,9 +459,8 @@ pub fn message_for(code: &str, service_message: Option<&str>) -> String {
         "unavailable" => "Licences aren't available in this edition of Breakpatch.",
         "needs_workspace" => "This is a Team licence key. Team licences are used in a workspace: connect or create one, then enter the key there.",
         "no_device" => "Breakpatch couldn't tell which Mac this is, so a Solo licence can't be activated here.",
-        _ => return service_message.map(str::to_string).unwrap_or_else(|| "The licence couldn't be checked.".into()),
-    };
-    m.to_string()
+        _ => return None,
+    })
 }
 
 /// The status of what's stored, at `now` (Unix seconds). `workspace`: the open workspace's
@@ -579,7 +591,7 @@ impl Service {
     /// The words for "offline": the TLS-inspection sentence when that's what it was.
     fn offline_message(&self) -> String {
         if self.cert_failed.load(std::sync::atomic::Ordering::Relaxed) {
-            crate::net::TLS_INTERCEPTED.to_string()
+            os_text(crate::net::TLS_INTERCEPTED).into_owned()
         } else {
             message_for("offline", None)
         }
@@ -1055,7 +1067,7 @@ impl<S: SecretStore> Licensing<S> {
             k => {
                 // The workspace's recovery code or machine key pasted as a licence key: never sent.
                 if let Some(msg) = not_a_licence_key(k) {
-                    return Err(Failure { code: "bad_request".into(), message: msg.into(), tier: None });
+                    return Err(Failure { code: "bad_request".into(), message: os_text(msg).into_owned(), tier: None });
                 }
                 k.to_string()
             }
@@ -1275,10 +1287,12 @@ impl<S: SecretStore> Licensing<S> {
     }
 }
 
-// ---- This Mac's id, for the local runner's machine licence -------------------------------------
+// ---- This machine's id, for the local runner's machine licence --------------------------------
 
-/// A stable id for this machine and its name. On macOS the hardware UUID, hashed (the raw id
-/// never leaves the Mac); elsewhere a random id kept in the app data folder.
+/// A stable id for this machine and its name. The platform's own id, hashed (the raw id never
+/// leaves the machine): the hardware UUID on macOS, `/etc/machine-id` on Linux and `MachineGuid`
+/// on Windows. Without one, a random id kept in `data_dir`, which on Windows must be the local app
+/// data folder, not the roaming one that follows a domain user between PCs (lib.rs).
 pub fn machine_identity(data_dir: &Path) -> (String, Option<String>) {
     let id = platform_uuid().map(|u| hash_id(&u)).unwrap_or_else(|| stored_id(data_dir));
     (id, machine_name())
@@ -1297,7 +1311,52 @@ fn platform_uuid() -> Option<String> {
     parse_ioreg_uuid(&String::from_utf8_lossy(&out.stdout))
 }
 
-#[cfg(not(target_os = "macos"))]
+/// systemd's machine id, or D-Bus's older copy. A container may have none (or share its image's):
+/// then the stored id. A Pi image cloned after its first boot shares one until
+/// `systemd-machine-id-setup` makes a new one.
+#[cfg(target_os = "linux")]
+fn platform_uuid() -> Option<String> {
+    ["/etc/machine-id", "/var/lib/dbus/machine-id"]
+        .iter()
+        .find_map(|p| parse_machine_id(&std::fs::read_to_string(p).ok()?))
+}
+
+/// `HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid`, from the 64-bit view of the registry.
+#[cfg(windows)]
+fn platform_uuid() -> Option<String> {
+    use windows_sys::Win32::System::Registry::{
+        RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RRF_SUBKEY_WOW6464KEY,
+    };
+    let key = wide("SOFTWARE\\Microsoft\\Cryptography");
+    let value = wide("MachineGuid");
+    let mut buf = [0u16; 128];
+    let mut size = std::mem::size_of_val(&buf) as u32;
+    // SAFETY: NUL-terminated names; `buf` and `size` describe the same buffer.
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            key.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_REG_SZ | RRF_SUBKEY_WOW6464KEY,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut size,
+        )
+    };
+    if rc != 0 {
+        return None;
+    }
+    let text = String::from_utf16_lossy(&buf[..(size as usize / 2).min(buf.len())]);
+    let id = text.trim_end_matches('\0').trim();
+    (!id.is_empty()).then(|| id.to_string())
+}
+
+#[cfg(windows)]
+pub(crate) fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 fn platform_uuid() -> Option<String> {
     None
 }
@@ -1307,6 +1366,15 @@ fn parse_ioreg_uuid(text: &str) -> Option<String> {
     let line = text.lines().find(|l| l.contains("\"IOPlatformUUID\""))?;
     let v = line.split('=').nth(1)?.trim().trim_matches('"');
     (!v.is_empty()).then(|| v.to_string())
+}
+
+/// 32 hex digits, as machine-id(5) has it. Not "uninitialized" (systemd's placeholder in an image
+/// before its first boot) and not all zeros.
+#[cfg_attr(not(any(test, target_os = "linux")), allow(dead_code))]
+fn parse_machine_id(text: &str) -> Option<String> {
+    let t = text.trim();
+    let ok = t.len() == 32 && t.chars().all(|c| c.is_ascii_hexdigit()) && t.chars().any(|c| c != '0');
+    ok.then(|| t.to_ascii_lowercase())
 }
 
 fn stored_id(data_dir: &Path) -> String {
@@ -1331,6 +1399,8 @@ fn stored_id(data_dir: &Path) -> String {
     id
 }
 
+/// What the person calls this machine: the Mac's Computer Name, Windows' computer name, or the
+/// host name elsewhere (GUI sessions on Linux rarely export `$HOSTNAME`, so it's asked for).
 fn machine_name() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
@@ -1338,10 +1408,35 @@ fn machine_name() -> Option<String> {
         let n = String::from_utf8_lossy(&out.stdout).trim().to_string();
         (!n.is_empty()).then(|| n.chars().take(80).collect())
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
     {
-        std::env::var("HOSTNAME").ok().filter(|n| !n.is_empty()).map(|n| n.chars().take(80).collect())
+        clean_machine_name(&std::env::var("COMPUTERNAME").ok()?)
     }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        host_name().and_then(|n| clean_machine_name(&n)).or_else(|| clean_machine_name(&std::env::var("HOSTNAME").ok()?))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        clean_machine_name(&std::env::var("HOSTNAME").ok()?)
+    }
+}
+
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn clean_machine_name(raw: &str) -> Option<String> {
+    let n = raw.trim();
+    (!n.is_empty()).then(|| n.chars().take(80).collect())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn host_name() -> Option<String> {
+    let mut buf = [0u8; 256];
+    // SAFETY: gethostname writes at most `buf.len()` bytes into `buf`.
+    if unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) } != 0 {
+        return None;
+    }
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    Some(String::from_utf8_lossy(&buf[..end]).into_owned())
 }
 
 /// Which of a hosted workspace's machine secrets this is, by its shape (Team cloud machines.ts and

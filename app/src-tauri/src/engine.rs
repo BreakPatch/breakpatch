@@ -3,7 +3,8 @@
 //! `RequestTable` is the pure part (ids, pending map, line parsing) and is unit tested.
 //! `EngineHost` owns the child process: it spawns `breakpatch-engine serve` once at
 //! startup, restarts it with backoff if it dies, forwards events to the webview as
-//! `engine://event` and stops it on exit. It also hands every engine process the licence token
+//! `engine://event` and stops it on exit (signals on macOS and Linux; on Windows `engine.quit`
+//! and a Job Object, see [`EngineHost::shutdown`]). It also hands every engine process the licence token
 //! (`licence.set`): on each start and restart, and whenever the licence changes (lib.rs).
 
 use std::collections::HashMap;
@@ -206,6 +207,11 @@ pub struct EngineHost {
     /// The licence token to hand the engine: None until the shell has read it (then nothing is
     /// sent), Some(None) when there is none.
     licence: Mutex<Option<Option<String>>>,
+    /// Windows: the running engine's Job Object, so closing it ends the PyInstaller bootloader,
+    /// Python and the Chromium it started together (`TerminateProcess` on the bootloader alone
+    /// would leave the rest running).
+    #[cfg(windows)]
+    job: Mutex<Option<job::Job>>,
 }
 
 impl EngineHost {
@@ -219,10 +225,19 @@ impl EngineHost {
                 match app.shell().sidecar("breakpatch-engine").map(|c| c.args(["serve"])).and_then(|c| c.spawn()) {
                     Ok((rx, child)) => {
                         log::info!(target: "engine", "engine started (pid {})", child.pid());
+                        #[cfg(windows)]
+                        {
+                            *host.job.lock().unwrap() = job::Job::for_process(child.pid())
+                                .map_err(|e| log::warn!(target: "engine", "no job object for the engine: {e}"))
+                                .ok();
+                        }
                         *host.child.lock().unwrap() = Some(child);
                         host.push_licence();
                         host.pump(&app, rx).await;
                         host.child.lock().unwrap().take();
+                        // Windows: whatever the engine left running (Chromium) ends with its job.
+                        #[cfg(windows)]
+                        host.job.lock().unwrap().take();
                         host.table.fail_all(&EngineError::new(
                             "internal",
                             "The engine stopped unexpectedly. It's restarting; try again in a moment.",
@@ -324,9 +339,20 @@ impl EngineHost {
     /// Asks the engine to quit, escalating if it doesn't. SIGINT first: the engine's
     /// `asyncio.run` turns it into a cancellation, so its `finally` closes Playwright and
     /// Chromium. SIGTERM would end Python without that cleanup, so it is only the fallback.
+    /// Windows has neither signal, and the shell plugin can't close the engine's stdin, so there
+    /// it's the protocol's `engine.quit` (which stops the engine as closing stdin does), then the
+    /// kill, then the Job Object for anything still in it.
     pub fn shutdown(&self) {
         self.shutting_down.store(true, Ordering::SeqCst);
-        let Some(child) = self.child.lock().unwrap().take() else { return };
+        #[cfg_attr(not(windows), allow(unused_mut))]
+        let Some(mut child) = self.child.lock().unwrap().take() else { return };
+        #[cfg(windows)]
+        {
+            let pid = child.pid();
+            if child.write(QUIT_LINE.as_bytes()).is_ok() {
+                job::wait_for_exit(pid, Duration::from_secs(3));
+            }
+        }
         #[cfg(unix)]
         {
             let pid = child.pid() as libc::pid_t;
@@ -338,7 +364,101 @@ impl EngineHost {
             }
         }
         let _ = child.kill();
+        #[cfg(windows)]
+        if let Some(job) = self.job.lock().unwrap().take() {
+            job.terminate();
+        }
         self.table.fail_all(&EngineError::new("stopped", "Breakpatch is quitting.", "app exit"));
+    }
+}
+
+/// The request that stops the engine where no signal can (Windows). Its id is a string, so it
+/// never matches a pending request's number.
+#[cfg_attr(not(any(test, windows)), allow(dead_code))]
+const QUIT_LINE: &str = "{\"id\":\"quit\",\"method\":\"engine.quit\"}\n";
+
+/// A Job Object that ends every process in it when it's closed (`KILL_ON_JOB_CLOSE`), including
+/// when the app itself ends without closing it. Processes the engine starts join its job.
+#[cfg(windows)]
+mod job {
+    use std::time::Duration;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+        TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, WaitForSingleObject, PROCESS_SET_QUOTA, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+    };
+
+    pub struct Job(HANDLE);
+
+    // SAFETY: a job handle may be used and closed from any thread.
+    unsafe impl Send for Job {}
+
+    impl Job {
+        /// A new job holding `pid`. The bootloader is assigned straight after it starts, before
+        /// it unpacks and starts Python, so Python and Chromium are in the job too.
+        pub fn for_process(pid: u32) -> Result<Job, String> {
+            // SAFETY: plain Win32 calls; every handle is checked and closed (the job's on drop).
+            unsafe {
+                let handle = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+                if handle.is_null() {
+                    return Err(std::io::Error::last_os_error().to_string());
+                }
+                let job = Job(handle);
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let set = SetInformationJobObject(
+                    job.0,
+                    JobObjectExtendedLimitInformation,
+                    (&info as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+                if set == 0 {
+                    return Err(std::io::Error::last_os_error().to_string());
+                }
+                let process = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid);
+                if process.is_null() {
+                    return Err(std::io::Error::last_os_error().to_string());
+                }
+                let assigned = AssignProcessToJobObject(job.0, process);
+                let err = std::io::Error::last_os_error();
+                CloseHandle(process);
+                if assigned == 0 {
+                    return Err(err.to_string());
+                }
+                Ok(job)
+            }
+        }
+
+        /// Ends every process in the job now.
+        pub fn terminate(&self) {
+            // SAFETY: our own job handle.
+            unsafe { TerminateJobObject(self.0, 1) };
+        }
+    }
+
+    impl Drop for Job {
+        fn drop(&mut self) {
+            // SAFETY: closing our own handle; KILL_ON_JOB_CLOSE ends what's still in the job.
+            unsafe { CloseHandle(self.0) };
+        }
+    }
+
+    /// Waits until `pid` exits or `limit` passes. True when it exited (or is already gone).
+    pub fn wait_for_exit(pid: u32, limit: Duration) -> bool {
+        // SAFETY: the handle is checked and closed.
+        unsafe {
+            let process = OpenProcess(PROCESS_SYNCHRONIZE, 0, pid);
+            if process.is_null() {
+                return true;
+            }
+            let ms = u32::try_from(limit.as_millis()).unwrap_or(u32::MAX);
+            let done = WaitForSingleObject(process, ms) == 0; // WAIT_OBJECT_0
+            CloseHandle(process);
+            done
+        }
     }
 }
 
@@ -490,6 +610,15 @@ mod tests {
         assert_eq!(licence_params(None), json!({"token": null}));
         let line = encode_request(3, "licence.set", &licence_params(None));
         assert_eq!(serde_json::from_str::<Value>(line.trim()).unwrap()["params"], json!({"token": null}));
+    }
+
+    /// The quit request is one JSON line the engine's protocol reads as `engine.quit`.
+    #[test]
+    fn the_quit_line_is_a_request_for_engine_quit() {
+        assert!(QUIT_LINE.ends_with('\n') && QUIT_LINE.matches('\n').count() == 1);
+        let v: Value = serde_json::from_str(QUIT_LINE.trim_end()).unwrap();
+        assert_eq!(v["method"], "engine.quit");
+        assert!(v["id"].is_string(), "never a pending request's number");
     }
 
     #[test]

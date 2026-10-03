@@ -10,6 +10,7 @@ import { baseName } from '../../../data/local/storage';
 import { modelSize, useSystemInfo } from './AiSection';
 import { edition } from '../../../edition';
 import { EditionMismatch, editionLabel } from './edition';
+import { Computer, isMac, osText, ThisComputer } from '../../../lib/osWords';
 
 const LAST_KEY = 'breakpatch.updates.lastChecked';
 function readLast(): number | null { try { const v = localStorage.getItem(LAST_KEY); return v ? Number(v) : null; } catch { return null; } }
@@ -41,9 +42,9 @@ export function AboutSection() {
 
   const ready = updateReady ?? (result?.state === 'ready' ? result.version : null);
   // Plain words here; the exact versions are in Copy details (DESK-16).
-  const browser = info ? (info.browser.version ? 'Installed, the same version on every Mac' : 'Not installed') : '…';
-  const ai = info ? (info.model.installed ? `${modelSize(info)}, same on every Mac` : 'Not downloaded') : '…';
-  const mac = info ? `Apple silicon · ${info.memoryGb} GB · ${info.os}` : '…';
+  const browser = info ? (info.browser.version ? osText('Installed, the same version on every Mac') : 'Not installed') : '…';
+  const ai = info ? (info.model.installed ? osText(`${modelSize(info)}, same on every Mac`) : 'Not downloaded') : '…';
+  const mac = info ? `${isMac() ? 'Apple silicon' : info.chip} · ${info.memoryGb} GB · ${info.os}` : '…';
   const library = online ? 'Online' : 'Offline · changes wait until you’re back';
 
   const details = () => [
@@ -53,7 +54,8 @@ export function AboutSection() {
     `Test browser ${info?.browser.version ?? 'not installed'}`,
     `AI assistant ${info?.model.repo ?? '—'}@${info?.model.revision ?? '—'}${info?.model.installed ? '' : ' (not downloaded)'}`,
     `Engine ${info?.engineVersion ?? '—'}`,
-    `This Mac ${info?.chip ?? 'Apple silicon'} · ${info?.memoryGb ?? '?'} GB · ${info?.os ?? 'macOS'}`,
+    isMac() ? `This Mac ${info?.chip ?? 'Apple silicon'} · ${info?.memoryGb ?? '?'} GB · ${info?.os ?? 'macOS'}`
+      : `${Computer()} ${info?.chip ?? '?'} · ${info?.memoryGb ?? '?'} GB · ${info?.os ?? '?'}`,
   ].join('\n');
 
   return (
@@ -88,7 +90,7 @@ export function AboutSection() {
         <Fact label="Test browser" value={browser} />
         <Fact label="AI assistant" value={ai} />
         {local ? <Fact label="Tests folder" value={baseName(local.path)} /> : <Fact label="Team workspace" value={library} />}
-        <Fact label="This Mac" value={mac} />
+        <Fact label={ThisComputer()} value={mac} />
       </div>
 
       <div className="set-flush"><CopyButton text={details} label="Copy details for a developer" copiedLabel="Details copied" kind="link" /></div>

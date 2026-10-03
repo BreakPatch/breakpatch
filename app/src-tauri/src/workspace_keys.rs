@@ -90,6 +90,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::secrets::SecretStore;
+use crate::os_words::{os_string, os_text};
 
 pub const SERVICE: &str = "dev.breakpatch.workspace-keys";
 const FIELD_INFO: &str = "bp-field-v1";
@@ -119,7 +120,7 @@ type Key = Zeroizing<[u8; 32]>;
 
 fn random<const N: usize>() -> Result<[u8; N], String> {
     let mut b = [0u8; N];
-    getrandom::fill(&mut b).map_err(|e| format!("This Mac couldn't make a random key: {e}"))?;
+    getrandom::fill(&mut b).map_err(|e| os_string(format!("This Mac couldn't make a random key: {e}")))?;
     Ok(b)
 }
 
@@ -494,12 +495,12 @@ impl Trust {
 
     /// Refuses a key unless its version was announced, by a trusted admin, with this key's commitment.
     pub fn check_key(&self, ws: &str, trusted: &BTreeSet<String>, kid: u32, key: &[u8; 32]) -> Result<(), String> {
-        let c = self.checks.get(&kid.to_string()).ok_or_else(|| format!("Key {kid} isn't one the workspace announced, so this Mac doesn't take it."))?;
+        let c = self.checks.get(&kid.to_string()).ok_or_else(|| os_string(format!("Key {kid} isn't one the workspace announced, so this Mac doesn't take it.")))?;
         if !trusted.contains(&c.by) || !verify_sig(&c.by, &key_msg(ws, kid, &c.check), &c.sig) {
-            return Err(format!("Key {kid} wasn't announced by an admin this Mac trusts, so it doesn't take it."));
+            return Err(os_string(format!("Key {kid} wasn't announced by an admin this Mac trusts, so it doesn't take it.")));
         }
         if c.check != key_check(key, ws, kid) {
-            return Err(format!("Key {kid} isn't the one the workspace announced, so this Mac doesn't take it."));
+            return Err(os_string(format!("Key {kid} isn't the one the workspace announced, so this Mac doesn't take it.")));
         }
         Ok(())
     }
@@ -508,13 +509,13 @@ impl Trust {
 /// Refuses a sealed copy that isn't signed by a trusted admin.
 fn check_sealed(ws: &str, recipient: &str, trusted: &BTreeSet<String>, s: &Sealed) -> Result<(), String> {
     if s.by.is_empty() || s.sig.is_empty() {
-        return Err("That key copy isn't signed by an admin's Mac, so this Mac doesn't take it.".into());
+        return Err(os_text("That key copy isn't signed by an admin's Mac, so this Mac doesn't take it.").into());
     }
     if !trusted.contains(&s.by) {
-        return Err("That key copy was signed by a Mac this Mac doesn't trust, so it doesn't take it.".into());
+        return Err(os_text("That key copy was signed by a Mac this Mac doesn't trust, so it doesn't take it.").into());
     }
     if !verify_sig(&s.by, &sealed_msg(ws, recipient, s), &s.sig) {
-        return Err("That key copy's signature doesn't match, so this Mac doesn't take it.".into());
+        return Err(os_text("That key copy's signature doesn't match, so this Mac doesn't take it.").into());
     }
     Ok(())
 }
@@ -645,7 +646,7 @@ pub fn recovery_kit_pdf(workspace: &str, code: &str, date: &str) -> Vec<u8> {
         (72.0, 696.0, "F1", format!("Made on {date}")),
         (72.0, 650.0, "F1", "Your recovery code".into()),
         (72.0, 622.0, "F3", code.to_string()),
-        (72.0, 580.0, "F1", "This code opens the tests of this workspace if every Mac that holds its key is lost.".into()),
+        (72.0, 580.0, "F1", os_text("This code opens the tests of this workspace if every Mac that holds its key is lost.").into()),
         (72.0, 564.0, "F1", "Breakpatch never sees it and can't make it again. Keep it in a safe place, such as".into()),
         (72.0, 548.0, "F1", "your password manager or with your company's papers.".into()),
         (72.0, 516.0, "F1", "To use it: open Breakpatch, sign in as an admin of the workspace, then Settings,".into()),
@@ -735,7 +736,7 @@ impl Ring {
         Zeroizing::new(serde_json::to_string(&RingFile { v: 2, keys, trusted: self.trusted.clone(), revoked: self.revoked.clone() }).expect("a ring serialises"))
     }
     fn from_json(text: &str) -> Result<Ring, String> {
-        let damaged = || "The workspace key on this Mac is damaged.".to_string();
+        let damaged = || os_text("The workspace key on this Mac is damaged.").into_owned();
         let f: RingFile = serde_json::from_str(text).map_err(|_| damaged())?;
         if f.v != 1 && f.v != 2 {
             return Err(damaged());
@@ -924,7 +925,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
                     return Err("That key version isn't valid.".into());
                 }
                 match ring.keys.get(&kid) {
-                    Some(have) if **have != *key => return Err(format!("This Mac already holds another key {kid} for this workspace.")),
+                    Some(have) if **have != *key => return Err(os_string(format!("This Mac already holds another key {kid} for this workspace."))),
                     Some(_) => {}
                     None => {
                         ring.keys.insert(kid, key);
@@ -1011,7 +1012,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         parse_signer(signer)?;
         self.update_ring(ws, |ring| {
             if ring.revoked.contains(signer) {
-                return Err("That Mac's admin isn't an admin of the workspace any more, so this Mac doesn't trust it.".into());
+                return Err(os_text("That Mac's admin isn't an admin of the workspace any more, so this Mac doesn't trust it.").into());
             }
             Ok(((), ring.trusted.insert(signer.to_string())))
         })
@@ -1022,7 +1023,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         let d = self.device_secrets(ws)?;
         let r = self.ring(ws)?;
         if r.lock().unwrap().revoked.contains(&d.signer()) {
-            return Err("This Mac's signing key for the workspace was withdrawn when its person stopped being an admin, so other Macs don't take what it signs.".into());
+            return Err(os_text("This Mac's signing key for the workspace was withdrawn when its person stopped being an admin, so other Macs don't take what it signs.").into());
         }
         Ok(d)
     }
@@ -1038,7 +1039,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         let d = self.signing(ws)?;
         let own = d.signer();
         if sign_key == own {
-            return Err("This Mac can't withdraw its own signing key.".into());
+            return Err(os_text("This Mac can't withdraw its own signing key.").into());
         }
         let mut kept: BTreeSet<String> = keep.iter().filter(|k| *k != sign_key && trusted.contains(*k)).cloned().collect();
         kept.insert(own.clone());
@@ -1053,7 +1054,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     /// it holds the key, so another admin's Mac endorses it. Refused while the old key is good.
     pub fn renew(&self, ws: &str) -> Result<Device, String> {
         if !self.status(ws)?.withdrawn {
-            return Err("This Mac's signing key wasn't withdrawn.".into());
+            return Err(os_text("This Mac's signing key wasn't withdrawn.").into());
         }
         let secrets = DeviceSecrets { x: Zeroizing::new(random()?), ed: Zeroizing::new(random()?) };
         let f = Zeroizing::new(serde_json::to_string(&DeviceFile { v: 2, x: STANDARD.encode(&secrets.x[..]), ed: STANDARD.encode(&secrets.ed[..]) }).expect("serialises"));
@@ -1069,7 +1070,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     /// Returns its announcement, signed by this Mac.
     pub fn create(&self, ws: &str, kid: Option<u32>) -> Result<Announced, String> {
         if self.status(ws)?.has_key {
-            return Err("This Mac already holds this workspace's key.".into());
+            return Err(os_text("This Mac already holds this workspace's key.").into());
         }
         let kid = kid.unwrap_or(1).max(1);
         self.signing(ws)?;
@@ -1080,7 +1081,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     /// A new key version (after someone leaves). New content is sealed with it. Returns its announcement.
     pub fn rotate(&self, ws: &str) -> Result<Announced, String> {
         self.signing(ws)?;
-        let next = self.status(ws)?.current.ok_or("This Mac doesn't hold this workspace's key.")? + 1;
+        let next = self.status(ws)?.current.ok_or_else(|| os_text("This Mac doesn't hold this workspace's key.").into_owned())? + 1;
         self.add_keys(ws, vec![(next, Zeroizing::new(random()?))], &[])?;
         self.announce(ws, next)
     }
@@ -1104,8 +1105,8 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     fn key(&self, ws: &str, kid: Option<u32>) -> Result<(u32, Key), String> {
         let r = self.ring(ws)?;
         let ring = r.lock().unwrap();
-        let kid = kid.or(ring.current()).ok_or("This Mac doesn't hold this workspace's key.")?;
-        let key = ring.keys.get(&kid).ok_or_else(|| format!("This Mac doesn't hold key {kid} of this workspace."))?;
+        let kid = kid.or(ring.current()).ok_or_else(|| os_text("This Mac doesn't hold this workspace's key.").into_owned())?;
+        let key = ring.keys.get(&kid).ok_or_else(|| os_string(format!("This Mac doesn't hold key {kid} of this workspace.")))?;
         Ok((kid, key.clone()))
     }
 
@@ -1148,7 +1149,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
             return Ok(Arc::clone(d));
         }
         let entry = format!("device:{ws}");
-        let damaged = || "This Mac's device key for the workspace is damaged.".to_string();
+        let damaged = || os_text("This Mac's device key for the workspace is damaged.").into_owned();
         let stored = self.store.get(&entry)?.map(Zeroizing::new);
         let (secrets, save) = match stored.as_deref() {
             Some(text) if text.trim_start().starts_with('{') => {
@@ -1188,7 +1189,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         let r = self.ring(ws)?;
         let ring = r.lock().unwrap();
         if ring.keys.is_empty() {
-            return Err("This Mac doesn't hold this workspace's key.".into());
+            return Err(os_text("This Mac doesn't hold this workspace's key.").into());
         }
         let by = d.signer();
         ring.keys
@@ -1210,7 +1211,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         let res = self.resolve(ws, trust, root)?;
         if root.is_some_and(|r| res.revoked.contains(r)) {
             let what = if recipient == "machine" { "machine key" } else { "recovery code" };
-            return Err(format!("This {what} was made by an admin who isn't an admin of the workspace any more, so this Mac doesn't take it. An admin makes a new one in Settings → Workspace → Encryption."));
+            return Err(os_string(format!("This {what} was made by an admin who isn't an admin of the workspace any more, so this Mac doesn't take it. An admin makes a new one in Settings → Workspace → Encryption.")));
         }
         let trusted = res.trusted;
         let mut keys = Vec::new();
@@ -1256,8 +1257,8 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     fn vouched(ws: &str, recipient: &str, secret: &[u8], vouch: &Vouch) -> Result<String, String> {
         parse_signer(&vouch.by)?;
         if !same_b64(&vouch.mac, &vouch_mac(secret, ws, recipient, &vouch.by)) {
-            return Err(format!("The workspace's {recipient} copy isn't one an admin made with this {}, so this Mac doesn't take it.",
-                if recipient == "recovery" { "recovery code" } else { "machine key" }));
+            return Err(os_string(format!("The workspace's {recipient} copy isn't one an admin made with this {}, so this Mac doesn't take it.",
+                if recipient == "recovery" { "recovery code" } else { "machine key" })));
         }
         Ok(vouch.by.clone())
     }
@@ -1329,7 +1330,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         let r = self.ring(ws)?;
         let ring = r.lock().unwrap();
         if ring.keys.is_empty() {
-            return Err("This Mac doesn't hold this workspace's key.".into());
+            return Err(os_text("This Mac doesn't hold this workspace's key.").into());
         }
         let keys = ring.keys.iter().map(|(k, v)| (k.to_string(), URL_SAFE_NO_PAD.encode(&v[..]))).collect();
         let json = Zeroizing::new(serde_json::to_string(&Invite { v: 2, ws: ws.to_string(), keys, signer }).expect("invite serialises"));
@@ -1360,7 +1361,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         let pinned = self.status(ws)?.pinned;
         let trusted = self.trusted(ws, trust, if pinned { None } else { Some(&inv.signer) })?;
         if !trusted.contains(&inv.signer) {
-            return Err("The invite link wasn't made by an admin this Mac trusts. Ask an admin of the workspace for a new link.".into());
+            return Err(os_text("The invite link wasn't made by an admin this Mac trusts. Ask an admin of the workspace for a new link.").into());
         }
         for (kid, key) in &keys {
             trust.check_key(ws, &trusted, *kid, key)?;
@@ -1374,7 +1375,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     pub fn retire(&self, ws: &str, keep: u32) -> Result<Vec<u32>, String> {
         self.update_ring(ws, |ring| {
             if !ring.keys.contains_key(&keep) {
-                return Err(format!("This Mac doesn't hold key {keep} of this workspace."));
+                return Err(os_string(format!("This Mac doesn't hold key {keep} of this workspace.")));
             }
             let before = ring.keys.len();
             ring.keys.retain(|kid, _| *kid >= keep);

@@ -13,6 +13,7 @@ import { StepRow, type RowStatus } from './StepRow';
 import { defaultLabel, stepIcon, stepNote, UNCHECKED_NOTE } from './stepText';
 import { countRows, duplicateStep, flatRows, moveAfter, moveBefore, moveBy, removeStep, updateStep, type RowInfo } from './stepTree';
 import './steps.css';
+import { osText } from '../../lib/osWords';
 
 export interface StepsPanelProps {
   steps: Step[];
@@ -417,7 +418,7 @@ function StepEditPanelBody({ step, secretNames, canRerecord, closing, onSave, on
         {source === 'typed' && <label className="ep-row">Text<input className="input" value={text} onChange={e => setText(e.target.value)} type={step.masked ? 'password' : 'text'} /></label>}
         {source === 'secret' && <div className="ep-row"><label htmlFor={'ep-secret-' + step.id}>Saved secret</label>
           <ChipSelect field id={'ep-secret-' + step.id} value={secretRef} onChange={setSecretRef}
-            options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: 'No saved secrets on this Mac' }]} /></div>}
+            options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: osText('No saved secrets on this Mac') }]} /></div>}
         {source === 'generated' && <div className="ep-row"><label htmlFor={'ep-gen-' + step.id}>Value</label>
           <ChipSelect<Generated> field id={'ep-gen-' + step.id} value={generated} onChange={setGenerated} options={GENERATED_CHOICES} /></div>}
       </>}

@@ -13,6 +13,7 @@ import { distance, fitScale, inside, keyName, nextZoom, normBox, PAGE_PAD, toVie
 import { SampleApp } from './sample/SampleApp';
 import type { SampleState } from './sample/sampleModel';
 import './live.css';
+import { shortcutKeyDown } from '../../lib/osWords';
 
 export interface LiveMarker {
   /**
@@ -221,7 +222,7 @@ function PassThrough({ scale, vp, frameRef, onInput }: {
       onContextMenu={e => e.preventDefault()}
       onWheel={e => onInput({ kind: 'wheel', at: at(e), dx: Math.round(e.deltaX), dy: Math.round(e.deltaY) })}
       onKeyDown={e => {
-        if (e.metaKey && e.key.toLowerCase() === 'e') return;           // Cmd+E leaves Use the page
+        if (shortcutKeyDown(e) && e.key.toLowerCase() === 'e') return;  // ⌘E (Ctrl+E) leaves Use the page
         const name = keyName(e);
         e.preventDefault(); e.stopPropagation();
         if (name === null) onInput({ kind: 'text', text: e.key });

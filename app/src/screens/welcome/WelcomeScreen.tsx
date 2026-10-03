@@ -10,6 +10,7 @@ import { isTauri } from '../../platform';
 import { useSession } from '../../state/session';
 import { shortPath, useChooseFolder } from './useChooseFolder';
 import './welcome.css';
+import { osText } from '../../lib/osWords';
 
 export default function WelcomeScreen() {
   const Extra = edition.slots.welcomeExtra;
@@ -22,7 +23,7 @@ export default function WelcomeScreen() {
   return (
     <GateSplit width={440}>
       <div className="gi-head">
-        <h1 className="gi-title">Start on this Mac.</h1>
+        <h1 className="gi-title">{osText('Start on this Mac.')}</h1>
         <p className="gi-lede">Your tests are saved as files in a folder you pick. Put it in your project's repo to keep them with your code.</p>
       </div>
 

@@ -15,6 +15,7 @@ import { AppDialog } from './AppDialog';
 import { FirstUse } from './FirstUse';
 import { useAllTests } from './useAllTests';
 import './home.css';
+import { ariaShortcut } from '../../lib/osWords';
 
 /** The edition's line above the apps (Team: "Upgrade to Team" while a tests folder is open). */
 const HomeBanner = edition.slots.homeBanner;
@@ -44,7 +45,7 @@ export default function HomeScreen() {
   const openApp = (a: App) => navigate(`/apps/${a.id}`);
 
   return (
-    <AppFrame nav="apps" actions={!firstUse && <Button icon="add" aria-keyshortcuts="Meta+N" onClick={addApp}>Add app</Button>}>
+    <AppFrame nav="apps" actions={!firstUse && <Button icon="add" aria-keyshortcuts={ariaShortcut('N')} onClick={addApp}>Add app</Button>}>
       {!apps ? (
         <div className="page home-page" aria-busy="true">
           <Skeleton w={120} h={26} />

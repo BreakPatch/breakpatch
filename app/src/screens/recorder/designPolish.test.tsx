@@ -12,6 +12,9 @@ import { editorStatuses } from './editorRun';
 import runSource from '../run/RunScreen.tsx?raw';
 import suiteSource from '../suites/SuiteEditorScreen.tsx?raw';
 import tauriConf from '../../../src-tauri/tauri.conf.json?raw';
+import tauriLinuxConf from '../../../src-tauri/tauri.linux.conf.json?raw';
+import tauriWindowsConf from '../../../src-tauri/tauri.windows.conf.json?raw';
+import { setOsForTests } from '../../lib/osWords';
 
 const fsModule = 'node:fs', urlModule = 'node:url', pathModule = 'node:path';
 const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync(path: string, enc: 'utf8'): string };
@@ -24,10 +27,10 @@ const notify = vi.hoisted(() => ({ perm: 'granted' as 'granted' | 'denied' | 'pr
 vi.mock('../../lib/notify', async orig => ({ ...(await orig<typeof import('../../lib/notify')>()), notifyPermission: async () => notify.perm }));
 const opened = vi.hoisted(() => [] as string[]);
 vi.mock('../../platform', async orig => ({ ...(await orig<typeof import('../../platform')>()), openExternal: async (u: string) => { opened.push(u); } }));
-const { NotificationsSection, NOTIFICATION_SETTINGS_URL } = await import('../settings/sections/NotificationsSection');
+const { NotificationsSection, NOTIFICATION_SETTINGS_URL, notificationSettingsUrl } = await import('../settings/sections/NotificationsSection');
 
 Element.prototype.scrollIntoView ??= () => undefined;
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); setOsForTests(null); });
 
 const steps: Step[] = [
   { id: 'a', action: 'click', label: 'Click Sign in', at: [10, 10] },
@@ -165,6 +168,33 @@ describe('DES-09: notifications blocked by macOS', () => {
     expect(rx.test('x-apple.systempreferences:com.apple.preference.security')).toBe(false);
     expect(rx.test('file:///etc/passwd')).toBe(false);
     expect(rx.test('-a Terminal')).toBe(false);
+  });
+  it('on Windows, opens Windows Settings, the one page its shell may open', async () => {
+    setOsForTests('windows');
+    notify.perm = 'denied';
+    opened.length = 0;
+    render(<NotificationsSection />);
+    fireEvent.click(await screen.findByRole('button', { name: /Open Windows Settings/ }));
+    expect(opened).toEqual(['ms-settings:notifications']);
+    expect(screen.getAllByText('Blocked by Windows')).toHaveLength(2);
+    expect(screen.queryByText(/macOS|this Mac/)).toBeNull();
+    const rx = new RegExp(`^${JSON.parse(tauriWindowsConf).plugins.shell.open}$`);
+    expect(rx.test('ms-settings:notifications')).toBe(true);
+    expect(rx.test(NOTIFICATION_SETTINGS_URL)).toBe(false);
+    expect(rx.test('ms-settings:privacy')).toBe(false);
+    expect(rx.test('https://breakpatch.dev/docs/')).toBe(true);
+  });
+  it('on Linux, says where to look, with no button (each desktop has its own settings)', async () => {
+    setOsForTests('linux');
+    notify.perm = 'denied';
+    render(<NotificationsSection />);
+    expect(await screen.findByText(/In your system settings, open Notifications/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Settings/ })).toBeNull();
+    expect(notificationSettingsUrl()).toBeNull();
+    const rx = new RegExp(`^${JSON.parse(tauriLinuxConf).plugins.shell.open}$`);
+    expect(rx.test(NOTIFICATION_SETTINGS_URL)).toBe(false);
+    expect(rx.test('https://breakpatch.dev/docs/')).toBe(true);
+    expect(rx.test('file:///etc/passwd')).toBe(false);
   });
 });
 

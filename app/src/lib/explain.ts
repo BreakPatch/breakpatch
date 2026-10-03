@@ -5,6 +5,7 @@
 import type { Explanation, FailReason, Run, Step, StepRun, Viewport } from '../data/types';
 import type { Backend } from '../data/backend';
 import { EngineError, type Engine } from '../engine/engine';
+import { osText } from './osWords';
 
 /** The reasons the AI assistant can add to (the engine's explain.EXPLAINED). */
 export const EXPLAINED: readonly FailReason[] = ['targetNotFound', 'healFailed', 'noChange', 'unexpectedScreen', 'timeout'];
@@ -94,7 +95,7 @@ export async function explainStep(o: { engine: Engine; backend?: Backend | null;
 export function explainProblem(e: unknown): string {
   const code = e instanceof EngineError ? e.code : '';
   if (code === 'busy') return 'A test is running. Ask again when it has finished.';
-  if (code === 'not_found') return "The screenshot of this failure isn't on this Mac, so the AI assistant can't look at it here.";
+  if (code === 'not_found') return osText("The screenshot of this failure isn't on this Mac, so the AI assistant can't look at it here.");
   if (code === 'not_ready' && e instanceof EngineError) return e.message;
   return "The AI assistant couldn't look at this failure. Try again.";
 }

@@ -4,6 +4,7 @@ import { ToastProvider } from '../../../components/ui';
 import { DemoBackend } from '../../../data/demo/demoBackend';
 import { NO_FEATURES } from '../../../edition/types';
 import { resetFeaturesForTests, setFeatures } from '../../../edition/features';
+import { setOsForTests } from '../../../lib/osWords';
 import { secrets } from '../../../platform';
 import { useSession } from '../../../state/session';
 import { SecretsSection } from './SecretsSection';
@@ -18,9 +19,20 @@ beforeEach(async () => {
   useSession.setState({ backend: new DemoBackend({ empty: true, signedIn: true, delayMs: 0 }) });
   await secrets.set('STAGING_TOKEN', 'tok', { origins: ['https://app.example.com'], runnerCanUse: false });
 });
-afterEach(async () => { cleanup(); resetFeaturesForTests(); await secrets.remove('STAGING_TOKEN'); await secrets.remove('NEW_ONE').catch(() => {}); });
+afterEach(async () => { cleanup(); setOsForTests(null); resetFeaturesForTests(); await secrets.remove('STAGING_TOKEN'); await secrets.remove('NEW_ONE').catch(() => {}); });
 
 describe('Settings, Saved secrets', () => {
+  it('names the system\'s own store off the Mac', async () => {
+    setOsForTests('linux');
+    show();
+    expect(await screen.findByText(/Values stay in this computer's keyring/)).toBeTruthy();
+    cleanup();
+    setOsForTests('windows');
+    show();
+    expect(await screen.findByText(/Values stay in this PC's Credential Manager/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/\bMac\b|Keychain/);
+  });
+
   it('lists each secret with the sites it may be typed on', async () => {
     show();
     const row = (await screen.findByText('STAGING_TOKEN')).closest('[role="listitem"]') as HTMLElement;

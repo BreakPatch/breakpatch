@@ -29,6 +29,7 @@ import type {
 import { folderConnectionId } from '../../state/connectionIds';
 import { FORMAT, SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
+import { osText } from '../../lib/osWords';
 
 /** Stands for a file over 5 MB in the texts read from the folder: it's skipped, never parsed. */
 const TOO_BIG = '\u0000breakpatch: file too big\u0000';
@@ -503,8 +504,8 @@ export class LocalBackend implements Backend {
   // ---- the person (no sign-in) ----
   currentUser() { return this.me; }
   onUser(l: Listener<Person | null>) { l(this.me); return () => {}; }
-  async signIn(): Promise<Person> { throw new Error('There is no sign-in: your tests are saved in a folder on this Mac.'); }
-  async sendPasswordReset() { throw new Error('There is no sign-in: your tests are saved in a folder on this Mac.'); }
+  async signIn(): Promise<Person> { throw new Error(osText('There is no sign-in: your tests are saved in a folder on this Mac.')); }
+  async sendPasswordReset() { throw new Error(osText('There is no sign-in: your tests are saved in a folder on this Mac.')); }
   async signOut() { /* nothing to sign out of */ }
   myRole(): Role { return 'admin'; }
 
@@ -873,11 +874,11 @@ export class LocalBackend implements Backend {
   suiteRuns(l: Listener<SuiteRun[]>) { queueMicrotask(() => l([])); return () => {}; }
   runRequests(l: Listener<RunRequest[]>) { queueMicrotask(() => l([])); return () => {}; }
   members(l: Listener<Member[]>) { queueMicrotask(() => l([])); return () => {}; }
-  async requestSuiteRun(): Promise<void> { throw new Error(NOT_HERE); }
-  async removeFromQueue(): Promise<void> { throw new Error(NOT_HERE); }
-  async claimRunRequest(): Promise<QueueItem> { throw new Error(NOT_HERE); }
-  async addToQueue(): Promise<QueueItem> { throw new Error(NOT_HERE); }
-  async heartbeat(): Promise<void> { throw new Error(NOT_HERE); }
-  async setRole(): Promise<void> { throw new Error('Community has no members: it is one person on one Mac.'); }
-  async removeMember(): Promise<void> { throw new Error('Community has no members: it is one person on one Mac.'); }
+  async requestSuiteRun(): Promise<void> { throw new Error(osText(NOT_HERE)); }
+  async removeFromQueue(): Promise<void> { throw new Error(osText(NOT_HERE)); }
+  async claimRunRequest(): Promise<QueueItem> { throw new Error(osText(NOT_HERE)); }
+  async addToQueue(): Promise<QueueItem> { throw new Error(osText(NOT_HERE)); }
+  async heartbeat(): Promise<void> { throw new Error(osText(NOT_HERE)); }
+  async setRole(): Promise<void> { throw new Error(osText('Community has no members: it is one person on one Mac.')); }
+  async removeMember(): Promise<void> { throw new Error(osText('Community has no members: it is one person on one Mac.')); }
 }

@@ -1,21 +1,23 @@
-// The Mac shortcuts in the app window (AppFrame) and how menus open and close (ui Menu).
+// The shortcuts in the app window (AppFrame: ⌘ on a Mac, Ctrl on Windows and Linux) and how menus
+// open and close (ui Menu).
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ariaShortcut, setOsForTests } from '../../lib/osWords';
 import { Button, Menu } from '../ui';
 import { AppFrame } from './AppFrame';
 
 // The same whichever edition this checkout builds (the Team module may be linked in).
 vi.mock('../../edition', () => ({ edition: { name: 'community', nav: [], slots: {}, settings: [], routes: [], gate: { paths: [] } } }));
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); setOsForTests(null); });
 
 function Where() { return <div data-testid="where">{useLocation().pathname}</div>; }
 
 function Screen({ onNew = () => {} }: { onNew?: () => void }) {
   return (
-    <AppFrame nav="apps" actions={<Button kind="primary" aria-keyshortcuts="Meta+N" onClick={onNew}>New test</Button>}>
+    <AppFrame nav="apps" actions={<Button kind="primary" aria-keyshortcuts={ariaShortcut('N')} onClick={onNew}>New test</Button>}>
       <div className="cm-search"><input aria-label="Search tests" /></div>
       <Where />
     </AppFrame>
@@ -48,6 +50,41 @@ describe('Mac shortcuts', () => {
     fireEvent.keyDown(window, { key: ',', metaKey: true });
     expect(onNew).not.toHaveBeenCalled();
     expect(screen.getByTestId('where')).toHaveTextContent('/');
+  });
+});
+
+describe('Ctrl shortcuts on Windows and Linux', () => {
+  for (const os of ['windows', 'linux'] as const) {
+    it(`Ctrl+, Ctrl+N and Ctrl+F work on ${os}, and ⌘ does nothing there`, () => {
+      setOsForTests(os);
+      const onNew = vi.fn();
+      at(<Screen onNew={onNew} />);
+      expect(screen.getByRole('button', { name: 'New test' })).toHaveAttribute('aria-keyshortcuts', 'Control+N');
+      fireEvent.keyDown(window, { key: 'n', metaKey: true });
+      expect(onNew).not.toHaveBeenCalled();
+      fireEvent.keyDown(window, { key: 'n', ctrlKey: true });
+      expect(onNew).toHaveBeenCalledOnce();
+      fireEvent.keyDown(window, { key: 'f', ctrlKey: true });
+      expect(screen.getByLabelText('Search tests')).toHaveFocus();
+      fireEvent.keyDown(window, { key: ',', ctrlKey: true });
+      expect(screen.getByTestId('where')).toHaveTextContent('/settings');
+    });
+  }
+
+  it('on a Mac, ⌘ with Ctrl held does nothing, as before', () => {
+    const onNew = vi.fn();
+    at(<Screen onNew={onNew} />);
+    fireEvent.keyDown(window, { key: 'n', metaKey: true, ctrlKey: true });
+    fireEvent.keyDown(window, { key: ',', metaKey: true, ctrlKey: true });
+    expect(onNew).not.toHaveBeenCalled();
+    expect(screen.getByTestId('where')).toHaveTextContent('/');
+  });
+
+  it('on a Mac, Ctrl alone is not the shortcut key', () => {
+    const onNew = vi.fn();
+    at(<Screen onNew={onNew} />);
+    fireEvent.keyDown(window, { key: 'n', ctrlKey: true });
+    expect(onNew).not.toHaveBeenCalled();
   });
 });
 
