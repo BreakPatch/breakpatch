@@ -84,8 +84,11 @@ export function pageHint(k: ActionKind): string {
   switch (k) {
     case 'waitUntil': return 'Draw a box around what should appear on the page, or click it.';
     case 'checkpoint': return 'Click the area to check on the page, or draw a box around it.';
-    case 'upload': return 'Click the upload field on the page.';
+    case 'upload': return 'Pick a file, then click the upload field on the page.';
     case 'hover': return 'Click what to hover over on the page.';
+    case 'doubleClick': return 'Click what to double-click on the page.';
+    case 'longClick': return 'Click what to long-click on the page. The step holds the click down.';
+    case 'rightClick': return 'Click what to right-click on the page.';
     case 'swipe': case 'scroll': return 'Drag on the page, or scroll it.';
     default: return 'Click on the page to add a step.';
   }
@@ -95,6 +98,8 @@ export function pageHint(k: ActionKind): string {
 export function toolHint(k: ActionKind, describe: boolean = DESCRIBE_STEPS): string | null {
   // Without the describe box, the bar itself says what to do for these (pageHint).
   if (!describe && (k === 'checkpoint' || k === 'waitUntil' || k === 'drag')) return null;
+  // The file choice fills the bar, so what to do goes above it.
+  if (!describe && k === 'upload') return pageHint(k);
   switch (k) {
     case 'drag': return 'Drag on the page from the start point to the end point, or click one and then the other.';
     case 'swipe': case 'scroll': return 'Drag on the page in the direction to move. The length of the drag sets the distance.';

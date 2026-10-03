@@ -4,11 +4,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AppFrame } from '../../components/shell/AppFrame';
-import { Button, Checkbox, Dialog, Icon, IconButton, Skeleton, TextInput, useToast } from '../../components/ui';
+import { Button, Checkbox, Icon, IconButton, Skeleton, TextInput, useToast } from '../../components/ui';
 import { useBackend, useLive } from '../../data/hooks';
-import { KEEP_DELETED_DAYS, type DeletedItem } from '../../data/backend';
+import { canManageDeleted, type DeletedItem } from '../../data/backend';
 import type { App, Suite } from '../../data/types';
 import { plural } from '../../components/common/format';
+import { RECENTLY_DELETED_PATH, useMoveToBin } from '../../components/common/moveToBin';
+import { useSession } from '../../state/session';
 import { useAllTests } from './useAllTests';
 import { edition, type SuiteExtras } from '../../edition';
 import './suites.css';
@@ -38,7 +40,9 @@ export default function SuiteEditorScreen() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tried, setTried] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const moveToBin = useMoveToBin();
+  const uid = useSession(st => st.user?.uid);
   const loaded = useRef<string | null>(null);
 
   // Fill the form once per suite; later live updates don't overwrite what's being edited.
@@ -98,10 +102,25 @@ export default function SuiteEditorScreen() {
   /** Saves unsaved edits first, for the edition's title-bar action. */
   const prepare = async () => (dirty || !suite ? await save() : suite);
 
+  // Straight to Recently deleted, with Undo in the toast (moveToBin.ts): nothing to confirm.
   const remove = async () => {
     if (!suiteId) return;
-    try { await backend.deleteSuite(suiteId); toast(`${name || 'Suite'} moved to Recently deleted.`); navigate('/suites', { replace: true }); }
-    catch (e) { toast(e instanceof Error ? e.message : "Couldn't delete the suite.", { error: true }); }
+    const label = name.trim() || suite?.name || 'Suite';
+    if (await moveToBin({ kind: 'suite', id: suiteId }, label, () => backend.deleteSuite(suiteId), "Couldn't delete the suite.")) navigate('/suites', { replace: true });
+  };
+
+  // The suite's tests in Recently deleted, by name: the test itself, or its deleted app.
+  const binnedItems = deleted ? [...new Map(binned.flatMap(r => {
+    const i = deleted.find(x => x.kind === 'test' && x.appId === r.appId && x.id === r.testId) ?? deleted.find(x => x.kind === 'app' && x.id === r.appId);
+    return i ? [[`${i.kind}/${i.id}`, i] as const] : [];
+  })).values()] : [];
+  const binnedNames = binnedItems.map(i => (i.kind === 'app' ? `the tests in ${i.name}` : `"${i.name}"`));
+  const canRestore = binnedItems.length > 0 && binnedItems.every(i => canManageDeleted(i, backend.myRole(), uid));
+  const restoreBinned = async () => {
+    setRestoring(true);
+    try { for (const i of binnedItems) await backend.recentlyDeleted!.restore(i); toast(binnedItems.length === 1 ? `"${binnedItems[0].name}" is back.` : 'They\'re back.'); }
+    catch (e) { toast(e instanceof Error ? e.message : "Couldn't restore them.", { error: true }); }
+    finally { setRestoring(false); }
   };
 
   const notFound = !isNew && suites && !suite && loaded.current !== suiteId;
@@ -128,7 +147,7 @@ export default function SuiteEditorScreen() {
           {!Panel && (
             <div className="se-lead">
               <span className="se-next">Pick the tests and the order they run in.</span>
-              {!isNew && <Button kind="dangerText" icon="delete" size="sm" onClick={() => setConfirmDelete(true)}>Delete suite</Button>}
+              {!isNew && <Button kind="dangerText" icon="delete" size="sm" onClick={() => void remove()}>Delete suite</Button>}
             </div>
           )}
           <TextInput label="Name" className="se-name" value={name} placeholder="e.g. Smoke" onChange={e => edit(setName)(e.target.value)}
@@ -140,7 +159,14 @@ export default function SuiteEditorScreen() {
           {tried && problems.tests && <div className="se-err" role="alert"><Icon name="error" />{problems.tests}</div>}
           {binned.length > 0 && (
             <div className="se-missing"><Icon name="delete" />
-              <span>{binned.length === 1 ? '1 test in this suite is in Recently deleted.' : `${binned.length} tests in this suite are in Recently deleted.`} Runs skip {binned.length === 1 ? 'it' : 'them'} until {binned.length === 1 ? "it's" : "they're"} restored.</span>
+              <span className="grow">
+                {binnedNames.length ? `${listOf(binnedNames)} ${binned.length === 1 ? 'is' : 'are'} in Recently deleted.` : binned.length === 1 ? '1 test in this suite is in Recently deleted.' : `${binned.length} tests in this suite are in Recently deleted.`}
+                {' '}Runs skip {binned.length === 1 ? 'it' : 'them'} until {binned.length === 1 ? "it's" : "they're"} restored.
+              </span>
+              <span className="se-missing-actions">
+                {canRestore && <Button size="sm" icon="restore" busy={restoring} onClick={() => void restoreBinned()}>Restore</Button>}
+                <Button size="sm" kind="link" onClick={() => navigate(RECENTLY_DELETED_PATH)}>Open Recently deleted</Button>
+              </span>
             </div>
           )}
           {missing > 0 && (
@@ -198,14 +224,17 @@ export default function SuiteEditorScreen() {
           <div className="se-right">
             <Panel suite={suite} suiteId={suiteId ?? null} name={name.trim() || 'New suite'} testCount={present.length} tried={tried}
               value={extras} onChange={(v, problem) => { setExtras(v); setExtrasProblem(problem); setDirty(true); }} />
-            {!isNew && <Button kind="dangerText" icon="delete" className="se-danger" onClick={() => setConfirmDelete(true)}>Delete suite</Button>}
+            {!isNew && <Button kind="dangerText" icon="delete" className="se-danger" onClick={() => void remove()}>Delete suite</Button>}
           </div>
         )}
       </div>
 
-      <Dialog open={confirmDelete} onClose={() => setConfirmDelete(false)} title={`Delete ${name || 'this suite'}?`}
-        sub={`It goes to Recently deleted with its schedule. You can restore it there for ${KEEP_DELETED_DAYS} days. Its past runs stay in the history.`}
-        actions={<><Button onClick={() => setConfirmDelete(false)} data-autofocus>Cancel</Button><Button kind="danger" icon="delete" onClick={remove}>Delete suite</Button></>} />
     </AppFrame>
   );
+}
+
+/** "A", "A and B", "A, B and C", starting with a capital. */
+function listOf(names: string[]): string {
+  const s = names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

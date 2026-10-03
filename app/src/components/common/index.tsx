@@ -117,3 +117,4 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, children, confi
 }
 
 export { ImpactDialog, impactSummary } from './ImpactDialog';
+export { useMoveToBin, RECENTLY_DELETED_PATH } from './moveToBin';

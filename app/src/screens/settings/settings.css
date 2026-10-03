@@ -99,7 +99,11 @@
 .set-del > .icon { font-size: 19px; color: var(--text-muted); }
 .set-del-name { font-size: 14px; font-weight: 600; }
 .set-del-meta { font-size: 12px; color: var(--text-faint); }
-.set-del-empty { font-size: 14px; color: var(--text-faint); }
+.set-del-why { font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+.set-del-none { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 32px 24px; text-align: center; }
+.set-del-none > .icon { font-size: 28px; color: var(--text-faint); margin-bottom: 4px; }
+.set-del-none-title { font-size: 14px; font-weight: 600; }
+.set-del-none-text { font-size: 13px; color: var(--text-faint); }
 
 /* Members */
 .set-members-head { display: flex; align-items: flex-end; gap: 16px; }
@@ -201,3 +205,6 @@ div.set-role { cursor: default; }
 
 /* Privacy (PrivacySection.tsx) */
 .set-privacy-list { margin: 4px 0 10px; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+/* A link inside a line of text, to another Settings page. */
+.set-link { display: inline; padding: 0; font: inherit; color: var(--accent); font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 3px; cursor: pointer; }
+.set-link:hover { text-decoration-color: currentColor; }

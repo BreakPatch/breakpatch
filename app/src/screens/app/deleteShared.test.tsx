@@ -1,5 +1,5 @@
-// Deleting shared steps (Recently deleted): only while no test uses them, and the confirm says
-// where they go.
+// Deleting shared steps (Recently deleted): only while no test uses them. It goes at once, and the
+// toast says where, with Undo.
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -28,23 +28,28 @@ const menuDelete = (name: string) => {
 };
 
 describe('Delete shared steps', () => {
-  it('moves them to Recently deleted, after saying so', async () => {
+  it('moves them to Recently deleted at once, and Undo puts them back', async () => {
     const g = await backend.createGroup(app.id, 'Sign in', '', []);
     open([g], []);
     menuDelete('Sign in');
-    expect(screen.getByText(/They go to Recently deleted\. You can restore them there for 30 days\./)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete shared steps' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
     await waitFor(async () => expect(await groupsNow()).toEqual([]));
-    await screen.findByText('Sign in moved to Recently deleted.');
+    await screen.findByText('"Sign in" moved to Recently deleted.');
+    expect(screen.getByRole('button', { name: 'Open Recently deleted' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await waitFor(async () => expect((await groupsNow()).map(x => x.name)).toEqual(['Sign in']));
+    await screen.findByText('"Sign in" is back.');
   });
 
-  it('waits while a test uses them, and counts only tests that are there', async () => {
+  it('can’t be deleted while a test uses them, and says how many (counting only tests that are there)', async () => {
     const t = await backend.createTest({ appId: app.id, name: 'Log in', startUrl: 'https://app.example.com', viewport: VP });
     const g = { ...(await backend.createGroup(app.id, 'Sign in', '', [])), usedBy: [{ testId: t.id, version: 'latest' as const }, { testId: 'deleted-one', version: 1 }] };
     open([g], [t]);
-    menuDelete('Sign in');
-    expect(screen.getByText('1 test uses these shared steps. Take them out of that test first, then delete them.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    fireEvent.click(screen.getByRole('button', { name: 'More for Sign in' }));
+    const del = screen.getByRole('menuitem', { name: /^Delete/ });
+    expect(del).toBeDisabled();
+    expect(del).toHaveTextContent('Used by 1 test. Take them out first.');
+    fireEvent.click(del);
     expect(await groupsNow()).toHaveLength(1);
   });
 

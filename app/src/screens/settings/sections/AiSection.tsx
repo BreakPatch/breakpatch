@@ -1,5 +1,6 @@
 import { hasFeature } from '../../../edition';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Disc, Icon, Skeleton, StatusPill, useToast } from '../../../components/ui';
 import { getEngine, MODELS, type SystemInfo } from '../../../engine';
 import { useSession } from '../../../state/session';
@@ -26,6 +27,7 @@ export function AiSection() {
   const runner = hasFeature('runner');
   const info = useSystemInfo();
   const toast = useToast();
+  const navigate = useNavigate();
   const [confirm, setConfirm] = useState(false);
   const installed = info?.model.installed ?? true;
   const size = gb(info?.model.sizeBytes);
@@ -55,7 +57,10 @@ export function AiSection() {
 
       <div className="set-info">
         <Icon name="info" />
-        <div className="grow">The built-in assistant works well for almost every app.{runner ? ' A local runner Mac with 32 GB of memory or more can also download a larger one, in Settings → Local runner.' : ''} Bringing your own model isn't available yet.</div>
+        <div className="grow">
+          The built-in assistant works well for almost every app. It's the only one for now.
+          {runner && <> A local runner with 32 GB of memory or more can also use a larger one: see <button type="button" className="set-link" onClick={() => navigate('/settings/runner', { replace: true })}>Local runner</button>.</>}
+        </div>
       </div>
 
       <div className="col" style={{ gap: 8 }}>

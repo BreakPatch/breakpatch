@@ -154,6 +154,11 @@ select.input { appearance: none; padding-right: 32px; background-image: none; cu
 .menu-item:disabled:hover { background: none; }
 .menu-item.danger { color: var(--failed); }
 .menu-item.danger .icon { color: var(--failed); }
+.menu-item.danger:disabled, .menu-item.danger:disabled .icon { color: var(--text-faint); }
+.menu-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.menu-detail { font-size: 12px; color: var(--text-faint); line-height: 1.35; }
+.menu-item:has(.menu-detail) { align-items: flex-start; }
+.menu-item:has(.menu-detail) .icon { margin-top: 1px; }
 .menu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
 .menu-item .menu-check { color: var(--accent); margin-left: auto; }
 .menu-item[aria-checked="true"] { font-weight: 600; }
@@ -185,16 +190,23 @@ select.input { appearance: none; padding-right: 32px; background-image: none; cu
 
 /* ---------- Toast ---------- */
 .toasts { position: fixed; right: 20px; bottom: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
-.toast { display: flex; align-items: center; gap: 8px; background: var(--raised); border: 1px solid var(--line-strong); border-radius: 12px; padding: 10px 14px; font-size: 14px; box-shadow: var(--shadow-pop); pointer-events: auto;
-  /* In, then out the same way before ToastProvider removes it at 2.4 s. */
-  animation: bpIn 200ms ease-out both, bpOut 180ms ease-in 2220ms forwards;
+.toast { display: flex; align-items: center; gap: 8px; background: var(--raised); border: 1px solid var(--line-strong); border-radius: 12px; padding: 10px 14px; font-size: 14px; box-shadow: var(--shadow-pop); pointer-events: auto; max-width: min(560px, calc(100vw - 40px));
+  animation: bpIn 200ms ease-out both;
 }
+/* Out the way it came in, for the 180 ms before ToastProvider removes it. */
+.toast.leaving { animation: bpOut 180ms ease-in forwards; }
+.toast-text { min-width: 0; }
+.toast-action { flex: none; font: inherit; font-weight: 600; color: var(--accent); background: none; border: 0; border-radius: 8px; padding: 4px 8px; margin: -4px 0; cursor: pointer; white-space: nowrap; }
+.toast-action:first-of-type { margin-left: 4px; }
+.toast-action:hover { background: var(--selected); }
+.toast-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .toast .icon { font-size: 19px; color: var(--passed); }
 .toast.error .icon { color: var(--failed); }
 
 /* ---------- Progress ---------- */
 .progress { height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden; }
-.progress > div { height: 100%; background: var(--accent); border-radius: 3px; transform-origin: left; transition: width 900ms ease-out; }
+/* Grows by transform, not width, so it doesn't lay the page out again as it moves. */
+.progress > div { height: 100%; background: var(--accent); transform-origin: left; transition: transform 900ms ease-out; }
 .progress.running > div { background: var(--running); }
 .progress.passed > div { background: var(--passed); }
 .progress.failed > div { background: var(--failed); }

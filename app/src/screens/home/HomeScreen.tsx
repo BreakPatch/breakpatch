@@ -3,10 +3,9 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppFrame } from '../../components/shell/AppFrame';
 import { OfflineCards } from '../../components/shell/SystemBanners';
-import { Button, Icon, Skeleton, useToast } from '../../components/ui';
-import { ConfirmDialog, plural } from '../../components/common';
+import { Button, Icon, Skeleton } from '../../components/ui';
+import { plural, useMoveToBin } from '../../components/common';
 import { useBackend, useLive } from '../../data/hooks';
-import { KEEP_DELETED_DAYS } from '../../data/backend';
 import type { App } from '../../data/types';
 import { useSession } from '../../state/session';
 import { edition } from '../../edition';
@@ -23,14 +22,19 @@ const HomeBanner = edition.slots.homeBanner;
 export default function HomeScreen() {
   const navigate = useNavigate();
   const backend = useBackend();
-  const toast = useToast();
   const user = useSession(s => s.user);
   const { data: apps, slow } = useLive<App[]>((b, l) => b.apps(l), []);
   const testsByApp = useAllTests(apps);
   const isAdmin = backend.myRole() === 'admin';
 
   const [dialog, setDialog] = useState<{ app: App | null } | null>(null);
-  const [deleting, setDeleting] = useState<App | null>(null);
+  const moveToBin = useMoveToBin();
+  // Straight to Recently deleted, with its tests, and Undo in the toast (moveToBin.ts).
+  const remove = (a: App) => {
+    const n = testsByApp[a.id]?.length ?? 0;
+    void moveToBin({ kind: 'app', id: a.id }, a.name, () => backend.deleteApp(a.id), "Couldn't delete the app.",
+      `"${a.name}"${n ? ` and its ${plural(n, 'test')}` : ''} moved to Recently deleted.`);
+  };
 
   const allLoaded = !!apps && apps.every(a => testsByApp[a.id]);
   const totalTests = useMemo(() => Object.values(testsByApp).reduce((n, t) => n + t.length, 0), [testsByApp]);
@@ -63,7 +67,7 @@ export default function HomeScreen() {
           <div className="home-grid">
             {apps.map((a, i) => (
               <AppCard key={a.id} app={a} index={i} tests={testsByApp[a.id]} canDelete={isAdmin}
-                onOpen={() => openApp(a)} onEdit={() => setDialog({ app: a })} onDelete={() => setDeleting(a)} />
+                onOpen={() => openApp(a)} onEdit={() => setDialog({ app: a })} onDelete={() => remove(a)} />
             ))}
             <button type="button" className="home-add" onClick={addApp}><Icon name="add" size={28} />Add an app to test</button>
           </div>
@@ -72,15 +76,6 @@ export default function HomeScreen() {
       )}
 
       <AppDialog open={!!dialog} app={dialog?.app} onClose={() => setDialog(null)} />
-      <ConfirmDialog open={!!deleting} onClose={() => setDeleting(null)} danger confirmLabel="Delete app"
-        title={`Delete ${deleting?.name ?? 'app'}?`}
-        onConfirm={async () => {
-          if (!deleting) return;
-          try { await backend.deleteApp(deleting.id); toast(`${deleting.name} moved to Recently deleted.`); }
-          catch (e) { toast(e instanceof Error ? e.message : "Couldn't delete the app.", { error: true }); }
-        }}>
-        {deleting && `It goes to Recently deleted with its ${plural(testsByApp[deleting.id]?.length ?? 0, 'test')}, shared steps and runs${backend.workspace ? ', for everyone' : ''}. You can restore it there for ${KEEP_DELETED_DAYS} days.`}
-      </ConfirmDialog>
     </AppFrame>
   );
 }

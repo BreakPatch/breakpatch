@@ -204,7 +204,8 @@ export function Dialog({ open, onClose, title, sub, children, actions, width = 5
 
 // ---------- Menu ----------
 /** `checked` makes it one of a set of choices (menuitemradio), ticked when true. */
-export interface MenuItem { label: string; icon?: string; onSelect: () => void; danger?: boolean; disabled?: boolean; checked?: boolean }
+/** `detail`: a second, smaller line, such as why it's disabled. */
+export interface MenuItem { label: string; icon?: string; onSelect: () => void; danger?: boolean; disabled?: boolean; checked?: boolean; detail?: string }
 export type MenuEntry = MenuItem | { group: string } | 'sep';
 /** Pop-up menu with keyboard navigation. Place inside a `position: relative` wrapper. */
 export function Menu({ open, onClose, items, style, width = 240, label }: { open: boolean; onClose: () => void; items: MenuEntry[]; style?: CSSProperties; width?: number; label: string }) {
@@ -247,7 +248,9 @@ export function Menu({ open, onClose, items, style, width = 240, label }: { open
         : 'group' in it ? <div key={k} className="menu-group">{it.group}</div>
         : <button key={k} type="button" role={it.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={it.checked} className={cx('menu-item', it.danger && 'danger')} disabled={it.disabled}
             onClick={() => { if (!open) return; onClose(); it.onSelect(); }}>
-            {it.icon && <Icon name={it.icon} />}{it.checked === undefined ? it.label : <span className="grow">{it.label}</span>}
+            {it.icon && <Icon name={it.icon} />}
+            {it.detail ? <span className="menu-text"><span>{it.label}</span><span className="menu-detail">{it.detail}</span></span>
+              : it.checked === undefined ? it.label : <span className="grow">{it.label}</span>}
             {it.checked && <Icon name="check" className="menu-check" />}
           </button>)}
     </div>
@@ -302,20 +305,51 @@ export function Banner({ tone, icon, title, children, actions }: { tone: 'accent
 }
 
 // ---------- Toasts ----------
-interface ToastItem { id: number; text: string; error?: boolean }
-const ToastCtx = createContext<(text: string, opts?: { error?: boolean }) => void>(() => {});
+/** A button in a toast, such as Undo. Pressing it also closes the toast. */
+export interface ToastAction { label: string; onClick: () => void }
+export interface ToastOptions { error?: boolean; actions?: ToastAction[] }
+interface ToastItem { id: number; text: string; error?: boolean; actions?: ToastAction[]; leaving?: boolean }
+/** How long a toast stays: longer when it has buttons, so there's time to press one. */
+export const TOAST_MS = 2400;
+export const TOAST_ACTIONS_MS = 8000;
+const TOAST_OUT_MS = 180;
+const ToastCtx = createContext<(text: string, opts?: ToastOptions) => void>(() => {});
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
-  const push = useCallback((text: string, opts?: { error?: boolean }) => {
-    const id = Date.now() + Math.random();
-    setItems(x => [...x, { id, text, error: opts?.error }]);
-    setTimeout(() => setItems(x => x.filter(t => t.id !== id)), 2400);
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const remove = useCallback((id: number) => {
+    clearTimeout(timers.current.get(id));
+    setItems(x => x.map(t => (t.id === id ? { ...t, leaving: true } : t)));
+    timers.current.set(id, setTimeout(() => { timers.current.delete(id); setItems(x => x.filter(t => t.id !== id)); }, TOAST_OUT_MS));
   }, []);
+  const later = useCallback((id: number, ms: number) => {
+    clearTimeout(timers.current.get(id));
+    timers.current.set(id, setTimeout(() => remove(id), ms));
+  }, [remove]);
+  const push = useCallback((text: string, opts?: ToastOptions) => {
+    const id = Date.now() + Math.random();
+    setItems(x => [...x, { id, text, error: opts?.error, actions: opts?.actions }]);
+    later(id, opts?.actions?.length ? TOAST_ACTIONS_MS : TOAST_MS);
+  }, [later]);
+  useEffect(() => { const t = timers.current; return () => t.forEach(clearTimeout); }, []);
   return (
     <ToastCtx.Provider value={push}>
       {children}
       <div className="toasts" aria-live="polite">
-        {items.map(t => <div key={t.id} className={cx('toast', t.error && 'error')}><Icon name={t.error ? 'error' : 'check_circle'} />{t.text}</div>)}
+        {items.map(t => (
+          // While the pointer or focus is on a toast with buttons, it stays; it goes a moment after.
+          <div key={t.id} className={cx('toast', t.error && 'error', t.leaving && 'leaving')}
+            onMouseEnter={t.actions && !t.leaving ? () => clearTimeout(timers.current.get(t.id)) : undefined}
+            onMouseLeave={t.actions && !t.leaving ? () => later(t.id, TOAST_MS) : undefined}
+            onFocus={t.actions && !t.leaving ? () => clearTimeout(timers.current.get(t.id)) : undefined}
+            onBlur={t.actions && !t.leaving ? () => later(t.id, TOAST_MS) : undefined}>
+            <Icon name={t.error ? 'error' : 'check_circle'} />
+            <span className="toast-text">{t.text}</span>
+            {t.actions?.map(a => (
+              <button key={a.label} type="button" className="toast-action" onClick={() => { remove(t.id); a.onClick(); }}>{a.label}</button>
+            ))}
+          </div>
+        ))}
       </div>
     </ToastCtx.Provider>
   );
@@ -325,7 +359,7 @@ export function useToast() { return useContext(ToastCtx); }
 // ---------- Progress, skeleton, avatar ----------
 export function ProgressBar({ value, tone, label, style }: { value: number; tone?: 'running' | 'passed' | 'failed'; label?: string; style?: CSSProperties }) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
-  return <div className={cx('progress', tone)} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label={label} style={style}><div style={{ width: pct + '%' }} /></div>;
+  return <div className={cx('progress', tone)} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label={label} style={style}><div style={{ transform: `scaleX(${pct / 100})` }} /></div>;
 }
 export function Skeleton({ w = '100%', h = 14, r, style }: { w?: number | string; h?: number | string; r?: number; style?: CSSProperties }) {
   return <div className="skeleton" style={{ width: w, height: h, borderRadius: r, ...style }} aria-hidden />;

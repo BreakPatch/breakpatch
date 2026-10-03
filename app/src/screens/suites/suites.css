@@ -55,6 +55,9 @@
 .se-order-row .icon-btn .icon { font-size: 18px; }
 .se-missing { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--text-muted); padding: 10px 14px; border-radius: 12px; background: var(--fixed-tint); flex: none; }
 .se-missing > .icon { color: var(--fixed); font-size: 18px; }
+.se-missing > .grow { align-self: center; }
+.se-missing-actions { display: flex; gap: 6px; align-items: center; flex: none; margin: -3px -6px -3px 0; }
+.se-missing-actions:empty { display: none; }
 
 .se-sec { display: flex; flex-direction: column; gap: 10px; }
 .se-next { font-size: 13px; color: var(--text-muted); }
