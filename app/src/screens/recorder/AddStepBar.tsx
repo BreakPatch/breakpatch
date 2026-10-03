@@ -12,6 +12,7 @@ import { ActionMenu } from './ActionMenu';
 import { SharedStepsPicker } from './SharedStepsPicker';
 import { composerInput, DESCRIBE_STEPS, INSTANT, onPage, pageHint, placeholderFor, shortName, toolHint, type MenuAction } from './actions';
 import type { Recorder } from './useRecorder';
+import { osText } from '../../lib/osWords';
 
 const CLICK_FAMILY = new Set(['click', 'doubleClick', 'longClick', 'rightClick', 'hover']);
 const FILE_TYPES = [['', 'Any type'], ['pdf', 'PDF'], ['csv', 'CSV'], ['xlsx', 'Excel sheet'], ['docx', 'Word document'], ['jpeg', 'JPEG image'], ['mp4', 'MP4 video']];
@@ -102,7 +103,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
     field = (
       <span className="rec-field-chip">
         <ChipSelect label="Saved secret" up value={o.secretRef} onChange={v => rec.setOptions({ secretRef: v })}
-          options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: 'No saved secrets on this Mac' }]} />
+          options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: osText('No saved secrets on this Mac') }]} />
       </span>
     );
   } else if (action === 'write' && o.writeSource === 'generated') {
@@ -152,7 +153,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
             {TOKENS.map(t => <button key={t.token} type="button" className="rec-chip" onClick={() => insertToken(t.token)}>{t.name}</button>)}
           </div>
         )}
-        {o.writeSource === 'secret' && <span className="faint">The value stays in this Mac's Keychain and is never shown.</span>}
+        {o.writeSource === 'secret' && <span className="faint">{osText("The value stays in this Mac's Keychain and is never shown.")}</span>}
       </div>
     );
     // Drawn or clicked on the page: their options are in the bar, not floating over where you draw.
@@ -291,7 +292,7 @@ function SecretAsk({ rec, taken }: { rec: Recorder; taken: string[] }) {
       <label className="grow rec-secret-name">Name
         <input className="rec-num mono" style={{ width: 200 }} value={name} autoFocus onChange={e => setName(e.target.value.toUpperCase())}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void save(); } if (e.key === 'Escape') setNaming(false); }} aria-invalid={!!bad} />
-        <span className={bad || error ? 'rec-secret-err' : 'faint'}>{bad ?? error ?? "Kept in this Mac's Keychain. The step then uses it."}</span>
+        <span className={bad || error ? 'rec-secret-err' : 'faint'}>{bad ?? error ?? osText("Kept in this Mac's Keychain. The step then uses it.")}</span>
       </label>
       <Button kind="primary" onClick={() => void save()} disabled={!!bad}>Save</Button>
       <button type="button" className="rec-ai-link" onClick={() => setNaming(false)}>Back</button>

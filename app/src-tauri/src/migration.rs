@@ -136,7 +136,7 @@ pub fn plan(place: Place, base: &Path, names: &[String]) -> Result<(Vec<PathBuf>
     let all_missing = || ordered.iter().map(|n| n.to_string()).collect::<Vec<_>>();
     match std::fs::symlink_metadata(base) {
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok((Vec::new(), all_missing())),
-        Err(_) => return Err("Breakpatch can't look in this folder (macOS refused it).".into()),
+        Err(_) => return Err(format!("Breakpatch can't look in this folder ({} refused it).", Os::current().name())),
         Ok(m) if !m.is_dir() => return Err("This isn't a folder.".into()),
         Ok(_) => {}
     }
@@ -189,7 +189,7 @@ pub fn trash_items(
     for p in paths {
         let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         if let Err(e) = mover(&p) {
-            out.error = Some(format!("Couldn't move {name} to the Trash. {e}"));
+            out.error = Some(format!("Couldn't move {name} to {}. {e}", Os::current().trash()));
             break;
         }
         out.moved.push(name);
@@ -207,7 +207,7 @@ pub fn resolve_folder(given: &Path, allowed: impl Fn(&Path) -> bool) -> Result<P
     let real = match std::fs::canonicalize(given) {
         Ok(p) => p,
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(given.to_path_buf()),
-        Err(_) => return Err("Breakpatch can't look in this folder (macOS refused it).".into()),
+        Err(_) => return Err(format!("Breakpatch can't look in this folder ({} refused it).", Os::current().name())),
     };
     if !allowed(&real) {
         return Err("Breakpatch only moves a tests folder you opened in it.".into());
@@ -239,16 +239,66 @@ pub fn to_trash(p: &Path) -> Result<(), String> {
     ctx.delete(p).map_err(|e| trash_error_text(&e.to_string()))
 }
 
+/// The operating system, for the words the person reads: the Recycle Bin on Windows, and what
+/// to check when it refuses.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Os {
+    Mac,
+    Windows,
+    Linux,
+}
+
+impl Os {
+    pub const fn current() -> Os {
+        if cfg!(target_os = "macos") {
+            Os::Mac
+        } else if cfg!(windows) {
+            Os::Windows
+        } else {
+            Os::Linux
+        }
+    }
+
+    /// "macOS refused it".
+    pub const fn name(self) -> &'static str {
+        match self {
+            Os::Mac => "macOS",
+            Os::Windows => "Windows",
+            Os::Linux => "the system",
+        }
+    }
+
+    /// "move it to the Trash".
+    pub const fn trash(self) -> &'static str {
+        match self {
+            Os::Windows => "the Recycle Bin",
+            Os::Mac | Os::Linux => "the Trash",
+        }
+    }
+}
+
 /// What to tell the person when the Trash refused an item: a permission problem says what to
 /// check, anything else passes on what the system said.
 pub fn trash_error_text(raw: &str) -> String {
+    trash_error_text_for(Os::current(), raw)
+}
+
+pub fn trash_error_text_for(os: Os, raw: &str) -> String {
     let low = raw.to_lowercase();
-    if ["permission", "not permitted", "code=513", "code=257", "-1743", "access"].iter().any(|k| low.contains(k)) {
-        "macOS didn't let Breakpatch move it. Check that you can change this folder in Finder (File, Get Info, Sharing & Permissions), and that Breakpatch is allowed in System Settings, Privacy & Security, Files and Folders.".into()
-    } else if low.contains("code=3328") || low.contains("unsupported") {
-        "This disk has no Trash (a network disk, for example), so Breakpatch leaves the folder as it is.".into()
-    } else {
-        format!("The system said: {raw}")
+    let refused = ["permission", "not permitted", "code=513", "code=257", "-1743", "access"].iter().any(|k| low.contains(k));
+    let read_only = low.contains("readonlyfilesystem") || low.contains("read-only");
+    let no_trash = match os {
+        Os::Mac => low.contains("code=3328") || low.contains("unsupported"),
+        // The trash crate found neither the home Trash nor one on the folder's disk.
+        Os::Linux => low.contains("valid 'home trash'") || low.contains("unsupported"),
+        Os::Windows => low.contains("unsupported"),
+    };
+    match os {
+        Os::Mac if refused => "macOS didn't let Breakpatch move it. Check that you can change this folder in Finder (File, Get Info, Sharing & Permissions), and that Breakpatch is allowed in System Settings, Privacy & Security, Files and Folders.".into(),
+        Os::Windows if refused => "Windows didn't let Breakpatch move it. Check that you can change this folder in File Explorer (Properties, Security), and that no other program has a file in it open.".into(),
+        Os::Linux if refused || read_only => "Breakpatch isn't allowed to move it. Check that you can change this folder (its permissions, in your file manager's Properties) and that its disk isn't read-only.".into(),
+        _ if no_trash => format!("This disk has no {} (a network disk, for example), so Breakpatch leaves the folder as it is.", os.trash().trim_start_matches("the ")),
+        _ => format!("The system said: {raw}"),
     }
 }
 
@@ -417,11 +467,14 @@ mod tests {
         };
         let r = trash_items(Place::Folder, d.path(), &names(&["apps", "suites", "breakpatch.json"]), failing).unwrap();
         assert_eq!(r.moved, names(&["apps"]));
-        assert_eq!(r.error.as_deref(), Some("Couldn't move suites to the Trash. locked"));
+        let said = format!("Couldn't move suites to {}. locked", Os::current().trash());
+        assert_eq!(r.error.as_deref(), Some(said.as_str()));
+        #[cfg(not(windows))]
+        assert_eq!(said, "Couldn't move suites to the Trash. locked");
         assert!(d.path().join("breakpatch.json").exists(), "breakpatch.json stays when an item before it fails");
         let json = serde_json::to_value(&r).unwrap();
         assert_eq!(json["moved"], serde_json::json!(["apps"]));
-        assert_eq!(json["error"], "Couldn't move suites to the Trash. locked");
+        assert_eq!(json["error"], said);
         assert!(serde_json::to_value(TrashResult::default()).unwrap().get("error").is_none());
     }
 
@@ -471,10 +524,31 @@ mod tests {
 
     #[test]
     fn a_refusal_by_macos_says_what_to_check() {
-        let t = trash_error_text("While deleting '/x', `trashItemAtURL` failed: Error Domain=NSCocoaErrorDomain Code=513 \"You don't have permission\"");
+        let t = trash_error_text_for(Os::Mac, "While deleting '/x', `trashItemAtURL` failed: Error Domain=NSCocoaErrorDomain Code=513 \"You don't have permission\"");
         assert!(t.starts_with("macOS didn't let Breakpatch move it."), "{t}");
-        assert!(trash_error_text("Code=3328 feature unsupported").contains("no Trash"));
-        assert_eq!(trash_error_text("disk full"), "The system said: disk full");
+        assert!(trash_error_text_for(Os::Mac, "Code=3328 feature unsupported").contains("no Trash"));
+        assert_eq!(trash_error_text_for(Os::Mac, "disk full"), "The system said: disk full");
+    }
+
+    /// The same refusals in each system's words, as the trash crate reports them there.
+    #[test]
+    fn refusals_on_windows_and_linux_say_what_to_check_there() {
+        let win = trash_error_text_for(Os::Windows, "Error during a `trash` operation: Os { code: -2147024891, description: \"Access is denied.\" }");
+        assert!(win.starts_with("Windows didn't let Breakpatch move it.") && win.contains("File Explorer"), "{win}");
+        assert!(!win.contains("Finder") && !win.contains("macOS"));
+        assert!(trash_error_text_for(Os::Windows, "unsupported").contains("no Recycle Bin"));
+
+        let linux = trash_error_text_for(Os::Linux, "Error during a `trash` operation: FileSystem { path: \"/x\", source: Os { code: 13, kind: PermissionDenied, message: \"Permission denied\" } }");
+        assert!(linux.starts_with("Breakpatch isn't allowed to move it."), "{linux}");
+        assert!(!linux.contains("Finder") && !linux.contains("macOS"));
+        assert!(trash_error_text_for(Os::Linux, "kind: ReadOnlyFilesystem").starts_with("Breakpatch isn't allowed"));
+        let none = trash_error_text_for(Os::Linux, "Unknown { description: \"Could not find a valid 'home trash' nor valid trashes on other mount points\" }");
+        assert!(none.contains("no Trash"), "{none}");
+        assert_eq!(trash_error_text_for(Os::Linux, "disk full"), "The system said: disk full");
+
+        assert_eq!(Os::Windows.trash(), "the Recycle Bin");
+        assert_eq!(Os::Mac.trash(), "the Trash");
+        assert_eq!(Os::Mac.name(), "macOS");
     }
 
     #[cfg(unix)]

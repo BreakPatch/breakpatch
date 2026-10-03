@@ -10,6 +10,7 @@ import { getEngine } from '../../engine';
 import { secrets } from '../../platform';
 import { callProblem, cleanCall, describeReply, isHttpAddress, tryCall, type Reply } from './tryCall';
 import { withScheme } from './TestDetailsDialog';
+import { osText } from '../../lib/osWords';
 
 const METHODS: HttpCall['method'][] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
@@ -159,7 +160,7 @@ function CallCard({ icon, title, sub, call, onChange, error, app, otherHosts, se
           </div>
           {h.secretRef !== undefined
             ? <Select aria-label={`${title}: header ${i + 1} secret`} value={h.secretRef} onChange={e => setHeader(i, { ...h, secretRef: e.target.value })}
-                options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: 'No saved secrets on this Mac' }]} />
+                options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: osText('No saved secrets on this Mac') }]} />
             : <TextInput aria-label={`${title}: header ${i + 1} value`} mono value={h.value ?? ''} spellCheck={false} autoCapitalize="off"
                 onChange={e => setHeader(i, { ...h, value: e.target.value })} />}
           <IconButton icon="close" label={`Remove header ${h.name || i + 1}`} onClick={() => onChange({ ...call, headers: headers.filter((_, j) => j !== i) })} />

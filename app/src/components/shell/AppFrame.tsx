@@ -11,6 +11,7 @@ import type { NavItem } from '../../edition/types';
 import { SystemBanners } from './SystemBanners';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import './shell.css';
+import { ariaShortcut, isMac, otherCommandKeyDown, shortcutKeyDown } from '../../lib/osWords';
 
 /** "apps", "suites", or an edition's nav item (Team: "runner"). */
 export type TopNavKey = string;
@@ -80,7 +81,7 @@ export function AppFrame({ nav, back, crumb, title, actions, progress, banners, 
         {/* One person on one Mac (Community) has no account to show: a Settings button instead. */}
         {!hideAvatar && (edition.name === 'team'
           ? user && <Avatar name={user.name} onClick={() => navigate('/settings')} title="Settings" />
-          : <IconButton icon="settings" label="Settings" onClick={() => navigate('/settings')} aria-keyshortcuts="Meta+Comma"
+          : <IconButton icon="settings" label="Settings" onClick={() => navigate('/settings')} aria-keyshortcuts={ariaShortcut('Comma')}
               aria-current={onSettings ? 'page' : undefined} />)}
       </header>
       {progress && <div className={`hairline ${progress.tone}`} role="progressbar" aria-label="Run progress" aria-valuenow={Math.round(progress.value * 100)}><div style={{ width: `${progress.value * 100}%` }} /></div>}
@@ -92,23 +93,25 @@ export function AppFrame({ nav, back, crumb, title, actions, progress, banners, 
   );
 }
 
-/** Native traffic lights in the desktop app (overlay title bar); drawn in a browser preview. */
+/** Native traffic lights in the desktop app on a Mac (overlay title bar); drawn in a browser
+ *  preview. Windows and Linux have the system's own title bar above the window, so no space. */
 function TrafficLights() {
-  if (isTauri()) return <div className="traffic-space" data-tauri-drag-region />;
+  if (isTauri()) return isMac() ? <div className="traffic-space" data-tauri-drag-region /> : null;
   return <div className="traffic" aria-hidden><span style={{ background: '#FF5F57' }} /><span style={{ background: '#FEBC2E' }} /><span style={{ background: '#28C840' }} /></div>;
 }
 
 /**
- * The Mac shortcuts people expect in any app window: ⌘, opens Settings, ⌘F goes to the screen's
- * search box, ⌘N presses the screen's "new" button (a title-bar button marked
- * `aria-keyshortcuts="Meta+N"`). Nothing happens while a dialog is open, and ⌘, is off where the
- * Settings button is hidden (setup, runner mode).
+ * The shortcuts people expect in any app window, with ⌘ on a Mac and Ctrl elsewhere: ⌘, opens
+ * Settings, ⌘F goes to the screen's search box, ⌘N presses the screen's "new" button (a title-bar
+ * button marked with `aria-keyshortcuts` Meta+N, or Control+N off the Mac: lib/osWords.ts
+ * `ariaShortcut`). Nothing happens while a dialog is open, and ⌘, is off where the Settings button
+ * is hidden (setup, runner mode).
  */
 function useShortcuts(settings: boolean) {
   const navigate = useNavigate();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.defaultPrevented) return;
+      if (!shortcutKeyDown(e) || otherCommandKeyDown(e) || e.altKey || e.shiftKey || e.defaultPrevented) return;
       if (document.querySelector('[aria-modal="true"]')) return;
       const key = e.key.toLowerCase();
       if (key === ',' && settings) { e.preventDefault(); if (!location.hash.startsWith('#/settings')) navigate('/settings'); }
@@ -116,7 +119,7 @@ function useShortcuts(settings: boolean) {
         const box = document.querySelector<HTMLInputElement>('.window-body .cm-search input, .window-body input[type="search"]');
         if (box) { e.preventDefault(); box.focus(); box.select(); }
       } else if (key === 'n') {
-        const btn = document.querySelector<HTMLButtonElement>('.titlebar [aria-keyshortcuts="Meta+N"]:not(:disabled)');
+        const btn = document.querySelector<HTMLButtonElement>(`.titlebar [aria-keyshortcuts="${ariaShortcut('N')}"]:not(:disabled)`);
         if (btn) { e.preventDefault(); btn.click(); }
       }
     };

@@ -11,6 +11,7 @@ import { formatWhen } from '../../components/common/format';
 import { suiteResultStatus, testsLine } from '../../components/common/suites';
 import { edition } from '../../edition';
 import './suites.css';
+import { ariaShortcut, osText, thisComputer } from '../../lib/osWords';
 
 const { suiteColumns = [], suiteRowAction: RowAction, suitesNote } = edition.slots;
 const BEFORE = suiteColumns.filter(c => !c.afterLastRun), AFTER = suiteColumns.filter(c => c.afterLastRun);
@@ -25,7 +26,7 @@ export default function SuitesScreen() {
   const list = suites.data;
 
   return (
-    <AppFrame nav="suites" actions={list?.length ? <Button kind="primary" icon="add" aria-keyshortcuts="Meta+N" onClick={() => navigate('/suites/new')}>New suite</Button> : undefined}>
+    <AppFrame nav="suites" actions={list?.length ? <Button kind="primary" icon="add" aria-keyshortcuts={ariaShortcut('N')} onClick={() => navigate('/suites/new')}>New suite</Button> : undefined}>
       {list && !list.length ? (
         <EmptyState icon="playlist_add_check" title="No suites yet."
           text="A suite is a set of tests you run together, from any app: a quick smoke check, a nightly run, a release check."
@@ -63,7 +64,7 @@ export default function SuitesScreen() {
                   {AFTER.map(c => <div key={c.header} role="cell" className="su-meta"><c.Cell suite={s} /></div>)}
                   <div role="cell" className="su-act" onClick={e => e.stopPropagation()}>
                     <Button size="sm" icon="play_arrow" disabled={!s.tests.length} onClick={() => navigate(`/suites/${s.id}/run`)}
-                      aria-label={`Run ${s.name} on this Mac`} title="Run on this Mac, one test after another">Run</Button>
+                      aria-label={`Run ${s.name} on ${thisComputer()}`} title={osText('Run on this Mac, one test after another')}>Run</Button>
                     {RowAction && <RowAction suite={s} />}
                   </div>
                 </div>

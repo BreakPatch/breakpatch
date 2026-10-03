@@ -31,6 +31,7 @@ import { removePrinted } from '../../lib/report/print';
 import { getEngine } from '../../engine';
 import type { Run, Step } from '../../data/types';
 import '../run/run.css';
+import { thisComputer, ThisComputer } from '../../lib/osWords';
 
 const DEFAULT_VP = { width: 1440, height: 900 };
 
@@ -130,7 +131,7 @@ export default function SuiteRunScreen() {
     try {
       await backend.addSuiteRun({
         suiteId: suite.id, suiteName: suite.name, result: suiteResult(counts), counts, testRunIds: runIds,
-        requestedBy: user?.name ?? 'This Mac', startedAt: done.startedAt ?? Date.now(), finishedAt: done.finishedAt ?? Date.now(),
+        requestedBy: user?.name ?? ThisComputer(), startedAt: done.startedAt ?? Date.now(), finishedAt: done.finishedAt ?? Date.now(),
       });
     } catch (e) {
       toast(`Couldn't save the suite's result: ${e instanceof Error ? e.message : String(e)}`, { error: true });
@@ -220,7 +221,7 @@ export default function SuiteRunScreen() {
         <aside className="srun-side" aria-label={plan?.app ? `All tests in ${plan.app.name}` : `${plan?.name ?? 'Suite'} tests`}>
           <div className="srun-head">
             <div className="srun-head-row"><div className="srun-name ellipsis">{plan?.app ? `All tests in ${plan.app.name}` : plan?.name ?? ' '}</div><div className="srun-count">{done} of {total}</div></div>
-            <div className="srun-sub">{view.startedAt ? `Started ${clock(view.startedAt)} · on this Mac, one test after another` : 'Getting the tests ready'}</div>
+            <div className="srun-sub">{view.startedAt ? `Started ${clock(view.startedAt)} · on ${thisComputer()}, one test after another` : 'Getting the tests ready'}</div>
           </div>
           <div className="srun-list" role="list">
             {/* One app (Run all): its name is in the heading, not on every row. */}
@@ -246,7 +247,7 @@ export default function SuiteRunScreen() {
           load={screenshots => reportInput({
             kind: 'suite', name: plan.app ? `All tests in ${plan.app.name}` : plan.name, screenshots, engine: getEngine(),
             suite: {
-              result: suiteResult(counts), counts, requestedBy: useSession.getState().user?.name ?? backend.currentUser()?.name ?? 'This Mac',
+              result: suiteResult(counts), counts, requestedBy: useSession.getState().user?.name ?? backend.currentUser()?.name ?? ThisComputer(),
               startedAt: view.startedAt ?? Date.now(), finishedAt: view.finishedAt ?? Date.now(),
             },
             tests: view.items.map((it, i): ExportTest => {

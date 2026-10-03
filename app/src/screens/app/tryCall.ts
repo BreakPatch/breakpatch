@@ -4,6 +4,7 @@
 import type { HttpCall } from '../../data/types';
 import type { CallReply, Engine } from '../../engine/engine';
 import { originOf, siteName } from '../../lib/sites';
+import { osText } from '../../lib/osWords';
 
 export type Reply = { ok: true; status: number; ms: number }
   | { ok: false; status?: number; ms?: number; error: 'invalid' | 'refused' | 'redirect' | 'secret' | 'unreachable' | 'timeout' | 'status'; message?: string };
@@ -44,7 +45,7 @@ export function callProblem(call: HttpCall, appUrl: string): string | undefined 
   const u = new URL(url);
   const app = (() => { try { return new URL(appUrl); } catch { return null; } })();
   const local = !!app && isLoopback(app.hostname);
-  if (u.protocol === 'http:' && !(local && isLoopback(u.hostname))) return 'Use https://. Plain http:// is only for an app on this Mac (localhost).';
+  if (u.protocol === 'http:' && !(local && isLoopback(u.hostname))) return osText('Use https://. Plain http:// is only for an app on this Mac (localhost).');
   if (call.allowOtherHosts || !app) return undefined;
   const [own, parent] = related(app.hostname);
   const host = u.hostname.toLowerCase().replace(/\.$/, '');

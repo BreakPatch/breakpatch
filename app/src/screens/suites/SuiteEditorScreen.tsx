@@ -12,6 +12,7 @@ import { plural } from '../../components/common/format';
 import { useAllTests } from './useAllTests';
 import { edition, type SuiteExtras } from '../../edition';
 import './suites.css';
+import { osText } from '../../lib/osWords';
 
 type Ref = Suite['tests'][number];
 const key = (r: Ref) => `${r.appId}/${r.testId}`;
@@ -117,7 +118,7 @@ export default function SuiteEditorScreen() {
   return (
     <AppFrame back="/suites" crumb="Suites" title={name.trim() || (isNew ? 'New suite' : suite?.name ?? 'Suite')}
       actions={<>
-        <Button icon="play_arrow" disabled={saving} title="Run on this Mac, one test after another"
+        <Button icon="play_arrow" disabled={saving} title={osText('Run on this Mac, one test after another')}
           onClick={async () => { const s = await prepare(); if (s) navigate(`/suites/${s.id}/run`); }}>Run</Button>
         {!isNew && Action && <Action suite={suite} prepare={prepare} disabled={saving} />}
         <Button kind="primary" onClick={() => void save()} busy={saving}>Save</Button>

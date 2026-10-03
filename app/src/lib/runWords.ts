@@ -4,9 +4,11 @@
 // files in engine/tests/fixtures/report/ check they agree. Plain data and functions only: lib/
 // imports nothing from screens/ or components/.
 import type { FailReason, Run, RunSource, Step, StepRun } from '../data/types';
+import { isMac, osText, ThisComputer } from './osWords';
 
 export const WHERE: Record<RunSource, { label: string; icon: string }> = {
-  desktop: { label: 'This Mac', icon: 'laptop_mac' },
+  // A getter: the words are the computer's the app runs on (lib/osWords.ts).
+  desktop: { get label() { return ThisComputer(); }, get icon() { return isMac() ? 'laptop_mac' : 'computer'; } },
   ci: { label: 'CI', icon: 'cloud' },
   runner: { label: 'Local runner', icon: 'dns' },
 };
@@ -42,7 +44,7 @@ export function reasonTitle(reason: FailReason | undefined, step: Pick<Step, 'ta
     case 'noChange': return 'Nothing happened after this step';
     case 'timeout': return 'Waited too long for the page';
     case 'healingUnavailable': return "The AI assistant isn't downloaded, so this couldn't be fixed automatically";
-    case 'secretMissing': return 'Saved secret is missing on this Mac';
+    case 'secretMissing': return osText('Saved secret is missing on this Mac');
     case 'setUpFailed': return "The set-up call didn't work";
     case 'stopped': return 'You stopped the run';
     case 'fileMissing': return "The file to upload isn't in the tests folder";
@@ -82,7 +84,7 @@ export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'tar
 /** What to try, under the side-by-side screenshots. */
 export function reasonAdvice(reason: FailReason | undefined): string {
   switch (reason) {
-    case 'secretMissing': return 'Saved secrets stay on each Mac. Add it here once and every test that uses it can run.';
+    case 'secretMissing': return osText('Saved secrets stay on each Mac. Add it here once and every test that uses it can run.');
     case 'healingUnavailable': return 'Without the AI assistant, a moved button fails the run. Re-record the step, or download the assistant.';
     case 'setUpFailed': return 'Check that the set-up address works and that the app is running, then run again.';
     case 'timeout': return 'If the app was slow this time, run again. If it always takes longer now, re-record this step.';

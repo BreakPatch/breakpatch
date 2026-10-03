@@ -6,6 +6,7 @@ import type { FileChoice, FileChooserEvent } from '../../engine';
 import { Button, Dialog, Icon } from '../../components/ui';
 import { addOwnFile, accepts, ownFiles, samplesFor } from '../../lib/testFiles';
 import { join } from '../../data/local/storage';
+import { osText } from '../../lib/osWords';
 
 export function FileChooserDialog({ ask, dir, onChoose }: {
   ask: FileChooserEvent | null;
@@ -43,13 +44,13 @@ export function FileChooserDialog({ ask, dir, onChoose }: {
         ))}
         {dir && <>
           <div className="fc-head">Your files</div>
-          {sorted.length === 0 && <div className="fc-empty">None yet. Files you choose from this Mac are kept in the tests folder, in files.</div>}
+          {sorted.length === 0 && <div className="fc-empty">{osText('None yet. Files you choose from this Mac are kept in the tests folder, in files.')}</div>}
           {sorted.map(n => (
             <button key={n} type="button" role="listitem" className="fc-item" onClick={() => onChoose({ file: `files/${n}`, path: join(dir, n) })}>
               <Icon name="description" size={18} />{n}
             </button>
           ))}
-          <button type="button" className="fc-item fc-mac" onClick={() => void fromMac()}><Icon name="folder_open" size={18} />Choose from this Mac…</button>
+          <button type="button" className="fc-item fc-mac" onClick={() => void fromMac()}><Icon name="folder_open" size={18} />{osText('Choose from this Mac…')}</button>
         </>}
         {error && <div className="fc-error" role="alert">{error}</div>}
       </div>

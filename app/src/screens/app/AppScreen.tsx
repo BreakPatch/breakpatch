@@ -12,6 +12,7 @@ import { RunsTab } from './RunsTab';
 import { SharedTab } from './SharedTab';
 import { TestsTab } from './TestsTab';
 import './app.css';
+import { ariaShortcut, osText } from '../../lib/osWords';
 
 type Tab = 'tests' | 'shared' | 'runs';
 const TABS: Tab[] = ['tests', 'shared', 'runs'];
@@ -70,10 +71,10 @@ export default function AppScreen() {
   return (
     <AppFrame back="/" crumb={app ? hostOf(app.baseUrl) : <Skeleton w={110} h={10} />} title={app ? name : <Skeleton w={90} h={14} style={{ marginTop: 3 }} />}
       actions={tab === 'shared' ? (
-        <Button kind="primary" icon="add" aria-keyshortcuts="Meta+N" onClick={newGroup} disabled={!app}>New shared steps</Button>
+        <Button kind="primary" icon="add" aria-keyshortcuts={ariaShortcut('N')} onClick={newGroup} disabled={!app}>New shared steps</Button>
       ) : <>
         <Button icon="playlist_play" onClick={runAll} disabled={!tests.data?.length}>Run all</Button>
-        <Button kind="primary" icon="add" aria-keyshortcuts="Meta+N" onClick={() => setNewOpen(true)} disabled={!app}>New test</Button>
+        <Button kind="primary" icon="add" aria-keyshortcuts={ariaShortcut('N')} onClick={() => setNewOpen(true)} disabled={!app}>New test</Button>
       </>}>
       <Tabs<Tab> label={`${name} sections`} value={tab} onChange={setTab} items={[
         { value: 'tests', label: `Tests${count(tests.data?.length)}` },
@@ -94,7 +95,7 @@ export default function AppScreen() {
                   action={<Button kind="primary" size="lg" icon="add" onClick={newGroup}>New shared steps</Button>} />
           ) : (
             runs.data!.length ? <RunsTab app={app} runs={runs.data!} more={runs.hasMore ? runs.more : undefined} />
-              : <EmptyState icon="play_circle" title="Nothing has run yet." text="Runs from your Mac, the local runner and CI all show up here."
+              : <EmptyState icon="play_circle" title="Nothing has run yet." text={osText('Runs from your Mac, the local runner and CI all show up here.')}
                   action={<div className="row" style={{ gap: 10, marginTop: 4 }}>
                     <Button kind="primary" size="lg" icon="playlist_play" onClick={runAll} disabled={!tests.data?.length}>Run all tests</Button>
                     <Button size="lg" onClick={() => setTab('tests')}>Open Tests</Button>

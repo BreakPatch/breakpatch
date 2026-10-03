@@ -58,7 +58,8 @@ fn spawn_caffeinate() -> Result<Option<std::process::Child>, String> {
     Ok(None)
 }
 
-/// Installed memory in whole GB (16 GB Mac → 16). 0 if unknown.
+/// Installed memory in whole GB (16 GB Mac → 16): `hw.memsize` on macOS, `/proc/meminfo` on
+/// Linux, `GlobalMemoryStatusEx` on Windows. 0 if unknown.
 pub fn memory_gb() -> u32 {
     let bytes = memory_bytes().unwrap_or(0);
     ((bytes as f64) / (1u64 << 30) as f64).round() as u32
@@ -80,7 +81,17 @@ fn memory_bytes() -> Option<u64> {
     parse_meminfo(&std::fs::read_to_string("/proc/meminfo").ok()?)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(windows)]
+fn memory_bytes() -> Option<u64> {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    // SAFETY: MEMORYSTATUSEX is plain data; dwLength must be set before the call.
+    let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+    status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+    // SAFETY: `status` is a valid, sized MEMORYSTATUSEX.
+    (unsafe { GlobalMemoryStatusEx(&mut status) } != 0).then_some(status.ullTotalPhys)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 fn memory_bytes() -> Option<u64> {
     None
 }
@@ -212,7 +223,7 @@ mod tests {
 
     #[test]
     fn memory_is_reported_here() {
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
         assert!(memory_gb() > 0);
     }
 

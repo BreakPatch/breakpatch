@@ -14,6 +14,7 @@ import { countUsage } from '../data/countUsage';
 import { addRecentFolder } from '../lib/recentFolders';
 import { useSystem } from './system';
 import { connections, folderConnection, useConnections, workspaceConnection, type Connection } from './connections';
+import { osText } from '../lib/osWords';
 
 export type Theme = 'dark' | 'light' | 'system';
 export type SetupTask = 'browser' | 'mac' | 'model';
@@ -76,7 +77,7 @@ interface SessionState {
 
 const KEY = 'breakpatch.session.v1';
 interface Saved { workspace: Workspace | null; local?: LocalFolder | null; setupDone: boolean; prefs: Prefs }
-const DEFAULT_PREFS: Prefs = { theme: 'dark', autoFix: true, failOnFix: false, allowSystemDifferences: true, runnerMode: false, runnerName: 'QA Mac mini' };
+const DEFAULT_PREFS: Prefs = { theme: 'dark', autoFix: true, failOnFix: false, allowSystemDifferences: true, runnerMode: false, runnerName: osText('QA Mac mini') };
 
 function load(): Saved {
   try {
@@ -99,7 +100,7 @@ export async function makeBackend(ws: Workspace): Promise<Backend> {
     const signedIn = q.has('signedin') || edition.name === 'community';
     return new DemoBackend({ empty: q.has('empty'), signedIn, delayMs }, ws);
   }
-  if (!edition.openWorkspace) throw new Error('This edition of Breakpatch opens tests from a folder on this Mac, not a team workspace.');
+  if (!edition.openWorkspace) throw new Error(osText('This edition of Breakpatch opens tests from a folder on this Mac, not a team workspace.'));
   return edition.openWorkspace(ws);
 }
 

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$LOCALDATA/Breakpatch/screenshots/**"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "targets": [
+      "nsis"
+    ],
+    "shortDescription": "Record and replay web UI tests on your PC",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": "(?:(?:(?:mailto:\\w+)|(?:tel:\\w+)|(?:https?://\\w+)).+|ms-settings:notifications)"
+    }
+  }
+}

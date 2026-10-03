@@ -8,6 +8,7 @@ import { preorder, rowRefs } from '../run/resolve';
 import { reasonText, reasonTitle, targetName } from '../run/reasons';
 import { systemNote } from './reportData';
 import { CAUSE_TEXT, SUGGESTION_TEXT } from '../../lib/explain';
+import { osText } from '../../lib/osWords';
 
 export interface IssueInput {
   run: Run;
@@ -156,7 +157,7 @@ export function issueContent(i: IssueInput): IssueContent {
       [t(`App: ${appName}`)],
       ...(test?.startUrl ? [[t(`Start address: ${test.startUrl}`)]] : []),
       [t(`Test: ${run.testName}, version ${run.testVersion}`)],
-      [t(`Run by: ${runBy(run)}, ${SOURCE[run.source]} (${WHERE[run.source].label}), on ${run.machine}`)],
+      [t(`Run by: ${runBy(run)}, ${osText(SOURCE[run.source])} (${WHERE[run.source].label}), on ${run.machine}`)],
       [t(`When: ${formatDateTime(run.startedAt)}`)],
       [t(`Run ID: ${run.id}`)],
       ...(step.target ? [[t(`What to look for: ${step.target}`)]] : []),

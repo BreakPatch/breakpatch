@@ -5,6 +5,7 @@ import { useSession } from '../../state/session';
 import { useSystem } from '../../state/system';
 import { checkForUpdates, restartToUpdate } from '../../lib/updates';
 import './systemStates.css';
+import { osText } from '../../lib/osWords';
 
 /** One banner under the title bar; editions reuse it (Team: the licence banner). */
 export function SysBanner({ tone, icon, title, text, actions }: { tone: 'accent' | 'fixed'; icon: string; title: ReactNode; text: ReactNode; actions: ReactNode }) {
@@ -67,7 +68,7 @@ export function OfflineCards() {
     <div className="sys-offline-cards">
       <div className="sys-offline-card">
         <div className="sys-offline-head"><Icon name="check_circle" style={{ color: 'var(--passed)' }} />Still works</div>
-        <div className="sys-offline-text">Running tests saved on this Mac<br />Recording new steps<br />The AI assistant (it runs on this Mac)</div>
+        <div className="sys-offline-text">{osText('Running tests saved on this Mac')}<br />Recording new steps<br />{osText('The AI assistant (it runs on this Mac)')}</div>
       </div>
       <div className="sys-offline-card">
         <div className="sys-offline-head"><Icon name="schedule" style={{ color: 'var(--fixed)' }} />Waits until you're back</div>

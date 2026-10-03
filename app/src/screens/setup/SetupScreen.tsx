@@ -12,6 +12,7 @@ import { ROWS, SetupRunner, type Row, type RowKey, type SetupSnapshot } from './
 import './setup.css';
 import { useSystem } from '../../state/system';
 import { startingText } from '../../components/shell/EngineStarting';
+import { Computer, osText, ThisComputer } from '../../lib/osWords';
 
 const NAMES: Record<RowKey, string> = { browser: 'Installing the test browser', mac: 'Checking this Mac', model: 'Downloading the AI assistant' };
 const LOOK: Record<TaskState, { icon: string; word: string; cls: string }> = {
@@ -76,28 +77,28 @@ export default function SetupScreen() {
     // Until the engine first answers, the first row says what is going on instead of sitting at 0%.
     if (!engineReady && k === ROWS[0] && r.state !== 'done') return startingText(firstStart);
     if (r.state !== 'done') return undefined;
-    if (k === 'mac' && snap.info) return `This Mac has ${snap.info.memoryGb} GB of memory, so you get the ${modelLabel} AI assistant${snap.modelBytes ? ` (${size(snap.modelBytes)})` : ''}.`;
+    if (k === 'mac' && snap.info) return `${ThisComputer()} has ${snap.info.memoryGb} GB of memory, so you get the ${modelLabel} AI assistant${snap.modelBytes ? ` (${size(snap.modelBytes)})` : ''}.`;
     if (k === 'model' && snap.modelBytes) return `${size(snap.modelBytes)}, checked and ready.`;
     return undefined;
   };
 
   let heading: string, lede: string, foot = '';
-  if (failed) { heading = "Setup couldn't finish"; lede = FAILED_LEDE[failed]; foot = 'Still stuck? Send the details to a developer.'; }
+  if (failed) { heading = "Setup couldn't finish"; lede = osText(FAILED_LEDE[failed]); foot = 'Still stuck? Send the details to a developer.'; }
   else if (paused) {
     const r = rows[paused];
     const at = r.doneBytes ? (r.totalBytes && r.totalBytes >= 1e9 ? `${(r.doneBytes / 1e9).toFixed(1)} GB` : size(r.doneBytes)) : null;
     heading = 'Setup paused';
     lede = at ? `The download stopped at ${at}. Nothing's lost.` : "The download stopped. Nothing's lost.";
     foot = at ? `Continues from ${at}, not from the start.` : 'Continues where it stopped, not from the start.';
-  } else if (ready) { heading = "You're set up."; lede = "The browser and AI assistant are on this Mac. You won't see this again."; }
-  else { heading = 'Getting this Mac ready'; lede = 'Takes about 5 minutes on office Wi-Fi. You can leave it running.'; foot = 'Safe to close. It picks up where it left off.'; }
+  } else if (ready) { heading = "You're set up."; lede = osText("The browser and AI assistant are on this Mac. You won't see this again."); }
+  else { heading = osText('Getting this Mac ready'); lede = 'Takes about 5 minutes on office Wi-Fi. You can leave it running.'; foot = 'Safe to close. It picks up where it left off.'; }
 
   const details = failed ? [
     `Breakpatch ${appVersion()} setup`,
-    `Task: ${NAMES[failed]}`,
+    `Task: ${osText(NAMES[failed])}`,
     `Reason: ${rows[failed].reason ?? ''}`,
     rows[failed].details,
-    snap.info && `Mac: ${snap.info.chip}, ${snap.info.memoryGb} GB, ${snap.info.os}, engine ${snap.info.engineVersion}`,
+    snap.info && `${Computer()}: ${snap.info.chip}, ${snap.info.memoryGb} GB, ${snap.info.os}, engine ${snap.info.engineVersion}`,
     snap.model && `AI assistant: ${snap.model.repo}@${snap.model.revision}`,
   ].filter(Boolean).join('\n') : '';
 
@@ -124,7 +125,7 @@ export default function SetupScreen() {
             <li key={k} className={'su-row ' + look.cls}>
               <Icon name={look.icon} className="su-icon" label={look.word || 'Working'} />
               <div className="grow col" style={{ gap: 6 }}>
-                <div className="su-top"><div className="su-name">{NAMES[k]}</div>{word && <div className="su-state">{word}</div>}</div>
+                <div className="su-top"><div className="su-name">{osText(NAMES[k])}</div>{word && <div className="su-state">{word}</div>}</div>
                 {n && <div className="su-note">{n}</div>}
                 {withBar && (
                   <>

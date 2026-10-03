@@ -8,6 +8,7 @@ import { edition } from '../../../edition';
 import { pendingLine, usage, type UsageSettings } from '../../../lib/usage';
 import { openExternal } from '../../../platform';
 import { Section } from './common';
+import { osText } from '../../../lib/osWords';
 
 export const PRIVACY_DOCS = 'https://breakpatch.dev/docs/#privacy';
 
@@ -30,7 +31,7 @@ export function PrivacySection() {
           <div className="grow col" style={{ gap: 3 }}>
             <div className="set-toggle-t">Share anonymous usage counts</div>
             <div className="set-toggle-d">
-              {s?.turnedOffByEnv ? 'Off: BREAKPATCH_NO_USAGE is set on this Mac.' : 'Once a day while you use Breakpatch. Turning it off stops it at once and drops what hasn’t been sent.'}
+              {s?.turnedOffByEnv ? osText('Off: BREAKPATCH_NO_USAGE is set on this Mac.') : 'Once a day while you use Breakpatch. Turning it off stops it at once and drops what hasn’t been sent.'}
             </div>
           </div>
           <Switch checked={!!s?.enabled} disabled={!s || busy || s.turnedOffByEnv} onChange={v => void toggle(v)} label="Share anonymous usage counts" />
@@ -45,12 +46,12 @@ export function PrivacySection() {
           <ul className="set-privacy-list">
             <li>How many tests were created, and how many runs {community ? 'there were' : 'by hand, by schedules, on the local runner and in CI'}, passed and failed.</li>
             {community
-              ? <li>Whether it’s the first time today, this week or this month that Breakpatch on this Mac has sent them, and whether it’s the first time ever. That’s how active Macs are counted without any ID.</li>
+              ? <li>{osText('Whether it’s the first time today, this week or this month that Breakpatch on this Mac has sent them, and whether it’s the first time ever. That’s how active Macs are counted without any ID.')}</li>
               : <li>On how many days Breakpatch was used.</li>}
             <li>{community ? 'The app version.' : 'Nothing else: the licence check already knows the licence and seat.'}</li>
           </ul>
           <strong>Never sent</strong>
-          <p className="set-note">Test names, addresses, steps, screenshots, saved secrets, your name or email, or any ID for you or this Mac{community ? '. Your IP address is only used to limit how often a Mac can send, and isn’t kept.' : '.'}</p>
+          <p className="set-note">{osText('Test names, addresses, steps, screenshots, saved secrets, your name or email, or any ID for you or this Mac')}{community ? osText('. Your IP address is only used to limit how often a Mac can send, and isn’t kept.') : '.'}</p>
         </div>
       </div>
 

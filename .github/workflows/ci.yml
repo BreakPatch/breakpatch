@@ -185,6 +185,49 @@ jobs:
           cargo llvm-cov --locked --json --summary-only --output-path "$RUNNER_TEMP/llvm-cov.json"
           echo "coverage=$(jq '.data[0].totals.lines.percent * 10 | round / 10' "$RUNNER_TEMP/llvm-cov.json")" >> "$GITHUB_OUTPUT"
 
+  # The shell's Windows and Linux code (plan P3.3, P3.4), on Ubuntu only: clippy for the Windows
+  # target through MinGW (a compile check, nothing runs), and the saved-secrets store against a
+  # real Secret Service (GNOME Keyring on a private session bus), then with none at all. No app
+  # is built or released for either system here.
+  shell-platforms:
+    name: Tauri shell (Windows target clippy, Linux keyring)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app/src-tauri
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: WebKit, system libraries, MinGW and GNOME Keyring
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
+            build-essential patchelf gcc-mingw-w64-x86-64 gnome-keyring dbus-daemon
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master, 2026-09
+        with:
+          toolchain: 1.98.1
+          targets: x86_64-pc-windows-gnu
+          components: clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: app/src-tauri
+      - name: Placeholder engine sidecars
+        run: |
+          sh ../scripts/dev-sidecar.sh
+          cp binaries/breakpatch-engine-x86_64-unknown-linux-gnu binaries/breakpatch-engine-x86_64-pc-windows-gnu.exe
+      - name: cargo clippy (Windows target)
+        run: cargo clippy --locked --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+      - name: Saved secrets in GNOME Keyring, and a plain error without a keyring
+        run: |
+          dbus-run-session -- sh -c 'echo ci | gnome-keyring-daemon --unlock --components=secrets --daemonize >/dev/null && cargo test --locked real_keyring -- --ignored'
+          env -u DBUS_SESSION_BUS_ADDRESS cargo test --locked no_keyring_message -- --ignored
+
   release-build:
     name: Community release build (scripts/build-release.sh, Linux, no bundle)
     runs-on: ubuntu-24.04

@@ -4,6 +4,7 @@ import { Button, Disc, Icon, Skeleton, StatusPill, useToast } from '../../../com
 import { getEngine, MODELS, type SystemInfo } from '../../../engine';
 import { useSession } from '../../../state/session';
 import { Confirm, Fact, Section, gb } from './common';
+import { osText, thisComputer, ThisComputer } from '../../../lib/osWords';
 
 export function useSystemInfo(): SystemInfo | null {
   const [info, setInfo] = useState<SystemInfo | null>(null);
@@ -49,23 +50,23 @@ export function AiSection() {
         <div className="set-facts">
           <Fact label="Size" value={info ? modelSize(info) : <Skeleton w={70} />} />
           <Fact label="On disk" value={info ? (installed ? size : 'Not downloaded') : <Skeleton w={60} />} />
-          <Fact label="This Mac" value={info ? `${info.memoryGb} GB memory` : <Skeleton w={100} />} />
+          <Fact label={ThisComputer()} value={info ? `${info.memoryGb} GB memory` : <Skeleton w={100} />} />
         </div>
       </div>
 
       <div className="set-info">
         <Icon name="info" />
-        <div className="grow">The built-in assistant works well for almost every app.{runner ? ' A local runner Mac with 32 GB of memory or more can also download a larger one, in Settings → Local runner.' : ''} Bringing your own model isn't available yet.</div>
+        <div className="grow">The built-in assistant works well for almost every app.{runner ? osText(' A local runner Mac with 32 GB of memory or more can also download a larger one, in Settings → Local runner.') : ''} Bringing your own model isn't available yet.</div>
       </div>
 
       <div className="col" style={{ gap: 8 }}>
-        <div><Button kind="danger" icon="delete" disabled={!installed} onClick={() => setConfirm(true)}>Remove from this Mac</Button></div>
+        <div><Button kind="danger" icon="delete" disabled={!installed} onClick={() => setConfirm(true)}>{osText('Remove from this Mac')}</Button></div>
         <p className="set-note">Frees {size}. You won't be able to record tests{fixing ? ' or fix moved buttons' : ''} until you download it again.</p>
       </div>
 
       <Confirm open={confirm} onClose={() => setConfirm(false)} icon="delete"
         title="Remove the AI assistant?" confirm="Remove"
-        text={<>Frees {size} on this Mac. Recording is blocked until you download it again, so setup opens straight after.</>}
+        text={<>Frees {size} on {thisComputer()}. Recording is blocked until you download it again, so setup opens straight after.</>}
         onConfirm={remove} />
     </Section>
   );
