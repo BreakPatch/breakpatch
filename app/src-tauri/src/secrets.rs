@@ -765,8 +765,13 @@ mod split_tests {
 }
 
 /// The real Secret Service on Linux: needs a session bus with an unlocked keyring, e.g.
-/// `dbus-run-session -- sh -c 'echo pw | gnome-keyring-daemon --unlock --components=secrets; cargo test real_keyring -- --ignored'`.
-/// With no Secret Service at all (`env -u DBUS_SESSION_BUS_ADDRESS`), `no_keyring_message` passes.
+/// `dbus-run-session -- sh -c 'echo pw | gnome-keyring-daemon --unlock --components=secrets; cargo test real_keyring -- --ignored'`
+/// (`--unlock` creates the `login` keyring, the default collection, when there's none).
+///
+/// `no_keyring_message` needs no session bus at all. Unsetting `DBUS_SESSION_BUS_ADDRESS` isn't
+/// enough: zbus then tries `$XDG_RUNTIME_DIR/bus`, and `/run/user/<uid>/bus` without that, where a
+/// desktop or a CI runner has a bus that starts GNOME Keyring when asked. Point it at nothing:
+/// `DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent cargo test no_keyring_message -- --ignored`.
 #[cfg(all(test, target_os = "linux"))]
 mod keyring_tests {
     use super::{KeyringStore, SecretStore, NO_KEYRING};
@@ -776,6 +781,12 @@ mod keyring_tests {
     #[test]
     #[ignore = "needs an unlocked Secret Service"]
     fn real_keyring_round_trip() {
+        // The keyring crate first, for what the Secret Service said: the store turns any refusal
+        // into NO_KEYRING.
+        let probe = keyring::Entry::new(TEST_SERVICE, "PROBE").expect("an entry");
+        probe.set_password("p").unwrap_or_else(|e| panic!("the Secret Service refused a new item: {e:?}"));
+        probe.delete_credential().unwrap_or_else(|e| panic!("the Secret Service refused a delete: {e:?}"));
+
         let store = KeyringStore::new(TEST_SERVICE);
         let long = "s3cr3t-ñ-".repeat(1000);
         store.set("ROUND_TRIP", &long).unwrap();
@@ -799,8 +810,17 @@ mod keyring_tests {
     #[test]
     #[ignore = "needs no Secret Service on the session bus"]
     fn no_keyring_message() {
+        let bus = std::env::var("DBUS_SESSION_BUS_ADDRESS")
+            .unwrap_or_else(|_| "unset, so zbus tries $XDG_RUNTIME_DIR/bus".into());
         let store = KeyringStore::new(TEST_SERVICE);
-        assert_eq!(store.get("ANY").unwrap_err(), NO_KEYRING);
+        // A get first: if a Secret Service answers after all, nothing is written to it.
+        match store.get("ANY") {
+            Err(e) => assert_eq!(e, NO_KEYRING),
+            Ok(v) => panic!(
+                "a Secret Service answered on the session bus ({bus}) and gave {v:?}: run with \
+                 DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent"
+            ),
+        }
         assert_eq!(store.set("ANY", "v").unwrap_err(), NO_KEYRING);
     }
 }

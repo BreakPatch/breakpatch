@@ -223,10 +223,23 @@ jobs:
           cp binaries/breakpatch-engine-x86_64-unknown-linux-gnu binaries/breakpatch-engine-x86_64-pc-windows-gnu.exe
       - name: cargo clippy (Windows target)
         run: cargo clippy --locked --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+      # The runner has a user session bus at /run/user/<uid>/bus that starts GNOME Keyring when
+      # asked, and zbus falls back to it (and to $XDG_RUNTIME_DIR/bus) when
+      # DBUS_SESSION_BUS_ADDRESS is unset, so "no keyring" points the address at nothing. The real
+      # keyring gets a private bus, runtime dir and data dir, so `--unlock` makes a new `login`
+      # keyring, the default collection. A failing test's panic becomes an annotation.
       - name: Saved secrets in GNOME Keyring, and a plain error without a keyring
         run: |
-          dbus-run-session -- sh -c 'echo ci | gnome-keyring-daemon --unlock --components=secrets --daemonize >/dev/null && cargo test --locked real_keyring -- --ignored'
-          env -u DBUS_SESSION_BUS_ADDRESS cargo test --locked no_keyring_message -- --ignored
+          annotate=../../.github/scripts/cargo-test-annotate.sh
+          kr="$RUNNER_TEMP/keyring"
+          mkdir -p "$kr/run" "$kr/data" && chmod 700 "$kr/run"
+          # shellcheck disable=SC2016   # $0 is for the inner sh: the annotate script
+          XDG_RUNTIME_DIR="$kr/run" XDG_DATA_HOME="$kr/data" dbus-run-session -- sh -c \
+            'echo ci | gnome-keyring-daemon --unlock --components=secrets --daemonize >/dev/null || { echo "::error::gnome-keyring-daemon --unlock failed"; exit 1; }
+               exec sh "$0" cargo test --locked real_keyring -- --ignored' \
+            "$annotate"
+          DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNNER_TEMP/no-session-bus" XDG_RUNTIME_DIR="$RUNNER_TEMP/no-runtime-dir" \
+            sh "$annotate" cargo test --locked no_keyring_message -- --ignored
 
   release-build:
     name: Community release build (scripts/build-release.sh, Linux, no bundle)
