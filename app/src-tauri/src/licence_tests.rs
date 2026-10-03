@@ -1325,3 +1325,21 @@ async fn a_runner_or_ci_token_typed_as_a_licence_key_says_which_it_is_and_is_nev
     assert_eq!(machine_secret("BP-2HC6-FWG8-CR0K-VBDB"), None);
     assert_eq!(not_a_licence_key(&pass), None);
 }
+
+/// The BPM1-/BPC1- cases the Team app (lib/secretShapes.ts) and breakpatch-ci (secret_shapes.py)
+/// check too, from a copy of this file in the Team repo (fixtures/secret-shapes-v1.json).
+#[test]
+fn machine_secrets_are_told_apart_as_the_team_app_and_breakpatch_ci_do() {
+    let v: serde_json::Value = serde_json::from_str(include_str!("testdata/secret-shapes-v1.json")).unwrap();
+    let cases = v["cases"].as_array().unwrap();
+    assert!(cases.len() > 10);
+    for c in cases {
+        let want = match c["shape"].as_str().unwrap() {
+            "machinePass" => MachineSecret::MachinePass,
+            "machineToken" => MachineSecret::RunnerToken,
+            "ciToken" => MachineSecret::CiToken,
+            other => panic!("unknown shape {other}"),
+        };
+        assert_eq!(machine_secret(c["text"].as_str().unwrap()), Some(want), "{}", c["why"]);
+    }
+}

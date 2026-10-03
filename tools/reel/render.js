@@ -29,7 +29,7 @@ const FPS = 30; const args = process.argv.slice(2);
     await Promise.all(pages.map(async p => {
       while (true) {
         const f = next++; if (f >= total) break;
-        await p.evaluate(f => draw(f / 30), f);
+        await p.evaluate(([f, fps]) => draw(f / fps), [f, FPS]);
         await p.screenshot({ path: path.join(outDir, `f${String(f).padStart(4,'0')}.png`) });
         if (f % 60 === 0) console.log('frame', f, ((Date.now()-t0)/1000).toFixed(0)+'s');
       }
