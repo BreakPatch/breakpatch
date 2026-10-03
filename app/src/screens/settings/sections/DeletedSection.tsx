@@ -11,7 +11,7 @@ import { Confirm, Section } from './common';
 
 const KIND: Record<DeletedKind, { icon: string; word: string }> = {
   app: { icon: 'language', word: 'App' },
-  test: { icon: 'radio_button_checked', word: 'Test' },
+  test: { icon: 'checklist', word: 'Test' },
   group: { icon: 'account_tree', word: 'Shared steps' },
   suite: { icon: 'playlist_play', word: 'Suite' },
 };
@@ -58,11 +58,18 @@ export function DeletedSection() {
 
       <div className="set-list" role="list" aria-label="Recently deleted">
         {!items && [0, 1].map(i => <div key={i} className="set-del"><Skeleton w={19} h={19} r={10} /><div className="grow col" style={{ gap: 6 }}><Skeleton w={200} /><Skeleton w={260} h={10} /></div></div>)}
-        {items?.length === 0 && <div className="set-del"><span className="set-del-empty">Nothing deleted in the last {KEEP_DELETED_DAYS} days.</span></div>}
+        {items?.length === 0 && (
+          <div className="set-del-none">
+            <Icon name="delete" />
+            <div className="set-del-none-title">Nothing deleted in the last {KEEP_DELETED_DAYS} days.</div>
+            <div className="set-del-none-text">Anything you delete waits here, so you can put it back.</div>
+          </div>
+        )}
         {items?.map(i => {
           const k = KIND[i.kind];
           const allowed = canManageDeleted(i, role, user?.uid);
           const left = daysLeft(i.deletedAt);
+          // Said in the row itself, not only on hover, since the buttons are off.
           const why = allowed ? undefined : 'Only admins can restore this';
           return (
             <div key={itemKey(i)} className="set-del" role="listitem">
@@ -74,9 +81,10 @@ export function DeletedSection() {
                     `Deleted ${formatDateTime(i.deletedAt)}${TEAM ? ` by ${i.deletedBy.name}` : ''}`,
                     left ? `${left} ${left === 1 ? 'day' : 'days'} left` : 'Last day'].join(' · ')}
                 </div>
+                {why && <div className="set-del-why"><Icon name="lock" size={13} />{why}</div>}
               </div>
-              <Button size="sm" icon="restore" busy={busy === itemKey(i)} disabled={!allowed} title={why} onClick={() => void restore(i)}>Restore</Button>
-              <IconButton icon="delete" label={`Delete ${i.name} now`} disabled={!allowed} title={why ?? 'Delete now'} onClick={() => setPurging(i)} />
+              <Button size="sm" icon="restore" busy={busy === itemKey(i)} disabled={!allowed} onClick={() => void restore(i)}>Restore</Button>
+              <IconButton icon="delete" label={`Delete ${i.name} now`} disabled={!allowed} title="Delete now" onClick={() => setPurging(i)} />
             </div>
           );
         })}

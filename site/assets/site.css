@@ -104,11 +104,11 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
 .runs-count b{font-weight:600;color:var(--text2)}
 /* Pre-launch notice: shown only while <html> has data-prelaunch. The Solo "Coming soon" notes
    (.solo-soon) look the same, and show while <html> has no data-solo (below). The Documentation's
-   .soon notes (Team not on sale yet, hosting opens soon) look the same and always show. */
-.prelaunch,.solo-soon{display:none}
-[data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon,.soon{display:flex;align-items:center;gap:8px;margin:0;font-size:0.8438rem;letter-spacing:.01em;color:var(--muted);background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);border-radius:999px;padding:5px 14px;text-align:left}
-.prelaunch .dot,.solo-soon .dot,.soon .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
-.prelaunch a,.solo-soon a,.soon a{font-weight:600}
+   p.soon notes (Team not on sale yet, hosting opens soon) look the same and always show. */
+.prelaunch,.solo-soon,.nav-scrim{display:none}
+[data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon,p.soon{display:flex;align-items:center;gap:8px;margin:0;font-size:0.8438rem;letter-spacing:.01em;color:var(--muted);background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);border-radius:999px;padding:5px 14px;text-align:left}
+.prelaunch .dot,.solo-soon .dot,p.soon .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
+.prelaunch a,.solo-soon a,p.soon a{font-weight:600}
 /* The same switch for a few words inside a sentence, like "(after the public release)". */
 .prelaunch-text{display:none}
 [data-prelaunch] .prelaunch-text{display:inline}
@@ -196,6 +196,10 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 .ai-text li::before{content:"";position:absolute;left:2px;top:.48em;width:9px;height:9px;background:var(--accent);border-radius:5px 1px 5px 5px;transform:rotate(-14deg)}
 .ai-text .more{font-weight:600;font-size:0.9688rem;margin-top:auto}
 .ai-card.wide .ai-text .more{margin-top:0}
+/* A feature that's coming later: text only, quieter than the cards above it. */
+.ai-card.later{display:flex;background:transparent}
+.ai-card.later .ai-text{padding:26px 30px;gap:10px;max-width:760px}
+.ai-card.later h3{font-size:1.25rem}
 .spec-card{grid-template-columns:minmax(0,5fr) minmax(0,7fr)!important;align-items:stretch}
 .spec{margin:0;padding:28px 30px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;background:var(--sunk);border-left:1px solid var(--line);align-content:center}
 .spec div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 14px}
@@ -228,7 +232,8 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 /* With Solo on sale, three plans. :where() keeps it as weak as .compare, so the small-screen rules below still win. */
 :where([data-solo]) .compare{grid-template-columns:repeat(3,minmax(0,1fr))}
 .plan{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:30px 30px 28px;display:flex;flex-direction:column;gap:14px}
-.plan.team{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));box-shadow:0 24px 60px -36px color-mix(in srgb,var(--accent) 60%,transparent)}
+/* Community is the plan to install today, so it carries the emphasis (like pricing's .plan-now). */
+.plan.plan-now{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));box-shadow:0 24px 60px -36px color-mix(in srgb,var(--accent) 60%,transparent)}
 .plan-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .plan h3{margin:0;font-size:1.625rem;letter-spacing:-.015em}
 .plan .who{margin:0;color:var(--muted);font-size:1rem}
@@ -266,7 +271,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 /* The answer emerges from its question (a fade and a 4px drop) and goes back the same way. */
 .faq details::details-content{opacity:0;translate:0 -4px;transition:opacity .2s ease-out,translate .2s ease-out,content-visibility .2s allow-discrete}
 .faq details[open]::details-content{opacity:1;translate:none}
-.faq .a a,.biz a,.prelaunch a,.solo-soon a,.soon a,.lost p a,.foot-small a{text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent);text-underline-offset:3px}
+.faq .a a,.biz a,.prelaunch a,.solo-soon a,p.soon a,.lost p a,.foot-small a{text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent);text-underline-offset:3px}
 .faq .a p{margin:0 0 10px}.faq .a p:last-child{margin:0}
 
 /* Final call to action */
@@ -423,7 +428,10 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .top:not(.has-menu) nav a{padding:12px 0}
   .top.has-menu nav{display:none}
   .has-menu .nav-toggle{display:inline-flex}
-  .top.has-menu.open nav{display:flex;flex-direction:column;gap:0;position:absolute;top:100%;left:0;right:0;padding:4px 16px 12px;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:0 24px 40px -24px rgba(0,0,0,.55)}
+  .top.has-menu.open nav{display:flex;flex-direction:column;gap:0;position:absolute;top:100%;left:0;right:0;padding:4px 16px 12px;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:0 24px 40px -24px rgba(0,0,0,.55);animation:reveal .2s ease-out both}
+  .nav-toggle .i-close,.top.open .nav-toggle .i-menu{display:none}
+  .top.open .nav-toggle .i-close{display:inline}
+  .top.open + .nav-scrim{display:block;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.45);animation:edge .2s ease-out both}
   .top.has-menu.open nav a,.top.has-menu.open nav a.wide{display:flex;align-items:center;min-height:48px;padding:0 4px;font-size:1.0625rem;border-top:1px solid var(--line)}
   .top.has-menu.open nav a:first-child{border-top:0}
   .top.has-menu.open nav a[aria-current]::after{left:4px;right:auto;width:24px;bottom:8px}
@@ -441,14 +449,18 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .install-actions a{display:inline-flex;align-items:center;min-height:44px}
   .toc-mobile a{display:flex;align-items:center;min-height:44px}
   .install-actions .btn{width:100%}
-  [data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon,.soon{border-radius:14px;align-items:flex-start}
-  .prelaunch .dot,.solo-soon .dot,.soon .dot{margin-top:7px}
+  [data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon,p.soon{border-radius:14px;align-items:flex-start}
+  .prelaunch .dot,.solo-soon .dot,p.soon .dot{margin-top:7px}
   .window{border-radius:10px}
   .head p{font-size:1.0625rem}
   .copytext p{font-size:1.0312rem}
   .faq summary{font-size:1.0312rem;padding:16px 48px 16px 18px}
   .faq .a{padding:0 18px 16px}
   .term{font-size:0.75rem;width:92%;margin-top:-24px}
+  /* Wrap rather than cut long lines off at the card's edge. */
+  .term pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px 14px 14px}
+  /* The documentation's closing links are tap-sized. */
+  .foot a{display:inline-flex;align-items:center;min-height:44px}
   .ai-card{border-radius:16px}
   .ai-card.wide .ai-media{padding:14px}
   .ai-text,.ai-card.wide .ai-text{padding:22px 20px 24px}

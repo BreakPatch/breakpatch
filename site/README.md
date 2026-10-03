@@ -59,11 +59,13 @@ At 560 px and narrower, the header's links fold into a Menu button next to Insta
 The pictures in `assets/shots/` are the real app's browser preview, regenerated with one command:
 
 ```sh
-scripts/link-team.sh                                   # the shots show Team features
-/path/to/engine/.venv/bin/python scripts/site-shots.py # all of them; or name some: ... site-shots.py names tests
+scripts/unlink-team.sh                                 # the Community shots: the recorder, the AI settings
+/path/to/engine/.venv/bin/python scripts/site-shots.py # or name some: ... site-shots.py recorder ai
+scripts/link-team.sh                                   # then the Team shots (stop the preview first)
+/path/to/engine/.venv/bin/python scripts/site-shots.py
 ```
 
-It starts `npm run dev` in `app/` if the preview isn't running, opens `?demo&ready&signedin` with the clock fixed, and saves each shot dark and light, at 1x and 2x, as WebP. `recorder-phone` is the home hero on a phone (the steps panel). The crops are listed in `SHOTS` at the top of the script. Each `<picture>` swaps to the light version when the Mac is in light mode. Keep `width` and `height` on every `<img>` matching the file.
+Each run takes the shots of the edition that's linked and lists the ones it left for the other. It starts `npm run dev` in `app/` if the preview isn't running, opens `?demo&ready&signedin` with the clock fixed, and saves each shot dark and light, at 1x and 2x, as WebP. `recorder-phone` is the home hero on a phone (the steps panel). The crops are listed in `SHOTS` at the top of the script. Each `<picture>` swaps to the light version when the Mac is in light mode. Keep `width` and `height` on every `<img>` matching the file.
 
 ## Hosting
 

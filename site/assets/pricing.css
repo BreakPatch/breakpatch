@@ -7,9 +7,9 @@
 /* With Solo on sale (<html data-solo>, assets/paddle-config.js), four cards. :where() keeps these as weak as .plans, so the smaller screens' rules below still win. */
 :where([data-solo]) .plans{grid-template-columns:1fr 1.3fr 1fr 1fr}
 .plans .edition h2{margin:0;font-size:1.5rem;letter-spacing:-.01em}
-/* Community is the plan on sale now; Team and Business (.soon) are coming later, with no price yet. */
+/* Community is the plan on sale now; Team and Business (.plan-soon) are coming later, with no price yet. */
 .plan-now{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent)}
-.plans .soon .price{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
+.plans .plan-soon .price{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
 .tbd{margin:2px 0 0;font-size:1.25rem;font-weight:700;letter-spacing:-.01em;color:var(--text)}
 .plan-cta{justify-content:center;margin-top:14px;width:100%}
 .amount{margin:6px 0 0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}

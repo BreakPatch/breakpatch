@@ -98,6 +98,9 @@ describe('layout that must not move the page', () => {
     const rules = css('recorder.css');
     expect(rules).toMatch(/\.rec-float \{ position: absolute;[^}]*bottom: calc\(100% \+ 8px\)/);
     expect(rules).toMatch(/\.rec-hint \{[^}]*height: 18px; white-space: nowrap;/);
+    // With no hint the row goes, and the bar keeps its height with the composer in the middle.
+    expect(rules).toMatch(/\.rec-bar \{[^}]*min-height: 91px; justify-content: center;/);
+    expect(rules).toContain('.rec-hint:empty { display: none; }');
   });
 
   it('keeps every action name on one line, next to its icon', () => {
@@ -418,5 +421,28 @@ describe('the describe box is off (DESCRIBE_STEPS)', () => {
     act(() => { r.setAction('write'); });
     expect(screen.getByLabelText('Text to write')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add step' })).toBeInTheDocument();
+  });
+
+  it('says what each gesture needs, keeps Upload file’s words whole above its file choice, and shows each icon once', async () => {
+    const { AddStepBar } = await import('./AddStepBar');
+    let r!: ReturnType<typeof useRecorder>;
+    function Bar() {
+      r = useRecorder({ viewport: vp, onError: vi.fn() });
+      return <AddStepBar rec={r} appId="a" allowGroups onInsertGroup={() => undefined} />;
+    }
+    const { container } = render(<Bar />);
+    // Nothing to type: no field look, and no icon in front repeating the action button's.
+    expect(container.querySelector('.rec-composer.passive .rec-lead')).toBeNull();
+    expect(container.querySelector('.rec-hint')).toBeEmptyDOMElement();
+    for (const [kind, words] of [['doubleClick', 'Click what to double-click on the page.'], ['rightClick', 'Click what to right-click on the page.'], ['longClick', /^Click what to long-click on the page\./]] as const) {
+      act(() => { r.setAction(kind); });
+      expect(screen.getByText(words)).toBeInTheDocument();
+    }
+    act(() => { r.setAction('upload'); });
+    expect(container.querySelector('.rec-hint')).toHaveTextContent('Pick a file, then click the upload field on the page.');
+    expect(container.querySelector('.rec-composer')).not.toHaveTextContent('click the upload field');
+    expect(screen.getByRole('radiogroup', { name: 'Sample file' }).closest('.rec-composer')).not.toBeNull();
+    act(() => { r.setAction('swipe'); });
+    expect(container.querySelector('.rec-hint')).not.toHaveTextContent('swipe');   // not the swipe icon again
   });
 });

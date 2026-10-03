@@ -94,7 +94,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   let hint: ReactNode = describe ? <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click anything on the page to add a step, or describe it below.</> : null;
   const th = toolHint(action, describe);
   if (rr) hint = <><Icon name="replay" size={16} className="rec-hint-icon" /><span className="grow">Do step {numberOf(rec.steps, rr.id)} again on the page{describe ? ', or describe it' : ''}. It replaces "{rr.label}".</span><button type="button" className="rec-hint-link" onClick={rec.cancelRerecord}>Cancel</button></>;
-  else if (th) hint = <><Icon name={actionInfo(action).icon} size={16} className="rec-hint-icon" />{th}</>;
+  // The action's own icon is on its button already: the hint says "on the page" with its own.
+  else if (th) hint = <><Icon name={describe ? actionInfo(action).icon : action === 'upload' ? 'ads_click' : 'drag_pan'} size={16} className="rec-hint-icon" />{th}</>;
   else if (loop) hint = <><Icon name="repeat" size={16} className="rec-hint-icon" />New steps go inside "{loop.label}" until you press Done repeating.</>;
 
   let field: ReactNode;
@@ -133,8 +134,10 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   } else {
     field = !describe && (action === 'swipe' || action === 'scroll')
       ? <span className="rec-inline rec-page-hint">{directionChips()}</span>
+      : !describe && action === 'upload'
+      ? <span className="rec-inline rec-page-hint">{sampleChips()}</span>
       : onPage(action)
-      ? <span className="rec-inline rec-page-hint"><span className="grow">{pageHint(action)}</span>{!describe && action === 'waitUntil' && maxWaitBox()}{!describe && action === 'upload' && sampleChips()}</span>
+      ? <span className="rec-inline rec-page-hint"><span className="grow">{pageHint(action)}</span>{!describe && action === 'waitUntil' && maxWaitBox()}</span>
       : <span className="rec-inline faint">{action === 'drag' ? 'Drag on the page from the start point to the end point, or click one and then the other.' : placeholderFor(action)}</span>;
   }
 
@@ -243,10 +246,12 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
       {rec.secretAsk && rec.ai.state === 'idle' && !rec.busy && <SecretAsk rec={rec} taken={secretNames} />}
       {extra}
       </div>
+      {/* Empty when there's nothing to add; the bar keeps its height either way (recorder.css). */}
       <div className="rec-hint">{hint}</div>
       <div className="rec-composer-wrap">
         <div className={'rec-composer' + (passive ? ' passive' : '')}>
-          <Icon name={leadIcon} size={18} className="rec-lead" />
+          {/* Done on the page: the action's icon is on its button, so no second one in front. */}
+          {!(passive && !describe) && <Icon name={leadIcon} size={18} className="rec-lead" />}
           {field}
           <button ref={actionBtn} type="button" className={'rec-action-btn' + (menu !== 'closed' ? ' open' : '')} aria-haspopup="menu" aria-expanded={menu !== 'closed'}
             onClick={() => setMenu(m => (m === 'closed' ? 'menu' : 'closed'))}>

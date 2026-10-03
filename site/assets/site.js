@@ -20,9 +20,15 @@ if (mainNav) {
   toggle.setAttribute('aria-expanded', 'false');
   toggle.setAttribute('aria-controls', mainNav.id);
   toggle.setAttribute('aria-label', 'Menu');
-  toggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
+  // Three lines for Menu, a cross while it's open (site.css swaps them).
+  toggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-menu" d="M4 7h16M4 12h16M4 17h16"/><path class="i-close" d="M6 6l12 12M18 6L6 18"/></svg>';
   mainNav.before(toggle);
   topBar.classList.add('has-menu');
+  // Dims the page under the open menu; a tap on it closes the menu without pressing what's under it.
+  const scrim = document.createElement('div');
+  scrim.className = 'nav-scrim';
+  scrim.setAttribute('aria-hidden', 'true');
+  topBar.after(scrim);
   const isOpen = () => topBar.classList.contains('open');
   const setOpen = (open, focus) => {
     topBar.classList.toggle('open', open);
@@ -94,17 +100,20 @@ if (navLinks.length) {
 
 // The documentation: highlight the section you're reading in the contents, on the side and in the
 // small-screen menu, whose summary also names it ("Contents · Install").
+// A part's introduction (header.part, such as Team) names the part, so the summary never shows
+// the last section of the part before.
 const links = [...document.querySelectorAll('.toc a, .toc-mobile a')];
 if (links.length) {
   const side = document.querySelector('.toc');
   const now = document.querySelector('.toc-now');
-  spy([...document.querySelectorAll('.content section[id]')], id => {
+  spy([...document.querySelectorAll('.content header.part[id], .content section[id]')], id => {
     links.forEach(l => {
       const on = l.getAttribute('href') === '#' + id;
       l.classList.toggle('active', on);
       if (on) l.setAttribute('aria-current', 'location'); else l.removeAttribute('aria-current');
     });
-    if (now) now.textContent = links.find(l => l.getAttribute('href') === '#' + id)?.textContent || '';
+    const part = document.getElementById(id)?.matches('header.part') && document.querySelector(`#${CSS.escape(id)} .part-title`);
+    if (now) now.textContent = part ? part.textContent : links.find(l => l.getAttribute('href') === '#' + id)?.textContent || '';
     const a = side && side.querySelector(`a[href="#${CSS.escape(id)}"]`);
     if (a && side.offsetParent) {
       const r = a.getBoundingClientRect(), box = side.getBoundingClientRect();

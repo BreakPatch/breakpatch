@@ -3,10 +3,9 @@ import { useMemo, useState, type SyntheticEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Icon, IconButton, Menu, SharedChip, statusInfo, useToast } from '../../components/ui';
 import {
-  ConfirmDialog, FilterChip, RelativeTime, ResultTally, SearchBox, countResults, formatWhen, lastRunStatus, plural,
+  FilterChip, RelativeTime, ResultTally, SearchBox, countResults, formatWhen, lastRunStatus, plural, useMoveToBin,
 } from '../../components/common';
 import { useBackend } from '../../data/hooks';
-import { KEEP_DELETED_DAYS } from '../../data/backend';
 import type { App, Test } from '../../data/types';
 import { useFeature } from '../../edition';
 import { distinct, filterTests, type LastRunFilter, type SharedFilter } from './filters';
@@ -22,10 +21,11 @@ export function TestsTab({ app, tests }: { app: App; tests: Test[] }) {
   const [shared, setShared] = useState<SharedFilter>('all');
   const [lastRun, setLastRun] = useState<LastRunFilter>('all');
   const [createdBy, setCreatedBy] = useState('all');
-  const [deleting, setDeleting] = useState<Test | null>(null);
   const [editing, setEditing] = useState<Test | null>(null);
   const backend = useBackend();
-  const toast = useToast();
+  const moveToBin = useMoveToBin();
+  // Straight to Recently deleted, with Undo in the toast (moveToBin.ts): nothing to confirm.
+  const remove = (t: Test) => void moveToBin({ kind: 'test', id: t.id, appId: app.id }, t.name, () => backend.deleteTest(app.id, t.id), "Couldn't delete the test.");
 
   const creators = useMemo(() => distinct(tests.map(t => t.createdBy), p => p.uid), [tests]);
   const shown = filterTests(tests, { q, shared, lastRun, createdBy });
@@ -50,19 +50,11 @@ export function TestsTab({ app, tests }: { app: App; tests: Test[] }) {
           <div role="columnheader">Name</div>{TEAM && <div role="columnheader">Shared</div>}<div role="columnheader">Last run</div>
           <div role="columnheader">Created</div><div role="columnheader">Last updated</div><div role="columnheader"><span className="sr-only">Actions</span></div>
         </div>
-        {shown.map((t, i) => <TestRow key={t.id} app={app} test={t} index={i} onDelete={() => setDeleting(t)} onDetails={() => setEditing(t)} />)}
+        {shown.map((t, i) => <TestRow key={t.id} app={app} test={t} index={i} onDelete={() => remove(t)} onDetails={() => setEditing(t)} />)}
         {!shown.length && filtered && (
           <div className="app-nomatch">No tests match. <Button kind="link" size="sm" onClick={clear}>Clear filters</Button></div>
         )}
       </div>
-      <ConfirmDialog open={!!deleting} onClose={() => setDeleting(null)} danger confirmLabel="Delete test" title={`Delete "${deleting?.name ?? ''}"?`}
-        onConfirm={async () => {
-          if (!deleting) return;
-          try { await backend.deleteTest(app.id, deleting.id); toast(`${deleting.name} moved to Recently deleted.`); }
-          catch (e) { toast(e instanceof Error ? e.message : "Couldn't delete the test.", { error: true }); }
-        }}>
-        It goes to Recently deleted{TEAM ? ' for everyone, with its version history' : ''}. You can restore it there for {KEEP_DELETED_DAYS} days. Past runs stay in the Runs tab.
-      </ConfirmDialog>
       {editing && <TestDetailsDialog open test={tests.find(t => t.id === editing.id) ?? editing} onClose={() => setEditing(null)} />}
     </>
   );

@@ -6,7 +6,11 @@
 .rec-bar {
   flex: none; position: relative; border-top: 1px solid var(--line); background: var(--surface);
   padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px;
+  /* One height with or without a hint (10 + 18 + 8 + 42 + 12, and the border), so the page never
+     moves; with none, the composer sits in the middle rather than under an empty row. */
+  min-height: 91px; justify-content: center;
 }
+.rec-hint:empty { display: none; }
 .rec-hint { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); height: 18px; white-space: nowrap; overflow: hidden; animation: bpIn 160ms ease-out both; }
 .rec-hint-icon { color: var(--accent); flex: none; }
 .rec-hint .grow { overflow: hidden; text-overflow: ellipsis; }
@@ -35,9 +39,9 @@
   padding: 5px 5px 5px 12px; background: var(--bg); min-height: 42px;
 }
 .rec-composer:focus-within { box-shadow: 0 0 0 3px var(--ring-accent); }
-/* Nothing to type (the step is done on the page): a quiet toolbar, not a text field. The action
-   button keeps its own focus ring. */
-.rec-composer.passive { border-color: var(--line-strong); background: var(--surface); }
+/* Nothing to type (the step is done on the page): a quiet toolbar, not a text field, so no
+   field border or fill. The action button keeps its own focus ring. */
+.rec-composer.passive { border-color: transparent; background: transparent; padding-left: 0; }
 .rec-composer.passive:focus-within { box-shadow: none; }
 .rec-composer.passive .rec-lead { color: var(--text-muted); }
 .rec-page-hint { color: var(--text-muted); gap: 14px; }

@@ -46,6 +46,7 @@ describe('Settings → Recently deleted', () => {
     render(<ToastProvider><DeletedSection /></ToastProvider>);
     const row = await screen.findByRole('listitem');
     await waitFor(() => expect(within(row).getByRole('button', { name: 'Restore' })).toBeDisabled());
-    expect(within(row).getByRole('button', { name: 'Restore' })).toHaveAttribute('title', 'Only admins can restore this');
+    // Said in the row, not only in a tooltip.
+    expect(within(row).getByText('Only admins can restore this')).toBeVisible();
   });
 });
