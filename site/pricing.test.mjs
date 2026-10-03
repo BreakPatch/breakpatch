@@ -124,9 +124,9 @@ const section = (html, marker, close = '</article>') => html.slice(html.indexOf(
 const HOME_PAGE = read('./index.html');
 
 test('Team and Business are coming later: no price, no checkout, and a way to hear when they’re ready', () => {
-  const team = section(HTML, '<article class="edition soon plan-team"');
-  const biz = section(HTML, '<article class="edition soon plan-business"');
-  const homeTeam = section(HOME_PAGE, '<article class="plan team">');
+  const team = section(HTML, '<article class="edition plan-soon plan-team"');
+  const biz = section(HTML, '<article class="edition plan-soon plan-business"');
+  const homeTeam = section(HOME_PAGE, '<article class="plan plan-team">');
   const homeBiz = section(HOME_PAGE, '<p class="biz">', '</p>');
   for (const [name, card, subject] of [['pricing Team', team, 'Team'], ['pricing Business', biz, 'Business'], ['home Team', homeTeam, 'Team'], ['home Business', homeBiz, 'Business']]) {
     assert.ok(card.length > 100, name);
@@ -165,6 +165,16 @@ test('no founding offer anywhere while Team is to be decided', () => {
     assert.doesNotMatch(text, /\$12\b/, name);
   }
   assert.doesNotMatch(TERMS, /\$\d/, 'terms name no amount');
+});
+
+test('Home: Community is the plan to install, highlighted with the main button; Team is not', () => {
+  const page = visible(without(HOME_PAGE, 'solo-only'));
+  const community = section(page, '<article class="plan plan-now">');
+  assert.ok(community.includes('<a class="btn" href="#install">Install Community</a>'));
+  assert.ok(section(page, '<article class="plan plan-team">').includes('class="btn ghost"'));
+  assert.ok(page.indexOf('plan-now') < page.indexOf('plan-team'));
+  assert.ok(SITE_CSS.includes('.plan.plan-now{border-color:'));
+  assert.doesNotMatch(SITE_CSS, /\.plan\.team\b/);
 });
 
 test('Community is the plan on sale now, first and highlighted', () => {
@@ -537,6 +547,13 @@ test('the manual keeps its Solo section, marked Coming soon until Solo is on sal
   const built = MANUAL_PAGE.slice(MANUAL_PAGE.indexOf('<section id="solo"'), MANUAL_PAGE.indexOf('</section>', MANUAL_PAGE.indexOf('<section id="solo"')));
   assert.match(built, /<p class="solo-soon" role="note"><span class="dot" aria-hidden="true"><\/span><span>Coming soon\. Solo isn't on sale yet\./);
   // Shown while <html> has no data-solo, in the pre-launch notes' style.
-  assert.ok(SITE_CSS.includes('[data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon,.soon{display:flex;'));
-  assert.ok(SITE_CSS.includes('.prelaunch,.solo-soon{display:none}'));
+  assert.ok(SITE_CSS.includes('[data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon,p.soon{display:flex;'));
+  assert.ok(SITE_CSS.includes('.prelaunch,.solo-soon,.nav-scrim{display:none}'));
+});
+
+test('the documentation notes (p.soon) and the pricing cards coming later (.plan-soon) keep apart', () => {
+  // The note style is for <p class="soon"> only, so a card can never pick it up.
+  assert.doesNotMatch(SITE_CSS, /(^|[,}\s])\.soon\b/m);
+  assert.doesNotMatch(HTML + HOME_PAGE, /class="(?:[^"]*\s)?soon[\s"]/);
+  assert.ok(PRICING_CSS.includes('.plans .plan-soon .price{'));
 });
