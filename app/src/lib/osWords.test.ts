@@ -44,18 +44,18 @@ describe('osText', () => {
     expect(w[10]).toBe('That’s how active PCs are counted without any ID.');
   });
 
-  it('says computer, keyring and the file manager on Linux, and keeps the Trash', () => {
+  it('says PC, keyring and the file manager on Linux, and keeps the Trash', () => {
     const l = SAMPLES.map(s => osText(s, 'linux'));
-    expect(l[0]).toBe("Passwords and emails that tests type in. Values stay in this computer's keyring and are never uploaded.");
+    expect(l[0]).toBe("Passwords and emails that tests type in. Values stay in this PC's keyring and are never uploaded.");
     expect(l[1]).toBe("Couldn't save to the keyring. Try again.");
-    expect(l[2]).toBe('This computer has 16 GB of memory, so you get the Standard AI assistant.');
-    expect(l[3]).toBe('Your Solo licence is in use on another computer.');
+    expect(l[2]).toBe('This PC has 16 GB of memory, so you get the Standard AI assistant.');
+    expect(l[3]).toBe('Your Solo licence is in use on another PC.');
     expect(l[5]).toBe('Show in folder');
     expect(l[6]).toBe('Breakpatch moved the copy to the Trash. To undo it, use Restore.');
     expect(l[7]).toBe("Linux isn't letting Breakpatch show notifications");
     expect(l[8]).toBe('In your system settings, open Notifications, then Breakpatch, and turn on Allow notifications.');
     expect(l[9]).toBe('Use the page directly, without recording (Ctrl+E)');
-    expect(l[11]).toBe('A local runner computer with 32 GB of memory or more can also download a larger one.');
+    expect(l[11]).toBe('A local runner PC with 32 GB of memory or more can also download a larger one.');
   });
 
   it('leaves no Mac words behind on Windows or Linux', () => {
@@ -66,7 +66,7 @@ describe('osText', () => {
 
   it('names a Mac mini as a plain PC or computer', () => {
     expect(osText('Like "Office Mac mini". Runs show under this name.', 'windows')).toBe('Like "Office PC". Runs show under this name.');
-    expect(osText('Office Mac mini', 'linux')).toBe('Office computer');
+    expect(osText('Office Mac mini', 'linux')).toBe('Office PC');
   });
 
   it('leaves words that only contain "Mac" alone', () => {
@@ -76,10 +76,10 @@ describe('osText', () => {
 
 describe('the helpers', () => {
   it('name this computer, the Trash, the file manager and shortcuts per system', () => {
-    expect([thisComputer('mac'), thisComputer('windows'), thisComputer('linux')]).toEqual(['this Mac', 'this PC', 'this computer']);
-    expect([ThisComputer('mac'), ThisComputer('windows'), ThisComputer('linux')]).toEqual(['This Mac', 'This PC', 'This computer']);
-    expect([computer('mac'), computer('windows'), computer('linux')]).toEqual(['Mac', 'PC', 'computer']);
-    expect(Computer('linux')).toBe('Computer');
+    expect([thisComputer('mac'), thisComputer('windows'), thisComputer('linux')]).toEqual(['this Mac', 'this PC', 'this PC']);
+    expect([ThisComputer('mac'), ThisComputer('windows'), ThisComputer('linux')]).toEqual(['This Mac', 'This PC', 'This PC']);
+    expect([computer('mac'), computer('windows'), computer('linux')]).toEqual(['Mac', 'PC', 'PC']);
+    expect(Computer('linux')).toBe('PC');
     expect([theTrash('mac'), theTrash('windows'), theTrash('linux')]).toEqual(['the Trash', 'the Recycle Bin', 'the Trash']);
     expect([showInFileManager('mac'), showInFileManager('windows'), showInFileManager('linux')])
       .toEqual(['Show in Finder', 'Show in File Explorer', 'Show in folder']);

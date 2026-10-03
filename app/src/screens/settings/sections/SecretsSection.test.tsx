@@ -25,7 +25,7 @@ describe('Settings, Saved secrets', () => {
   it('names the system\'s own store off the Mac', async () => {
     setOsForTests('linux');
     show();
-    expect(await screen.findByText(/Values stay in this computer's keyring/)).toBeTruthy();
+    expect(await screen.findByText(/Values stay in this PC's keyring/)).toBeTruthy();
     cleanup();
     setOsForTests('windows');
     show();

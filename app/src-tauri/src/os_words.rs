@@ -1,6 +1,6 @@
 //! The shell's messages in the words of the computer it runs on, as the app's
 //! `app/src/lib/osWords.ts` does for the screens: messages are written for the Mac, and
-//! [`os_text`] says "this PC" or "this computer", Credential Manager or keyring, File Explorer,
+//! [`os_text`] says "this PC", Credential Manager or keyring, File Explorer,
 //! the Recycle Bin on Windows and Linux. On a Mac it hands back the very text it was given.
 //! The rules are osWords.ts's, in the same order; change the two together.
 
@@ -47,8 +47,8 @@ const WINDOWS: &[(&str, &str)] = &[
 ];
 
 const LINUX: &[(&str, &str)] = &[
-    ("This Mac's Keychain", "This computer's keyring"),
-    ("this Mac's Keychain", "this computer's keyring"),
+    ("This Mac's Keychain", "This PC's keyring"),
+    ("this Mac's Keychain", "this PC's keyring"),
     ("the macOS Keychain", "your keyring"),
     ("the Keychain", "the keyring"),
     ("Keychain", "keyring"),
@@ -59,10 +59,10 @@ const LINUX: &[(&str, &str)] = &[
     ("System Settings", "your system settings"),
     ("macOS", "Linux"),
     ("Apple silicon", "x64"),
-    ("MacBook Pro", "computer"),
-    ("Mac mini", "computer"),
-    ("Macs", "computers"),
-    ("Mac", "computer"),
+    ("MacBook Pro", "PC"),
+    ("Mac mini", "PC"),
+    ("Macs", "PCs"),
+    ("Mac", "PC"),
 ];
 
 /// `text`, written for the Mac, in the words of the computer the shell runs on.
@@ -172,15 +172,15 @@ mod tests {
     }
 
     #[test]
-    fn linux_says_computer_keyring_and_keeps_the_trash() {
+    fn linux_says_pc_keyring_and_keeps_the_trash() {
         let l: Vec<String> = SAMPLES.iter().map(|s| os_text_for(Os::Linux, s).into_owned()).collect();
-        assert_eq!(l[0], "Passwords and emails that tests type in. Values stay in this computer's keyring and are never uploaded.");
+        assert_eq!(l[0], "Passwords and emails that tests type in. Values stay in this PC's keyring and are never uploaded.");
         assert_eq!(l[1], "Couldn't save to the keyring. Try again.");
-        assert_eq!(l[2], "This computer has 16 GB of memory, so you get the Standard AI assistant.");
+        assert_eq!(l[2], "This PC has 16 GB of memory, so you get the Standard AI assistant.");
         assert_eq!(l[5], "Show in folder");
         assert_eq!(l[6], "Breakpatch moved the copy to the Trash. To undo it, use Restore.");
         assert_eq!(l[8], "In your system settings, open Notifications, then Breakpatch, and turn on Allow notifications.");
-        assert_eq!(l[9], "Your seat is already used on too many computers.");
+        assert_eq!(l[9], "Your seat is already used on too many PCs.");
     }
 
     #[test]
@@ -194,7 +194,7 @@ mod tests {
             }
             assert_eq!(os_text_for(os, "MacBook-free machine, MACHINE_KEY, Macro, iMac"), "MacBook-free machine, MACHINE_KEY, Macro, iMac");
         }
-        assert_eq!(os_text_for(Os::Linux, "Office Mac mini"), "Office computer");
+        assert_eq!(os_text_for(Os::Linux, "Office Mac mini"), "Office PC");
         assert_eq!(os_text_for(Os::Windows, "Mac."), "PC.");
     }
 }

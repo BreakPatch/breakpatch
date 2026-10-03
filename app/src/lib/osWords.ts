@@ -1,5 +1,5 @@
 // The words that depend on the computer Breakpatch runs on: "this Mac" is "this PC" on Windows and
-// "this computer" on Linux; Finder, the Keychain, the Trash and ⌘ have their own names there.
+// Linux; Finder, the Keychain, the Trash and ⌘ have their own names there.
 //
 // On a Mac every helper returns exactly the text it was given, so the Mac app reads as it always
 // has. The text in the code is the Mac's; `osText` rewrites it for Windows and Linux.
@@ -60,7 +60,7 @@ const WINDOWS: Rule[] = [
 ];
 const LINUX: Rule[] = [
   ...COMMON_FIRST,
-  [/\b([Tt])his Mac's Keychain\b/g, '$1his computer\'s keyring'],
+  [/\b([Tt])his Mac's Keychain\b/g, '$1his PC\'s keyring'],
   [/\bthe macOS Keychain\b/g, 'your keyring'],
   [/\bthe Keychain\b/g, 'the keyring'],
   [/\bKeychain\b/g, 'keyring'],
@@ -71,11 +71,10 @@ const LINUX: Rule[] = [
   [/\bSystem Settings\b/g, 'your system settings'],
   [/\bmacOS\b/g, 'Linux'],
   [/\bApple silicon\b/g, 'x64'],
-  [/\bMacBook Pro\b/g, 'computer'],
-  [/\bMac mini\b/g, 'computer'],
-  [/\b([Aa]) Mac\b/g, '$1 computer'],
-  [/\bMacs\b/g, 'computers'],
-  [/\bMac\b/g, 'computer'],
+  [/\bMacBook Pro\b/g, 'PC'],
+  [/\bMac mini\b/g, 'PC'],
+  [/\bMacs\b/g, 'PCs'],
+  [/\bMac\b/g, 'PC'],
 ];
 
 /** `text`, written for the Mac, in the words of the computer it runs on. Unchanged on a Mac. */
@@ -86,12 +85,12 @@ export function osText(text: string, os: Os = currentOs()): string {
   return out;
 }
 
-/** "this Mac", "this PC" or "this computer". */
+/** "this Mac" or "this PC". */
 export function thisComputer(os: Os = currentOs()): string { return osText('this Mac', os); }
-/** "This Mac", "This PC" or "This computer". */
+/** "This Mac" or "This PC". */
 export function ThisComputer(os: Os = currentOs()): string { return osText('This Mac', os); }
 
-/** "Mac", "PC" or "computer", as in "Maria's Mac". */
+/** "Mac" or "PC", as in "Maria's Mac". */
 export function computer(os: Os = currentOs()): string { return osText('Mac', os); }
 /** "Mac", "PC" or "Computer", to start a line with. */
 export function Computer(os: Os = currentOs()): string { const w = computer(os); return w[0].toUpperCase() + w.slice(1); }

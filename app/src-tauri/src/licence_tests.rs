@@ -1494,7 +1494,7 @@ mod mac_words_unchanged {
         );
         assert_eq!(
             os_text_for(Os::Linux, solo_words("too_many_devices").unwrap()),
-            "This Solo licence is in use on another computer. Free it at account.breakpatch.dev, then try again."
+            "This Solo licence is in use on another PC. Free it at account.breakpatch.dev, then try again."
         );
     }
 }

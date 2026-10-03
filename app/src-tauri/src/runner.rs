@@ -113,9 +113,9 @@ impl Hold {
             .spawn()
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
-                    "Couldn't keep this computer awake: systemd-inhibit isn't installed. Turn off sleep in your system settings instead.".to_string()
+                    "Couldn't keep this PC awake: systemd-inhibit isn't installed. Turn off sleep in your system settings instead.".to_string()
                 } else {
-                    format!("Couldn't keep this computer awake: {e}")
+                    format!("Couldn't keep this PC awake: {e}")
                 }
             })?;
         // systemd-inhibit gives up at once when there's no logind or it may not take the lock:
@@ -129,7 +129,7 @@ impl Hold {
             }
             let why = why.trim();
             return Err(format!(
-                "Couldn't keep this computer awake: systemd-inhibit stopped ({}). Turn off sleep in your system settings instead.",
+                "Couldn't keep this PC awake: systemd-inhibit stopped ({}). Turn off sleep in your system settings instead.",
                 if why.is_empty() { status.to_string() } else { why.to_string() }
             ));
         }
@@ -623,7 +623,7 @@ mod tests {
     fn linux_keep_awake_says_why_it_failed() {
         let k = KeepAwake::default();
         let e = k.set(true).unwrap_err();
-        assert!(e.starts_with("Couldn't keep this computer awake: systemd-inhibit stopped ("), "{e}");
+        assert!(e.starts_with("Couldn't keep this PC awake: systemd-inhibit stopped ("), "{e}");
         assert!(!k.is_on());
     }
 

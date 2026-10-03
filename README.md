@@ -340,8 +340,9 @@ curl -fsSL https://breakpatch.dev/install | BREAKPATCH_GITHUB_TOKEN=<token> BREA
 
 ### Roadmap
 
-What's planned is tracked as
-[GitHub issues with the `roadmap` label](https://github.com/BreakPatch/breakpatch/issues?q=is%3Aissue+label%3Aroadmap).
+What's planned, in order: [the roadmap overview (#48)](https://github.com/BreakPatch/breakpatch/issues/48).
+Every item is a
+[GitHub issue with the `roadmap` label](https://github.com/BreakPatch/breakpatch/issues?q=is%3Aissue+label%3Aroadmap).
 
 ### Contributing
 
