@@ -102,7 +102,8 @@ export function toolHint(k: ActionKind, describe: boolean = DESCRIBE_STEPS): str
   if (!describe && k === 'upload') return pageHint(k);
   switch (k) {
     case 'drag': return 'Drag on the page from the start point to the end point, or click one and then the other.';
-    case 'swipe': case 'scroll': return 'Drag on the page in the direction to move. The length of the drag sets the distance.';
+    // One way to say both: a drag sets direction and distance (and fills the fields); a click uses the fields.
+    case 'swipe': case 'scroll': return 'Drag on the page to set the direction and distance, or click it to use the ones below.';
     case 'checkpoint': return 'Click or draw a box around what should be visible, or name it below.';
     case 'waitUntil': return 'Draw a box around what should appear, or describe it below.';
     default: return null;

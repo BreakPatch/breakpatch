@@ -7,12 +7,17 @@
 //
 // It understands the Markdown the documentation uses: "# " parts, "## " sections, "### " subsections,
 // paragraphs, lists (nested by indent), tables, fenced code, `code`, **bold**, *italic*, [links](…).
+// A fence marked ```output is something a program printed, not something to type: no Copy button,
+// and its lines wrap on a phone instead of hiding under the button.
+// A table right after a <!-- stack --> line becomes one card per row on a phone (site.css table.stack),
+// each cell named by its column, two side by side, like the home page's comparison; <!-- stack 3 -->
+// puts three side by side.
 // A paragraph that starts with <!-- prelaunch --> becomes the "Public release coming soon" note,
 // shown only while <html> has data-prelaunch (GitHub hides the comment and shows the text).
-// One that starts with <!-- solo-soon --> becomes a Solo "Coming soon" note, in the same style,
+// One that starts with <!-- solo-soon --> becomes a Solo "Coming later" note, in the same style,
 // shown only while Solo isn't on sale (no <html data-solo>: assets/paddle-config.js asks the back office).
 // One that starts with <!-- soon --> is a note in the same style that always shows (Team and
-// Business aren't on sale yet, Hosted by Breakpatch opens soon): delete it when that changes.
+// Business aren't on sale yet, Hosted by Breakpatch is coming later): delete it when that changes.
 // Everything before the first "---" is the intro: its paragraphs become the lead, and its
 // contents list is skipped (the page builds its own). Ids match GitHub's heading anchors, so
 // links like docs/#run-requests work on both.
@@ -48,6 +53,7 @@ function inline(s) {
 const PRELAUNCH = /^<!--\s*prelaunch\s*-->\s*(.*)$/;
 const SOLO_SOON = /^<!--\s*solo-soon\s*-->\s*(.*)$/;
 const SOON = /^<!--\s*soon\s*-->\s*(.*)$/;
+const STACK = /^\s*<!--\s*stack(?:\s+([1-4]))?\s*-->\s*$/;
 const LIST = /^(\s*)(\d+\.|[-*])\s+(.*)$/;
 const indentOf = l => l.match(/^\s*/)[0].length;
 
@@ -64,20 +70,28 @@ function blocks(lines) {
       const pad = fence[1].length, body = [];
       for (i++; i < lines.length && !/^\s*```\s*$/.test(lines[i]); i++) body.push(lines[i].slice(Math.min(pad, indentOf(lines[i]))));
       i++;
+      if (fence[2] === 'output') { out.push(`<div class="code output"><pre><code>${esc(body.join('\n'))}</code></pre></div>`); continue; }
       const lang = fence[2] ? ` data-lang="${fence[2]}"` : '';
       out.push(`<div class="code"><button class="copy" type="button">Copy</button><pre><code${lang}>${esc(body.join('\n'))}</code></pre></div>`);
       continue;
     }
 
+    const stackM = line.match(STACK);
+    const stack = !!stackM && /^\s*\|/.test(lines[i + 1] ?? '');
+    const cols = stack && stackM[1] ? ` style="--cols:${stackM[1]}"` : '';
+    if (stack) i++;
+
     const h = line.match(/^(#{3,4})\s+(.*)$/);
     if (h) { out.push(`<h${h[1].length} id="${slug(h[2])}">${inline(h[2])}</h${h[1].length}>`); i++; continue; }
 
-    if (/^\s*\|/.test(line)) {
+    if (stack || /^\s*\|/.test(line)) {
       const rows = [];
       for (; i < lines.length && /^\s*\|/.test(lines[i]); i++) rows.push(lines[i].trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim()));
       const [head, , ...body] = rows;
-      out.push(`<div class="table"><table><thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${
-        body.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+      // Stacked: every cell after the first names its column (data-label), as the cards on a phone show it.
+      const label = j => (stack && j > 0 && head[j] ? ` data-label="${esc(head[j].replace(/[`*_]/g, ''))}"` : '');
+      out.push(`<div class="table"><table${stack ? ` class="stack"${cols}` : ''}><thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${
+        body.map(r => `<tr>${r.map((c, j) => `<td${label(j)}>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
       continue;
     }
 
@@ -194,7 +208,7 @@ export function build(md) {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/assets/site.css">
-<!-- In <head>: it sets <html data-solo> while Solo is on sale (the back office says so), which hides the Solo "Coming soon" note. -->
+<!-- In <head>: it sets <html data-solo> while Solo is on sale (the back office says so), which hides the Solo "Coming later" note. -->
 <script src="/assets/paddle-config.js"></script>
 <!-- Built from docs/manual.md by site/build-manual.mjs. Edit the Markdown, then run: node site/build-manual.mjs -->
 </head>

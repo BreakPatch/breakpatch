@@ -8,6 +8,10 @@ import { useBackend, useLive } from '../../../data/hooks';
 import { useFeature } from '../../../edition/features';
 import { useSession } from '../../../state/session';
 import { Confirm, Section } from './common';
+import { restoredText } from '../../../components/common/moveToBin';
+
+/** "Today, 07:02" after another word: "Deleted today, 07:02". */
+const inSentence = (when: string) => when.replace(/^(Today|Yesterday)\b/, w => w.toLowerCase());
 
 const KIND: Record<DeletedKind, { icon: string; word: string }> = {
   app: { icon: 'language', word: 'App' },
@@ -41,7 +45,7 @@ export function DeletedSection() {
 
   const restore = async (i: DeletedItem) => {
     setBusy(itemKey(i));
-    try { await backend.recentlyDeleted!.restore(i); toast(`${i.name} restored.`); }
+    try { await backend.recentlyDeleted!.restore(i); toast(restoredText(i.name)); }
     catch (e) { toast(e instanceof Error ? e.message : `Couldn't restore ${i.name}.`, { error: true }); }
     finally { setBusy(null); }
   };
@@ -78,7 +82,7 @@ export function DeletedSection() {
                 <div className="set-del-name ellipsis">{i.name}</div>
                 <div className="set-del-meta ellipsis">
                   {[i.appName ? `${k.word} in ${i.appName}` : k.word,
-                    `Deleted ${formatDateTime(i.deletedAt)}${TEAM ? ` by ${i.deletedBy.name}` : ''}`,
+                    `Deleted ${inSentence(formatDateTime(i.deletedAt))}${TEAM ? ` by ${i.deletedBy.name}` : ''}`,
                     left ? `${left} ${left === 1 ? 'day' : 'days'} left` : 'Last day'].join(' · ')}
                 </div>
                 {why && <div className="set-del-why"><Icon name="lock" size={13} />{why}</div>}

@@ -54,7 +54,7 @@ Breakpatch is **Community** for now: free and open source, for one person on one
 
 ## Install
 
-You need a Mac with Apple Silicon, 16 GB of memory and macOS 14 or later.
+You need a Mac with Apple Silicon, 16 GB of memory and macOS 14 or later. Linux comes next, then Windows: see the [roadmap](https://github.com/BreakPatch/breakpatch/issues/48).
 
 Open Terminal and paste this:
 
@@ -281,17 +281,17 @@ To put it back: Settings → **Recently deleted**. Each item says what it is, wh
 
 - **A deleted app keeps its own.** Its tests and shared steps aren't listed one by one: restore the app and they come back with it, together with anything deleted in it before.
 - **Something took its place?** If you made a new test with the same name since, the restored one comes back next to it, as *log-in-2*.
-- **Suites keep deleted tests.** A suite that has a test in Recently deleted keeps it and names it in the suite, with **Restore**; runs skip it (*Couldn't run: it was deleted*) until it's restored. A test that's gone for good leaves the suite the next time you save it.
+- **Suites keep deleted tests.** A suite that has a test in Recently deleted keeps it and names it in the suite, with **Restore** (when you may restore it) and **Open Recently deleted**; runs skip it (*Couldn't run: it was deleted*) until it's restored. A test that's gone for good leaves the suite the next time you save it.
 - **Shared steps in use can't be deleted.** Their **Delete** is greyed out and says how many tests use them: take them out of those tests first.
 - **Delete now** (the bin icon next to Restore) deletes one for good at once, after asking. That can't be undone.
 
 In a tests folder, Recently deleted is the `deleted/` folder: one folder per deleted item, with its files as they were and a `deleted.json` that says what it is. Breakpatch deletes what's older than 30 days when it opens the folder.
 
-**In a team workspace** Recently deleted is the same for everyone. Restoring and deleting for good are for whoever may delete it: admins for apps, shared steps and suites, and a member for their own tests that aren't in the team suite. Other Macs see a deleted or restored item at once.
+**In a team workspace** Recently deleted is the same for everyone. Restoring and deleting for good are for whoever may delete it: admins for apps, shared steps and suites, and a member for their own tests that aren't in the team suite. Anything else says *Only admins can restore this*. Other Macs see a deleted or restored item at once.
 
 - **Hosted by Breakpatch** deletes what's older than 30 days once a day, with everything in it. Things in Recently deleted don't count toward your plan's number of apps, tests, shared steps and suites, but they still use storage until they're gone: use **Delete now** to free it. When the plan is full, restoring waits until there's room, like adding one.
 - **Hosted yourself**, there's no server of ours to do it: an admin's Breakpatch deletes what's older than 30 days, once a day, while it's open. If no admin opens the workspace, it stays in Recently deleted (and in your database) until one does.
-- Breakpatch from before this shows items in Recently deleted as if they weren't deleted, and can't delete anything: update it on every Mac. Hosted yourself, publish the security rules again first (Settings → Workspace → **Copy security rules**): older rules refuse the delete.
+- Update Breakpatch on every Mac, the local runner too, and `breakpatch-ci` on your CI machines, before you delete anything. The first time something goes to Recently deleted, the workspace moves to a newer format: Breakpatch from before Recently deleted can still open it, but can't save anything there any more, runs included (*Update Breakpatch to save changes*), because it would show deleted items as if they weren't. Hosted yourself, publish the security rules again first (Settings → Workspace → **Copy security rules**): older rules refuse the delete.
 - Runs of a deleted test stay in the app's **Runs** tab until the run history deletes them; a deleted suite's runs stay in its history the same way.
 
 ## Saved secrets
@@ -312,7 +312,7 @@ A small AI model that runs only on your Mac. Your screens never leave it. It nam
 
 On sites with good page structure (buttons, links and fields that say what they are), Breakpatch names what you click at once, from the names the page gives them, without the AI assistant. It uses the AI assistant when the page doesn't say, or draws everything itself, like Flutter apps and canvas pages. Either way it clicks a spot on the screen and checks the step on the screen.
 
-Breakpatch comes with one AI model, the **Standard** assistant (Qwen3-VL 4B, about 3 GB), which setup downloads. It works well for almost every team. It's the only model for now: bringing your own, a local one through Ollama or LM Studio or a cloud model, isn't available yet. (A Team [runner Mac](#the-local-runner) with 32 GB of memory or more can also download a larger one, about 5 GB, but it's rarely needed.)
+Breakpatch comes with one AI model, the **Standard** assistant (Qwen3-VL 4B, about 3 GB), which setup downloads. It works well for almost every team. It's the only model for now: bringing your own local one, through Ollama or LM Studio, isn't available yet. Cloud AI models aren't planned: your screens stay on your Mac. (A Team [runner Mac](#the-local-runner) with 32 GB of memory or more can also download a larger one, about 5 GB, but it's rarely needed.)
 
 Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it to name what you click, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)) and explaining a failure ([Why did this fail?](#why-did-this-fail)) come with Team.
 
@@ -400,7 +400,7 @@ You can also send IT this section: [breakpatch.dev/docs/#using-breakpatch-on-a-c
 
 # Team
 
-<!-- soon --> Coming soon. Team and Business aren't on sale yet. To hear when they are, email [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20Team).
+<!-- soon --> Coming later. Team and Business aren't on sale yet, and their pricing is to be decided. To hear when they are, email [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20Team).
 
 Everything in this part comes with **Breakpatch Team** (and Business, which is Team for bigger companies). It describes Team as it's built today. The Breakpatch you install already has it inside: a Team licence turns it on, so there's nothing to reinstall when it goes on sale. [Solo](#solo) says which parts Solo, planned for one person, includes.
 
@@ -423,10 +423,11 @@ Workspaces hosted by Breakpatch aren't open yet either. Until they are, a worksp
 
 ## Solo
 
-<!-- solo-soon --> Coming soon. Solo isn't on sale yet. To hear when it is, email [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20Solo).
+<!-- solo-soon --> Coming later. Solo isn't on sale yet. To hear when it is, email [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20Solo).
 
 Solo is planned for one person who wants Team's automation for themselves, on their own tests folder. This is how it works in the app today. Its price isn't set.
 
+<!-- stack 3 -->
 | | Community | Solo | Team and Business |
 |---|---|---|---|
 | People | 1 | 1 | Your team |
@@ -452,7 +453,7 @@ Solo is planned for one person who wants Team's automation for themselves, on th
 
 ## Upgrading to Team
 
-There's nothing to install: the Breakpatch you got with the [install command](#install) already has Team inside, and a licence turns it on. (A copy you build yourself from the open-source repository is Community only.) The AI assistant, the test browser, your settings and your saved secrets stay as they are, and Breakpatch opens your tests folder like before. Go to **Settings → Upgrade to Team** (or **Upgrade to Team** on Home):
+There's nothing to install: the Breakpatch you got with the [install command](#install) already has Team inside, and a licence turns it on. (A copy you build yourself from the open-source repository is Community only.) The AI assistant, the test browser, your settings and your saved secrets stay as they are, and Breakpatch opens your tests folder like before. Once Team is on sale, go to **Settings → Upgrade to Team** (or **Upgrade to Team** on Home); until then, a tests folder doesn't offer it:
 
 1. **Connect a workspace**: sign in to one [hosted by Breakpatch](#hosted-by-breakpatch), [create one of your own](#create-a-workspace), or open an invite link from your team. Then sign in.
 2. **The licence.** A hosted workspace needs no key: Breakpatch sets up everyone's seat. If you created a workspace of your own, enter the licence key once in **Settings → Licence** (it looks like `BP-XXXX-XXXX-XXXX-XXXX`). If you joined with an invite link, the link sets up your licence and there's no key to enter. See [Licences and seats](#licences-and-seats).
@@ -474,7 +475,7 @@ Good to know:
 
 ## Hosted by Breakpatch
 
-<!-- soon --> Opens soon. Until it does, keep your team's tests in your own Firebase project: see [Host it yourself](#host-it-yourself).
+<!-- soon --> Coming later. Until then, keep your team's tests in your own Firebase project: see [Host it yourself](#host-it-yourself).
 
 The easy way to a Team or Business workspace: Breakpatch keeps it for you, in Europe, with nothing to set up. Everyone signs in with their work email and a code; there are no passwords. It's the same Breakpatch as a workspace of your own, with the same tests, suites, runs and roles.
 
@@ -486,7 +487,7 @@ This Mac stays signed in to your Breakpatch account, so next time the list opens
 
 ### Create the hosted workspace
 
-A licence's admin does this once, after getting Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name, choose the country your company is in and press **Create workspace**. You're its first admin, and the licence's other admins are invited. Your data is stored in Europe. Hosting by Breakpatch for companies in the EU and the EEA is coming soon: those countries say *(coming soon)* in the list, and choosing one offers **Host it yourself** instead.
+A licence's admin does this once, after getting Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name, choose the country your company is in and press **Create workspace**. You're its first admin, and the licence's other admins are invited. Your data is stored in Europe. Hosting for companies in the EU and the EEA isn't open yet: those countries say *(coming soon)* in the list, and choosing one offers **Host it yourself** instead.
 
 Creating it turns on [encryption](#encryption-and-the-recovery-code): the workspace's key is made on your Mac, and Breakpatch never has it. Straight away, Breakpatch shows the workspace's **recovery code**: save it (**Save recovery kit (PDF)** or **Copy code**) and type back the 4 characters it asks for. The window stays open until you do, or until you choose **Skip, I'll make a new one later** and confirm. Without the code, losing every Mac that has the key means losing the tests.
 
@@ -656,7 +657,7 @@ One Mac per workspace that stays on and runs scheduled suites and run requests f
 2. Sign in with a **separate account** (for example `runner@yourcompany.com`) so runs don't show under a person's name. Give it the *Local runner* role.
 3. Settings → **Local runner** → **Use this Mac as the local runner**.
 
-It then stays awake while it's plugged in, opens at login and starts in runner mode after a restart or update. Runner mode shows what it's doing: waiting, running (with a live view), the queue and the last runs. **Pause after this test** stops it cleanly. Press Resume to carry on.
+It then stays awake while it's plugged in, opens at login and starts in runner mode after a restart or update. The checklist in Settings → Local runner says *Stays awake*; if macOS won't let it, it says *Can't stay awake* and why: then turn off sleep for that Mac in System Settings. Runner mode shows what it's doing: waiting, running (with a live view), the queue and the last runs. **Pause after this test** stops it cleanly. Press Resume to carry on.
 
 It uses the Standard AI assistant, like every Mac. With 32 GB of memory or more you can download the Larger one in the same place, but it's rarely needed.
 
@@ -1022,7 +1023,7 @@ jobs:
 
 The install command adds its folder to `GITHUB_PATH`, so the next steps can run `breakpatch-ci`.
 
-**A Windows PC as a runner.** To run a suite on a schedule without the app, use Task Scheduler. `breakpatch-ci service` writes the task for you:
+**A Windows PC as a runner.** To run a suite on a schedule without the app, use Task Scheduler. `breakpatch-ci service` writes the task for you; run `schtasks` from a terminal opened as administrator:
 
 ```powershell
 breakpatch-ci service --windows --suite smoke-7f3a --workspace C:\breakpatch\team.bpworkspace --schedule "Mon..Fri 06:00" --version released --xml smoke.xml
@@ -1049,17 +1050,18 @@ A Raspberry Pi makes a cheap, always-on machine that replays your workspace's su
 
 Each time `breakpatch-ci` starts a run, it checks how much memory the machine has and how fast its processor is. That takes less than a second. Then it picks a tier, and the first lines of the log say which and why, for example:
 
-```
+```output
 breakpatch-ci: simple runner (4 GB of memory and a processor 1.0× as fast as a Raspberry Pi 4; the full tier needs 6 GB and a faster processor). Replay, screen checks and schedules only: no AI assistant and no fixing. Waits are 2× as long (BP_TIMINGS_SCALE changes that).
 ```
 
+<!-- stack -->
 | | Simple runner | Full runner |
 |---|---|---|
 | **When** | Under 6 GB of memory, or a processor about as fast as a Raspberry Pi 4 | 6 GB or more, and a faster processor (a Pi 5, a mini PC, a Mac, a CI machine) |
 | **Replay and screen checks** | Yes | Yes |
 | **Suites on a schedule** | Yes | Yes |
 | **AI assistant and fixing** (`--auto-fix`) | No. `--auto-fix` is ignored, and the log says why in one line | Where the AI assistant is installed (today, a Mac) |
-| **Waits** (when `BP_TIMINGS_SCALE` isn't set) | Longer: 2× on a Pi 4, 3× on anything slower, 1.5× on a fast machine with little memory | As set |
+| **Waits** (when `BP_TIMINGS_SCALE` isn't set) | Longer: 2× on a Pi 4, 3× on a much slower processor (a Pi 3, or a Pi 4 slowing down when hot), 1.5× on a fast machine with little memory | As set |
 
 A Raspberry Pi 4 with 4 GB is a simple runner. So is a Pi 4 with 8 GB: it has the memory, but not the speed.
 
@@ -1111,7 +1113,7 @@ The service passes the licence key, the CI account's password and saved secrets 
 
 **Without root.** `breakpatch-ci service --user …` writes the service in your own account instead (`~/.config/systemd/user`), with the secrets in `~/.config/breakpatch/secrets.env`, which only you can read. Use `systemctl --user` and `journalctl --user` in place of `sudo systemctl` and `journalctl`. So that it runs while you're logged out, run `sudo loginctl enable-linger $USER` once.
 
-**Remove it.** `sudo breakpatch-ci service --suite smoke-7f3a --remove` stops the suite's timer and removes its files. After the last suite, it also removes the service, the settings and the secrets.
+**Remove it.** `sudo /home/breakpatch/.local/bin/breakpatch-ci service --suite smoke-7f3a --remove` stops the suite's timer and removes its files. After the last suite, it also removes the service, the settings and the secrets.
 
 **What's different from the app's local runner**
 
@@ -1205,6 +1207,8 @@ Create issue comes with a Breakpatch Team licence that includes it; licences get
 - Anyone in the team can note the issue made from a run, and change nothing else about it. Only admins set where issues go. Tokens for GitHub, Linear and Jira are never in the workspace.
 - In an encrypted workspace, names, steps, addresses and results are stored encrypted, and the rules check only their size. Only admins can encrypt what's there again (turning encryption on, a new key), and nothing else about it. The copies of the key for the recovery code and the machine key are for admins (the machine key's for the runner and CI too), and each Mac's request to be let in is its owner's.
 
+**After an update.** The rules carry a date (search what you copy for *These rules are dated*), and each Breakpatch version needs its own date's rules or newer: this version's are dated 2026-10-06. In a workspace in your own Firebase, an admin copies them again after updating (Settings → Workspace → **Copy security rules**) and publishes them in the Firebase console → Firestore → your database → Rules. Until then, **Check the connection** says the rules for this version aren't published, and each Mac reads the whole workspace every time it opens it. The 2026-10-06 rules also make sure a removed admin can't change which Mac's signature was withdrawn (see [Encryption and the recovery code](#encryption-and-the-recovery-code)). Hosted by Breakpatch, the rules are always up to date.
+
 To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the workspace's database. Disable the user in Firebase Authentication to cut it off.
 
 A service account using the Firebase Admin SDK skips the rules altogether. Use a normal user with the `ci` role instead: `breakpatch-ci` only signs in with one.
@@ -1277,6 +1281,6 @@ Until then, that Mac shows names as *Locked* and can't save. After a new key, a 
 
 **A new key.** After someone leaves the team, Breakpatch offers **Make a new key** (it's also in Settings → Workspace → Encryption). Every Mac still in the team gets it, the recovery code and machine key keep working, and what's in the workspace is encrypted again with it in the background. Once that's done, each Mac deletes the older keys from its Keychain, so a copy of an old key opens nothing new. Anyone who had access may have kept copies of what they could read.
 
-**When an admin leaves.** When an admin is removed, or made a member, another admin's Breakpatch withdraws their Mac's signature: from then on, the team's Macs don't take a key from it or trust a Mac it let in later, even if that Mac is kept or stolen. Keys taken from them before stay, and Breakpatch signs again what only they had signed. Admins then see *Ana left the team with the workspace's key*, with **Make a new key**: do it, since they could keep a copy of the key. **Not now** hides the note on that Mac until someone else leaves; Settings → Workspace → Encryption still says a new key is due. In a workspace in your own Firebase, **Make a new key** also asks you to check they can't still open your Firebase project (Google Cloud console → IAM) and to remove them there if they can: Breakpatch can't see who has access to your project. If Breakpatch couldn't withdraw the signature, admins see *The team's Macs still trust an admin who left.* Hosted by Breakpatch, it tries again when the workspace changes; in your own Firebase, press **Copy security rules** on the note, publish them in the Firebase console and open the workspace again. A recovery code or machine key they made stops working, because they saw it. Admins see *Make a new recovery code* or *Make a new machine key*; a new key made after they left comes with a new recovery code to save. After a new machine key, enter it on the runner Mac and update `BREAKPATCH_MACHINE_KEY` in CI. If an admin's Mac was the only one a teammate's Mac trusted, that Mac asks its person to check another admin's words the next time it's let in. Someone made admin again gets new keys on their Mac, and another admin's Mac vouches for them.
+**When an admin leaves.** When an admin is removed, or made a member, another admin's Breakpatch withdraws their Mac's signature: from then on, the team's Macs don't take a key from it or trust a Mac it let in later, even if that Mac is kept or stolen. Keys taken from them before stay, and Breakpatch signs again what only they had signed. Admins then see *Ana left the team with the workspace's key*, with **Make a new key**. In your own Firebase, do it, since they could keep a copy of the key; hosted by Breakpatch, their access has already ended, so it's extra care. **Not now** hides the note on that Mac until someone else leaves; Settings → Workspace → Encryption still says a new key is due. In a workspace in your own Firebase, **Make a new key** also asks you to check they can't still open your Firebase project (Google Cloud console → IAM) and to remove them there if they can: Breakpatch can't see who has access to your project. If Breakpatch couldn't withdraw the signature, admins see *The team's Macs still trust an admin who left.* Hosted by Breakpatch, it tries again when the workspace changes; in your own Firebase, press **Copy security rules** on the note, publish them in the Firebase console and open the workspace again. A recovery code or machine key they made stops working, because they saw it. Admins see *Make a new recovery code* or *Make a new machine key*; a new key made after they left comes with a new recovery code to save. After a new machine key, enter it on the runner Mac and update `BREAKPATCH_MACHINE_KEY` in CI. If an admin's Mac was the only one a teammate's Mac trusted, that Mac asks its person to check another admin's words the next time it's let in. Someone made admin again gets new keys on their Mac, and another admin's Mac vouches for them.
 
 **Turning it on**, or a new key, encrypts what's already there in the background. The admin's Mac doing it shows how far it got in a thin line under the title bar, for example *Encrypting your tests… 34 of 120*, or *Encrypting your tests with the new key…* (tests count with their versions; runs, shared steps and suites count too). Keep working, and *Your tests are encrypted.* says when it's done. If you close the app, it carries on the next time an admin opens the workspace, from where it was. If it stops, a note says why, for example *Encrypting your tests stopped at 40 of 120. Breakpatch couldn't reach the workspace.*, and **Try again** carries on; what's encrypted so far stays encrypted. Breakpatch versions from before encryption can't save to an encrypted workspace, so update everyone first.

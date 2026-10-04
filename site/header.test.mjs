@@ -41,9 +41,13 @@ test('the install command stays on one line on phones, with Copy at its end', ()
   assert.match(phone, /\.install-cmd \.copy\{top:1px;bottom:1px;right:1px;[^}]*min-height:44px/);
 });
 
-test('the hero badge keeps its dot with the words after it', () => {
+test('the hero badge keeps its dot with the words after it, and on a phone has none to orphan', () => {
   const home = read('./index.html');
-  assert.ok(home.includes('AI on your Mac<span class="soft"><span>no cloud<a class="star" href="#no-cloud"'));
+  assert.ok(home.includes('AI on your Mac</span><span class="soft"><span>no cloud<a class="star" href="#no-cloud"'));
+  assert.match(phone, /\.ai-badge\{[^}]*flex-direction:column/);
+  assert.ok(phone.includes('.ai-badge .soft::before{display:none}'));
+  // The asterisk is a 44 px target without moving the words: padding, taken back by a negative margin.
+  assert.match(CSS, /\.ai-badge \.star\{position:relative;display:inline-block;padding:12px 19px;margin:-12px -19px -12px calc\(1px - 19px\);line-height:20px/);
   // The asterisk on "no cloud" leads to the note that says where the cloud does come in.
   assert.ok(home.includes('<p class="cloud-note" id="no-cloud">'));
   assert.doesNotMatch(home, /class="sep"/);
@@ -56,4 +60,11 @@ const playwright = spawnSync('python3', ['-c', 'import playwright'], { stdio: 'i
 test('every page at 360, 390 and 430 px: no sideways scroll, nothing overlapping in the header (real browser)', { skip: !(chromium && playwright) && 'needs Python Playwright and a Chromium (BP_CHROMIUM)', timeout: 300_000 }, () => {
   const run = spawnSync('python3', [fileURLToPath(new URL('./header-check.py', import.meta.url))], { encoding: 'utf8', env: { ...process.env, BP_CHROMIUM: chromium } });
   assert.equal(run.status, 0, run.stdout + run.stderr);
+});
+
+test('docs code on a phone: Copy never covers the first line (WEB-03), and footer links are tap-sized (WEB-05)', () => {
+  // Commands wrap and keep room beside the 44 px Copy; other code starts below it.
+  assert.ok(phone.includes('.code:not(.install-cmd,.output) pre{padding:60px 16px 14px}'));
+  assert.ok(phone.includes('.code pre code[data-lang="sh"]::before{content:"";float:right;width:72px;height:40px}'));
+  assert.ok(phone.includes('.foot-links a,.foot-brand p a{display:inline-flex;align-items:center;min-height:44px}'));
 });

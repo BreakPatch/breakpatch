@@ -58,6 +58,9 @@
 .se-missing > .grow { align-self: center; }
 .se-missing-actions { display: flex; gap: 6px; align-items: center; flex: none; margin: -3px -6px -3px 0; }
 .se-missing-actions:empty { display: none; }
+/* "Open Recently deleted" reads as a link, in the accent, on hover too (not the plain text colour). */
+.se-missing-actions .btn-link, .se-missing-actions .btn-link:hover:not(:disabled) { color: var(--accent); }
+.se-missing-actions .btn-link:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
 
 .se-sec { display: flex; flex-direction: column; gap: 10px; }
 .se-next { font-size: 13px; color: var(--text-muted); }

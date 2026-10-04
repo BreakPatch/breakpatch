@@ -23,7 +23,7 @@ describe('Settings → Recently deleted', () => {
     const { backend, app } = await withDeleted();
     const row = await screen.findByRole('listitem');
     expect(within(row).getByText('Log in')).toBeInTheDocument();
-    expect(within(row).getByText(/^Test in Web app · Deleted Today, \d\d:\d\d · 30 days left$/)).toBeInTheDocument();
+    expect(within(row).getByText(/^Test in Web app · Deleted today, \d\d:\d\d · 30 days left$/)).toBeInTheDocument();
     fireEvent.click(within(row).getByRole('button', { name: 'Restore' }));
     await screen.findByText('Nothing deleted in the last 30 days.');
     const tests = await new Promise<unknown[]>(res => { const off = backend.tests(app.id, v => { setTimeout(off); res(v); }); });

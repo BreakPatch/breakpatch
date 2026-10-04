@@ -540,12 +540,12 @@ test('the terms, refunds and privacy pages read right while Solo is off: "when o
   }
 });
 
-test('the manual keeps its Solo section, marked Coming soon until Solo is on sale', () => {
+test('the manual keeps its Solo section, marked Coming later until Solo is on sale', () => {
   const MANUAL = read('../docs/manual.md');
   const section = MANUAL.slice(MANUAL.indexOf('## Solo\n'), MANUAL.indexOf('## Upgrading to Team'));
-  assert.match(section, /^## Solo\n\n<!-- solo-soon --> Coming soon\. Solo isn't on sale yet\./);
+  assert.match(section, /^## Solo\n\n<!-- solo-soon --> Coming later\. Solo isn't on sale yet\./);
   const built = MANUAL_PAGE.slice(MANUAL_PAGE.indexOf('<section id="solo"'), MANUAL_PAGE.indexOf('</section>', MANUAL_PAGE.indexOf('<section id="solo"')));
-  assert.match(built, /<p class="solo-soon" role="note"><span class="dot" aria-hidden="true"><\/span><span>Coming soon\. Solo isn't on sale yet\./);
+  assert.match(built, /<p class="solo-soon" role="note"><span class="dot" aria-hidden="true"><\/span><span>Coming later\. Solo isn't on sale yet\./);
   // Shown while <html> has no data-solo, in the pre-launch notes' style.
   assert.ok(SITE_CSS.includes('[data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon,p.soon{display:flex;'));
   assert.ok(SITE_CSS.includes('.prelaunch,.solo-soon,.nav-scrim{display:none}'));

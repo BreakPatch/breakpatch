@@ -1,7 +1,7 @@
 // Design polish (DES-01 to DES-17): the open card folds shut, notes fit their row, "Not played"
 // is said once, one "Next step goes here" slot, Play to here leaves later steps quiet, blocked
 // notifications say how to fix it, and the Community suite editor has no empty side column.
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Step } from '../../data/types';
 import { shortNote, StepsPanel, UNCHECKED_NOTE } from '../../components/steps';
@@ -99,12 +99,22 @@ describe('DES-02, DES-07: the open card keeps still and fits one row', () => {
     fireEvent.focus(screen.getByLabelText(/What to look for/));
     expect(container.querySelectorAll('.step-edit *').length).toBe(n);
   });
+  it('says how to change where a step acts, with re-record as a link that starts it (DESK-10)', () => {
+    const onRerecord = vi.fn();
+    render(panel({ selectedId: 'a', onRerecord }));
+    fireEvent.click(screen.getByLabelText('More for this step'));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Edit/ }));
+    const dlg = screen.getByRole('dialog', { name: 'Edit step' });
+    expect(dlg).toHaveTextContent('Re-record to change where it acts on the page.');
+    fireEvent.click(within(dlg).getByRole('button', { name: 'Re-record' }));
+    expect(onRerecord).toHaveBeenCalledWith('a');
+  });
   it('has no Re-record and no "Where it acts on the page" for a seconds wait', () => {
     render(panel({ selectedId: 't' }));
     fireEvent.click(screen.getByLabelText('More for this step'));
     expect(screen.queryByRole('menuitem', { name: /Re-record/ })).toBeNull();
     fireEvent.click(screen.getByRole('menuitem', { name: /Edit/ }));
-    expect(screen.getByRole('dialog', { name: 'Edit step' })).not.toHaveTextContent('Where it acts on the page');
+    expect(screen.getByRole('dialog', { name: 'Edit step' })).not.toHaveTextContent('where it acts on the page');
   });
 });
 

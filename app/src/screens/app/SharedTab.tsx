@@ -67,7 +67,8 @@ function GroupRow({ app, group: g, index, inUse, onEdit, onDelete }: { app: App;
         </div>
       </div>
       <div role="cell" className="app-plain">{g.stepCount}</div>
-      <div role="cell" className="app-used"><Icon name="checklist" size={17} />{plural(g.usedBy.length, 'test')}</div>
+      {/* The same count as Delete's: tests that use them now, not ones in Recently deleted. */}
+      <div role="cell" className="app-used"><Icon name="checklist" size={17} />{plural(inUse, 'test')}</div>
       {HISTORY && <div role="cell" className="app-plain">{g.currentVersion}</div>}
       <div role="cell" className="app-cell-2">
         {TEAM && <div className="app-person ellipsis">{g.updatedBy.name}</div>}
@@ -80,7 +81,7 @@ function GroupRow({ app, group: g, index, inUse, onEdit, onDelete }: { app: App;
           <Menu open={menu} onClose={() => setMenu(false)} label={`${g.name} actions`} width={200} style={{ top: 'calc(100% + 4px)', right: 0 }}
             items={[{ label: 'Edit', icon: 'edit', onSelect: onEdit }, ...(HISTORY ? [{ label: 'Version history', icon: 'history', onSelect: history }] : []),
               ...(onDelete ? ['sep' as const, inUse
-                ? { label: 'Delete', icon: 'delete', danger: true, disabled: true, detail: `Used by ${plural(inUse, 'test')}. Take them out first.`, onSelect: () => {} }
+                ? { label: 'Delete', icon: 'delete', danger: true, disabled: true, detail: `Used by ${plural(inUse, 'test')}. Take ${inUse === 1 ? 'it' : 'them'} out first.`, onSelect: () => {} }
                 : { label: 'Delete', icon: 'delete', danger: true, onSelect: onDelete }] : [])]} />
         </div>
       </div>

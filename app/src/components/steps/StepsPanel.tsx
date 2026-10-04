@@ -325,7 +325,7 @@ function StepEditor({ step, number, secretNames, closing, onChange, onEdit, onRe
             help="Optional. Used only if this step's check fails." more="Read by the AI assistant only if this step's check fails, to judge it." />}
         </div>
       )}
-      <StepEditPanel open={editing && !closing} step={step} secretNames={secretNames} canRerecord={!!onRerecord} onCancel={() => setEditing(false)} onSave={(patch, affects) => { setEditing(false); onEdit(patch, affects); }} />
+      <StepEditPanel open={editing && !closing} step={step} secretNames={secretNames} canRerecord={!!onRerecord} onRerecord={onRerecord ? () => { setEditing(false); onRerecord(); } : undefined} onCancel={() => setEditing(false)} onSave={(patch, affects) => { setEditing(false); onEdit(patch, affects); }} />
       {confirmDelete ? (
         <div className="step-actions step-confirm" role="alert">
           <span className="grow">Delete step {number}?</span>
@@ -359,8 +359,10 @@ function StepEditPanel({ open, ...rest }: { open: boolean } & EditPanelProps) {
 }
 interface EditPanelProps {
   step: Step; secretNames: string[]; canRerecord: boolean; onSave: (patch: Partial<Step>, affectsPage: boolean) => void; onCancel: () => void;
+  /** Closes the panel and starts Re-record (the step's own menu has it too). */
+  onRerecord?: () => void;
 }
-function StepEditPanelBody({ step, secretNames, canRerecord, closing, onSave, onCancel }: EditPanelProps & { closing: boolean }) {
+function StepEditPanelBody({ step, secretNames, canRerecord, onRerecord, closing, onSave, onCancel }: EditPanelProps & { closing: boolean }) {
   const [label, setLabel] = useState(step.label);
   const [source, setSource] = useState<'typed' | 'secret' | 'generated'>(step.secretRef ? 'secret' : step.generated ? 'generated' : 'typed');
   const [text, setText] = useState(step.text ?? '');
@@ -438,7 +440,8 @@ function StepEditPanelBody({ step, secretNames, canRerecord, closing, onSave, on
       {a === 'loop' && <label className="ep-row">Repeat, times<input className="input" type="number" min={1} max={100} value={count} onChange={e => setCount(Number(e.target.value) || 1)} /></label>}
       <div className="ep-actions">
         {/* A seconds wait doesn't act anywhere on the page (DES-07). */}
-        <span className="faint grow">{canRerecord ? 'Where it acts on the page: Re-record.' : ''}</span>
+        <span className="faint grow ep-where">{canRerecord && <>{onRerecord
+          ? <button type="button" className="ep-link" onClick={onRerecord}>Re-record</button> : 'Re-record'} to change where it acts on the page.</>}</span>
         <Button onClick={onCancel}>Cancel</Button>
         <Button kind="primary" onClick={save}>Save</Button>
       </div>

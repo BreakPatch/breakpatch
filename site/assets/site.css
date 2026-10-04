@@ -76,6 +76,10 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
 .code{position:relative;margin:16px 0}
 .code pre{margin:0;background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:14px 84px 14px 16px;overflow:auto}
 .code pre code{background:none;padding:0;font-size:0.8125rem;line-height:1.65;color:var(--text2)}
+/* What a program printed (```output in docs/manual.md): nothing to copy, so no button and no room
+   kept for one, and long lines wrap rather than scroll out of sight. */
+.code.output pre{padding:14px 16px}
+.code.output pre code{white-space:pre-wrap;overflow-wrap:anywhere}
 .copy{position:absolute;top:8px;right:8px;font-family:var(--font);font-size:0.75rem;font-weight:600;color:var(--muted);background:var(--surface);border:1px solid var(--line2);border-radius:8px;padding:4px 10px;cursor:pointer;letter-spacing:.01em;transition:scale .12s ease-out,color .15s ease-out,border-color .15s ease-out}
 .copy:hover{color:var(--text);border-color:var(--accent)}
 .copy[data-done]{color:var(--accent);border-color:var(--accent)}
@@ -101,13 +105,18 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
 .cloud-note{margin:6px auto 0;max-width:52ch;font-size:0.8125rem;line-height:1.5;color:var(--faint)}
 .cloud-note b{color:var(--muted);font-weight:600}
 .ai-badge .star{color:var(--accent);font-weight:700;margin-left:1px;text-decoration:none}
+/* The asterisk is one character, but its tap target is 44 × 44: padding grows the area that answers a
+   tap, and the same negative margin takes the room back, so the words don't move. Positioned, so the
+   padding sits above the letters next to it. */
+.ai-badge .star{position:relative;display:inline-block;padding:12px 19px;margin:-12px -19px -12px calc(1px - 19px);line-height:20px;border-radius:999px}
+.ai-badge .star:focus-visible{outline:2px solid var(--accent);outline-offset:-10px}
 /* "12,300 tests run with Breakpatch" (assets/runs-count.js): out of the flow, in the space above the
    screenshot, so it takes no room and moves nothing when it fades in. */
 .runs-count{position:absolute;top:calc(100% + 12px);left:0;right:0;margin:0;font-size:0.8438rem;color:var(--faint);letter-spacing:.01em;animation:edge .6s ease-out both}
 .runs-count b{font-weight:600;color:var(--text2)}
-/* Pre-launch notice: shown only while <html> has data-prelaunch. The Solo "Coming soon" notes
+/* Pre-launch notice: shown only while <html> has data-prelaunch. The Solo "Coming later" notes
    (.solo-soon) look the same, and show while <html> has no data-solo (below). The Documentation's
-   p.soon notes (Team not on sale yet, hosting opens soon) look the same and always show. */
+   p.soon notes (Team not on sale yet, hosting coming later) look the same and always show. */
 .prelaunch,.solo-soon,.nav-scrim{display:none}
 [data-prelaunch] .prelaunch,html:not([data-solo]) .solo-soon,p.soon{display:flex;align-items:center;gap:8px;margin:0;font-size:0.8438rem;letter-spacing:.01em;color:var(--muted);background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);border-radius:999px;padding:5px 14px;text-align:left}
 .prelaunch .dot,.solo-soon .dot,p.soon .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none}
@@ -130,6 +139,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 /* "AI on your Mac" badge in the hero */
 .ai-badge{display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px 9px;margin:0;padding:6px 15px 6px 11px;border-radius:999px;background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);color:var(--text);font-size:0.875rem;font-weight:600;line-height:1.35}
 .ai-badge svg{width:16px;height:16px;fill:var(--accent);flex:none}
+.ai-badge .lead{display:inline-flex;align-items:center;gap:9px}
 .ai-badge .soft{display:inline-flex;align-items:center;gap:9px;color:var(--muted);font-weight:500}
 /* The dot goes with the words after it, so a badge that wraps starts its second line with it, never ends the first. */
 .ai-badge .soft::before{content:"";width:4px;height:4px;border-radius:50%;background:var(--faint);flex:none}
@@ -236,6 +246,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 :where([data-solo]) .compare{grid-template-columns:repeat(3,minmax(0,1fr))}
 .plan{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:30px 30px 28px;display:flex;flex-direction:column;gap:14px}
 /* Community is the plan to install today, so it carries the emphasis (like pricing's .plan-now). */
+.plan.plan-now .team-tag{background:var(--accent);color:var(--on-accent)}
 .plan.plan-now{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));box-shadow:0 24px 60px -36px color-mix(in srgb,var(--accent) 60%,transparent)}
 .plan-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .plan h3{margin:0;font-size:1.625rem;letter-spacing:-.015em}
@@ -359,6 +370,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 /* Opens in place, fading in below its summary. It closes at once: the page is about to jump to the section picked. */
 .toc-mobile[open]::details-content{animation:reveal .2s ease-out}
 @keyframes reveal{from{opacity:0;translate:0 -4px}}
+@keyframes unreveal{to{opacity:0;translate:0 -4px}}
 .toc-mobile[open] summary{border-bottom:1px solid var(--line)}
 .toc-mobile .toc-title{padding:14px 16px 4px}
 .toc-mobile a{display:block;padding:8px 16px;color:var(--text2);font-size:0.9688rem}
@@ -435,6 +447,15 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .nav-toggle .i-close,.top.open .nav-toggle .i-menu{display:none}
   .top.open .nav-toggle .i-close{display:inline}
   .top.open + .nav-scrim{display:block;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.45);animation:edge .2s ease-out both}
+  /* Over the scrim the header is solid, so it doesn't take the scrim's grey through its glass. */
+  .top.open,.top.closing{background:var(--bg)}
+  /* Closing: the menu and the scrim fade out the way they came (assets/site.js keeps them for it). */
+  .top.has-menu.closing nav{display:flex;flex-direction:column;gap:0;position:absolute;top:100%;left:0;right:0;padding:4px 16px 12px;background:var(--bg);border-bottom:1px solid var(--line);box-shadow:0 24px 40px -24px rgba(0,0,0,.55);animation:unreveal .16s ease-in both;pointer-events:none}
+  .top.has-menu.closing nav a,.top.has-menu.closing nav a.wide{display:flex;align-items:center;min-height:48px;padding:0 4px;font-size:1.0625rem;border-top:1px solid var(--line)}
+  .top.has-menu.closing nav a:first-child{border-top:0}
+  .top.closing + .nav-scrim{display:block;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.45);animation:edge .16s ease-in reverse both;pointer-events:none}
+  /* While it's open the page under the scrim doesn't scroll. */
+  html.menu-open{overflow:hidden}
   .top.has-menu.open nav a,.top.has-menu.open nav a.wide{display:flex;align-items:center;min-height:48px;padding:0 4px;font-size:1.0625rem;border-top:1px solid var(--line)}
   .top.has-menu.open nav a:first-child{border-top:0}
   .top.has-menu.open nav a[aria-current]::after{left:4px;right:auto;width:24px;bottom:8px}
@@ -446,7 +467,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .copy{min-height:44px;min-width:44px}
   .btn{min-height:44px}
   .more{display:inline-flex;align-items:center;min-height:44px}
-  .foot-links a{display:inline-flex;align-items:center;min-height:44px}
+  .foot-links a,.foot-brand p a{display:inline-flex;align-items:center;min-height:44px}
   .foot-brand .brand{min-height:44px}
   .skip{min-height:44px;display:inline-flex;align-items:center}
   .install-actions a{display:inline-flex;align-items:center;min-height:44px}
@@ -468,11 +489,17 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .ai-card.wide .ai-media{padding:14px}
   .ai-text,.ai-card.wide .ai-text{padding:22px 20px 24px}
   .spec{padding:20px;grid-template-columns:1fr}
-  .ai-badge{font-size:0.8438rem}
+  /* On a phone the badge is two lines, always: the second line starts with its words, not a lone dot. */
+  .ai-badge{font-size:0.8438rem;flex-direction:column;gap:2px;padding:7px 18px;border-radius:20px}
+  .ai-badge .soft::before{display:none}
   .matrix.vs{font-size:0.875rem}
   .matrix.vs th,.matrix.vs td{padding:10px 10px}
-  .code:not(.install-cmd) pre{padding:40px 16px 14px}
+  /* Copy is a 44 px target in the top right corner (top 8px). Commands wrap, so their first lines
+     make room for it (a float as tall as the button); other code doesn't wrap, so it starts below it. */
+  .code:not(.install-cmd,.output) pre{padding:60px 16px 14px}
+  .code:not(.install-cmd,.output) pre:has(> code[data-lang="sh"]){padding-top:14px}
   .code pre code[data-lang="sh"]{white-space:pre-wrap;overflow-wrap:anywhere}
+  .code pre code[data-lang="sh"]::before{content:"";float:right;width:72px;height:40px}
   .matrix.vs tbody th{width:34%}
   .matrix.vs td{width:33%}
 }
@@ -492,6 +519,8 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   table.stack tbody tr > :first-child{grid-column:1 / -1}
   table.stack td[data-label]::before{content:attr(data-label);display:block;font-size:0.7812rem;font-weight:600;color:var(--faint);letter-spacing:.02em;margin-bottom:1px}
   .matrix.stack{--cols:2}
+  /* The documentation's stacked tables (<!-- stack --> in docs/manual.md): the two columns side by side, like the comparison above. */
+  .table table.stack:not([style*="--cols"]){--cols:2}
 }
 /* Reduced motion: no movement, but keep the short fades that explain what changed. */
 @media (prefers-reduced-motion:reduce){
@@ -499,6 +528,11 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   :root{--press:1}
   @keyframes in{from{opacity:0}}
   @keyframes reveal{from{opacity:0}}
+  @keyframes unreveal{to{opacity:0}}
+  /* The phone menu and its scrim fade only, quickly; the header's scroll edge is just there, not faded in. */
+  .top.has-menu.open nav,.top.has-menu.closing nav,.top.open + .nav-scrim,.top.closing + .nav-scrim{animation-duration:.12s}
+  .top::after{animation:none}
+  .runs-count{animation-duration:.2s}
   .lost .mora{animation:none}
   .faq details::details-content{translate:none}
   .to-top{translate:none}

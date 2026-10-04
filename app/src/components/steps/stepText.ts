@@ -65,7 +65,8 @@ export function defaultLabel(p: Partial<Step> & { action: Step['action'] }): str
 /** Second line under a label, when there is something useful to say. */
 export function stepNote(s: Step, opts: { range?: [number, number] } = {}): string | undefined {
   if (s.action === 'loop') return !opts.range ? 'No steps yet' : opts.range[0] === opts.range[1] ? `Step ${opts.range[0]}` : `Steps ${opts.range[0]} to ${opts.range[1]}`;
-  if (s.action === 'group') return s.groupVersion === 'latest' || s.groupVersion === undefined ? 'Shared steps · always latest' : `Shared steps · version ${s.groupVersion}`;
+  // Which version first: in a narrow row (a run) the end is cut off, and the icon already says shared steps.
+  if (s.action === 'group') return s.groupVersion === 'latest' || s.groupVersion === undefined ? 'Always latest · shared steps' : `Version ${s.groupVersion} · shared steps`;
   if (s.action === 'write') return repeatPreview(s.text);
   return undefined;
 }

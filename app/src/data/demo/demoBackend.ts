@@ -38,7 +38,10 @@ interface State {
 }
 
 /** An item in Recently deleted, with the documents it took out of the lists. */
-interface Binned { item: DeletedItem; apps?: App[]; tests?: Test[]; groups?: StepGroup[]; suites?: Suite[] }
+/** `next`: for each thing taken, what came after it in its list, so restoring puts it back in its place. */
+interface Binned { item: DeletedItem; apps?: App[]; tests?: Test[]; groups?: StepGroup[]; suites?: Suite[]; next?: Record<string, string> }
+const LISTS = ['apps', 'tests', 'groups', 'suites'] as const;
+const placeKey = (list: string, x: { id: string; appId?: string }) => `${list}:${x.appId ?? ''}/${x.id}`;
 const sameRef = (a: DeletedRef, b: DeletedRef) => a.kind === b.kind && a.id === b.id && (a.appId ?? '') === (b.appId ?? '');
 
 export interface DemoOptions { empty?: boolean; signedIn?: boolean; delayMs?: number }
@@ -203,7 +206,21 @@ export class DemoBackend implements Backend {
   // ---- recently deleted ----
   private toBin(item: Omit<DeletedItem, 'deletedAt' | 'deletedBy'>, take: (s: State) => Omit<Binned, 'item'>) {
     const me = this.me();
-    this.mutate(s => { s.bin.push({ item: { ...item, deletedAt: Date.now(), deletedBy: me }, ...take(s) }); });
+    this.mutate(s => {
+      const was = { apps: [...s.apps], tests: [...s.tests], groups: [...s.groups], suites: [...s.suites] };
+      const taken = take(s);
+      const next: Record<string, string> = {};
+      for (const k of LISTS) {
+        const gone = new Set<object>(taken[k] ?? []);
+        const list: { id: string; appId?: string }[] = was[k];
+        list.forEach((x, i) => {
+          if (!gone.has(x)) return;
+          const n = list.slice(i + 1).find(y => !gone.has(y));
+          if (n) next[placeKey(k, x)] = placeKey(k, n);
+        });
+      }
+      s.bin.push({ item: { ...item, deletedAt: Date.now(), deletedBy: me }, ...taken, next });
+    });
   }
   private binned(r: DeletedRef) {
     const b = this.st.bin.find(x => sameRef(x.item, r));
@@ -237,7 +254,15 @@ export class DemoBackend implements Backend {
       if (b.item.appId && !this.st.apps.some(a => a.id === b.item.appId)) throw new Error('Its app was deleted. Restore the app first.');
       this.mutate(s => {
         s.bin = s.bin.filter(x => x !== b);
-        s.apps.push(...(b.apps ?? [])); s.tests.push(...(b.tests ?? [])); s.groups.push(...(b.groups ?? [])); s.suites.push(...(b.suites ?? []));
+        // Back in its place: before what came after it, if that's still there.
+        const put = <T extends { id: string; appId?: string }>(k: typeof LISTS[number], list: T[], back: T[] = []) => {
+          for (const x of back) {
+            const n = b.next?.[placeKey(k, x)];
+            const at = n ? list.findIndex(y => placeKey(k, y) === n) : -1;
+            if (at >= 0) list.splice(at, 0, x); else list.push(x);
+          }
+        };
+        put('apps', s.apps, b.apps); put('tests', s.tests, b.tests); put('groups', s.groups, b.groups); put('suites', s.suites, b.suites);
       });
       await this.wait(null);
     },

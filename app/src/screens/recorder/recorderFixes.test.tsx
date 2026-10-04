@@ -442,7 +442,25 @@ describe('the describe box is off (DESCRIBE_STEPS)', () => {
     expect(container.querySelector('.rec-hint')).toHaveTextContent('Pick a file, then click the upload field on the page.');
     expect(container.querySelector('.rec-composer')).not.toHaveTextContent('click the upload field');
     expect(screen.getByRole('radiogroup', { name: 'Sample file' }).closest('.rec-composer')).not.toBeNull();
+    // Its own icon, not Double click's.
+    expect(container.querySelector('.rec-hint .icon')).not.toHaveTextContent('ads_click');
     act(() => { r.setAction('swipe'); });
     expect(container.querySelector('.rec-hint')).not.toHaveTextContent('swipe');   // not the swipe icon again
+    expect(container.querySelector('.rec-hint .icon')).not.toHaveTextContent('drag_pan');   // nor Drag and drop's
+    // One clear way: a drag sets direction and distance, a click uses the fields.
+    expect(container.querySelector('.rec-hint')).toHaveTextContent('Drag on the page to set the direction and distance, or click it to use the ones below.');
+    expect(container.querySelector('.rec-hint')).not.toHaveTextContent('length of the drag');
+  });
+
+  it('while the test plays, the bar says so instead of how to add a step (DESK-06)', async () => {
+    const { AddStepBar } = await import('./AddStepBar');
+    function Bar() {
+      const r = useRecorder({ viewport: vp, onError: vi.fn() });
+      return <AddStepBar rec={r} appId="a" allowGroups onInsertGroup={() => undefined} frozen="The test is playing in this browser." />;
+    }
+    const { container } = render(<Bar />);
+    expect(container.querySelector('.rec-composer')).toHaveTextContent('The test is playing in this browser.');
+    expect(screen.queryByText('Click on the page to add a step.')).toBeNull();
+    expect(screen.getAllByText('The test is playing in this browser.')).toHaveLength(1);
   });
 });

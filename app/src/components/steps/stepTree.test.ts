@@ -124,8 +124,8 @@ describe('step text', () => {
     expect(repeatPreview('Note {i}')).toBe('Note 1, Note 2…');
     expect(repeatPreview('plain')).toBeUndefined();
     expect(stepNote(loop('L', []), { range: [3, 6] })).toBe('Steps 3 to 6');
-    expect(stepNote({ id: 'g', action: 'group', label: 'Log in', groupVersion: 'latest' })).toBe('Shared steps · always latest');
-    expect(stepNote({ id: 'g', action: 'group', label: 'Log in', groupVersion: 2 })).toBe('Shared steps · version 2');
+    expect(stepNote({ id: 'g', action: 'group', label: 'Log in', groupVersion: 'latest' })).toBe('Always latest · shared steps');
+    expect(stepNote({ id: 'g', action: 'group', label: 'Log in', groupVersion: 2 })).toBe('Version 2 · shared steps');
     expect(stepIcon({ action: 'navigate', nav: 'back' })).toBe('arrow_back');
     expect(stepIcon({ action: 'write', secretRef: 'X' })).toBe('key');
     expect(stepIcon({ action: 'click' })).toBe('touch_app');
