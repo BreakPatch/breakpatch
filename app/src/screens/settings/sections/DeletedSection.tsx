@@ -8,6 +8,7 @@ import { useBackend, useLive } from '../../../data/hooks';
 import { useFeature } from '../../../edition/features';
 import { useSession } from '../../../state/session';
 import { Confirm, Section } from './common';
+import { restoredText } from '../../../components/common/moveToBin';
 
 const KIND: Record<DeletedKind, { icon: string; word: string }> = {
   app: { icon: 'language', word: 'App' },
@@ -41,7 +42,7 @@ export function DeletedSection() {
 
   const restore = async (i: DeletedItem) => {
     setBusy(itemKey(i));
-    try { await backend.recentlyDeleted!.restore(i); toast(`${i.name} restored.`); }
+    try { await backend.recentlyDeleted!.restore(i); toast(restoredText(i.name)); }
     catch (e) { toast(e instanceof Error ? e.message : `Couldn't restore ${i.name}.`, { error: true }); }
     finally { setBusy(null); }
   };

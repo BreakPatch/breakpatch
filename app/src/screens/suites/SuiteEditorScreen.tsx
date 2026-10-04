@@ -9,7 +9,7 @@ import { useBackend, useLive } from '../../data/hooks';
 import { canManageDeleted, type DeletedItem } from '../../data/backend';
 import type { App, Suite } from '../../data/types';
 import { plural } from '../../components/common/format';
-import { RECENTLY_DELETED_PATH, useMoveToBin } from '../../components/common/moveToBin';
+import { RECENTLY_DELETED_PATH, restoredText, useMoveToBin } from '../../components/common/moveToBin';
 import { useSession } from '../../state/session';
 import { useAllTests } from './useAllTests';
 import { swapTests } from './suiteOrder';
@@ -85,7 +85,8 @@ export default function SuiteEditorScreen() {
   };
   const valid = !Object.values(problems).some(Boolean);
 
-  const save = async (): Promise<Suite | null> => {
+  /** `quiet`: no "Suite saved." (deleting saves unsaved edits first, and says so itself). */
+  const save = async (quiet = false): Promise<Suite | null> => {
     setTried(true);
     if (!valid) return null;
     setSaving(true);
@@ -93,7 +94,7 @@ export default function SuiteEditorScreen() {
       const url = extras.resultUrl?.trim();
       const out = await backend.saveSuite(suiteId ?? null, { name: name.trim(), tests: kept, schedule: extras.schedule, ...(url ? { resultUrl: url } : {}), ...(extras.notify !== undefined ? { notify: extras.notify } : {}) });
       setDirty(false);
-      toast(isNew ? `${out.name} created.` : 'Suite saved.');
+      if (!quiet) toast(isNew ? `${out.name} created.` : 'Suite saved.');
       if (isNew) { loaded.current = out.id; navigate(`/suites/${out.id}`, { replace: true }); }
       return out;
     } catch (e) {
@@ -105,11 +106,15 @@ export default function SuiteEditorScreen() {
   /** Saves unsaved edits first, for the edition's title-bar action. */
   const prepare = async () => (dirty || !suite ? await save() : suite);
 
-  // Straight to Recently deleted, with Undo in the toast (moveToBin.ts): nothing to confirm.
+  // Straight to Recently deleted, with Undo in the toast (moveToBin.ts): nothing to confirm. Unsaved
+  // edits are saved first, so Undo brings back the suite as it was on screen; if they can't be
+  // saved (no name, no tests), the toast says they weren't kept.
   const remove = async () => {
     if (!suiteId) return;
-    const label = name.trim() || suite?.name || 'Suite';
-    if (await moveToBin({ kind: 'suite', id: suiteId }, label, () => backend.deleteSuite(suiteId), "Couldn't delete the suite.")) navigate('/suites', { replace: true });
+    const kept = !dirty || !!(await save(true));
+    const label = (kept && name.trim()) || suite?.name || 'Suite';
+    const said = kept ? undefined : `"${label}" moved to Recently deleted, without the edits you hadn't saved.`;
+    if (await moveToBin({ kind: 'suite', id: suiteId }, label, () => backend.deleteSuite(suiteId), "Couldn't delete the suite.", said)) navigate('/suites', { replace: true });
   };
 
   // The suite's tests in Recently deleted, by name: the test itself, or its deleted app.
@@ -121,7 +126,7 @@ export default function SuiteEditorScreen() {
   const canRestore = binnedItems.length > 0 && binnedItems.every(i => canManageDeleted(i, backend.myRole(), uid));
   const restoreBinned = async () => {
     setRestoring(true);
-    try { for (const i of binnedItems) await backend.recentlyDeleted!.restore(i); toast(binnedItems.length === 1 ? `"${binnedItems[0].name}" is back.` : 'They\'re back.'); }
+    try { for (const i of binnedItems) await backend.recentlyDeleted!.restore(i); toast(restoredText(...binnedItems.map(i => i.name))); }
     catch (e) { toast(e instanceof Error ? e.message : "Couldn't restore them.", { error: true }); }
     finally { setRestoring(false); }
   };

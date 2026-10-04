@@ -24,6 +24,9 @@
 .hairline.passed > div { background: var(--passed); }
 .hairline.failed > div { background: var(--failed); }
 .window-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; position: relative; }
+/* While Community's usage notice shows in the corner (UsageNotice.tsx), room at the end of the screen
+   so the last row can scroll out from under it. */
+.usage-notice-open .window-body::after { content: ""; display: block; flex: none; height: var(--usage-notice-room, 0px); }
 .page { padding: 32px 40px; display: flex; flex-direction: column; gap: 24px; animation: bpIn 300ms ease-out both; }
 .page-title { font-size: 26px; font-weight: 600; letter-spacing: -0.015em; margin: 0; }
 

@@ -149,12 +149,15 @@ select.input { appearance: none; padding-right: 32px; background-image: none; cu
 .menu-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--r-row); font-size: 14px; color: var(--text); text-align: left; width: 100%; }
 .menu-item .icon { font-size: 19px; color: var(--text-muted); }
 .menu-item:hover, .menu-item:focus-visible, .menu-item[aria-selected="true"] { background: var(--raised); outline: none; }
-.menu-item:active:not(:disabled) { background: var(--selected); }
-.menu-item:disabled { color: var(--text-faint); cursor: default; }
-.menu-item:disabled:hover { background: none; }
+.menu-item:active:not([aria-disabled="true"]) { background: var(--selected); }
+/* Unavailable (aria-disabled): faint and inert to the pointer, but still focusable, so the focus ring shows. */
+.menu-item[aria-disabled="true"] { color: var(--text-faint); cursor: default; }
+.menu-item[aria-disabled="true"]:hover { background: none; }
+.menu-item[aria-disabled="true"]:focus-visible { background: var(--raised); }
+.menu-item[aria-disabled="true"] .icon { color: var(--text-faint); }
 .menu-item.danger { color: var(--failed); }
 .menu-item.danger .icon { color: var(--failed); }
-.menu-item.danger:disabled, .menu-item.danger:disabled .icon { color: var(--text-faint); }
+.menu-item.danger[aria-disabled="true"], .menu-item.danger[aria-disabled="true"] .icon { color: var(--text-faint); }
 .menu-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .menu-detail { font-size: 12px; color: var(--text-faint); line-height: 1.35; }
 .menu-item:has(.menu-detail) { align-items: flex-start; }
@@ -198,6 +201,8 @@ select.input { appearance: none; padding-right: 32px; background-image: none; cu
 .toast-text { min-width: 0; }
 .toast-action { flex: none; font: inherit; font-weight: 600; color: var(--accent); background: none; border: 0; border-radius: 8px; padding: 4px 8px; margin: -4px 0; cursor: pointer; white-space: nowrap; }
 .toast-action:first-of-type { margin-left: 4px; }
+/* "Undo ⌘Z": the shortcut beside the word, quieter than it. */
+.toast-key { font: inherit; font-weight: 500; font-size: 12px; color: var(--text-faint); margin-left: 6px; letter-spacing: .02em; }
 .toast-action:hover { background: var(--selected); }
 .toast-action:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .toast .icon { font-size: 19px; color: var(--passed); }

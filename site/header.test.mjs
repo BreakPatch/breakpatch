@@ -41,9 +41,13 @@ test('the install command stays on one line on phones, with Copy at its end', ()
   assert.match(phone, /\.install-cmd \.copy\{top:1px;bottom:1px;right:1px;[^}]*min-height:44px/);
 });
 
-test('the hero badge keeps its dot with the words after it', () => {
+test('the hero badge keeps its dot with the words after it, and on a phone has none to orphan', () => {
   const home = read('./index.html');
-  assert.ok(home.includes('AI on your Mac<span class="soft"><span>no cloud<a class="star" href="#no-cloud"'));
+  assert.ok(home.includes('AI on your Mac</span><span class="soft"><span>no cloud<a class="star" href="#no-cloud"'));
+  assert.match(phone, /\.ai-badge\{[^}]*flex-direction:column/);
+  assert.ok(phone.includes('.ai-badge .soft::before{display:none}'));
+  // The asterisk is a 44 px target without moving the words: padding, taken back by a negative margin.
+  assert.match(CSS, /\.ai-badge \.star\{position:relative;display:inline-block;padding:12px 18px;margin:-12px -18px -12px calc\(1px - 18px\);line-height:20px/);
   // The asterisk on "no cloud" leads to the note that says where the cloud does come in.
   assert.ok(home.includes('<p class="cloud-note" id="no-cloud">'));
   assert.doesNotMatch(home, /class="sep"/);

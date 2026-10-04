@@ -15,16 +15,22 @@ export function Fact({ label, value }: { label: string; value: ReactNode }) {
   return <div className="set-fact"><div>{label}</div><div>{value}</div></div>;
 }
 
-/** Confirm dialog for destructive actions. The confirm button shows a spinner while `onConfirm` runs. */
-export function Confirm({ open, onClose, title, text, confirm, onConfirm, icon = 'warning' }: {
-  open: boolean; onClose: () => void; title: string; text: ReactNode; confirm: string; onConfirm: () => Promise<void> | void; icon?: string;
+/**
+ * Confirm dialog. The confirm button shows a spinner while `onConfirm` runs. `tone`: 'danger' (the
+ * default) for what destroys or can't be undone: a red button, a red icon, and Cancel takes Enter.
+ * 'primary' for a weighty step that isn't destructive (a new key): the usual primary button and icon.
+ */
+export function Confirm({ open, onClose, title, text, confirm, onConfirm, icon = 'warning', tone = 'danger' }: {
+  open: boolean; onClose: () => void; title: string; text: ReactNode; confirm: string; onConfirm: () => Promise<void> | void; icon?: string; tone?: 'danger' | 'primary';
 }) {
   const [busy, setBusy] = useState(false);
+  const danger = tone === 'danger';
   return (
-    <Dialog open={open} onClose={onClose} title={title} icon={icon} iconColor="var(--failed)"
+    <Dialog open={open} onClose={onClose} title={title} icon={icon} iconColor={danger ? 'var(--failed)' : undefined}
       actions={<>
-        <Button kind="ghost" onClick={onClose} data-autofocus>Cancel</Button>
-        <Button kind="danger" busy={busy} onClick={async () => { setBusy(true); try { await onConfirm(); onClose(); } finally { setBusy(false); } }}>{confirm}</Button>
+        <Button kind="ghost" onClick={onClose} data-autofocus={danger || undefined}>Cancel</Button>
+        <Button kind={danger ? 'danger' : 'primary'} busy={busy} data-autofocus={!danger || undefined}
+          onClick={async () => { setBusy(true); try { await onConfirm(); onClose(); } finally { setBusy(false); } }}>{confirm}</Button>
       </>}>
       <p className="set-dlg-text">{text}</p>
     </Dialog>

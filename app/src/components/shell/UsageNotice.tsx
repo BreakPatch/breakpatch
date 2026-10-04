@@ -15,6 +15,9 @@ export const NOTICE_TEXT = 'Breakpatch counts tests created and runs, as anonymo
 
 /** Screens the notice waits behind: the first-launch steps. */
 const NOT_ON = ['/welcome', '/setup', ...edition.gate.paths];
+/** Screens with their own bar along the bottom (the recorder's add-step bar, a run's controls): the
+ *  notice steps aside there and comes back after, so it never covers them. */
+const BUSY = /\/(record|run|run-all|edit)$|\/runs\//;
 
 export function UsageNotice() {
   const { pathname } = useLocation();
@@ -22,23 +25,36 @@ export function UsageNotice() {
   const asked = useRef(false);
   const community = edition.name === 'community';
   const waiting = NOT_ON.includes(pathname);
-  const { mounted, closing } = usePresence(show);
+  const aside = BUSY.test(pathname);
+  const { mounted, closing } = usePresence(show && !aside);
+  const box = useRef<HTMLElement>(null);
+  // While it shows, lists get room at their end (shell.css), so their last row can scroll clear of it.
+  useEffect(() => {
+    const el = box.current, root = document.documentElement;
+    if (!mounted || closing || !el) return;
+    const room = () => root.style.setProperty('--usage-notice-room', `${el.offsetHeight + 28}px`);
+    room();
+    root.classList.add('usage-notice-open');
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(room) : null;
+    ro?.observe(el);
+    return () => { ro?.disconnect(); root.classList.remove('usage-notice-open'); root.style.removeProperty('--usage-notice-room'); };
+  }, [mounted, closing]);
 
   useEffect(() => {
-    if (!community || waiting || asked.current) return;
+    if (!community || waiting || aside || asked.current) return;
     asked.current = true;
     usage.settings().then(s => {
       if (s.edition !== 'community' || s.noticeSeen || s.turnedOffByEnv) return;
       setShow(true);
       void usage.noticeSeen();          // shown: sending may start (usage.rs), whether or not OK is pressed
     }, () => {});
-  }, [community, waiting]);
+  }, [community, waiting, aside]);
 
   if (!mounted) return null;
   const ok = () => setShow(false);
   const off = () => { setShow(false); void usage.setEnabled(false); };
   return (
-    <aside className={'usage-notice' + (closing ? ' closing' : '')} role="status" aria-label="Anonymous usage counts" inert={closing || undefined}>
+    <aside ref={box} className={'usage-notice' + (closing ? ' closing' : '')} role="status" aria-label="Anonymous usage counts" inert={closing || undefined}>
       <div className="usage-notice-head"><Icon name="query_stats" size={20} /><span>Anonymous usage counts</span></div>
       <p className="usage-notice-text">{NOTICE_TEXT}</p>
       <p className="usage-notice-note">You can turn this off at any time in Settings → Privacy.</p>

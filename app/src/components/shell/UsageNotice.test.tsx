@@ -52,6 +52,21 @@ describe('the one-time usage notice (Community)', () => {
     expect(screen.queryByText(NOTICE_TEXT)).not.toBeInTheDocument();
   });
 
+  it('waits outside the recorder, whose add-step bar it would cover', async () => {
+    at('/apps/a/tests/t/record');
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText(NOTICE_TEXT)).not.toBeInTheDocument();
+    expect((await usage.settings()).noticeSeen).toBe(false);
+  });
+
+  it('while it shows, lists get room at their end for it', async () => {
+    at('/');
+    await screen.findByText(NOTICE_TEXT);
+    expect(document.documentElement).toHaveClass('usage-notice-open');
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    await waitFor(() => expect(document.documentElement).not.toHaveClass('usage-notice-open'));
+  });
+
   it('blocks nothing and takes no focus, and counts as seen once shown (DES-10)', async () => {
     at('/');
     await screen.findByText(NOTICE_TEXT);

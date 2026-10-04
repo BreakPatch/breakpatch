@@ -35,7 +35,7 @@ describe('Delete shared steps', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     await waitFor(async () => expect(await groupsNow()).toEqual([]));
     await screen.findByText('"Sign in" moved to Recently deleted.');
-    expect(screen.getByRole('button', { name: 'Open Recently deleted' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show Recently deleted' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
     await waitFor(async () => expect((await groupsNow()).map(x => x.name)).toEqual(['Sign in']));
     await screen.findByText('"Sign in" is back.');
@@ -46,11 +46,39 @@ describe('Delete shared steps', () => {
     const g = { ...(await backend.createGroup(app.id, 'Sign in', '', [])), usedBy: [{ testId: t.id, version: 'latest' as const }, { testId: 'deleted-one', version: 1 }] };
     open([g], [t]);
     fireEvent.click(screen.getByRole('button', { name: 'More for Sign in' }));
-    const del = screen.getByRole('menuitem', { name: /^Delete/ });
-    expect(del).toBeDisabled();
-    expect(del).toHaveTextContent('Used by 1 test. Take them out first.');
+    const del = screen.getByRole('menuitem', { name: 'Delete' });
+    // Unavailable, but still there for the keyboard, with why as its description.
+    expect(del).toHaveAttribute('aria-disabled', 'true');
+    expect(del).not.toBeDisabled();
+    expect(del).toHaveAccessibleDescription('Used by 1 test. Take it out first.');
     fireEvent.click(del);
     expect(await groupsNow()).toHaveLength(1);
+    expect(screen.getByRole('menu')).toBeInTheDocument();          // choosing it does nothing, not even close the menu
+  });
+
+  it('the unavailable Delete is reachable with the arrow keys', async () => {
+    const t = await backend.createTest({ appId: app.id, name: 'Log in', startUrl: 'https://app.example.com', viewport: VP });
+    const g = { ...(await backend.createGroup(app.id, 'Sign in', '', [])), usedBy: [{ testId: t.id, version: 'latest' as const }] };
+    open([g], [t]);
+    fireEvent.click(screen.getByRole('button', { name: 'More for Sign in' }));
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Edit' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });            // wraps round to the last item
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Delete' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: 'Edit' }));
+    fireEvent.keyDown(document.activeElement!, { key: 'End' });
+    fireEvent.keyDown(document.activeElement!, { key: 'Enter' });
+    fireEvent.click(document.activeElement!);                       // Enter on a button clicks it
+    expect(await groupsNow()).toHaveLength(1);
+  });
+
+  it('says the same count in the Used by column as Delete does', async () => {
+    const t = await backend.createTest({ appId: app.id, name: 'Log in', startUrl: 'https://app.example.com', viewport: VP });
+    const g = { ...(await backend.createGroup(app.id, 'Sign in', '', [])), usedBy: [{ testId: t.id, version: 'latest' as const }, { testId: 'deleted-one', version: 1 }] };
+    open([g], [t]);
+    const row = screen.getByRole('row', { name: 'Sign in, edit' });
+    expect(row).toHaveTextContent('1 test');
+    expect(row).not.toHaveTextContent('2 tests');
   });
 
   it('is for admins only', async () => {

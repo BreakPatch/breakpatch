@@ -5,6 +5,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { copyText } from '../../platform';
+import { ariaShortcut, otherCommandKeyDown, shortcut, shortcutKeyDown } from '../../lib/osWords';
 import { usePresence } from './presence';
 import './ui.css';
 
@@ -210,6 +211,7 @@ export type MenuEntry = MenuItem | { group: string } | 'sep';
 /** Pop-up menu with keyboard navigation. Place inside a `position: relative` wrapper. */
 export function Menu({ open, onClose, items, style, width = 240, label }: { open: boolean; onClose: () => void; items: MenuEntry[]; style?: CSSProperties; width?: number; label: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const uid = useId();
   const { mounted, closing } = usePresence(open);
   useEffect(() => {
     if (!open) return;
@@ -219,7 +221,8 @@ export function Menu({ open, onClose, items, style, width = 240, label }: { open
     const onDown = (e: MouseEvent) => { if (el && !el.contains(e.target as Node)) onClose(); };
     const onKey = (e: KeyboardEvent) => {
       if (!el) return;
-      const list = [...el.querySelectorAll<HTMLElement>('[role^="menuitem"]:not([disabled])')];
+      // Every item, the unavailable ones too (aria-disabled): they stay reachable so their detail can be read.
+      const list = [...el.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
       const i = list.indexOf(document.activeElement as HTMLElement);
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
       else if (e.key === 'ArrowDown') { e.preventDefault(); list[(i + 1) % list.length]?.focus(); }
@@ -246,10 +249,13 @@ export function Menu({ open, onClose, items, style, width = 240, label }: { open
       style={{ width, transformOrigin: originFor(style), ...style }}>
       {items.map((it, k) => it === 'sep' ? <div key={k} className="menu-sep" role="separator" />
         : 'group' in it ? <div key={k} className="menu-group">{it.group}</div>
-        : <button key={k} type="button" role={it.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={it.checked} className={cx('menu-item', it.danger && 'danger')} disabled={it.disabled}
-            onClick={() => { if (!open) return; onClose(); it.onSelect(); }}>
+        // An unavailable item is aria-disabled, not disabled: it stays focusable with the arrows, its detail
+        // (why it's unavailable) is its description, and choosing it does nothing.
+        : <button key={k} type="button" role={it.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={it.checked} className={cx('menu-item', it.danger && 'danger')}
+            aria-disabled={it.disabled || undefined} aria-labelledby={it.detail ? `${uid}-${k}-l` : undefined} aria-describedby={it.detail ? `${uid}-${k}` : undefined}
+            onClick={() => { if (!open || it.disabled) return; onClose(); it.onSelect(); }}>
             {it.icon && <Icon name={it.icon} />}
-            {it.detail ? <span className="menu-text"><span>{it.label}</span><span className="menu-detail">{it.detail}</span></span>
+            {it.detail ? <span className="menu-text"><span id={`${uid}-${k}-l`}>{it.label}</span><span className="menu-detail" id={`${uid}-${k}`}>{it.detail}</span></span>
               : it.checked === undefined ? it.label : <span className="grow">{it.label}</span>}
             {it.checked && <Icon name="check" className="menu-check" />}
           </button>)}
@@ -305,18 +311,44 @@ export function Banner({ tone, icon, title, children, actions }: { tone: 'accent
 }
 
 // ---------- Toasts ----------
-/** A button in a toast, such as Undo. Pressing it also closes the toast. */
-export interface ToastAction { label: string; onClick: () => void }
+/**
+ * A button in a toast, such as Undo. Pressing it also closes the toast. `undo`: the newest toast's
+ * undo also runs on ⌘Z (Ctrl+Z off the Mac), and the button says so. `name`: what a screen reader
+ * says when the label is short ("Show" → "Show Recently deleted"); it starts with the label.
+ */
+export interface ToastAction { label: string; onClick: () => void; undo?: boolean; name?: string }
 export interface ToastOptions { error?: boolean; actions?: ToastAction[] }
-interface ToastItem { id: number; text: string; error?: boolean; actions?: ToastAction[]; leaving?: boolean }
-/** How long a toast stays: longer when it has buttons, so there's time to press one. */
+/** `from`: where focus was when it showed, for focus to go back to after one of its buttons. */
+interface ToastItem { id: number; text: string; error?: boolean; actions?: ToastAction[]; leaving?: boolean; from?: HTMLElement | null }
+/** How long a toast stays: longer when it has buttons, so there's time to press one, and long enough to read an error. */
 export const TOAST_MS = 2400;
+export const TOAST_ERROR_MS = 6000;
 export const TOAST_ACTIONS_MS = 8000;
 const TOAST_OUT_MS = 180;
 const ToastCtx = createContext<(text: string, opts?: ToastOptions) => void>(() => {});
+
+/** Where typing goes, so ⌘Z there is the field's own undo, never a toast's. */
+function isTypingIn(t: EventTarget | null): boolean {
+  if (!(t instanceof HTMLElement)) return false;
+  if (t.isContentEditable || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return true;
+  return t instanceof HTMLInputElement && !['button', 'checkbox', 'radio', 'range', 'color', 'file', 'submit', 'reset', 'image'].includes(t.type);
+}
+/** Focus that's nowhere in particular: the page itself, or gone with what held it. */
+const focusLost = () => { const a = document.activeElement; return !a || a === document.body || !a.isConnected; };
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const box = useRef<HTMLDivElement>(null);
+  const live = useRef<ToastItem[]>([]);
+  useEffect(() => { live.current = items; }, [items]);
+  // The last place focus was outside the toasts, for focus to go back to after a toast's button.
+  const lastFocus = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const onIn = (e: FocusEvent) => { if (e.target instanceof HTMLElement && !box.current?.contains(e.target)) lastFocus.current = e.target; };
+    document.addEventListener('focusin', onIn);
+    return () => document.removeEventListener('focusin', onIn);
+  }, []);
   const remove = useCallback((id: number) => {
     clearTimeout(timers.current.get(id));
     setItems(x => x.map(t => (t.id === id ? { ...t, leaving: true } : t)));
@@ -328,14 +360,46 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, [remove]);
   const push = useCallback((text: string, opts?: ToastOptions) => {
     const id = Date.now() + Math.random();
-    setItems(x => [...x, { id, text, error: opts?.error, actions: opts?.actions }]);
-    later(id, opts?.actions?.length ? TOAST_ACTIONS_MS : TOAST_MS);
+    const a = document.activeElement;
+    const from = a instanceof HTMLElement && a !== document.body && !box.current?.contains(a) ? a : null;
+    setItems(x => [...x, { id, text, error: opts?.error, actions: opts?.actions, from }]);
+    later(id, opts?.actions?.length ? TOAST_ACTIONS_MS : opts?.error ? TOAST_ERROR_MS : TOAST_MS);
   }, [later]);
+  /** Runs a toast's button and closes the toast. Focus that was on the toast goes back where it was. */
+  const press = useCallback((t: ToastItem, a: ToastAction) => {
+    const wasIn = !!box.current?.contains(document.activeElement);
+    remove(t.id);
+    a.onClick();
+    if (!wasIn) return;
+    // After the button's own work has had a moment to render (a restored row, another page).
+    setTimeout(() => {
+      if (!focusLost() && !box.current?.contains(document.activeElement)) return;   // it went somewhere on purpose
+      const back = [t.from, lastFocus.current].find(el => el?.isConnected);
+      back?.focus();
+    }, 0);
+  }, [remove]);
+  // ⌘Z runs the newest toast's Undo while it shows: not while typing in a field (that's the field's
+  // own undo), and not under a dialog. (In the Mac app, the page sees ⌘Z before the Edit menu does.)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.key.toLowerCase() !== 'z' || !shortcutKeyDown(e) || otherCommandKeyDown(e) || e.shiftKey || e.altKey) return;
+      if (isTypingIn(e.target) || document.querySelector('[aria-modal="true"]')) return;
+      const t = [...live.current].reverse().find(x => !x.leaving && x.actions?.some(b => b.undo));
+      const undo = t?.actions?.find(b => b.undo);
+      if (!t || !undo) return;
+      e.preventDefault();
+      press(t, undo);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [press]);
   useEffect(() => { const t = timers.current; return () => t.forEach(clearTimeout); }, []);
+  // Only the newest toast with an Undo answers ⌘Z, so only it says so.
+  const keyed = [...items].reverse().find(x => !x.leaving && x.actions?.some(b => b.undo))?.id;
   return (
     <ToastCtx.Provider value={push}>
       {children}
-      <div className="toasts" aria-live="polite">
+      <div className="toasts" aria-live="polite" ref={box}>
         {items.map(t => (
           // While the pointer or focus is on a toast with buttons, it stays; it goes a moment after.
           <div key={t.id} className={cx('toast', t.error && 'error', t.leaving && 'leaving')}
@@ -345,9 +409,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             onBlur={t.actions && !t.leaving ? () => later(t.id, TOAST_MS) : undefined}>
             <Icon name={t.error ? 'error' : 'check_circle'} />
             <span className="toast-text">{t.text}</span>
-            {t.actions?.map(a => (
-              <button key={a.label} type="button" className="toast-action" onClick={() => { remove(t.id); a.onClick(); }}>{a.label}</button>
-            ))}
+            {t.actions?.map(a => {
+              const key = a.undo && t.id === keyed;
+              return (
+                <button key={a.label} type="button" className="toast-action" aria-label={a.name} aria-keyshortcuts={key ? ariaShortcut('Z') : undefined}
+                  onClick={() => press(t, a)}>
+                  {a.label}{key && <kbd className="toast-key" aria-hidden>{shortcut('Z')}</kbd>}
+                </button>
+              );
+            })}
           </div>
         ))}
       </div>

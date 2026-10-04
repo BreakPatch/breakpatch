@@ -79,9 +79,20 @@ def menu(pg, problems, where):
         b = links.nth(i).bounding_box()
         if b and b['height'] < 44:
             problems.append(f'{where}: the menu link "{links.nth(i).inner_text()}" is {round(b["height"])} px tall')
+    # The page under the scrim doesn't scroll while the menu is open.
+    if pg.evaluate("getComputedStyle(document.documentElement).overflow") != 'hidden':
+        problems.append(f'{where}: the page still scrolls under the open menu')
     pg.keyboard.press('Escape')
-    if t.get_attribute('aria-expanded') != 'false' or links.first.is_visible():
+    # Closing fades the menu out for a moment (site.css .closing), then it's gone.
+    try:
+        links.first.wait_for(state='hidden', timeout=1000)
+        gone = True
+    except Exception:
+        gone = False
+    if t.get_attribute('aria-expanded') != 'false' or not gone:
         problems.append(f'{where}: Esc doesn\'t close the menu')
+    if pg.evaluate("getComputedStyle(document.documentElement).overflow") == 'hidden':
+        problems.append(f'{where}: the page doesn\'t scroll again after the menu closes')
     if not pg.evaluate("document.activeElement === document.querySelector('.nav-toggle')"):
         problems.append(f'{where}: after Esc, focus isn\'t back on the Menu button')
     # From the keyboard: Enter opens it with focus on the first link.

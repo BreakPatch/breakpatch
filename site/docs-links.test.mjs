@@ -96,7 +96,28 @@ test('notes render as notes, never as a comment in the text', () => {
   assert.doesNotMatch(PAGE, /&lt;!--/);
   // Team and Business aren't on sale yet: the Team part says so first, in a note that always shows.
   const team = PAGE.slice(PAGE.indexOf('<header class="part" id="team">'), PAGE.indexOf('</header>', PAGE.indexOf('<header class="part" id="team">')));
-  assert.match(team, /<p class="soon" role="note"><span class="dot" aria-hidden="true"><\/span><span>Coming soon\. Team and Business aren't on sale yet\./);
+  assert.match(team, /<p class="soon" role="note"><span class="dot" aria-hidden="true"><\/span><span>Coming later\. Team and Business aren't on sale yet, and their pricing is to be decided\./);
   assert.match(PAGE, /<section id="hosted-by-breakpatch" class="team">[\s\S]*?<p class="soon" role="note">/);
   assert.throws(() => build('# T\n\nx\n\n---\n\n# P\n\n## S\n\n<!-- later --> Something.\n'), /Unknown note/);
+});
+
+test('nothing says Coming soon for Team, Business, Solo or hosting: they are coming later', () => {
+  for (const m of MD.matchAll(/<!--\s*(?:soon|solo-soon)\s*-->\s*(.*)/g)) assert.match(m[1], /^Coming later\./, m[1]);
+  assert.doesNotMatch(MD, /Opens soon/);
+});
+
+test('a program’s output is shown without a Copy button, and wraps on a phone', () => {
+  const html = build('# T\n\nx\n\n---\n\n# P\n\n## S\n\n```output\nbreakpatch-ci: simple runner (4 GB)\n```\n\n```sh\nbreakpatch-ci run\n```\n');
+  assert.match(html, /<div class="code output"><pre><code>breakpatch-ci: simple runner \(4 GB\)<\/code><\/pre><\/div>/);
+  assert.match(html, /<div class="code"><button class="copy" type="button">Copy<\/button><pre><code data-lang="sh">breakpatch-ci run/);
+  // The runner tiers' example log is one.
+  assert.match(PAGE, /<div class="code output"><pre><code>breakpatch-ci: simple runner/);
+  assert.match(read('site/assets/site.css'), /\.code\.output pre code\{white-space:pre-wrap/);
+});
+
+test('a table after <!-- stack --> stacks on a phone, each cell named by its column', () => {
+  const html = build('# T\n\nx\n\n---\n\n# P\n\n## S\n\n<!-- stack -->\n| | A | **B** |\n|---|---|---|\n| One | yes | no |\n');
+  assert.match(html, /<table class="stack"><thead><tr><th><\/th><th>A<\/th><th><strong>B<\/strong><\/th><\/tr><\/thead><tbody><tr><td>One<\/td><td data-label="A">yes<\/td><td data-label="B">no<\/td><\/tr>/);
+  const tiers = PAGE.slice(PAGE.indexOf('id="runner-tiers"'));
+  assert.match(tiers, /^[^]*?<table class="stack">[^]*?<td data-label="Simple runner">/);
 });

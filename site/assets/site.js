@@ -30,8 +30,19 @@ if (mainNav) {
   scrim.setAttribute('aria-hidden', 'true');
   topBar.after(scrim);
   const isOpen = () => topBar.classList.contains('open');
+  // Closing fades the menu and the scrim out (.closing in site.css) before they go; opening again cuts it short.
+  let closing;
+  const endClosing = () => { clearTimeout(closing); topBar.classList.remove('closing'); };
   const setOpen = (open, focus) => {
+    if (open === isOpen()) return;
+    endClosing();
+    if (!open && isOpen()) {
+      topBar.classList.add('closing');
+      closing = setTimeout(endClosing, matchMedia('(prefers-reduced-motion: reduce)').matches ? 120 : 160);
+    }
     topBar.classList.toggle('open', open);
+    // The page under the scrim stays where it is while the menu is open.
+    document.documentElement.classList.toggle('menu-open', open);
     toggle.setAttribute('aria-expanded', String(open));
     toggle.setAttribute('aria-label', open ? 'Close menu' : 'Menu');
     if (open && focus) mainNav.querySelector('a')?.focus();

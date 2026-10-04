@@ -400,7 +400,7 @@ You can also send IT this section: [breakpatch.dev/docs/#using-breakpatch-on-a-c
 
 # Team
 
-<!-- soon --> Coming soon. Team and Business aren't on sale yet. To hear when they are, email [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20Team).
+<!-- soon --> Coming later. Team and Business aren't on sale yet, and their pricing is to be decided. To hear when they are, email [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20Team).
 
 Everything in this part comes with **Breakpatch Team** (and Business, which is Team for bigger companies). It describes Team as it's built today. The Breakpatch you install already has it inside: a Team licence turns it on, so there's nothing to reinstall when it goes on sale. [Solo](#solo) says which parts Solo, planned for one person, includes.
 
@@ -423,7 +423,7 @@ Workspaces hosted by Breakpatch aren't open yet either. Until they are, a worksp
 
 ## Solo
 
-<!-- solo-soon --> Coming soon. Solo isn't on sale yet. To hear when it is, email [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20Solo).
+<!-- solo-soon --> Coming later. Solo isn't on sale yet. To hear when it is, email [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20Solo).
 
 Solo is planned for one person who wants Team's automation for themselves, on their own tests folder. This is how it works in the app today. Its price isn't set.
 
@@ -474,7 +474,7 @@ Good to know:
 
 ## Hosted by Breakpatch
 
-<!-- soon --> Opens soon. Until it does, keep your team's tests in your own Firebase project: see [Host it yourself](#host-it-yourself).
+<!-- soon --> Coming later. Until then, keep your team's tests in your own Firebase project: see [Host it yourself](#host-it-yourself).
 
 The easy way to a Team or Business workspace: Breakpatch keeps it for you, in Europe, with nothing to set up. Everyone signs in with their work email and a code; there are no passwords. It's the same Breakpatch as a workspace of your own, with the same tests, suites, runs and roles.
 
@@ -486,7 +486,7 @@ This Mac stays signed in to your Breakpatch account, so next time the list opens
 
 ### Create the hosted workspace
 
-A licence's admin does this once, after getting Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name, choose the country your company is in and press **Create workspace**. You're its first admin, and the licence's other admins are invited. Your data is stored in Europe. Hosting by Breakpatch for companies in the EU and the EEA is coming soon: those countries say *(coming soon)* in the list, and choosing one offers **Host it yourself** instead.
+A licence's admin does this once, after getting Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name, choose the country your company is in and press **Create workspace**. You're its first admin, and the licence's other admins are invited. Your data is stored in Europe. Hosting for companies in the EU and the EEA isn't open yet: those countries say *(coming soon)* in the list, and choosing one offers **Host it yourself** instead.
 
 Creating it turns on [encryption](#encryption-and-the-recovery-code): the workspace's key is made on your Mac, and Breakpatch never has it. Straight away, Breakpatch shows the workspace's **recovery code**: save it (**Save recovery kit (PDF)** or **Copy code**) and type back the 4 characters it asks for. The window stays open until you do, or until you choose **Skip, I'll make a new one later** and confirm. Without the code, losing every Mac that has the key means losing the tests.
 
@@ -1049,10 +1049,11 @@ A Raspberry Pi makes a cheap, always-on machine that replays your workspace's su
 
 Each time `breakpatch-ci` starts a run, it checks how much memory the machine has and how fast its processor is. That takes less than a second. Then it picks a tier, and the first lines of the log say which and why, for example:
 
-```
+```output
 breakpatch-ci: simple runner (4 GB of memory and a processor 1.0× as fast as a Raspberry Pi 4; the full tier needs 6 GB and a faster processor). Replay, screen checks and schedules only: no AI assistant and no fixing. Waits are 2× as long (BP_TIMINGS_SCALE changes that).
 ```
 
+<!-- stack -->
 | | Simple runner | Full runner |
 |---|---|---|
 | **When** | Under 6 GB of memory, or a processor about as fast as a Raspberry Pi 4 | 6 GB or more, and a faster processor (a Pi 5, a mini PC, a Mac, a CI machine) |
