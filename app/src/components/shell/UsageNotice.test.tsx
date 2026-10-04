@@ -62,7 +62,8 @@ describe('the one-time usage notice (Community)', () => {
   it('while it shows, lists get room at their end for it', async () => {
     at('/');
     await screen.findByText(NOTICE_TEXT);
-    expect(document.documentElement).toHaveClass('usage-notice-open');
+    // Set in an effect after the notice is drawn, so on a busy machine a moment later.
+    await waitFor(() => expect(document.documentElement).toHaveClass('usage-notice-open'));
     fireEvent.click(screen.getByRole('button', { name: 'OK' }));
     await waitFor(() => expect(document.documentElement).not.toHaveClass('usage-notice-open'));
   });
