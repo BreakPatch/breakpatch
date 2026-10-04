@@ -1057,13 +1057,13 @@ breakpatch-ci: simple runner (4 GB of memory and a processor 1.0× as fast as a 
 <!-- stack -->
 | | Simple runner | Full runner |
 |---|---|---|
-| **When** | Under 6 GB of memory, or a processor about as fast as a Raspberry Pi 4 | 6 GB or more, and a faster processor (a Pi 5, a mini PC, a Mac, a CI machine) |
+| **When** | Under 6 GB of memory | 6 GB or more |
 | **Replay and screen checks** | Yes | Yes |
 | **Suites on a schedule** | Yes | Yes |
 | **AI assistant and fixing** (`--auto-fix`) | No. `--auto-fix` is ignored, and the log says why in one line | Where the AI assistant is installed (today, a Mac) |
-| **Waits** (when `BP_TIMINGS_SCALE` isn't set) | Longer: 2× on a Pi 4, 3× on a much slower processor (a Pi 3, or a Pi 4 slowing down when hot), 1.5× on a fast machine with little memory | As set |
+| **Waits** (when `BP_TIMINGS_SCALE` isn't set) | Longer: 2× on a Pi 4, 3× on a much slower processor (a Pi 3, or a Pi 4 slowing down when hot), 1.5× on a fast machine with little memory | 2× on a Pi 4, 3× on a much slower processor (a Pi 3, or a Pi 4 slowing down when hot), else as set |
 
-A Raspberry Pi 4 with 4 GB is a simple runner. So is a Pi 4 with 8 GB: it has the memory, but not the speed.
+A Raspberry Pi 4 with 4 GB is a simple runner. A Pi 4 with 8 GB is a full runner with longer waits: the processor's speed only sets the waits.
 
 The tier is also in the JSON result, as `runner` (`tier`, `reason`, `memoryGb`, `cpuSpeed` and `timingsScale`), and in the `--html` report, on the *Runner* line under *Machine*.
 

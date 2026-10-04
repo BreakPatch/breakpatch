@@ -1,0 +1,13 @@
+[
+  {"run": {"source": "desktop", "ranOn": {"os": "macOS"}}, "where": "This Mac"},
+  {"run": {"source": "desktop", "systemMismatch": {"ranOn": {"os": "macOS"}}}, "where": "This Mac"},
+  {"run": {"source": "desktop", "ranOn": {"os": "Windows"}}, "where": "This PC"},
+  {"run": {"source": "desktop", "systemMismatch": {"recordedOn": {"os": "macOS"}, "ranOn": {"os": "Linux"}}}, "where": "This PC"},
+  {"run": {"source": "desktop", "ranOn": {"os": "Windows"}, "systemMismatch": {"ranOn": {"os": "macOS"}}}, "where": "This PC"},
+  {"run": {"source": "desktop", "ranOn": {"chromium": "140"}, "systemMismatch": {"ranOn": {"os": "Linux"}}}, "where": "This PC"},
+  {"run": {"source": "desktop"}, "where": "Desktop app"},
+  {"run": {"source": "desktop", "ranOn": {"os": "FreeBSD"}}, "where": "Desktop app"},
+  {"run": {"source": "ci", "ranOn": {"os": "Linux"}}, "where": "CI"},
+  {"run": {"source": "runner", "ranOn": {"os": "macOS"}}, "where": "Local runner"},
+  {"run": {"source": "kiosk"}, "where": "kiosk"}
+]

@@ -2,7 +2,7 @@
 # Builds the Linux pieces inside a manylinux_2_28 container (AlmaLinux 8, glibc 2.28), so they run
 # on every Linux with glibc 2.28 or later: Debian 12, Raspberry Pi OS Bookworm, Ubuntu 22.04 and
 # later. Built straight on ubuntu-24.04 (glibc 2.39) a Nuitka module or a PyInstaller binary can
-# need symbols those don't have (plan docs/linux-windows-plan.md §1.4, "glibc floor").
+# need symbols those don't have.
 #
 #   scripts/build-manylinux.sh ci [build-ci.sh options]     breakpatch-ci: the Team wheel (tagged
 #                                                           manylinux_2_28_<arch>), the engine wheel

@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw
 
 from breakpatch_engine import config, report
 from breakpatch_engine.report import images
+from breakpatch_engine.report import view as report_view
 
 tpl = importlib.import_module("breakpatch_engine.report.render")
 from breakpatch_engine.service import Engine
@@ -55,6 +56,12 @@ def test_the_junit_xml_is_the_golden_one(case):
 
 
 # ---------------------------------------------------------------- what the report says
+
+@pytest.mark.parametrize("case", json.loads((FIXTURES / "where.json").read_text(encoding="utf-8")))
+def test_where_names_the_run_s_own_machine_as_the_app_does(case):
+    """The same cases as the app's report.test.ts: a desktop run's machine by its recorded system."""
+    assert report_view.where_text(case["run"]) == case["where"]
+
 
 def test_a_failed_step_has_its_reason_the_ai_assistant_and_its_screenshot():
     view = report.build(INPUT["run"])

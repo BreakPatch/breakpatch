@@ -90,7 +90,7 @@ use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::secrets::SecretStore;
-use crate::os_words::{os_string, os_text};
+use crate::os_words::{os_format, os_text};
 
 pub const SERVICE: &str = "dev.breakpatch.workspace-keys";
 const FIELD_INFO: &str = "bp-field-v1";
@@ -120,7 +120,7 @@ type Key = Zeroizing<[u8; 32]>;
 
 fn random<const N: usize>() -> Result<[u8; N], String> {
     let mut b = [0u8; N];
-    getrandom::fill(&mut b).map_err(|e| os_string(format!("This Mac couldn't make a random key: {e}")))?;
+    getrandom::fill(&mut b).map_err(|e| os_format!("This Mac couldn't make a random key: {e}", e = e))?;
     Ok(b)
 }
 
@@ -276,6 +276,11 @@ fn parse_public(b64: &str) -> Result<[u8; 32], String> {
 // ---- Device ids and fingerprints ---------------------------------------------------------------
 
 /// A device's id in the workspace (`devices/<id>`): the first 8 bytes of SHA-256 over its public key.
+///
+/// The Team module has a copy in TypeScript (breakpatch-team app/encryption/deviceId.ts, which
+/// keysApi.ts uses, so there's no shell command for it). Both check the same vector,
+/// `c16185034a809d23` for the key 00 01 … 1f (workspace_keys_tests.rs
+/// a_device_id_is_derived_from_its_device_key, deviceId.test.ts): change the two together.
 pub fn device_id(pk: &[u8; 32]) -> String {
     let mut h = Sha256::new();
     h.update(b"bp-device-v1");
@@ -495,12 +500,12 @@ impl Trust {
 
     /// Refuses a key unless its version was announced, by a trusted admin, with this key's commitment.
     pub fn check_key(&self, ws: &str, trusted: &BTreeSet<String>, kid: u32, key: &[u8; 32]) -> Result<(), String> {
-        let c = self.checks.get(&kid.to_string()).ok_or_else(|| os_string(format!("Key {kid} isn't one the workspace announced, so this Mac doesn't take it.")))?;
+        let c = self.checks.get(&kid.to_string()).ok_or_else(|| os_format!("Key {kid} isn't one the workspace announced, so this Mac doesn't take it.", kid = kid))?;
         if !trusted.contains(&c.by) || !verify_sig(&c.by, &key_msg(ws, kid, &c.check), &c.sig) {
-            return Err(os_string(format!("Key {kid} wasn't announced by an admin this Mac trusts, so it doesn't take it.")));
+            return Err(os_format!("Key {kid} wasn't announced by an admin this Mac trusts, so it doesn't take it.", kid = kid));
         }
         if c.check != key_check(key, ws, kid) {
-            return Err(os_string(format!("Key {kid} isn't the one the workspace announced, so this Mac doesn't take it.")));
+            return Err(os_format!("Key {kid} isn't the one the workspace announced, so this Mac doesn't take it.", kid = kid));
         }
         Ok(())
     }
@@ -925,7 +930,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
                     return Err("That key version isn't valid.".into());
                 }
                 match ring.keys.get(&kid) {
-                    Some(have) if **have != *key => return Err(os_string(format!("This Mac already holds another key {kid} for this workspace."))),
+                    Some(have) if **have != *key => return Err(os_format!("This Mac already holds another key {kid} for this workspace.", kid = kid)),
                     Some(_) => {}
                     None => {
                         ring.keys.insert(kid, key);
@@ -1106,7 +1111,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         let r = self.ring(ws)?;
         let ring = r.lock().unwrap();
         let kid = kid.or(ring.current()).ok_or_else(|| os_text("This Mac doesn't hold this workspace's key.").into_owned())?;
-        let key = ring.keys.get(&kid).ok_or_else(|| os_string(format!("This Mac doesn't hold key {kid} of this workspace.")))?;
+        let key = ring.keys.get(&kid).ok_or_else(|| os_format!("This Mac doesn't hold key {kid} of this workspace.", kid = kid))?;
         Ok((kid, key.clone()))
     }
 
@@ -1211,7 +1216,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         let res = self.resolve(ws, trust, root)?;
         if root.is_some_and(|r| res.revoked.contains(r)) {
             let what = if recipient == "machine" { "machine key" } else { "recovery code" };
-            return Err(os_string(format!("This {what} was made by an admin who isn't an admin of the workspace any more, so this Mac doesn't take it. An admin makes a new one in Settings → Workspace → Encryption.")));
+            return Err(os_format!("This {what} was made by an admin who isn't an admin of the workspace any more, so this Mac doesn't take it. An admin makes a new one in Settings → Workspace → Encryption.", what = what));
         }
         let trusted = res.trusted;
         let mut keys = Vec::new();
@@ -1257,8 +1262,8 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     fn vouched(ws: &str, recipient: &str, secret: &[u8], vouch: &Vouch) -> Result<String, String> {
         parse_signer(&vouch.by)?;
         if !same_b64(&vouch.mac, &vouch_mac(secret, ws, recipient, &vouch.by)) {
-            return Err(os_string(format!("The workspace's {recipient} copy isn't one an admin made with this {}, so this Mac doesn't take it.",
-                if recipient == "recovery" { "recovery code" } else { "machine key" })));
+            return Err(os_format!("The workspace's {recipient} copy isn't one an admin made with this {made_with}, so this Mac doesn't take it.",
+                recipient = recipient, made_with = if recipient == "recovery" { "recovery code" } else { "machine key" }));
         }
         Ok(vouch.by.clone())
     }
@@ -1375,7 +1380,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     pub fn retire(&self, ws: &str, keep: u32) -> Result<Vec<u32>, String> {
         self.update_ring(ws, |ring| {
             if !ring.keys.contains_key(&keep) {
-                return Err(os_string(format!("This Mac doesn't hold key {keep} of this workspace.")));
+                return Err(os_format!("This Mac doesn't hold key {keep} of this workspace.", keep = keep));
             }
             let before = ring.keys.len();
             ring.keys.retain(|kid, _| *kid >= keep);

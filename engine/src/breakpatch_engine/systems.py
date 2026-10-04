@@ -175,6 +175,8 @@ WINDOWS_CPU_KEY = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
 
 
 def memory_gb() -> float:
+    """The memory this process can have, in GB: the machine's, or on Linux its cgroup's limit when
+    that's smaller (a container, a systemd unit with MemoryMax=)."""
     try:
         total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
     except (ValueError, OSError, AttributeError):    # Windows has no sysconf
@@ -186,7 +188,58 @@ def memory_gb() -> float:
             pass
     elif sys.platform == "win32":
         total = windows_memory_bytes() or total
+    elif sys.platform.startswith("linux"):
+        limit = cgroup_memory_bytes()
+        if limit and (not total or limit < total):
+            total = limit
     return round(total / 2**30)
+
+
+CGROUP_ROOT = Path("/sys/fs/cgroup")
+PROC_SELF_CGROUP = Path("/proc/self/cgroup")
+# cgroup v1 writes "no limit" as the largest multiple of the page size that fits in 63 bits.
+_NO_CGROUP_LIMIT = 2**62
+
+
+def _cgroup_limit(path: Path) -> int:
+    """A memory.max or memory.limit_in_bytes value, or 0 for none ("max", unreadable, or v1's no limit)."""
+    try:
+        v = path.read_text().strip()
+    except OSError:
+        return 0
+    return int(v) if v.isdigit() and 0 < int(v) < _NO_CGROUP_LIMIT else 0
+
+
+def cgroup_memory_bytes(root: Path | None = None, proc: Path | None = None) -> int:
+    """The smallest memory limit on this process's cgroup and the ones above it (cgroup v2
+    memory.max, v1 memory/memory.limit_in_bytes), or 0 when there's none."""
+    root = CGROUP_ROOT if root is None else root
+    proc = PROC_SELF_CGROUP if proc is None else proc
+    places: list[Path] = []
+    try:
+        lines = proc.read_text().splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        _, controllers, rel = (line.split(":", 2) + ["", ""])[:3]
+        rel = rel.strip().lstrip("/")
+        if controllers == "":                                      # v2: "0::/system.slice/…"
+            places.append(root / rel / "memory.max" if rel else root / "memory.max")
+        elif "memory" in controllers.split(","):                   # v1: "4:memory:/docker/…"
+            places.append(root / "memory" / rel / "memory.limit_in_bytes" if rel else root / "memory" / "memory.limit_in_bytes")
+    if not places:
+        places = [root / "memory.max", root / "memory" / "memory.limit_in_bytes"]
+    limits = []
+    for f in places:
+        # The limit on this cgroup and every one above it, up to the root.
+        d = f.parent
+        while True:
+            limits.append(_cgroup_limit(d / f.name))
+            if d == root or d == root / "memory" or root not in d.parents:
+                break
+            d = d.parent
+    found = [n for n in limits if n]
+    return min(found) if found else 0
 
 
 def _kernel32():
@@ -287,38 +340,40 @@ def os_name() -> str:
 
 
 # ---------------------------------------------------------------- runner tiers
-# (plan docs/linux-windows-plan.md P4.6; docs/manual.md "Raspberry Pi runner"). When breakpatch-ci
-# starts a run it measures this machine's memory and processor and picks a tier:
+# (docs/manual.md "Runner tiers"). When breakpatch-ci starts a run it measures this machine's memory
+# (its cgroup's limit, when smaller) and processor and picks a tier:
 #
-# - simple: under 6 GB of memory, or a processor about as fast as a Raspberry Pi 4. Replay, screen
-#   checks and schedules only: no AI assistant, so no fixing. Waits are longer by default.
-# - full: 6 GB or more and a processor clearly faster than a Pi 4 (a Pi 5, a mini PC, a Mac, a CI
-#   machine). Everything breakpatch-ci does, as before tiers existed.
+# - simple: under 6 GB of memory. Replay, screen checks and schedules only: no AI assistant, so no
+#   fixing.
+# - full: 6 GB or more. Everything breakpatch-ci does, as before tiers existed.
 #
-# `pick_tier` is pure (tests give it made-up numbers); `runner_tier` measures and calls it.
-# BREAKPATCH_TIER=simple|full (or breakpatch-ci's --tier) sets the tier, for testing.
+# The processor's speed only sets how long the waits are by default (default_timings_scale): until
+# PI4_ROUNDS_PER_SECOND is measured on a real Pi 4, an estimate mustn't turn off a licensed
+# --auto-fix. `pick_tier` is pure (tests give it made-up numbers); `runner_tier` measures and calls
+# it. BREAKPATCH_TIER=simple|full (or breakpatch-ci's --tier) sets the tier, for testing.
 
 TIER_SIMPLE, TIER_FULL = "simple", "full"
 TIERS = (TIER_SIMPLE, TIER_FULL)
 TIER_VAR = "BREAKPATCH_TIER"
 FULL_MIN_MEMORY_GB = 6
-# cpu_benchmark's speed, where 1 is a Raspberry Pi 4 (4 × Cortex-A72 at 1.8 GHz). The plan's
-# estimates (§3.3): a Pi 5 is 2–3, an Intel N100 mini PC 3–4, an Apple Silicon Mac more. 1.6 sits
-# between the Pi 4 and the Pi 5, away from both, so a machine doesn't change tier from run to run.
-FULL_MIN_CPU_SPEED = 1.6
+# cpu_benchmark's speed, where 1 is a Raspberry Pi 4 (4 × Cortex-A72 at 1.8 GHz). The estimates: a
+# Pi 5 is 2–3, an Intel N100 mini PC 3–4, an Apple Silicon Mac more. Under 1.6 (between the Pi 4 and
+# the Pi 5, away from both) a processor is slow: its waits are longer.
+SLOW_CPU_SPEED = 1.6
 # Below this a machine is slower than a Pi 4 (a Pi 3, or a Pi 4 that's throttling when hot).
 VERY_SLOW_CPU_SPEED = 0.6
-# The timing scale (config.timings_scale) a tier uses when BP_TIMINGS_SCALE isn't set. The manual
-# said 2 for a Pi 4 with normal pages and 3 for Flutter before tiers existed (P4.1): a Pi 4 gets 2,
-# anything slower 3, and a fast processor with little memory 1.5 (Chromium has less room, so pages
-# can be slower to settle). Only the longest waits grow (config.SCALED_TIMINGS), so a page that's
-# ready on time costs nothing extra. The full tier keeps 1: nothing changes on a fast machine.
-SCALE_SIMPLE_VERY_SLOW, SCALE_SIMPLE_SLOW, SCALE_SIMPLE_FAST = 3.0, 2.0, 1.5
+# The timing scale (config.timings_scale) used when BP_TIMINGS_SCALE isn't set. The manual said 2
+# for a Pi 4 with normal pages and 3 for Flutter before tiers existed: a Pi 4's speed gets 2,
+# anything slower 3, whatever the tier; a fast processor with little memory 1.5 (Chromium has less
+# room, so pages can be slower to settle), and a simple runner whose speed is unknown a Pi's 2. Only
+# the longest waits grow (config.SCALED_TIMINGS), so a page that's ready on time costs nothing extra.
+# A fast machine with the memory keeps 1: nothing changes there.
+SCALE_VERY_SLOW, SCALE_SLOW, SCALE_LITTLE_MEMORY = 3.0, 2.0, 1.5
 
 # The benchmark's work rate on a Pi 4, in rounds per second. Estimated, not measured yet: a 2.1 GHz
 # Xeon cloud core did 300–340 while busy (so somewhat more when quiet), and single-core benchmarks
 # put the Cortex-A72 at 4–5 times slower, with CPython on it slower still: about a fifth of ~470.
-# Replace with what a Pi 4 does (`cpuSpeed` in breakpatch-ci's JSON × this) once measured (P4.1).
+# Replace with what a Pi 4 does (`cpuSpeed` in breakpatch-ci's JSON × this) once measured.
 PI4_ROUNDS_PER_SECOND = 95.0
 
 
@@ -363,36 +418,31 @@ def _speed_words(speed: float) -> str:
 
 
 def default_timings_scale(tier: str, cpu_speed: float | None) -> float:
+    """The waits' scale for a tier and processor speed (None = unknown): the speed decides it, on
+    either tier."""
+    if cpu_speed is not None and cpu_speed < VERY_SLOW_CPU_SPEED:
+        return SCALE_VERY_SLOW
+    if cpu_speed is not None and cpu_speed < SLOW_CPU_SPEED:
+        return SCALE_SLOW
     if tier == TIER_FULL:
         return 1.0
-    if cpu_speed is not None and cpu_speed < VERY_SLOW_CPU_SPEED:
-        return SCALE_SIMPLE_VERY_SLOW
-    if cpu_speed is None or cpu_speed < FULL_MIN_CPU_SPEED:
-        return SCALE_SIMPLE_SLOW
-    return SCALE_SIMPLE_FAST
+    return SCALE_SLOW if cpu_speed is None else SCALE_LITTLE_MEMORY
 
 
 def pick_tier(memory_gb: float, cpu_speed: float | None, override: str | None = None) -> Tier:
     """The tier for this much memory (GB, 0 = unknown) and this processor speed (1 = a Pi 4,
-    None = unknown). `override` ("simple" or "full") wins. Unknown values never make a machine
-    simple on their own: a machine whose memory can't be read is judged by its processor."""
+    None = unknown). `override` ("simple" or "full") wins. Only memory makes a machine simple; the
+    speed sets the waits. Memory that can't be read never makes a machine simple."""
     speed = None if cpu_speed is None else round(cpu_speed, 1)
     if override in TIERS:
         return Tier(override, f"set by {TIER_VAR}={override}", memory_gb, speed,
                     default_timings_scale(override, speed), overridden=True)
-    low_memory = 0 < memory_gb < FULL_MIN_MEMORY_GB
-    slow_cpu = speed is not None and speed < FULL_MIN_CPU_SPEED
-    if low_memory and slow_cpu:
-        reason = f"{_gb(memory_gb)} and {_speed_words(speed)}; the full tier needs {FULL_MIN_MEMORY_GB} GB and a faster processor"
-    elif low_memory:
+    if 0 < memory_gb < FULL_MIN_MEMORY_GB:
         reason = f"{_gb(memory_gb)}, under the {FULL_MIN_MEMORY_GB} GB the full tier needs"
-    elif slow_cpu:
-        reason = f"{_speed_words(speed)}; the full tier needs one at least {FULL_MIN_CPU_SPEED:g}× as fast"
-    else:
-        have = [s for s in ((_gb(memory_gb) if memory_gb > 0 else ""), (_speed_words(speed) if speed is not None else "")) if s]
-        reason = " and ".join(have) if have else "this machine's memory and processor couldn't be measured"
-        return Tier(TIER_FULL, reason, memory_gb, speed, 1.0)
-    return Tier(TIER_SIMPLE, reason, memory_gb, speed, default_timings_scale(TIER_SIMPLE, speed))
+        return Tier(TIER_SIMPLE, reason, memory_gb, speed, default_timings_scale(TIER_SIMPLE, speed))
+    have = [s for s in ((_gb(memory_gb) if memory_gb > 0 else ""), (_speed_words(speed) if speed is not None else "")) if s]
+    reason = " and ".join(have) if have else "this machine's memory and processor couldn't be measured"
+    return Tier(TIER_FULL, reason, memory_gb, speed, default_timings_scale(TIER_FULL, speed))
 
 
 def tier_override(value: str | None) -> tuple[str | None, str | None]:

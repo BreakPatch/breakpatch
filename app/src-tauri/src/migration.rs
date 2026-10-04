@@ -32,6 +32,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::os_words::Os;
+
 /// What may be moved out of a tests folder, in the order they move (`breakpatch.json` last).
 pub const FOLDER_ITEMS: [&str; 3] = ["apps", "suites", "breakpatch.json"];
 /// Longest report kept (the report is a list of names and counts; this is plenty).
@@ -136,7 +138,7 @@ pub fn plan(place: Place, base: &Path, names: &[String]) -> Result<(Vec<PathBuf>
     let all_missing = || ordered.iter().map(|n| n.to_string()).collect::<Vec<_>>();
     match std::fs::symlink_metadata(base) {
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok((Vec::new(), all_missing())),
-        Err(_) => return Err(format!("Breakpatch can't look in this folder ({} refused it).", Os::current().name())),
+        Err(_) => return Err(format!("Breakpatch can't look in this folder ({} refused it).", Os::CURRENT.name())),
         Ok(m) if !m.is_dir() => return Err("This isn't a folder.".into()),
         Ok(_) => {}
     }
@@ -189,7 +191,7 @@ pub fn trash_items(
     for p in paths {
         let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         if let Err(e) = mover(&p) {
-            out.error = Some(format!("Couldn't move {name} to {}. {e}", Os::current().trash()));
+            out.error = Some(format!("Couldn't move {name} to {}. {e}", Os::CURRENT.trash()));
             break;
         }
         out.moved.push(name);
@@ -207,7 +209,7 @@ pub fn resolve_folder(given: &Path, allowed: impl Fn(&Path) -> bool) -> Result<P
     let real = match std::fs::canonicalize(given) {
         Ok(p) => p,
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(given.to_path_buf()),
-        Err(_) => return Err(format!("Breakpatch can't look in this folder ({} refused it).", Os::current().name())),
+        Err(_) => return Err(format!("Breakpatch can't look in this folder ({} refused it).", Os::CURRENT.name())),
     };
     if !allowed(&real) {
         return Err("Breakpatch only moves a tests folder you opened in it.".into());
@@ -239,48 +241,10 @@ pub fn to_trash(p: &Path) -> Result<(), String> {
     ctx.delete(p).map_err(|e| trash_error_text(&e.to_string()))
 }
 
-/// The operating system, for the words the person reads: the Recycle Bin on Windows, and what
-/// to check when it refuses.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Os {
-    Mac,
-    Windows,
-    Linux,
-}
-
-impl Os {
-    pub const fn current() -> Os {
-        if cfg!(target_os = "macos") {
-            Os::Mac
-        } else if cfg!(windows) {
-            Os::Windows
-        } else {
-            Os::Linux
-        }
-    }
-
-    /// "macOS refused it".
-    pub const fn name(self) -> &'static str {
-        match self {
-            Os::Mac => "macOS",
-            Os::Windows => "Windows",
-            Os::Linux => "the system",
-        }
-    }
-
-    /// "move it to the Trash".
-    pub const fn trash(self) -> &'static str {
-        match self {
-            Os::Windows => "the Recycle Bin",
-            Os::Mac | Os::Linux => "the Trash",
-        }
-    }
-}
-
 /// What to tell the person when the Trash refused an item: a permission problem says what to
 /// check, anything else passes on what the system said.
 pub fn trash_error_text(raw: &str) -> String {
-    trash_error_text_for(Os::current(), raw)
+    trash_error_text_for(Os::CURRENT, raw)
 }
 
 pub fn trash_error_text_for(os: Os, raw: &str) -> String {
@@ -467,7 +431,7 @@ mod tests {
         };
         let r = trash_items(Place::Folder, d.path(), &names(&["apps", "suites", "breakpatch.json"]), failing).unwrap();
         assert_eq!(r.moved, names(&["apps"]));
-        let said = format!("Couldn't move suites to {}. locked", Os::current().trash());
+        let said = format!("Couldn't move suites to {}. locked", Os::CURRENT.trash());
         assert_eq!(r.error.as_deref(), Some(said.as_str()));
         #[cfg(not(windows))]
         assert_eq!(said, "Couldn't move suites to the Trash. locked");

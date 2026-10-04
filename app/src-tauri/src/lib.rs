@@ -400,9 +400,12 @@ async fn migration_report_save(app: tauri::AppHandle, text: String) -> Result<St
 
 // ---- Runner mode -------------------------------------------------------------------------
 
+/// Off the main thread: taking the hold can wait (on Linux, 200 ms to see systemd-inhibit start).
+/// The app sends one call at a time and waits for each (the Team runner's keepAwake.ts), so they
+/// can't overtake each other here.
 #[tauri::command]
-fn runner_keep_awake(k: State<'_, KeepAwake>, on: bool) -> Result<(), String> {
-    k.set(on)
+async fn runner_keep_awake(app: tauri::AppHandle, on: bool) -> Result<(), String> {
+    blocking(move || app.state::<KeepAwake>().set(on)).await
 }
 
 /// Turns "open at login" on or off and returns the resulting state.

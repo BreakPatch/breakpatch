@@ -39,13 +39,14 @@ KNOWN_PUBLIC = ("huggingface.co", "hf.co", "breakpatch.dev", "playwright.dev", "
 
 def machine_words(platform: str | None = None) -> tuple[str, str]:
     """What the messages call the machine and where its proxy is set: ("this Mac", System Settings)
-    on macOS, ("this computer", the system's own place) elsewhere."""
+    on macOS, ("this PC", the system's own place) on Windows and Linux, as the app says it
+    (app/src/lib/osWords.ts, app/src-tauri/src/os_words.rs)."""
     platform = platform or sys.platform
     if platform == "darwin":
         return "this Mac", "System Settings > Network > Details > Proxies"
     if platform == "win32":
-        return "this computer", "Settings > Network & internet > Proxy"
-    return "this computer", "your system's network proxy settings"
+        return "this PC", "Settings > Network & internet > Proxy"
+    return "this PC", "your system's network proxy settings"
 
 
 def tls_intercepted(platform: str | None = None) -> str:

@@ -294,8 +294,10 @@ def test_the_words_name_the_machine_and_its_proxy_settings_for_its_system():
         words = [net.tls_intercepted(platform), net.tls_untrusted("app.test", platform), net.proxy_auth(None, platform),
                  net.proxy_failed(None, platform), net.pac_hint(platform)]
         assert not any("Mac" in m or "System Settings" in m for m in words), words
-        assert "this computer" in net.tls_untrusted("app.test", platform)
-        assert net.tls_untrusted("app.test", platform).startswith("This computer doesn't trust app.test's certificate.")
+        # The app's words for Windows and Linux (osWords.ts, os_words.rs): "this PC" on both.
+        assert "this PC" in net.tls_untrusted("app.test", platform)
+        assert net.tls_untrusted("app.test", platform).startswith("This PC doesn't trust app.test's certificate.")
+        assert "computer" not in " ".join(words)
     assert "Settings > Network & internet > Proxy" in net.proxy_failed(None, "win32")
     assert net.TLS_INTERCEPTED == net.tls_intercepted(sys.platform)
 

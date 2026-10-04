@@ -1,5 +1,5 @@
 """The engine's Windows and Raspberry Pi code paths, tested on Linux with `sys.platform`
-monkeypatched and fakes for kernel32, the registry and /proc (plan docs/linux-windows-plan.md P1.1).
+monkeypatched and fakes for kernel32, the registry and /proc.
 Real Windows and Pi machines still need a check by hand (engine/README.md "Needs real hardware")."""
 import asyncio
 import ctypes
@@ -300,21 +300,24 @@ def test_timings_scale_values():
     assert config.timings_scale({"BP_TIMINGS_SCALE": "10"}) == 10.0
 
 
-# ---------------------------------------------------------------- runner tiers (plan P4.6)
+# ---------------------------------------------------------------- runner tiers (docs/manual.md "Runner tiers")
 
 def test_a_4_gb_raspberry_pi_4_is_the_simple_runner():
     t = systems.pick_tier(4, 1.0)
     assert t.name == "simple" and t.simple and not t.overridden
     assert t.timings_scale == 2.0
-    assert t.summary() == ("Simple runner: 4 GB of memory and a processor 1.0× as fast as a Raspberry Pi 4; "
-                           "the full tier needs 6 GB and a faster processor")
+    assert t.summary() == "Simple runner: 4 GB of memory, under the 6 GB the full tier needs"
     assert t.to_json() == {"tier": "simple", "reason": t.reason, "memoryGb": 4, "timingsScale": 2.0, "cpuSpeed": 1.0}
 
 
-def test_an_8_gb_pi_4_is_simple_for_its_processor():
+def test_only_memory_makes_a_runner_simple_the_processor_sets_the_waits():
+    # An 8 GB Pi 4: the speed estimate isn't measured on a real Pi yet, so it mustn't turn --auto-fix
+    # off. It's a full runner with a Pi's waits.
     t = systems.pick_tier(8, 1.1)
-    assert t.name == "simple" and t.timings_scale == 2.0
-    assert t.reason == "a processor 1.1× as fast as a Raspberry Pi 4; the full tier needs one at least 1.6× as fast"
+    assert t.name == "full" and t.timings_scale == 2.0
+    assert t.reason == "8 GB of memory and a processor 1.1× as fast as a Raspberry Pi 4"
+    assert systems.pick_tier(8, 0.4).timings_scale == 3.0
+    assert systems.pick_tier(8, 0.4).name == "full"
 
 
 def test_a_fast_machine_with_little_memory_is_simple_with_a_shorter_scale():
@@ -328,7 +331,7 @@ def test_slower_than_a_pi_4_waits_longer_still():
 
 
 @pytest.mark.parametrize("memory,speed", [(6, 1.6), (8, 2.4), (16, 4.0), (7, 9.9)])
-def test_6_gb_and_a_fast_enough_processor_is_the_full_tier(memory, speed):
+def test_6_gb_and_a_fast_processor_is_the_full_tier_with_waits_as_set(memory, speed):
     t = systems.pick_tier(memory, speed)
     assert t.name == "full" and not t.simple and t.timings_scale == 1.0
     assert t.summary().startswith(f"Full runner: {memory:g} GB of memory and a processor")
@@ -336,9 +339,11 @@ def test_6_gb_and_a_fast_enough_processor_is_the_full_tier(memory, speed):
 
 def test_unknown_values_never_make_a_machine_simple_on_their_own():
     assert systems.pick_tier(0, 3.0).name == "full"                # memory couldn't be read
+    assert systems.pick_tier(0, 0.5).name == "full"                # nor with a slow processor
     assert systems.pick_tier(16, None).name == "full"              # processor not measured
     t = systems.pick_tier(0, None)
     assert t.name == "full" and t.reason == "this machine's memory and processor couldn't be measured"
+    assert t.timings_scale == 1.0
     assert systems.pick_tier(4, None).timings_scale == 2.0         # simple, speed unknown: a Pi's scale
 
 
@@ -347,7 +352,8 @@ def test_the_tier_can_be_set():
     assert t.name == "simple" and t.overridden and t.reason == "set by BREAKPATCH_TIER=simple"
     assert t.timings_scale == 1.5
     assert systems.pick_tier(4, 1.0, "full").name == "full"
-    assert systems.pick_tier(4, 1.0, "full").timings_scale == 1.0
+    assert systems.pick_tier(4, 1.0, "full").timings_scale == 2.0   # the speed still sets the waits
+    assert systems.pick_tier(4, 3.0, "full").timings_scale == 1.0
 
 
 @pytest.mark.parametrize("raw,want,warned", [("", None, False), (None, None, False), ("simple", "simple", False),
@@ -363,6 +369,8 @@ def test_runner_tier_measures_memory_and_the_processor():
     calls = []
     t, warnings = systems.runner_tier({}, memory=lambda: 4, benchmark=lambda: calls.append(1) or 0.97)
     assert (t.name, t.memory_gb, t.cpu_speed, warnings, calls) == ("simple", 4.0, 1.0, [], [1])
+    t, _ = systems.runner_tier({}, memory=lambda: 8, benchmark=lambda: 0.97)
+    assert (t.name, t.timings_scale) == ("full", 2.0)
 
 
 def test_runner_tier_flag_wins_over_the_variable_and_bad_values_are_said():
@@ -401,7 +409,56 @@ def test_cpu_benchmark_keeps_the_best_window_in_pi_4_units():
 
 
 def test_cpu_benchmark_is_quick():
+    # About 0.4 s of work; a loaded CI runner can stretch that, so the bound is loose. What matters
+    # is that it stops by its windows, not by the amount of work.
     import time
     start = time.perf_counter()
     assert systems.cpu_benchmark() > 0
-    assert time.perf_counter() - start < 1.0
+    assert time.perf_counter() - start < 5.0
+    calls = []
+    systems.cpu_benchmark(window=0.01, windows=2, work=lambda _d: calls.append(1))
+    assert calls
+
+
+# ---------------------------------------------------------------- the memory a cgroup allows
+
+def _cgroups(tmp_path, proc: str, files: dict[str, str]):
+    root = tmp_path / "cgroup"
+    for rel, text in files.items():
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text(text)
+    (tmp_path / "self-cgroup").write_text(proc)
+    return root, tmp_path / "self-cgroup"
+
+
+def test_cgroup_v2_limit_is_the_smallest_on_the_way_up(tmp_path):
+    root, proc = _cgroups(tmp_path, "0::/system.slice/breakpatch-suite@smoke.service\n", {
+        "memory.max": "max\n", "system.slice/memory.max": str(6 * 2**30),
+        "system.slice/breakpatch-suite@smoke.service/memory.max": str(3 * 2**30)})
+    assert systems.cgroup_memory_bytes(root, proc) == 3 * 2**30
+    root, proc = _cgroups(tmp_path / "b", "0::/\n", {"memory.max": "max\n"})
+    assert systems.cgroup_memory_bytes(root, proc) == 0
+
+
+def test_cgroup_v1_limit_and_its_no_limit_value(tmp_path):
+    root, proc = _cgroups(tmp_path, "4:memory:/docker/abc\n0::/\n", {
+        "memory/memory.limit_in_bytes": "9223372036854771712", "memory/docker/abc/memory.limit_in_bytes": str(2 * 2**30)})
+    assert systems.cgroup_memory_bytes(root, proc) == 2 * 2**30
+    root, proc = _cgroups(tmp_path / "b", "4:cpu,memory:/\n", {"memory/memory.limit_in_bytes": "9223372036854771712"})
+    assert systems.cgroup_memory_bytes(root, proc) == 0
+    # No /proc/self/cgroup: the root's files.
+    root, _ = _cgroups(tmp_path / "c", "", {"memory.max": str(5 * 2**30)})
+    assert systems.cgroup_memory_bytes(root, tmp_path / "nothing") == 5 * 2**30
+
+
+def test_memory_on_linux_is_the_smaller_of_the_machine_and_its_cgroup(tmp_path, monkeypatch):
+    root, proc = _cgroups(tmp_path, "0::/\n", {"memory.max": str(4 * 2**30)})
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(systems, "CGROUP_ROOT", root)
+    monkeypatch.setattr(systems, "PROC_SELF_CGROUP", proc)
+    monkeypatch.setattr(os, "sysconf", lambda name: {"SC_PAGE_SIZE": 4096, "SC_PHYS_PAGES": 16 * 2**30 // 4096}[name], raising=False)
+    assert systems.memory_gb() == 4
+    (root / "memory.max").write_text("max\n")
+    assert systems.memory_gb() == 16
+    (root / "memory.max").write_text(str(64 * 2**30))
+    assert systems.memory_gb() == 16
