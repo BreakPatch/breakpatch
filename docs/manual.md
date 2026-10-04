@@ -1039,7 +1039,7 @@ A Raspberry Pi makes a cheap, always-on machine that replays your workspace's su
 **Which Pi.** These are our recommendations; we haven't measured every model yet.
 
 - **Raspberry Pi 4 with 4 GB:** a [simple runner](#runner-tiers). It replays tests, checks the screen and runs suites on a schedule. It doesn't fix moved buttons.
-- **Raspberry Pi 4 with 8 GB:** should be fine for nightly and hourly replays of normal web pages. It's a simple runner too: its processor is too slow for the AI assistant.
+- **Raspberry Pi 4 with 8 GB:** should be fine for nightly and hourly replays of normal web pages. It's a full runner, with longer waits because its processor is slow. It doesn't fix moved buttons either: the AI assistant only runs on a Mac today.
 - **Raspberry Pi 5 with 8 GB:** faster, and the better buy if you're buying one now.
 - **A small x64 mini PC** (for example one with an Intel N100): faster again, and the best choice for Flutter apps (below). It uses the same Linux install as any CI machine.
 - Use an **SSD** over USB 3 (or NVMe on a Pi 5) rather than an SD card, which wears out with screenshots and logs. Give it cooling (a Pi 4 slows down at 80 °C) and the official power supply (27 W on a Pi 5).
@@ -1048,10 +1048,10 @@ A Raspberry Pi makes a cheap, always-on machine that replays your workspace's su
 
 #### Runner tiers
 
-Each time `breakpatch-ci` starts a run, it checks how much memory the machine has and how fast its processor is. That takes less than a second. Then it picks a tier, and the first lines of the log say which and why, for example:
+Each time `breakpatch-ci` starts a run, it checks how much memory the machine has and how fast its processor is. That takes less than a second. The memory picks the tier: under 6 GB, it's a simple runner. The processor's speed only sets how long it waits. The first lines of the log say which tier and why, for example:
 
 ```output
-breakpatch-ci: simple runner (4 GB of memory and a processor 1.0× as fast as a Raspberry Pi 4; the full tier needs 6 GB and a faster processor). Replay, screen checks and schedules only: no AI assistant and no fixing. Waits are 2× as long (BP_TIMINGS_SCALE changes that).
+breakpatch-ci: simple runner (4 GB of memory, under the 6 GB the full tier needs). Replay, screen checks and schedules only: no AI assistant and no fixing. Waits are 2× as long (BP_TIMINGS_SCALE changes that).
 ```
 
 <!-- stack -->
@@ -1067,7 +1067,7 @@ A Raspberry Pi 4 with 4 GB is a simple runner. A Pi 4 with 8 GB is a full runner
 
 The tier is also in the JSON result, as `runner` (`tier`, `reason`, `memoryGb`, `cpuSpeed` and `timingsScale`), and in the `--html` report, on the *Runner* line under *Machine*.
 
-To try the other tier, set `BREAKPATCH_TIER=simple` or `BREAKPATCH_TIER=full`, or add `--tier simple` to `breakpatch-ci run`. That's for testing: a full runner on a Pi 4 still can't run the AI assistant in good time.
+To try the other tier, set `BREAKPATCH_TIER=simple` or `BREAKPATCH_TIER=full`, or add `--tier simple` to `breakpatch-ci run`. That's for testing: choosing full doesn't give a machine more memory.
 
 **Flutter web apps.** Replay works, because it compares the screen and needs no AI assistant, but Flutter is the hardest case for a Pi:
 
@@ -1077,7 +1077,7 @@ To try the other tier, set `BREAKPATCH_TIER=simple` or `BREAKPATCH_TIER=full`, o
 
 A Pi 4 with 8 GB suits nightly Flutter runs, a Pi 5 is better, and an x64 mini PC is best.
 
-**Slow machines.** A simple runner waits longer for a page to settle, for a step's first check to match, for pages to load and for the start page: 2× on a Pi 4. It doesn't stretch the watch for moving parts before each step, so a page that's ready on time costs nothing extra. To choose yourself, set `BP_TIMINGS_SCALE` to a number from 1 to 10: it wins over the tier's. Use 2 for a Pi 5 and 3 for a Pi 4 with Flutter. If steps fail with "didn't settle" or "not there yet", raise it. For a runner set up as below, put the line `BP_TIMINGS_SCALE=3` in `/etc/breakpatch/breakpatch.env`.
+**Slow machines.** On a slow processor `breakpatch-ci` waits longer for a page to settle, for a step's first check to match, for pages to load and for the start page: 2× on a Pi 4, on either tier. It doesn't stretch the watch for moving parts before each step, so a page that's ready on time costs nothing extra. To choose yourself, set `BP_TIMINGS_SCALE` to a number from 1 to 10: it wins over the tier's. Use 2 for a Pi 5 and 3 for a Pi 4 with Flutter. If steps fail with "didn't settle" or "not there yet", raise it. For a runner set up as below, put the line `BP_TIMINGS_SCALE=3` in `/etc/breakpatch/breakpatch.env`.
 
 **Set it up**
 
