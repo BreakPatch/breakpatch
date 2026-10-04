@@ -399,6 +399,12 @@ mod job {
     impl Job {
         /// A new job holding `pid`. The bootloader is assigned straight after it starts, before
         /// it unpacks and starts Python, so Python and Chromium are in the job too.
+        ///
+        /// That's a race, if a narrow one: a process the bootloader started before this call isn't
+        /// in the job. Follow-up: start it suspended, assign, then resume (the shell plugin's
+        /// sidecar can't pass CREATE_SUSPENDED, so that means spawning it ourselves). Putting the
+        /// app itself in a KILL_ON_JOB_CLOSE job at startup, so children inherit it, isn't the fix:
+        /// the updater's installer and anything opened from the app would end with the app.
         pub fn for_process(pid: u32) -> Result<Job, String> {
             // SAFETY: plain Win32 calls; every handle is checked and closed (the job's on drop).
             unsafe {

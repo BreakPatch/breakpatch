@@ -102,7 +102,7 @@ jobs:
           python -m pytest -q --cov --cov-report=term
           echo "coverage=$(python -m coverage report --format=total --precision=1)" >> "$GITHUB_OUTPUT"
 
-  # The engine's tests on Windows and Linux arm64 (plan P0.4). Manual runs only (Actions → CI →
+  # The engine's tests on Windows and Linux arm64. Manual runs only (Actions → CI →
   # Run workflow): they don't run on pushes or pull requests, so they cost no minutes until asked.
   engine-platforms:
     name: Engine (pytest) on ${{ matrix.platform }}
@@ -185,7 +185,7 @@ jobs:
           cargo llvm-cov --locked --json --summary-only --output-path "$RUNNER_TEMP/llvm-cov.json"
           echo "coverage=$(jq '.data[0].totals.lines.percent * 10 | round / 10' "$RUNNER_TEMP/llvm-cov.json")" >> "$GITHUB_OUTPUT"
 
-  # The shell's Windows and Linux code (plan P3.3, P3.4), on Ubuntu only: clippy for the Windows
+  # The shell's Windows and Linux code, on Ubuntu only: clippy for the Windows
   # target through MinGW (a compile check, nothing runs), and the saved-secrets store against a
   # real Secret Service (GNOME Keyring on a private session bus), then with none at all. No app
   # is built or released for either system here.

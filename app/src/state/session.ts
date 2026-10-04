@@ -77,14 +77,14 @@ interface SessionState {
 
 const KEY = 'breakpatch.session.v1';
 interface Saved { workspace: Workspace | null; local?: LocalFolder | null; setupDone: boolean; prefs: Prefs }
-const DEFAULT_PREFS: Prefs = { theme: 'dark', autoFix: true, failOnFix: false, allowSystemDifferences: true, runnerMode: false, runnerName: osText('QA Mac mini') };
+const defaultPrefs = (): Prefs => ({ theme: 'dark', autoFix: true, failOnFix: false, allowSystemDifferences: true, runnerMode: false, runnerName: osText('QA Mac mini') });
 
 function load(): Saved {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) { const s = JSON.parse(raw) as Saved; return { ...s, prefs: { ...DEFAULT_PREFS, ...s.prefs } }; }
+    if (raw) { const s = JSON.parse(raw) as Saved; return { ...s, prefs: { ...defaultPrefs(), ...s.prefs } }; }
   } catch { /* first launch or storage unavailable */ }
-  return { workspace: null, local: null, setupDone: false, prefs: DEFAULT_PREFS };
+  return { workspace: null, local: null, setupDone: false, prefs: defaultPrefs() };
 }
 function save(s: Saved) { try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* ignore */ } }
 

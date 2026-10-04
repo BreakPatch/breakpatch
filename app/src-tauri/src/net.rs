@@ -10,7 +10,7 @@
 //! What's here: telling a certificate the Mac doesn't trust apart from "couldn't reach", so the
 //! person gets the sentence that says what to ask IT for.
 
-use crate::os_words::os_string;
+use crate::os_words::os_format;
 
 /// What a TLS-inspecting network looks like from here, in the words the engine uses too.
 pub const TLS_INTERCEPTED: &str = "Your network replaced the website's certificate (common on company networks). \
@@ -32,11 +32,10 @@ pub fn is_cert_error(e: &(dyn std::error::Error + 'static)) -> bool {
 
 /// For a host that may have a certificate of its own making (a webhook on an intranet server).
 pub fn tls_untrusted(who: &str) -> String {
-    os_string(format!(
+    os_format!(
         "This Mac doesn't trust {who}'s certificate. If you're on a company network, it may have replaced the \
          certificate: Breakpatch trusts the certificates your Mac trusts, so ask IT to install the network's \
-         certificate on this Mac."
-    ))
+         certificate on this Mac.", who = who)
 }
 
 #[cfg(test)]

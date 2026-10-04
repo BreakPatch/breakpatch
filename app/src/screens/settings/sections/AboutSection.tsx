@@ -10,7 +10,7 @@ import { baseName } from '../../../data/local/storage';
 import { modelSize, useSystemInfo } from './AiSection';
 import { edition } from '../../../edition';
 import { EditionMismatch, editionLabel } from './edition';
-import { Computer, isMac, osText, ThisComputer } from '../../../lib/osWords';
+import { Computer, isMac, osFormat, osText, ThisComputer } from '../../../lib/osWords';
 
 const LAST_KEY = 'breakpatch.updates.lastChecked';
 function readLast(): number | null { try { const v = localStorage.getItem(LAST_KEY); return v ? Number(v) : null; } catch { return null; } }
@@ -43,7 +43,7 @@ export function AboutSection() {
   const ready = updateReady ?? (result?.state === 'ready' ? result.version : null);
   // Plain words here; the exact versions are in Copy details (DESK-16).
   const browser = info ? (info.browser.version ? osText('Installed, the same version on every Mac') : 'Not installed') : '…';
-  const ai = info ? (info.model.installed ? osText(`${modelSize(info)}, same on every Mac`) : 'Not downloaded') : '…';
+  const ai = info ? (info.model.installed ? osFormat`${modelSize(info)}, same on every Mac` : 'Not downloaded') : '…';
   const mac = info ? `${isMac() ? 'Apple silicon' : info.chip} · ${info.memoryGb} GB · ${info.os}` : '…';
   const library = online ? 'Online' : 'Offline · changes wait until you’re back';
 

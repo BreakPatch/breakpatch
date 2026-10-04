@@ -85,6 +85,36 @@ export function osText(text: string, os: Os = currentOs()): string {
   return out;
 }
 
+/** Marks where a value goes while osFormat rewrites a message's words (private use: in no message). */
+const VALUE = '\uE000';
+
+/**
+ * A message written for the Mac with values in it, in the words of the computer it runs on: the
+ * template's own words are rewritten as osText does, the values (workspace, folder, secret, site
+ * and people's names; errors) never are, so a secret called "Mac tests" stays "Mac tests":
+ *
+ *   osFormat`There's no saved secret ${name} on this Mac.`
+ *
+ * On a Mac it is the template literal itself. Words inside a value's expression are a value too:
+ * write `${osText(ok ? 'This Mac has it.' : '…')}` for those. Use osText only for text with no
+ * values in it.
+ */
+export function osFormat(strings: TemplateStringsArray, ...values: unknown[]): string {
+  return osFormatFor(currentOs())(strings, ...values);
+}
+
+/** osFormat as on `os` (tests, and code that's handed the system). */
+export function osFormatFor(os: Os): (strings: TemplateStringsArray, ...values: unknown[]) => string {
+  return (strings, ...values) => {
+    const words = os === 'mac' ? [...strings] : osText(strings.join(VALUE), os).split(VALUE);
+    // The rules never make or take a VALUE, so the words still have one gap per value.
+    const parts = words.length === strings.length ? words : [...strings];
+    let out = parts[0];
+    for (let i = 0; i < values.length; i++) out += String(values[i]) + parts[i + 1];
+    return out;
+  };
+}
+
 /** "this Mac" or "this PC". */
 export function thisComputer(os: Os = currentOs()): string { return osText('this Mac', os); }
 /** "This Mac" or "This PC". */
@@ -102,7 +132,7 @@ export function theTrash(os: Os = currentOs()): string { return osText('the Tras
 export function showInFileManager(os: Os = currentOs()): string { return osText('Show in Finder', os); }
 
 /** A keyboard shortcut as the person types it: ⌘E on a Mac, Ctrl+E elsewhere. */
-export function shortcut(key: string, os: Os = currentOs()): string { return osText(`⌘${key}`, os); }
+export function shortcut(key: string, os: Os = currentOs()): string { return osFormatFor(os)`⌘${key}`; }
 
 /** Whether the app's shortcut key is down: ⌘ on a Mac, Ctrl elsewhere. */
 export function shortcutKeyDown(e: { metaKey: boolean; ctrlKey: boolean }, os: Os = currentOs()): boolean {

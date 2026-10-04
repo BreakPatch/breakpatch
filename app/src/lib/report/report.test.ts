@@ -6,6 +6,8 @@ import { allOpen, buildView, junitXml, printableParts, REPORT_TEMPLATE, reportHt
 import { parse, render, TemplateError } from './render';
 import { countsText, isoText, reportRows, seconds, shortTime, whenText } from './view';
 import { xmlEscape } from './junit';
+import { whereText } from '../runWords';
+import { setOsForTests } from '../osWords';
 
 const fsModule = 'node:fs', urlModule = 'node:url', pathModule = 'node:path';
 const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync(p: string, e: 'utf8'): string; writeFileSync(p: string, d: string): void };
@@ -26,6 +28,16 @@ describe('the same files as breakpatch-ci', () => {
     it(`view: ${c}`, () => expect(buildView(INPUT[c])).toEqual(JSON.parse(fs.readFileSync(join(dir, `view-${c}.json`), 'utf8'))));
     it(`HTML: ${c}`, () => golden(`report-${c}.html`, reportHtml(buildView(INPUT[c]))));
     it(`JUnit XML: ${c}`, () => golden(`report-${c}.junit.xml`, junitXml(buildView(INPUT[c]))));
+  }
+});
+
+describe('Where: the run\'s own machine, the same as breakpatch-ci (where.json)', () => {
+  const CASES = JSON.parse(fs.readFileSync(join(dir, 'where.json'), 'utf8')) as { run: Parameters<typeof whereText>[0]; where: string }[];
+  for (const os of ['mac', 'windows', 'linux'] as const) {
+    it(`whoever looks at it (on ${os})`, () => {
+      setOsForTests(os);
+      try { for (const c of CASES) expect(whereText(c.run), JSON.stringify(c.run)).toBe(c.where); } finally { setOsForTests(null); }
+    });
   }
 });
 

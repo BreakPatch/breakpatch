@@ -104,7 +104,7 @@ impl Hold {
     fn take() -> Result<Option<Hold>, String> {
         use std::os::unix::process::CommandExt;
         let (program, args) = linux_inhibit_command(std::process::id());
-        let mut child = std::process::Command::new(program)
+        let child = std::process::Command::new(program)
             .args(&args)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
@@ -120,19 +120,9 @@ impl Hold {
             })?;
         // systemd-inhibit gives up at once when there's no logind or it may not take the lock:
         // say so, instead of reporting a lock nobody holds.
-        std::thread::sleep(Duration::from_millis(200));
-        if let Ok(Some(status)) = child.try_wait() {
-            let mut why = String::new();
-            if let Some(mut err) = child.stderr.take() {
-                use std::io::Read;
-                let _ = err.read_to_string(&mut why);
-            }
-            let why = why.trim();
-            return Err(format!(
-                "Couldn't keep this PC awake: systemd-inhibit stopped ({}). Turn off sleep in your system settings instead.",
-                if why.is_empty() { status.to_string() } else { why.to_string() }
-            ));
-        }
+        let child = still_running(child, Duration::from_millis(200)).map_err(|why| {
+            format!("Couldn't keep this PC awake: systemd-inhibit stopped ({why}). Turn off sleep in your system settings instead.")
+        })?;
         Ok(Some(Hold::Process(child)))
     }
 
@@ -145,6 +135,30 @@ impl Hold {
     fn take() -> Result<Option<Hold>, String> {
         Ok(None)
     }
+}
+
+/// `child` (its stderr piped) after `wait`, if it's still running; else what it said, or its exit
+/// status. From then on nobody reads its stderr: it's drained, not closed, so the helper never
+/// blocks on a full pipe or dies writing to a closed one. The draining thread ends with it.
+#[cfg(unix)]
+#[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+fn still_running(mut child: std::process::Child, wait: Duration) -> Result<std::process::Child, String> {
+    std::thread::sleep(wait);
+    if let Ok(Some(status)) = child.try_wait() {
+        let mut why = String::new();
+        if let Some(mut err) = child.stderr.take() {
+            use std::io::Read;
+            let _ = err.read_to_string(&mut why);
+        }
+        let why = why.trim();
+        return Err(if why.is_empty() { status.to_string() } else { why.to_string() });
+    }
+    if let Some(mut err) = child.stderr.take() {
+        std::thread::spawn(move || {
+            let _ = std::io::copy(&mut err, &mut std::io::sink());
+        });
+    }
+    Ok(child)
 }
 
 /// `systemd-inhibit` holding off sleep and the idle action (the screen blanking or locking, as
@@ -585,6 +599,43 @@ mod tests {
                 "/dev/null"
             ]
         );
+    }
+
+    /// A helper that started, then writes more to stderr than a pipe holds, goes on running: its
+    /// stderr is drained after the start check, not left full.
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_talks_after_starting_isnt_blocked() {
+        let dir = tempfile::tempdir().unwrap();
+        let done = dir.path().join("done");
+        let child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("sleep 0.2; head -c 300000 /dev/zero >&2; touch '{}'; sleep 5", done.display()))
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut child = still_running(child, Duration::from_millis(50)).unwrap();
+        assert!(child.stderr.is_none());
+        let started = std::time::Instant::now();
+        while !done.exists() && started.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(done.exists(), "the helper blocked writing to its stderr");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_helper_that_stops_at_once_says_why() {
+        let child = std::process::Command::new("sh")
+            .args(["-c", "echo 'no logind' >&2; exit 3"])
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        assert_eq!(still_running(child, Duration::from_millis(300)).unwrap_err(), "no logind");
     }
 
     /// Releasing ends the helper's whole process group, so systemd-inhibit's child doesn't linger.

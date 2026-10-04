@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use crate::os_words::os_string;
+use crate::os_words::os_format;
 #[cfg(test)]
 use std::path::Path;
 use std::path::PathBuf;
@@ -119,16 +119,26 @@ pub const NO_KEYRING: &str = "Breakpatch keeps secrets in your keyring and could
 
 /// Values longer than one credential store entry holds, split over several (Windows' Credential
 /// Manager: 2,560 bytes an entry). A value that fits is kept as its UTF-8 bytes, as it is. A longer
-/// one gets a head entry under its own name, `SPLIT` followed by the number of parts, and the parts
-/// in `<name>#1`, `<name>#2`, …. The head can't be mistaken for a value: `SPLIT` starts with 0xFF,
+/// one gets a head entry under its own name and the parts in `<name>#<generation>.1`,
+/// `<name>#<generation>.2`, …. The head, `SPLIT` then `parts:generation:length:hash`, names the
+/// parts and says how long the value is and the start of its SHA-256, which [`split::get`] checks:
+/// parts from two different saves never read back as a value. Each save writes its parts under a
+/// new generation, so a save that fails part way never touches the parts the head in place names,
+/// and takes away the parts it wrote. The head can't be mistaken for a value: it starts with 0xFF,
 /// which never occurs in UTF-8. Secret names never hold `#` ([`validate_name`]).
+///
+/// Heads from before (`SPLIT_V1` and a number, parts in `<name>#1`, …) are still read.
 #[cfg_attr(not(any(test, windows)), allow(dead_code))]
 pub mod split {
+    use sha2::{Digest, Sha256};
+
     /// `CRED_MAX_CREDENTIAL_BLOB_SIZE`.
     pub const WINDOWS_LIMIT: usize = 2560;
     /// At most this many parts: 40 KB on Windows, far above any secret, licence or key.
     pub const MAX_PARTS: usize = 16;
-    const SPLIT: &[u8] = b"\xFFbp-split-v1:";
+    const SPLIT: &[u8] = b"\xFFbp-split-v2:";
+    const SPLIT_V1: &[u8] = b"\xFFbp-split-v1:";
+    const DAMAGED: &str = "A saved value is damaged. Save it again.";
 
     /// One entry's bytes, by name.
     pub trait Blobs {
@@ -137,31 +147,77 @@ pub mod split {
         fn remove(&self, name: &str) -> Result<(), String>;
     }
 
-    fn part_name(name: &str, i: usize) -> String {
-        format!("{name}#{i}")
+    /// What a head entry says.
+    struct Head {
+        parts: usize,
+        /// 0 for a head from before generations (parts in `<name>#1`, …).
+        generation: u32,
+        /// The value's length and the start of its SHA-256 (hex); None in a head from before.
+        check: Option<(usize, String)>,
     }
 
-    /// How many parts a head entry names, or None for a value kept whole.
-    fn parts_of(head: &[u8]) -> Option<Result<usize, String>> {
-        let rest = head.strip_prefix(SPLIT)?;
-        let n = std::str::from_utf8(rest).ok().and_then(|t| t.parse::<usize>().ok());
-        Some(match n {
-            Some(n) if (2..=MAX_PARTS).contains(&n) => Ok(n),
-            _ => Err("A saved value is damaged. Save it again.".to_string()),
-        })
+    fn part_name(name: &str, generation: u32, i: usize) -> String {
+        if generation == 0 {
+            format!("{name}#{i}")
+        } else {
+            format!("{name}#{generation}.{i}")
+        }
+    }
+
+    fn part_names(name: &str, head: &Head) -> Vec<String> {
+        (1..=head.parts).map(|i| part_name(name, head.generation, i)).collect()
+    }
+
+    /// The first 8 bytes of the value's SHA-256, in hex.
+    fn short_hash(bytes: &[u8]) -> String {
+        Sha256::digest(bytes)[..8].iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// What a head entry names, or None for a value kept whole.
+    fn head_of(entry: &[u8]) -> Option<Result<Head, String>> {
+        let parts_ok = |n: usize| (2..=MAX_PARTS).contains(&n);
+        if let Some(rest) = entry.strip_prefix(SPLIT_V1) {
+            let n = std::str::from_utf8(rest).ok().and_then(|t| t.parse::<usize>().ok());
+            return Some(match n {
+                Some(n) if parts_ok(n) => Ok(Head { parts: n, generation: 0, check: None }),
+                _ => Err(DAMAGED.to_string()),
+            });
+        }
+        let rest = entry.strip_prefix(SPLIT)?;
+        let fields: Vec<&str> = std::str::from_utf8(rest).unwrap_or("").split(':').collect();
+        let head = match fields[..] {
+            [n, g, len, hash] => match (n.parse::<usize>(), g.parse::<u32>(), len.parse::<usize>()) {
+                (Ok(n), Ok(g), Ok(len)) if parts_ok(n) && g > 0 && hash.len() == 16 => {
+                    Some(Head { parts: n, generation: g, check: Some((len, hash.to_string())) })
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        Some(head.ok_or_else(|| DAMAGED.to_string()))
+    }
+
+    /// The head under `name`, if it is one (a damaged one reads as none: there's nothing to keep).
+    fn head_in(store: &impl Blobs, name: &str) -> Result<Option<Head>, String> {
+        Ok(store.read(name)?.and_then(|e| head_of(&e)).and_then(Result::ok))
     }
 
     pub fn get(store: &impl Blobs, limit: usize, name: &str) -> Result<Option<String>, String> {
-        let Some(head) = store.read(name)? else { return Ok(None) };
-        let bytes = match parts_of(&head) {
-            None => head,
-            Some(n) => {
-                let n = n?;
-                let mut all = Vec::with_capacity(n * limit);
-                for i in 1..=n {
-                    match store.read(&part_name(name, i))? {
+        let Some(entry) = store.read(name)? else { return Ok(None) };
+        let bytes = match head_of(&entry) {
+            None => entry,
+            Some(head) => {
+                let head = head?;
+                let mut all = Vec::with_capacity(head.parts * limit);
+                for part in part_names(name, &head) {
+                    match store.read(&part)? {
                         Some(p) => all.extend_from_slice(&p),
                         None => return Err("Part of a saved value is missing. Save it again.".into()),
+                    }
+                }
+                if let Some((len, hash)) = &head.check {
+                    if all.len() != *len || short_hash(&all) != *hash {
+                        return Err(DAMAGED.into());
                     }
                 }
                 all
@@ -171,47 +227,67 @@ pub mod split {
     }
 
     pub fn set(store: &impl Blobs, limit: usize, name: &str, value: &str) -> Result<(), String> {
-        let before = match store.read(name)? {
-            Some(head) => parts_of(&head).and_then(Result::ok).unwrap_or(0),
-            None => 0,
-        };
+        let before = head_in(store, name)?;
         let bytes = value.as_bytes();
-        let parts = if bytes.len() <= limit {
+        if bytes.len() <= limit {
             store.write(name, bytes)?;
-            0
         } else {
             let chunks: Vec<&[u8]> = bytes.chunks(limit).collect();
             if chunks.len() > MAX_PARTS {
                 return Err(format!("That's too long to keep: up to {} KB.", MAX_PARTS * limit / 1024));
             }
-            // The parts first, then the head that names them: until the head is written, a
-            // reader still finds the old value whole (or the old head and its parts, rewritten).
+            // A new generation's parts, then the head that names them: until the head is
+            // written, a reader still finds the old value, whole or in its own parts, untouched.
+            let generation = match before.as_ref().map_or(0, |h| h.generation).wrapping_add(1) {
+                0 => 1,
+                g => g,
+            };
+            let head = Head { parts: chunks.len(), generation, check: Some((bytes.len(), short_hash(bytes))) };
+            let names = part_names(name, &head);
+            let undo = |written: &[String]| {
+                for n in written {
+                    if let Err(e) = store.remove(n) {
+                        log::warn!("couldn't take away the part {n} of a save that failed: {e}");
+                    }
+                }
+            };
             for (i, chunk) in chunks.iter().enumerate() {
-                store.write(&part_name(name, i + 1), chunk)?;
+                if let Err(e) = store.write(&names[i], chunk) {
+                    undo(&names[..i]);
+                    return Err(e);
+                }
             }
-            let mut head = SPLIT.to_vec();
-            head.extend_from_slice(chunks.len().to_string().as_bytes());
-            store.write(name, &head)?;
-            chunks.len()
-        };
-        for i in parts + 1..=before {
-            store.remove(&part_name(name, i))?;
+            let (len, hash) = head.check.as_ref().expect("a check");
+            let mut entry = SPLIT.to_vec();
+            entry.extend_from_slice(format!("{}:{}:{len}:{hash}", head.parts, head.generation).as_bytes());
+            if let Err(e) = store.write(name, &entry) {
+                undo(&names);
+                return Err(e);
+            }
+        }
+        // The value is saved: the old parts are only clutter now.
+        for part in before.map(|h| part_names(name, &h)).unwrap_or_default() {
+            if let Err(e) = store.remove(&part) {
+                log::warn!("couldn't remove the old part {part}: {e}");
+            }
         }
         Ok(())
     }
 
-    /// An in-memory store that refuses entries longer than `limit`, as Credential Manager does.
+    /// An in-memory store that refuses entries longer than `limit`, as Credential Manager does,
+    /// and any write to a name that `fail_on` names (a store failing part way, for the tests).
     #[cfg(test)]
     #[derive(Default)]
     pub struct MemBlobs {
         pub limit: usize,
         pub entries: std::sync::Mutex<std::collections::BTreeMap<String, Vec<u8>>>,
+        pub fail_on: std::sync::Mutex<Option<String>>,
     }
 
     #[cfg(test)]
     impl MemBlobs {
         pub fn new(limit: usize) -> Self {
-            Self { limit, entries: Default::default() }
+            Self { limit, ..Default::default() }
         }
         pub fn names(&self) -> Vec<String> {
             self.entries.lock().unwrap().keys().cloned().collect()
@@ -230,6 +306,9 @@ pub mod split {
             if bytes.len() > self.limit {
                 return Err(format!("{name}: {} bytes is over the {}-byte limit", bytes.len(), self.limit));
             }
+            if self.fail_on.lock().unwrap().as_deref() == Some(name) {
+                return Err(format!("{name}: the store refused it"));
+            }
             self.entries.lock().unwrap().insert(name.into(), bytes.to_vec());
             Ok(())
         }
@@ -240,13 +319,10 @@ pub mod split {
     }
 
     pub fn delete(store: &impl Blobs, name: &str) -> Result<(), String> {
-        let parts = match store.read(name)? {
-            Some(head) => parts_of(&head).and_then(Result::ok).unwrap_or(0),
-            None => 0,
-        };
+        let before = head_in(store, name)?;
         store.remove(name)?;
-        for i in 1..=parts {
-            store.remove(&part_name(name, i))?;
+        for part in before.map(|h| part_names(name, &h)).unwrap_or_default() {
+            store.remove(&part)?;
         }
         Ok(())
     }
@@ -490,7 +566,7 @@ impl<S: SecretStore> Secrets<S> {
         let origins = normalize_origins(&origins)?;
         let _g = self.lock.lock().unwrap();
         if !self.index.load().contains_key(name) {
-            return Err(os_string(format!("There's no saved secret {name} on this Mac.")));
+            return Err(os_format!("There's no saved secret {name} on this Mac.", name = name));
         }
         self.index.put(name, Some(Policy { origins, runner_can_use }))
     }
@@ -639,6 +715,14 @@ mod tests {
     }
 
     #[test]
+    fn a_secret_s_name_is_never_reworded_for_the_computer() {
+        let (_d, s) = fixture();
+        let err = s.set_policy("Mac.tests", vec![], false).unwrap_err();
+        let this = crate::os_words::os_text("this Mac");
+        assert_eq!(err, format!("There's no saved secret Mac.tests on {this}."));
+    }
+
+    #[test]
     fn sites_are_normalised_like_the_engine_does() {
         assert_eq!(normalize_origin("https://App.Example.com/login?x=1").unwrap(), "https://app.example.com");
         assert_eq!(normalize_origin("https://app.example.com:443").unwrap(), "https://app.example.com");
@@ -704,7 +788,7 @@ mod split_tests {
         split::set(&s, WINDOWS_LIMIT, "K", &"x".repeat(WINDOWS_LIMIT)).unwrap();
         assert_eq!(s.names(), ["K"]);
         split::set(&s, WINDOWS_LIMIT, "K", &"x".repeat(WINDOWS_LIMIT + 1)).unwrap();
-        assert_eq!(s.names(), ["K", "K#1", "K#2"]);
+        assert_eq!(s.names(), ["K", "K#1.1", "K#1.2"]);
         assert_eq!(split::get(&s, WINDOWS_LIMIT, "K").unwrap().unwrap().len(), WINDOWS_LIMIT + 1);
     }
 
@@ -715,7 +799,7 @@ mod split_tests {
         let v: String = "ñ€😀abc".repeat(800); // 10 bytes × 800 = 8,000 bytes
         assert!(v.len() > 3 * WINDOWS_LIMIT);
         split::set(&s, WINDOWS_LIMIT, "K", &v).unwrap();
-        assert_eq!(s.names(), ["K", "K#1", "K#2", "K#3", "K#4"]);
+        assert_eq!(s.names(), ["K", "K#1.1", "K#1.2", "K#1.3", "K#1.4"]);
         assert!(s.read_raw("K").starts_with(&[0xFF]), "the head can't be read as a UTF-8 value");
         assert_eq!(split::get(&s, WINDOWS_LIMIT, "K").unwrap().as_deref(), Some(v.as_str()));
     }
@@ -725,9 +809,9 @@ mod split_tests {
         let s = MemBlobs::new(WINDOWS_LIMIT);
         split::set(&s, WINDOWS_LIMIT, "K", &"y".repeat(3 * WINDOWS_LIMIT)).unwrap();
         split::set(&s, WINDOWS_LIMIT, "Other", "keep me").unwrap();
-        assert_eq!(s.names(), ["K", "K#1", "K#2", "K#3", "Other"]);
+        assert_eq!(s.names(), ["K", "K#1.1", "K#1.2", "K#1.3", "Other"]);
         split::set(&s, WINDOWS_LIMIT, "K", &"z".repeat(WINDOWS_LIMIT + 5)).unwrap();
-        assert_eq!(s.names(), ["K", "K#1", "K#2", "Other"]);
+        assert_eq!(s.names(), ["K", "K#2.1", "K#2.2", "Other"]);
         split::set(&s, WINDOWS_LIMIT, "K", "short").unwrap();
         assert_eq!(s.names(), ["K", "Other"]);
         assert_eq!(split::get(&s, WINDOWS_LIMIT, "K").unwrap().as_deref(), Some("short"));
@@ -745,10 +829,70 @@ mod split_tests {
         assert!(s.names().is_empty(), "nothing is written when it can't all fit");
 
         split::set(&s, WINDOWS_LIMIT, "K", &"x".repeat(2 * WINDOWS_LIMIT + 1)).unwrap();
-        s.entries.lock().unwrap().remove("K#2");
+        s.entries.lock().unwrap().remove("K#1.2");
         assert!(split::get(&s, WINDOWS_LIMIT, "K").unwrap_err().contains("missing"));
         s.entries.lock().unwrap().insert("K".into(), b"\xFFbp-split-v1:99".to_vec());
         assert!(split::get(&s, WINDOWS_LIMIT, "K").unwrap_err().contains("damaged"));
+        s.entries.lock().unwrap().insert("K".into(), b"\xFFbp-split-v2:3:1:9".to_vec());
+        assert!(split::get(&s, WINDOWS_LIMIT, "K").unwrap_err().contains("damaged"));
+    }
+
+    /// A part that isn't the one the head was written with (another save's, or changed) is found
+    /// out by the head's length and hash, never read back as the value.
+    #[test]
+    fn parts_from_another_save_read_as_damaged() {
+        let s = MemBlobs::new(WINDOWS_LIMIT);
+        split::set(&s, WINDOWS_LIMIT, "K", &"a".repeat(3 * WINDOWS_LIMIT)).unwrap();
+        s.entries.lock().unwrap().insert("K#1.2".into(), "b".repeat(WINDOWS_LIMIT).into_bytes());
+        assert!(split::get(&s, WINDOWS_LIMIT, "K").unwrap_err().contains("damaged"));
+        s.entries.lock().unwrap().insert("K#1.2".into(), "a".repeat(WINDOWS_LIMIT - 1).into_bytes());
+        assert!(split::get(&s, WINDOWS_LIMIT, "K").unwrap_err().contains("damaged"));
+    }
+
+    /// The store refuses the second part of a new value: the old one reads back whole and as it
+    /// was, and the part that was written is taken away again.
+    #[test]
+    fn a_save_that_fails_on_its_second_part_leaves_the_old_value() {
+        let s = MemBlobs::new(WINDOWS_LIMIT);
+        let old = format!("{}{}{}", "a".repeat(WINDOWS_LIMIT), "b".repeat(WINDOWS_LIMIT), "c".repeat(10));
+        split::set(&s, WINDOWS_LIMIT, "K", &old).unwrap();
+        let names = s.names();
+        *s.fail_on.lock().unwrap() = Some("K#2.2".into());
+        let new = "z".repeat(3 * WINDOWS_LIMIT);
+        assert!(split::set(&s, WINDOWS_LIMIT, "K", &new).unwrap_err().contains("refused"));
+        assert_eq!(split::get(&s, WINDOWS_LIMIT, "K").unwrap().as_deref(), Some(old.as_str()));
+        assert_eq!(s.names(), names, "the new value's first part is gone again");
+        // The head itself refused: the same.
+        *s.fail_on.lock().unwrap() = Some("K".into());
+        assert!(split::set(&s, WINDOWS_LIMIT, "K", &new).is_err());
+        assert_eq!(split::get(&s, WINDOWS_LIMIT, "K").unwrap().as_deref(), Some(old.as_str()));
+        assert_eq!(s.names(), names);
+        *s.fail_on.lock().unwrap() = None;
+        split::set(&s, WINDOWS_LIMIT, "K", &new).unwrap();
+        assert_eq!(split::get(&s, WINDOWS_LIMIT, "K").unwrap().as_deref(), Some(new.as_str()));
+    }
+
+    /// A value saved before heads had a check (parts in `K#1`, …): still read, and a failed save
+    /// over it leaves it as it was.
+    #[test]
+    fn a_value_split_the_old_way_reads_and_survives_a_failed_save() {
+        let s = MemBlobs::new(WINDOWS_LIMIT);
+        let old = format!("{}{}", "a".repeat(WINDOWS_LIMIT), "b".repeat(5));
+        {
+            let mut e = s.entries.lock().unwrap();
+            e.insert("K".into(), b"\xFFbp-split-v1:2".to_vec());
+            e.insert("K#1".into(), "a".repeat(WINDOWS_LIMIT).into_bytes());
+            e.insert("K#2".into(), b"bbbbb".to_vec());
+        }
+        assert_eq!(split::get(&s, WINDOWS_LIMIT, "K").unwrap().as_deref(), Some(old.as_str()));
+        *s.fail_on.lock().unwrap() = Some("K#1.2".into());
+        assert!(split::set(&s, WINDOWS_LIMIT, "K", &"z".repeat(2 * WINDOWS_LIMIT)).is_err());
+        assert_eq!(split::get(&s, WINDOWS_LIMIT, "K").unwrap().as_deref(), Some(old.as_str()));
+        *s.fail_on.lock().unwrap() = None;
+        split::set(&s, WINDOWS_LIMIT, "K", &"z".repeat(2 * WINDOWS_LIMIT)).unwrap();
+        assert_eq!(s.names(), ["K", "K#1.1", "K#1.2"]);
+        split::delete(&s, "K").unwrap();
+        assert!(s.names().is_empty());
     }
 
     #[test]

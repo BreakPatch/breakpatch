@@ -3,15 +3,19 @@
 // engine's breakpatch_engine/report/view.py); both are checked against
 // engine/tests/fixtures/report/view-*.json, built from input.json. The words are the report's own
 // (lib/runWords.ts, lib/explain.ts), so view.py repeats them: change them together.
-import type { Explanation, Run, Step, StepRun } from '../../data/types';
-import { UNCHECKED_NOTE, WHERE, passNote, reasonAdvice, reasonText, reasonTitle, runBy, targetName, tookText } from '../runWords';
+import type { Explanation, RecordedOn, Run, Step, StepRun } from '../../data/types';
+import { UNCHECKED_NOTE, passNote, reasonAdvice, reasonText, reasonTitle, runBy, targetName, tookText, whereText } from '../runWords';
 import { CAUSE_TEXT, SUGGESTION_TEXT } from '../explain';
 
 /** A screenshot, as a WebP data: URI (the engine's `report.images`). */
 export interface ReportImage { src: string; width: number; height: number }
 export type ReportStepRun = StepRun & { image?: ReportImage };
 /** `runner`: the tier breakpatch-ci ran on ("Simple runner: 4 GB of memory, …"); runs from the app have none. */
-export type ReportRun = Omit<Run, 'steps' | 'appId' | 'testId'> & Partial<Pick<Run, 'appId' | 'testId'>> & { steps: ReportStepRun[]; runner?: string };
+export type ReportRun = Omit<Run, 'steps' | 'appId' | 'testId'> & Partial<Pick<Run, 'appId' | 'testId'>> & {
+  steps: ReportStepRun[]; runner?: string;
+  /** The system it ran on, when the run says (the engine's run.ended ranOn): the report's Where. */
+  ranOn?: RecordedOn;
+};
 
 export interface ReportTestInput {
   appName: string;
@@ -208,7 +212,7 @@ function runState(run: ReportRun | null, steps: StepView[]): StepState {
 function runMeta(run: ReportRun, offset: number): Meta[] {
   const meta: Meta[] = [
     { k: 'Took', v: tookText(int(run.durationMs)) }, { k: 'Run by', v: runBy(run) },
-    { k: 'Where', v: WHERE[run.source]?.label ?? String(run.source ?? '') },
+    { k: 'Where', v: whereText(run) },
     { k: 'Machine', v: String(run.machine ?? '') },
     // breakpatch-ci's tier on that machine (engine systems.Tier.summary): "Simple runner: 4 GB of memory, …"
     { k: 'Runner', v: String(run.runner ?? '') }, { k: 'When', v: whenText(run.startedAt, offset) },

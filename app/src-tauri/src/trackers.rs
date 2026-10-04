@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::secrets::SecretStore;
-use crate::os_words::{os_string, os_text};
+use crate::os_words::{os_format, os_text};
 
 pub const SERVICE: &str = "dev.breakpatch.trackers";
 const TIMEOUT: Duration = Duration::from_secs(30);
@@ -208,7 +208,7 @@ fn reach_error(e: reqwest::Error, who: &str) -> String {
     } else if e.is_timeout() {
         format!("{who} didn't answer within {} seconds. Try again.", TIMEOUT.as_secs())
     } else {
-        os_string(format!("Couldn't reach {who}. Check this Mac's connection and try again."))
+        os_format!("Couldn't reach {who}. Check this Mac's connection and try again.", who = who)
     }
 }
 
@@ -402,9 +402,8 @@ pub async fn create_issue(
             if let Some(want) = r.site.as_deref().filter(|s| !s.trim().is_empty()) {
                 let want = normalize_site(want)?;
                 if want != site {
-                    return Err(os_string(format!(
-                        "The Jira token on this Mac is for {site}, but the workspace sends issues to {want}. Save a token for {want} in Settings → Issue trackers."
-                    )));
+                    return Err(os_format!(
+                        "The Jira token on this Mac is for {site}, but the workspace sends issues to {want}. Save a token for {want} in Settings → Issue trackers.", site = site, want = want));
                 }
             }
             let project = r.project.as_deref().unwrap_or_default().to_ascii_uppercase();
@@ -565,8 +564,8 @@ impl<S: SecretStore> Trackers<S> {
 
     pub fn get(&self, p: Provider) -> Result<(String, TrackerStatus), String> {
         let _g = self.lock.lock().unwrap();
-        let who = self.load().get(p.key()).cloned().ok_or_else(|| os_string(format!("{} isn't set up on this Mac. Add it in Settings → Issue trackers.", p.name())))?;
-        let token = self.store.get(p.key())?.ok_or_else(|| os_string(format!("The {} token isn't on this Mac any more. Add it again in Settings → Issue trackers.", p.name())))?;
+        let who = self.load().get(p.key()).cloned().ok_or_else(|| os_format!("{} isn't set up on this Mac. Add it in Settings → Issue trackers.", p.name()))?;
+        let token = self.store.get(p.key())?.ok_or_else(|| os_format!("The {} token isn't on this Mac any more. Add it again in Settings → Issue trackers.", p.name()))?;
         Ok((token, who))
     }
 

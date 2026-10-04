@@ -2,7 +2,7 @@
 // Windows and Linux get their own names for the computer, Finder, the Keychain, the Trash and ⌘.
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  ariaShortcut, Computer, computer, currentOs, osFromUserAgent, osText, otherCommandKeyDown, setOsForTests,
+  ariaShortcut, Computer, computer, currentOs, osFormat, osFormatFor, osFromUserAgent, osText, otherCommandKeyDown, setOsForTests,
   shortcut, shortcutKeyDown, showInFileManager, theTrash, ThisComputer, thisComputer,
 } from './osWords';
 
@@ -71,6 +71,38 @@ describe('osText', () => {
 
   it('leaves words that only contain "Mac" alone', () => {
     expect(osText('MacBook-free machine, MACHINE_KEY, Macro', 'windows')).toBe('MacBook-free machine, MACHINE_KEY, Macro');
+  });
+});
+
+describe('osFormat', () => {
+  // Names people give things: a secret, a workspace, a folder, a site, a person.
+  const name = 'Mac tests', ws = 'Finder team', folder = '/Users/ana/Trash talk', who = 'Mac Keychain';
+
+  it('is the template literal itself on a Mac', () => {
+    const n = 3;
+    expect(osFormatFor('mac')`There's no saved secret ${name} on this Mac (${n}).`).toBe(`There's no saved secret ${name} on this Mac (${n}).`);
+    setOsForTests('mac');
+    expect(osFormat`Your tests are in ${ws}. The folder's copy is in the Trash.`).toBe(`Your tests are in ${ws}. The folder's copy is in the Trash.`);
+  });
+
+  it('rewrites the words on Windows and Linux, never the names in it', () => {
+    for (const os of ['windows', 'linux'] as const) {
+      const out = osFormatFor(os)`There's no saved secret ${name} on this Mac. ${ws} keeps ${folder} for ${who}.`;
+      expect(out, os).toBe(`There's no saved secret Mac tests on this PC. Finder team keeps /Users/ana/Trash talk for Mac Keychain.`);
+      // What osText on the finished string did: the names reworded too.
+      expect(osText(`There's no saved secret ${name} on this Mac.`, os)).not.toContain('Mac tests');
+    }
+    expect(osFormatFor('windows')`Your tests are in ${ws}. The folder's copy is in the Trash.`).toBe('Your tests are in Finder team. The folder\'s copy is in the Recycle Bin.');
+    setOsForTests('linux');
+    expect(osFormat`${2} Macs are waiting; ${name}'s Mac, this Mac's Keychain`).toBe("2 PCs are waiting; Mac tests's PC, this PC's keyring");
+  });
+
+  it('rewrites a word that a value ends, and ⌘ before a value', () => {
+    const n: number = 2;
+    expect(osFormatFor('windows')`${n} Mac${n === 1 ? '' : 's'}`).toBe('2 PCs');
+    expect(osFormatFor('windows')`⌘${'E'}`).toBe('Ctrl+E');
+    expect(osFormatFor('linux')`${'the Trash'}`).toBe('the Trash');
+    expect(osFormatFor('linux')`${undefined} ${null} ${0}`).toBe('undefined null 0');
   });
 });
 

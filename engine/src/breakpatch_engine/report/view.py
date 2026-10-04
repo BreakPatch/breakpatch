@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-WHERE = {"desktop": "This Mac", "ci": "CI", "runner": "Local runner"}
+WHERE = {"ci": "CI", "runner": "Local runner"}
 RESULT_TEXT = {"passed": "Passed", "fixed": "Fixed automatically", "failed": "Failed", "stopped": "Stopped", "notRun": "Not run"}
 RUN_TEXT = {"passed": "Passed", "fixed": "Passed with fixes", "failed": "Failed", "notRun": "Not run", "stopped": "Stopped"}
 SUITE_RESULT = {"passed": "passed", "passed_with_fixes": "fixed", "failed": "failed", "replaced": "notRun"}
@@ -296,9 +296,30 @@ def run_by(run: dict) -> str:
     return str(by.get("name") or by.get("serviceAccount") or "")
 
 
+def where_text(run: dict) -> str:
+    """Where a run ran, about the run's own machine, as the app's runWords.ts whereText: a desktop run
+    says "This Mac" or "This PC" by the system it ran on when the run records it (ranOn, or a system
+    mismatch's ranOn), else "Desktop app"."""
+    source = run.get("source")
+    if source != "desktop":
+        return WHERE.get(source, str(source or ""))
+    def os_of(holder: object) -> object:
+        ran = holder.get("ranOn") if isinstance(holder, dict) else None
+        return ran.get("os") if isinstance(ran, dict) else None
+
+    os_name = os_of(run)
+    if os_name is None:
+        os_name = os_of(run.get("systemMismatch"))
+    if os_name == "macOS":
+        return "This Mac"
+    if os_name in ("Windows", "Linux"):
+        return "This PC"
+    return "Desktop app"
+
+
 def run_meta(run: dict, offset: int) -> list[dict]:
     meta = [{"k": "Took", "v": took_text(run.get("durationMs"))}, {"k": "Run by", "v": run_by(run)},
-            {"k": "Where", "v": WHERE.get(run.get("source"), str(run.get("source") or ""))},
+            {"k": "Where", "v": where_text(run)},
             {"k": "Machine", "v": str(run.get("machine") or "")},
             # breakpatch-ci's tier on that machine (systems.Tier.summary): "Simple runner: 4 GB of memory, …"
             {"k": "Runner", "v": str(run.get("runner") or "")}, {"k": "When", "v": when_text(run.get("startedAt"), offset)}]

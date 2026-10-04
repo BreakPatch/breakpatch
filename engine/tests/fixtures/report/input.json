@@ -27,7 +27,7 @@
         "run": {
           "id": "run_8f21c", "appId": "web-app", "testId": "create-project", "testName": "Create a project", "testVersion": 4,
           "startedBy": { "uid": "u1", "name": "Maria López", "email": "maria@example.com" },
-          "machine": "Maria's MacBook Pro", "source": "desktop",
+          "machine": "Maria's ThinkPad", "source": "desktop",
           "startedAt": 1790258400000, "durationMs": 68250, "result": "fail", "healedCount": 1,
           "systemMismatch": {
             "recordedOn": { "os": "macOS", "osVersion": "15.6", "chromium": "140.0.7339.16" },
