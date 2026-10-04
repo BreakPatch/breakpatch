@@ -108,7 +108,7 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
 /* The asterisk is one character, but its tap target is 44 × 44: padding grows the area that answers a
    tap, and the same negative margin takes the room back, so the words don't move. Positioned, so the
    padding sits above the letters next to it. */
-.ai-badge .star{position:relative;display:inline-block;padding:12px 18px;margin:-12px -18px -12px calc(1px - 18px);line-height:20px;border-radius:999px}
+.ai-badge .star{position:relative;display:inline-block;padding:12px 19px;margin:-12px -19px -12px calc(1px - 19px);line-height:20px;border-radius:999px}
 .ai-badge .star:focus-visible{outline:2px solid var(--accent);outline-offset:-10px}
 /* "12,300 tests run with Breakpatch" (assets/runs-count.js): out of the flow, in the space above the
    screenshot, so it takes no room and moves nothing when it fades in. */
@@ -455,7 +455,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .top.has-menu.closing nav a:first-child{border-top:0}
   .top.closing + .nav-scrim{display:block;position:fixed;inset:0;z-index:9;background:rgba(0,0,0,.45);animation:edge .16s ease-in reverse both;pointer-events:none}
   /* While it's open the page under the scrim doesn't scroll. */
-  html.menu-open,html.menu-open body{overflow:hidden}
+  html.menu-open{overflow:hidden}
   .top.has-menu.open nav a,.top.has-menu.open nav a.wide{display:flex;align-items:center;min-height:48px;padding:0 4px;font-size:1.0625rem;border-top:1px solid var(--line)}
   .top.has-menu.open nav a:first-child{border-top:0}
   .top.has-menu.open nav a[aria-current]::after{left:4px;right:auto;width:24px;bottom:8px}
@@ -467,7 +467,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .copy{min-height:44px;min-width:44px}
   .btn{min-height:44px}
   .more{display:inline-flex;align-items:center;min-height:44px}
-  .foot-links a{display:inline-flex;align-items:center;min-height:44px}
+  .foot-links a,.foot-brand p a{display:inline-flex;align-items:center;min-height:44px}
   .foot-brand .brand{min-height:44px}
   .skip{min-height:44px;display:inline-flex;align-items:center}
   .install-actions a{display:inline-flex;align-items:center;min-height:44px}
@@ -494,8 +494,12 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .ai-badge .soft::before{display:none}
   .matrix.vs{font-size:0.875rem}
   .matrix.vs th,.matrix.vs td{padding:10px 10px}
-  .code:not(.install-cmd,.output) pre{padding:40px 16px 14px}
+  /* Copy is a 44 px target in the top right corner (top 8px). Commands wrap, so their first lines
+     make room for it (a float as tall as the button); other code doesn't wrap, so it starts below it. */
+  .code:not(.install-cmd,.output) pre{padding:60px 16px 14px}
+  .code:not(.install-cmd,.output) pre:has(> code[data-lang="sh"]){padding-top:14px}
   .code pre code[data-lang="sh"]{white-space:pre-wrap;overflow-wrap:anywhere}
+  .code pre code[data-lang="sh"]::before{content:"";float:right;width:72px;height:40px}
   .matrix.vs tbody th{width:34%}
   .matrix.vs td{width:33%}
 }
@@ -516,7 +520,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   table.stack td[data-label]::before{content:attr(data-label);display:block;font-size:0.7812rem;font-weight:600;color:var(--faint);letter-spacing:.02em;margin-bottom:1px}
   .matrix.stack{--cols:2}
   /* The documentation's stacked tables (<!-- stack --> in docs/manual.md): the two columns side by side, like the comparison above. */
-  .table table.stack{--cols:2}
+  .table table.stack:not([style*="--cols"]){--cols:2}
 }
 /* Reduced motion: no movement, but keep the short fades that explain what changed. */
 @media (prefers-reduced-motion:reduce){

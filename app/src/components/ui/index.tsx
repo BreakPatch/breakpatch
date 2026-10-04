@@ -317,7 +317,12 @@ export function Banner({ tone, icon, title, children, actions }: { tone: 'accent
  * says when the label is short ("Show" → "Show Recently deleted"); it starts with the label.
  */
 export interface ToastAction { label: string; onClick: () => void; undo?: boolean; name?: string }
-export interface ToastOptions { error?: boolean; actions?: ToastAction[] }
+/** `onClose`: called once the toast has gone, however it went. */
+export interface ToastOptions { error?: boolean; actions?: ToastAction[]; onClose?: () => void }
+/** What showing a toast returns: the way to take it away early (its item changed some other way). */
+export interface ToastHandle { dismiss: () => void }
+/** At most this many toasts at once: a new one pushes the oldest out. */
+export const TOAST_MAX = 3;
 /** `from`: where focus was when it showed, for focus to go back to after one of its buttons. */
 interface ToastItem { id: number; text: string; error?: boolean; actions?: ToastAction[]; leaving?: boolean; from?: HTMLElement | null }
 /** How long a toast stays: longer when it has buttons, so there's time to press one, and long enough to read an error. */
@@ -325,7 +330,7 @@ export const TOAST_MS = 2400;
 export const TOAST_ERROR_MS = 6000;
 export const TOAST_ACTIONS_MS = 8000;
 const TOAST_OUT_MS = 180;
-const ToastCtx = createContext<(text: string, opts?: ToastOptions) => void>(() => {});
+const ToastCtx = createContext<(text: string, opts?: ToastOptions) => ToastHandle>(() => ({ dismiss: () => {} }));
 
 /** Where typing goes, so ⌘Z there is the field's own undo, never a toast's. */
 function isTypingIn(t: EventTarget | null): boolean {
@@ -349,12 +354,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     document.addEventListener('focusin', onIn);
     return () => document.removeEventListener('focusin', onIn);
   }, []);
+  const closed = useRef(new Map<number, () => void>());
+  const going = useRef(new Set<number>());
   const remove = useCallback((id: number) => {
+    if (going.current.has(id)) return;
+    going.current.add(id);
     clearTimeout(timers.current.get(id));
     setItems(x => x.map(t => (t.id === id ? { ...t, leaving: true } : t)));
-    timers.current.set(id, setTimeout(() => { timers.current.delete(id); setItems(x => x.filter(t => t.id !== id)); }, TOAST_OUT_MS));
+    timers.current.set(id, setTimeout(() => {
+      timers.current.delete(id); going.current.delete(id); setItems(x => x.filter(t => t.id !== id));
+      const done = closed.current.get(id); closed.current.delete(id); done?.();
+    }, TOAST_OUT_MS));
   }, []);
   const later = useCallback((id: number, ms: number) => {
+    if (going.current.has(id)) return;
     clearTimeout(timers.current.get(id));
     timers.current.set(id, setTimeout(() => remove(id), ms));
   }, [remove]);
@@ -362,9 +375,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const id = Date.now() + Math.random();
     const a = document.activeElement;
     const from = a instanceof HTMLElement && a !== document.body && !box.current?.contains(a) ? a : null;
+    // A stack stays short: the oldest go when a new one would make more than TOAST_MAX.
+    const shown = live.current.filter(t => !t.leaving);
+    shown.slice(0, Math.max(0, shown.length - TOAST_MAX + 1)).forEach(t => remove(t.id));
+    if (opts?.onClose) closed.current.set(id, opts.onClose);
     setItems(x => [...x, { id, text, error: opts?.error, actions: opts?.actions, from }]);
     later(id, opts?.actions?.length ? TOAST_ACTIONS_MS : opts?.error ? TOAST_ERROR_MS : TOAST_MS);
-  }, [later]);
+    return { dismiss: () => { if (timers.current.has(id)) remove(id); } };
+  }, [later, remove]);
   /** Runs a toast's button and closes the toast. Focus that was on the toast goes back where it was. */
   const press = useCallback((t: ToastItem, a: ToastAction) => {
     const wasIn = !!box.current?.contains(document.activeElement);
@@ -403,9 +421,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {items.map(t => (
           // While the pointer or focus is on a toast with buttons, it stays; it goes a moment after.
           <div key={t.id} className={cx('toast', t.error && 'error', t.leaving && 'leaving')}
-            onMouseEnter={t.actions && !t.leaving ? () => clearTimeout(timers.current.get(t.id)) : undefined}
+            onMouseEnter={t.actions && !t.leaving ? () => { if (!going.current.has(t.id)) clearTimeout(timers.current.get(t.id)); } : undefined}
             onMouseLeave={t.actions && !t.leaving ? () => later(t.id, TOAST_MS) : undefined}
-            onFocus={t.actions && !t.leaving ? () => clearTimeout(timers.current.get(t.id)) : undefined}
+            onFocus={t.actions && !t.leaving ? () => { if (!going.current.has(t.id)) clearTimeout(timers.current.get(t.id)); } : undefined}
             onBlur={t.actions && !t.leaving ? () => later(t.id, TOAST_MS) : undefined}>
             <Icon name={t.error ? 'error' : 'check_circle'} />
             <span className="toast-text">{t.text}</span>

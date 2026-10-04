@@ -58,15 +58,31 @@ export function useMoveToBin() {
     catch (e) { toast(e instanceof Error ? e.message : failed, { error: true }); return false; }
     refocus();
     const bin = backend.recentlyDeleted;
+    let back = false;
     const undo = () => {
+      if (back) return;     // already put back some other way: nothing to do
       bin?.restore(ref).then(
         () => toast(restoredText(name)),
         e => toast(e instanceof Error ? e.message : `Couldn't put "${name}" back. It's in Recently deleted.`, { error: true }),
       );
     };
-    toast(said ?? `"${name}" moved to Recently deleted.`, bin ? {
+    // Once it's out of Recently deleted another way (restored there, or from a suite's notice), the
+    // toast's Undo has nothing left to undo: the toast goes.
+    let off: (() => void) | null = null, stop = false;
+    const unwatch = () => { stop = true; off?.(); off = null; };
+    const handle = toast(said ?? `"${name}" moved to Recently deleted.`, bin ? {
       actions: [{ label: 'Undo', undo: true, onClick: undo }, { label: 'Show', name: 'Show Recently deleted', onClick: () => navigate(RECENTLY_DELETED_PATH) }],
+      onClose: unwatch,
     } : undefined);
+    if (bin) {
+      let seen = false;
+      off = bin.items(items => {
+        const there = items.some(i => i.kind === ref.kind && i.id === ref.id);
+        if (there) seen = true;
+        else if (seen) { back = true; handle?.dismiss(); queueMicrotask(unwatch); }
+      }, ref.kind === 'test' || ref.kind === 'group' ? ref.appId : undefined);
+      if (stop) { off(); off = null; }
+    }
     return true;
   }, [backend, toast, navigate]);
 }

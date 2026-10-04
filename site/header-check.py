@@ -103,6 +103,11 @@ def menu(pg, problems, where):
     pg.keyboard.press('Escape')
 
 
+# Footer links shorter than 44 px: [text, height].
+FOOT_LINKS = """[...document.querySelectorAll('footer a')].filter(a => a.offsetParent)
+  .map(a => [a.textContent.trim(), a.getBoundingClientRect().height]).filter(([, h]) => h < 44)"""
+
+
 def main():
     httpd, base = serve()
     problems = []
@@ -118,6 +123,10 @@ def main():
                     pg.goto(base + path, wait_until='load')
                     for msg in pg.evaluate(PROBE):
                         problems.append(f'{path} at {width} px ({scheme}): {msg}')
+                    # The footer's links (the support address too) are tap-sized on a phone.
+                    if scheme == 'dark':
+                        for text, h in pg.evaluate(FOOT_LINKS):
+                            problems.append(f'{path} at {width} px: the footer link "{text}" is {round(h)} px tall')
                     if path == '/' and scheme == 'dark':
                         menu(pg, problems, f'/ at {width} px')
                 ctx.close()

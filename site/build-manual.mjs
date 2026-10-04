@@ -10,7 +10,8 @@
 // A fence marked ```output is something a program printed, not something to type: no Copy button,
 // and its lines wrap on a phone instead of hiding under the button.
 // A table right after a <!-- stack --> line becomes one card per row on a phone (site.css table.stack),
-// each cell named by its column, two side by side, like the home page's comparison.
+// each cell named by its column, two side by side, like the home page's comparison; <!-- stack 3 -->
+// puts three side by side.
 // A paragraph that starts with <!-- prelaunch --> becomes the "Public release coming soon" note,
 // shown only while <html> has data-prelaunch (GitHub hides the comment and shows the text).
 // One that starts with <!-- solo-soon --> becomes a Solo "Coming later" note, in the same style,
@@ -52,7 +53,7 @@ function inline(s) {
 const PRELAUNCH = /^<!--\s*prelaunch\s*-->\s*(.*)$/;
 const SOLO_SOON = /^<!--\s*solo-soon\s*-->\s*(.*)$/;
 const SOON = /^<!--\s*soon\s*-->\s*(.*)$/;
-const STACK = /^\s*<!--\s*stack\s*-->\s*$/;
+const STACK = /^\s*<!--\s*stack(?:\s+([1-4]))?\s*-->\s*$/;
 const LIST = /^(\s*)(\d+\.|[-*])\s+(.*)$/;
 const indentOf = l => l.match(/^\s*/)[0].length;
 
@@ -75,7 +76,9 @@ function blocks(lines) {
       continue;
     }
 
-    const stack = STACK.test(line) && /^\s*\|/.test(lines[i + 1] ?? '');
+    const stackM = line.match(STACK);
+    const stack = !!stackM && /^\s*\|/.test(lines[i + 1] ?? '');
+    const cols = stack && stackM[1] ? ` style="--cols:${stackM[1]}"` : '';
     if (stack) i++;
 
     const h = line.match(/^(#{3,4})\s+(.*)$/);
@@ -87,7 +90,7 @@ function blocks(lines) {
       const [head, , ...body] = rows;
       // Stacked: every cell after the first names its column (data-label), as the cards on a phone show it.
       const label = j => (stack && j > 0 && head[j] ? ` data-label="${esc(head[j].replace(/[`*_]/g, ''))}"` : '');
-      out.push(`<div class="table"><table${stack ? ' class="stack"' : ''}><thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${
+      out.push(`<div class="table"><table${stack ? ` class="stack"${cols}` : ''}><thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join('')}</tr></thead><tbody>${
         body.map(r => `<tr>${r.map((c, j) => `<td${label(j)}>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
       continue;
     }

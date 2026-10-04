@@ -427,6 +427,7 @@ Workspaces hosted by Breakpatch aren't open yet either. Until they are, a worksp
 
 Solo is planned for one person who wants Team's automation for themselves, on their own tests folder. This is how it works in the app today. Its price isn't set.
 
+<!-- stack 3 -->
 | | Community | Solo | Team and Business |
 |---|---|---|---|
 | People | 1 | 1 | Your team |

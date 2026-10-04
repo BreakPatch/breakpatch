@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { TOAST_ACTIONS_MS, TOAST_ERROR_MS, ToastProvider, useToast } from '../ui';
+import { TOAST_ACTIONS_MS, TOAST_ERROR_MS, TOAST_MAX, ToastProvider, useToast } from '../ui';
 import { setOsForTests } from '../../lib/osWords';
 import type { App, Test } from '../../data/types';
 import { DemoBackend } from '../../data/demo/demoBackend';
@@ -56,6 +56,16 @@ describe('Deleting a test', () => {
     expect(screen.getByTestId('where')).toHaveTextContent('/settings/deleted');
     // Pressing a button closes the toast.
     await waitFor(() => expect(screen.queryByText('"Log in" moved to Recently deleted.')).toBeNull());
+  });
+
+  it('the toast goes once the test is put back another way, so its Undo is never stale (DESK-01)', async () => {
+    const t = await backend.createTest({ appId: app.id, name: 'Log in', startUrl: app.baseUrl, viewport: VP });
+    open([t]);
+    del('Log in');
+    await screen.findByRole('button', { name: 'Undo' });
+    await act(async () => { await backend.recentlyDeleted!.restore({ kind: 'test', id: t.id, appId: app.id }); });
+    await waitFor(() => expect(screen.queryByText('"Log in" moved to Recently deleted.')).toBeNull());
+    expect(screen.queryByText(/no longer in Recently deleted/)).toBeNull();
   });
 
   it('⌘Z undoes it while the toast shows, and the toast says so', async () => {
@@ -197,6 +207,17 @@ describe('Only the newest toast with Undo answers ⌘Z', () => {
   });
 });
 
+describe('A stack of toasts', () => {
+  it('keeps the newest few: a new one pushes the oldest out', async () => {
+    function Push() { const toast = useToast(); let n = 0; return <button type="button" onClick={() => toast(`Toast ${++n}.`)}>push</button>; }
+    render(<ToastProvider><Push /></ToastProvider>);
+    for (let i = 0; i < TOAST_MAX + 2; i++) { fireEvent.click(screen.getByRole('button', { name: 'push' })); await act(async () => {}); }
+    await waitFor(() => expect(document.querySelectorAll('.toast').length).toBe(TOAST_MAX));
+    expect(screen.getByText(`Toast ${TOAST_MAX + 2}.`)).toBeInTheDocument();
+    expect(screen.queryByText('Toast 1.')).toBeNull();
+  });
+});
+
 describe('An error toast', () => {
   it('stays long enough to read', () => {
     vi.useFakeTimers();
@@ -225,5 +246,15 @@ describe('Deleting a suite with edits not saved yet', () => {
     await screen.findByText('"Smoke, nightly" is back.');
     const back = await new Promise<{ name: string }[]>(r => { const off = backend.suites(v => { setTimeout(off); r(v); }); });
     expect(back.map(s => s.name)).toEqual(['Smoke, nightly']);
+  });
+});
+
+describe('Putting a test back (DESK-04)', () => {
+  it('comes back in its old place in the app’s list, not at the end', async () => {
+    const mk = (name: string) => backend.createTest({ appId: app.id, name, startUrl: app.baseUrl, viewport: VP });
+    const [, b] = [await mk('One'), await mk('Two'), await mk('Three')];
+    await backend.deleteTest(app.id, b.id);
+    await backend.recentlyDeleted!.restore({ kind: 'test', id: b.id, appId: app.id });
+    expect((await testsNow()).map(x => x.name)).toEqual(['One', 'Two', 'Three']);
   });
 });

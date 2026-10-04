@@ -2,7 +2,7 @@
 // bars, the composer (describe box + action button + send), and action-specific inputs.
 // Clicking the page and describing are always both available: no mode switch.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import type { Direction, Generated, SampleFile, StepGroup } from '../../data/types';
+import type { ActionKind, Direction, Generated, SampleFile, StepGroup } from '../../data/types';
 import { secrets } from '../../platform';
 import { actionInfo, GENERATED_CHOICES, SAMPLES } from '../../engine/labels';
 import { countRows, findStep, TOKENS, numberOf } from '../../components/steps';
@@ -13,6 +13,9 @@ import { SharedStepsPicker } from './SharedStepsPicker';
 import { composerInput, DESCRIBE_STEPS, INSTANT, onPage, pageHint, placeholderFor, shortName, toolHint, type MenuAction } from './actions';
 import type { Recorder } from './useRecorder';
 import { osText } from '../../lib/osWords';
+
+/** The hint row's icon for what's done on the page: not the action's own icon, which is on its button. */
+const HINT_ICON: Partial<Record<ActionKind, string>> = { upload: 'touch_app', swipe: 'move', scroll: 'move' };
 
 const CLICK_FAMILY = new Set(['click', 'doubleClick', 'longClick', 'rightClick', 'hover']);
 const FILE_TYPES = [['', 'Any type'], ['pdf', 'PDF'], ['csv', 'CSV'], ['xlsx', 'Excel sheet'], ['docx', 'Word document'], ['jpeg', 'JPEG image'], ['mp4', 'MP4 video']];
@@ -96,11 +99,15 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   const th = toolHint(action, describe);
   if (rr) hint = <><Icon name="replay" size={16} className="rec-hint-icon" /><span className="grow">Do step {numberOf(rec.steps, rr.id)} again on the page{describe ? ', or describe it' : ''}. It replaces "{rr.label}".</span><button type="button" className="rec-hint-link" onClick={rec.cancelRerecord}>Cancel</button></>;
   // The action's own icon is on its button already: the hint says "on the page" with its own.
-  else if (th) hint = <><Icon name={describe ? actionInfo(action).icon : action === 'upload' ? 'ads_click' : 'drag_pan'} size={16} className="rec-hint-icon" />{th}</>;
+  // Each its own: a click for the upload field, a move for swipe and scroll (not Double click's or Drag and drop's icons).
+  else if (th) hint = <><Icon name={describe ? actionInfo(action).icon : HINT_ICON[action] ?? 'move'} size={16} className="rec-hint-icon" />{th}</>;
   else if (loop) hint = <><Icon name="repeat" size={16} className="rec-hint-icon" />New steps go inside "{loop.label}" until you press Done repeating.</>;
 
   let field: ReactNode;
-  if (action === 'write' && o.writeSource === 'secret') {
+  if (frozen) {
+    // Playing (or using the page directly): the bar says that, not how to add a step it can't add now.
+    field = <span className="rec-inline rec-page-hint rec-frozen" role="status"><Icon name={rec.hand ? 'back_hand' : 'play_arrow'} size={16} className="rec-hint-icon" /><span className="grow">{frozen}</span></span>;
+  } else if (action === 'write' && o.writeSource === 'secret') {
     field = (
       <span className="rec-field-chip">
         <ChipSelect label="Saved secret" up value={o.secretRef} onChange={v => rec.setOptions({ secretRef: v })}
@@ -205,14 +212,15 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   // The sparkle only means "describe it to the AI"; otherwise the chosen action's own icon.
   const leadIcon = describe && CLICK_FAMILY.has(action) ? 'auto_awesome' : actionInfo(action).icon;
   // Nothing to type and nothing to send (it's done on the page): no field look and no send button.
-  const passive = input === 'none' && (onPage(action) || action === 'drag');
+  const passive = !!frozen || (input === 'none' && (onPage(action) || action === 'drag'));
   const showSend = !passive && action !== 'group';
   const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' && !onPage(action) : action === 'write' ? o.writeSource !== 'typed' || rec.text !== '' : !!rec.text.trim());
 
   if (rec.retryNote && !rr) hint = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click the page again to pick another spot.</>;
   // What the box can't do, by the box, until the sentence is changed (not a toast that goes).
   if (rec.unhandled && !rr) hint = <><Icon name="info" size={16} className="rec-hint-icon" /><span className="grow rec-hint-unhandled" role="status">{rec.unhandled}</span></>;
-  if (frozen) hint = <><Icon name="play_arrow" size={16} className="rec-hint-icon" /><span className="grow">{frozen}</span></>;
+  // While frozen the bar itself says why (the field above), so the hint row stays empty.
+  if (frozen) hint = null;
   else if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span></>;
 
   return (
