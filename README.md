@@ -25,7 +25,7 @@
   AI-powered UI testing that runs on your Mac. Click through your web app, replay it any time, and see exactly what broke. No code, no selectors, no cloud.*
 </p>
 
-<p align="center"><sub>* Mostly sunny, with a light chance of cloud. The AI and your screens never leave your Mac. The internet is only needed to download the model once and to get updates. Team workspaces (coming later) sync through the cloud, because that's how a team shares tests.</sub></p>
+<p align="center"><sub>* Mostly sunny, with a light chance of cloud. The AI and your screens never leave your Mac. The internet is only needed to download the AI model and the test browser once, for updates, and for anonymous usage counts you can turn off. Team workspaces (coming later) sync through the cloud, because that's how a team shares tests.</sub></p>
 
 <p align="center">
   <a href="https://github.com/BreakPatch/breakpatch/actions/workflows/ci.yml"><img src="https://github.com/BreakPatch/breakpatch/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
@@ -91,6 +91,8 @@ straight away.
 | macOS | 14 Sonoma or later |
 | Disk | About 3 GB for the AI assistant, plus the test browser |
 
+Linux comes next, then Windows: see the [roadmap](https://github.com/BreakPatch/breakpatch/issues/48).
+
 ## What it does
 
 - **Record by clicking.** Click, drag or draw a box on the page, and the AI names what you clicked:
@@ -98,8 +100,8 @@ straight away.
   you can edit.
 - **The AI runs on your Mac.** Qwen3-VL 4B, an open-weights model, on Apple Silicon through MLX.
   Your screens never leave the Mac, there are no API keys and no per-run fees, and it works
-  offline once it's downloaded. It's the only model for now: bringing your own (a local one through
-  Ollama or LM Studio, or a cloud model) isn't available yet.
+  offline once it's downloaded. It's the only model for now: bringing your own local one (through
+  Ollama or LM Studio) isn't available yet, and cloud AI models aren't planned.
 - **Screen checks you don't set up.** After every step, Breakpatch checks that the screen changed
   the way it did when you recorded it. It's a perceptual comparison, not AI, so the same screen
   always gets the same answer, and it leaves out the parts that change by themselves, like clocks

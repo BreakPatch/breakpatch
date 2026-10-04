@@ -67,7 +67,7 @@
             <a href="/docs/#install">What the command does</a>
           </div>
           <p class="reqs">Free and open source · Apple Silicon · macOS 14 or later · 16 GB memory</p>
-          <p class="cloud-note" id="no-cloud"><b>* No cloud?</b> Mostly sunny, with a light chance of cloud. The AI and your screens never leave your Mac. The internet is only needed to download the model once and to get updates. Team workspaces (coming later) sync through the cloud, because that's how a team shares tests.</p>
+          <p class="cloud-note" id="no-cloud"><b>* No cloud?</b> Mostly sunny, with a light chance of cloud. The AI and your screens never leave your Mac. The internet is only needed to download the AI model and the test browser once, for updates, and for anonymous usage counts you can turn off. Team workspaces (coming later) sync through the cloud, because that's how a team shares tests.</p>
           <p class="runs-count" id="runs-count" hidden><b id="runs-count-n"></b> tests run with Breakpatch</p>
         </div>
       </div>
@@ -387,7 +387,7 @@ suites/smoke.json</pre>
         </details>
         <details>
           <summary>Which AI model does it use?</summary>
-          <div class="a"><p>A vision AI model that runs on your Mac and reads the screen. It's about 3 GB, downloaded once during setup, and unloaded when it's idle.</p><p class="dev-note"><b>For developers:</b> Qwen3-VL 4B, an open-weights vision-language model, run on Apple Silicon through MLX.</p><p>The AI names the steps you record. In Team, coming later, it also finds buttons that moved and says why a step failed. Screen checks don't use it: they're a visual comparison. See <a href="/docs/#the-ai-assistant">The AI assistant</a>.</p><p>It's the only model for now. Bringing your own, a local one through Ollama or LM Studio or a cloud model, isn't available yet.</p></div>
+          <div class="a"><p>A vision AI model that runs on your Mac and reads the screen. It's about 3 GB, downloaded once during setup, and unloaded when it's idle.</p><p class="dev-note"><b>For developers:</b> Qwen3-VL 4B, an open-weights vision-language model, run on Apple Silicon through MLX.</p><p>The AI names the steps you record. In Team, coming later, it also finds buttons that moved and says why a step failed. Screen checks don't use it: they're a visual comparison. See <a href="/docs/#the-ai-assistant">The AI assistant</a>.</p><p>It's the only model for now. Bringing your own local one, through Ollama or LM Studio, isn't available yet. Cloud AI models aren't planned: your screens stay on your Mac.</p></div>
         </details>
         <details>
           <summary>Does the AI need the internet, or cost extra to run?</summary>
@@ -399,7 +399,7 @@ suites/smoke.json</pre>
         </details>
         <details>
           <summary>Which Macs does it run on?</summary>
-          <div class="a"><p>A Mac with Apple Silicon (M1 or later), 16 GB of memory and macOS 14 or later. Intel Macs aren't supported. The AI model takes about 3 GB of disk space.</p></div>
+          <div class="a"><p>A Mac with Apple Silicon (M1 or later), 16 GB of memory and macOS 14 or later. Intel Macs aren't supported. The AI model takes about 3 GB of disk space.</p><p>Linux comes next, then Windows.</p></div>
         </details>
         <details>
           <summary>How do I install and update it?</summary>
@@ -407,7 +407,7 @@ suites/smoke.json</pre>
         </details>
         <details>
           <summary>What does Breakpatch send back to you?</summary>
-          <div class="a"><p>Only what's needed to check a Team licence, never your tests. Community has no licence at all.</p><p>Team, when it comes, confirms its licence once a day and keeps working for 30 days without a connection. It sends the licence, who is using it (the person's work email, or the machine's name for a runner) and simple counts, such as how many tests ran and passed. Never test names, web addresses, steps or screenshots. The documentation lists <a href="/docs/#licences-and-seats">every detail</a>.</p></div>
+          <div class="a"><p>Never your tests. Community sends only anonymous daily counts of tests created and runs, which you can turn off, and has no licence to check.</p><p>Team, when it comes, confirms its licence once a day and keeps working for 30 days without a connection. It sends the licence, who is using it (the person's work email, or the machine's name for a runner) and simple counts, such as how many tests ran and passed. Never test names, web addresses, steps or screenshots. The documentation lists <a href="/docs/#licences-and-seats">every detail</a>.</p></div>
         </details>
         <details>
           <summary>Can I use it in CI?</summary>
