@@ -32,7 +32,7 @@ export default function ReportScreen() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { run, runs, moreRuns, test, steps, app, missing } = useReport(appId, runId);
+  const { run, runs, moreRuns, test, steps, recordedOn, app, missing } = useReport(appId, runId);
 
   const showHistory = hasFeature('versions') || (runs?.length ?? 0) > 1;
   const tab = params.get('tab') === 'history' && showHistory ? 'history' : 'run';
@@ -135,7 +135,7 @@ export default function ReportScreen() {
         <ExportDialog open={exporting} onClose={() => setExporting(false)} what="this run"
           load={screenshots => reportInput({
             kind: 'run', name: run.testName, screenshots, engine: getEngine(),
-            tests: [{ appName: app?.name ?? '', name: run.testName, steps, run, viewport: test?.viewport }],
+            tests: [{ appName: app?.name ?? '', name: run.testName, steps, run, viewport: test?.viewport, recordedOn }],
           })} />
       )}
     </AppFrame>

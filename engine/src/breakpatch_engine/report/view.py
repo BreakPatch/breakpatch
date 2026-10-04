@@ -15,6 +15,7 @@ The input:
 """
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta, timezone
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -296,20 +297,33 @@ def run_by(run: dict) -> str:
     return str(by.get("name") or by.get("serviceAccount") or "")
 
 
-def where_text(run: dict) -> str:
+def _this_computer() -> str:
+    """The system of the machine making the report, as a recording names it ("" when it isn't one of the three)."""
+    if sys.platform == "darwin":
+        return "macOS"
+    if sys.platform in ("win32", "cygwin"):
+        return "Windows"
+    return "Linux" if sys.platform.startswith("linux") else ""
+
+
+def where_text(run: dict, recorded_on: object = None) -> str:
     """Where a run ran, about the run's own machine, as the app's runWords.ts whereText: a desktop run
-    says "This Mac" or "This PC" by the system it ran on when the run records it (ranOn, or a system
-    mismatch's ranOn), else "Desktop app"."""
+    says "This Mac" or "This PC" by the system it ran on. A run records that system only when it
+    differs from where the test was recorded (ranOn, or a system mismatch's ranOn). Without one it
+    ran on the test's own system (`recorded_on`, the test's recordedOn, when known), else on this
+    computer: the one making the report. A system it doesn't know says "Desktop app"."""
     source = run.get("source")
     if source != "desktop":
         return WHERE.get(source, str(source or ""))
     def os_of(holder: object) -> object:
-        ran = holder.get("ranOn") if isinstance(holder, dict) else None
-        return ran.get("os") if isinstance(ran, dict) else None
+        return holder.get("os") if isinstance(holder, dict) else None
 
-    os_name = os_of(run)
-    if os_name is None:
-        os_name = os_of(run.get("systemMismatch"))
+    mismatch = run.get("systemMismatch")
+    os_name = os_of(run.get("ranOn")) or os_of(mismatch.get("ranOn") if isinstance(mismatch, dict) else None)
+    if not os_name and not isinstance(mismatch, dict):
+        os_name = os_of(recorded_on)
+    if not os_name:
+        os_name = _this_computer()
     if os_name == "macOS":
         return "This Mac"
     if os_name in ("Windows", "Linux"):
@@ -317,9 +331,9 @@ def where_text(run: dict) -> str:
     return "Desktop app"
 
 
-def run_meta(run: dict, offset: int) -> list[dict]:
+def run_meta(run: dict, offset: int, recorded_on: object = None) -> list[dict]:
     meta = [{"k": "Took", "v": took_text(run.get("durationMs"))}, {"k": "Run by", "v": run_by(run)},
-            {"k": "Where", "v": where_text(run)},
+            {"k": "Where", "v": where_text(run, recorded_on)},
             {"k": "Machine", "v": str(run.get("machine") or "")},
             # breakpatch-ci's tier on that machine (systems.Tier.summary): "Simple runner: 4 GB of memory, …"
             {"k": "Runner", "v": str(run.get("runner") or "")}, {"k": "When", "v": when_text(run.get("startedAt"), offset)}]
@@ -342,7 +356,7 @@ def test_view(t: dict, index: int, offset: int, screenshots: bool, multi: bool) 
         v.pop("_reason", None)
     return {
         "anchor": f"test-{index + 1}", "name": name, "appName": str(t.get("appName") or ""), "multi": multi,
-        "result": state, "resultText": RUN_TEXT[state] if run else "Couldn't run", "meta": run_meta(run, offset) if run else [],
+        "result": state, "resultText": RUN_TEXT[state] if run else "Couldn't run", "meta": run_meta(run, offset, t.get("recordedOn")) if run else [],
         "testNote": "" if run else str(t.get("note") or "It couldn't run."),
         "stepsText": plural(len(views), "step"), "steps": views, "junit": j,
         # In a suite, a test that passed starts closed: what didn't pass is what's read first.

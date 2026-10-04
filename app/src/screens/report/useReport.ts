@@ -1,7 +1,7 @@
 // Loads what the run report shows: the run, its test, the steps as they were in the version
 // it tested (shared steps resolved), and the test's other runs for Run history.
 import { useEffect, useState } from 'react';
-import type { App, Run, Step, Test } from '../../data/types';
+import type { App, RecordedOn, Run, Step, Test } from '../../data/types';
 import { useBackend, useLive, usePagedLive } from '../../data/hooks';
 import { backendGroupLoader, resolveSteps } from '../run/resolve';
 
@@ -24,6 +24,8 @@ export function useReport(appId: string, runId: string) {
   const run = runs?.find(r => r.id === runId) ?? fetched;
 
   const [steps, setSteps] = useState<Step[] | null>(null);
+  // Where the run's version was recorded: the exported report's Where when the run records no system.
+  const [recordedOn, setRecordedOn] = useState<RecordedOn | undefined>(undefined);
   const version = fetched?.testVersion;
   const current = test?.currentVersion;
   useEffect(() => {
@@ -31,13 +33,14 @@ export function useReport(appId: string, runId: string) {
     let live = true;
     (async () => {
       // Without version history only the latest version is kept; then the report shows that one.
-      const v = (await backend.version(appId, testId, version)) ?? (current ? await backend.version(appId, testId, current) : null);
+      const own = await backend.version(appId, testId, version);
+      const v = own ?? (current ? await backend.version(appId, testId, current) : null);
       const out = await resolveSteps(v?.steps ?? [], backendGroupLoader(backend, appId)).catch(() => v?.steps ?? []);
-      if (live) setSteps(out);
+      if (live) { setSteps(out); setRecordedOn(own?.recordedOn); }
     })();
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backend, appId, testId, version, current, test === undefined]);
 
-  return { run, runs, moreRuns: history.hasMore ? history.more : undefined, test, steps, app: apps?.find(a => a.id === appId), missing: fetched === null };
+  return { run, runs, moreRuns: history.hasMore ? history.more : undefined, test, steps, recordedOn, app: apps?.find(a => a.id === appId), missing: fetched === null };
 }

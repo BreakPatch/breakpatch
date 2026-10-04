@@ -5,9 +5,17 @@
   {"run": {"source": "desktop", "systemMismatch": {"recordedOn": {"os": "macOS"}, "ranOn": {"os": "Linux"}}}, "where": "This PC"},
   {"run": {"source": "desktop", "ranOn": {"os": "Windows"}, "systemMismatch": {"ranOn": {"os": "macOS"}}}, "where": "This PC"},
   {"run": {"source": "desktop", "ranOn": {"chromium": "140"}, "systemMismatch": {"ranOn": {"os": "Linux"}}}, "where": "This PC"},
-  {"run": {"source": "desktop"}, "where": "Desktop app"},
   {"run": {"source": "desktop", "ranOn": {"os": "FreeBSD"}}, "where": "Desktop app"},
+  {"run": {"source": "desktop", "ranOn": {"os": "Windows"}}, "recordedOn": {"os": "macOS"}, "where": "This PC"},
+  {"run": {"source": "desktop"}, "recordedOn": {"os": "macOS"}, "where": "This Mac"},
+  {"run": {"source": "desktop"}, "recordedOn": {"os": "Windows", "chromium": "140"}, "where": "This PC"},
+  {"run": {"source": "desktop"}, "recordedOn": {"os": "FreeBSD"}, "where": "Desktop app"},
+  {"run": {"source": "desktop"}, "where": {"mac": "This Mac", "windows": "This PC", "linux": "This PC"}},
+  {"run": {"source": "desktop"}, "recordedOn": {"chromium": "140"}, "where": {"mac": "This Mac", "windows": "This PC", "linux": "This PC"}},
+  {"run": {"source": "desktop", "systemMismatch": {"recordedOn": {"os": "macOS"}, "differences": ["os"]}}, "recordedOn": {"os": "macOS"},
+   "where": {"mac": "This Mac", "windows": "This PC", "linux": "This PC"}},
   {"run": {"source": "ci", "ranOn": {"os": "Linux"}}, "where": "CI"},
+  {"run": {"source": "ci"}, "recordedOn": {"os": "macOS"}, "where": "CI"},
   {"run": {"source": "runner", "ranOn": {"os": "macOS"}}, "where": "Local runner"},
   {"run": {"source": "kiosk"}, "where": "kiosk"}
 ]

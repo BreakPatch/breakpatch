@@ -58,9 +58,34 @@ def test_the_junit_xml_is_the_golden_one(case):
 # ---------------------------------------------------------------- what the report says
 
 @pytest.mark.parametrize("case", json.loads((FIXTURES / "where.json").read_text(encoding="utf-8")))
-def test_where_names_the_run_s_own_machine_as_the_app_does(case):
-    """The same cases as the app's report.test.ts: a desktop run's machine by its recorded system."""
-    assert report_view.where_text(case["run"]) == case["where"]
+@pytest.mark.parametrize("here", [("darwin", "mac"), ("win32", "windows"), ("linux", "linux")])
+def test_where_names_the_run_s_own_machine_as_the_app_does(case, here, monkeypatch):
+    """The same cases as the app's report.test.ts: a desktop run's machine by its recorded system,
+    else the test's (`recordedOn`), else the machine making the report (`where` per machine)."""
+    monkeypatch.setattr(report_view.sys, "platform", here[0])
+    want = case["where"] if isinstance(case["where"], str) else case["where"][here[1]]
+    assert report_view.where_text(case["run"], case.get("recordedOn")) == want
+
+
+def test_a_desktop_run_with_no_system_of_its_own_says_this_mac_on_a_mac(monkeypatch):
+    monkeypatch.setattr(report_view.sys, "platform", "darwin")
+    assert report_view.where_text({"source": "desktop"}) == "This Mac"
+    monkeypatch.setattr(report_view.sys, "platform", "freebsd14")
+    assert report_view.where_text({"source": "desktop"}) == "Desktop app"
+
+
+def test_the_report_passes_the_test_s_recorded_system_on_to_where(monkeypatch):
+    monkeypatch.setattr(report_view.sys, "platform", "darwin")
+    t = INPUT["run"]["tests"][0]
+    plain = {**t, "run": {k: v for k, v in t["run"].items() if k != "systemMismatch"}}
+
+    def where(test):
+        meta = report.build({**INPUT["run"], "tests": [test]})["tests"][0]["meta"]
+        return next(m["v"] for m in meta if m["k"] == "Where")
+
+    assert where(plain) == "This Mac"
+    assert where({**plain, "recordedOn": {"os": "Windows"}}) == "This PC"
+    assert where({**t, "recordedOn": {"os": "macOS"}}) == "This PC"   # its mismatch says Linux
 
 
 def test_a_failed_step_has_its_reason_the_ai_assistant_and_its_screenshot():

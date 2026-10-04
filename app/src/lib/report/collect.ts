@@ -2,7 +2,7 @@
 // with the screenshots (engine `report.images`, WebP: full size for a failed step, small for the
 // rest), then the files themselves. The report screen and the suite run screen use it, and in
 // Team the local runner (runner/htmlReport.ts) for every suite run.
-import type { Run, Step, Viewport } from '../../data/types';
+import type { RecordedOn, Run, Step, Viewport } from '../../data/types';
 import type { Engine } from '../../engine/engine';
 import { appVersion, saveTextFile } from '../../platform';
 import { junitXml } from './junit';
@@ -17,6 +17,8 @@ export interface ExportTest {
   run: Run | null;
   viewport?: Pick<Viewport, 'width'>;
   note?: string;
+  /** Where the run's version was recorded (Version.recordedOn), when known: the report's Where for a run that records no system. */
+  recordedOn?: RecordedOn;
 }
 
 export type ExportFormat = 'html' | 'pdf' | 'junit';
@@ -47,7 +49,7 @@ export async function reportInput(o: {
 }): Promise<ReportInput> {
   const now = o.now ?? Date.now();
   const tests = await Promise.all(o.tests.map(async t => ({
-    appName: t.appName, name: t.name, steps: t.steps, ...(t.note ? { note: t.note } : {}),
+    appName: t.appName, name: t.name, steps: t.steps, ...(t.note ? { note: t.note } : {}), ...(t.recordedOn ? { recordedOn: t.recordedOn } : {}),
     run: t.run ? { ...t.run, steps: o.screenshots ? await withImages(t, o.engine) : t.run.steps } : null,
   })));
   return {

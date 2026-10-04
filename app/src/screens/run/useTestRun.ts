@@ -20,7 +20,7 @@ import { INITIAL_RUN, runReducer } from './runState';
 import { demoFailIds, demoSeen } from './demo';
 import { computer, ThisComputer } from '../../lib/osWords';
 
-export interface Finished { ended: RunEnded; run: Run | null; steps: Step[] }
+export interface Finished { ended: RunEnded; run: Run | null; steps: Step[]; recordedOn?: RecordedOn }
 
 /** The test's current version with its shared steps filled in, where it was recorded and where it starts. */
 export async function prepareTest(backend: Backend, test: Test): Promise<{ steps: Step[]; recordedOn?: RecordedOn; startUrl: string }> {
@@ -177,7 +177,7 @@ export function useTestRun() {
       }
       setRun(saved);
       if (opts.notify !== false && saved) void notifyTestRun(t, ended, resolved, `/apps/${t.appId}/runs/${saved.id}`);
-      return { ended, run: saved, steps: resolved };
+      return { ended, run: saved, steps: resolved, ...(recordedOn ? { recordedOn } : {}) };
     } catch (e) {
       if (active.current === handle) active.current = null;
       if (!handle.abandoned) dispatch({ type: 'error', message: e instanceof Error ? e.message : "Couldn't start the run." });

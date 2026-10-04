@@ -25,6 +25,8 @@ export interface ReportTestInput {
   run: ReportRun | null;
   /** Why there's no run: "Couldn't run: it was deleted". */
   note?: string;
+  /** Where the run's version of the test was recorded, when known: the Where of a run that records no system. */
+  recordedOn?: RecordedOn;
 }
 
 export interface ReportInput {
@@ -209,10 +211,10 @@ function runState(run: ReportRun | null, steps: StepView[]): StepState {
   return int(run.healedCount) > 0 ? 'fixed' : 'passed';
 }
 
-function runMeta(run: ReportRun, offset: number): Meta[] {
+function runMeta(run: ReportRun, offset: number, recordedOn?: RecordedOn): Meta[] {
   const meta: Meta[] = [
     { k: 'Took', v: tookText(int(run.durationMs)) }, { k: 'Run by', v: runBy(run) },
-    { k: 'Where', v: whereText(run) },
+    { k: 'Where', v: whereText(run, recordedOn) },
     { k: 'Machine', v: String(run.machine ?? '') },
     // breakpatch-ci's tier on that machine (engine systems.Tier.summary): "Simple runner: 4 GB of memory, …"
     { k: 'Runner', v: String(run.runner ?? '') }, { k: 'When', v: whenText(run.startedAt, offset) },
@@ -252,7 +254,7 @@ function testView(t: ReportTestInput, index: number, offset: number, screenshots
   const steps: StepView[] = withCode.map(({ reasonCode: _code, ...s }) => s);
   return {
     anchor: `test-${index + 1}`, name: String(t.name || run?.testName || 'Test'), appName: String(t.appName ?? ''), multi,
-    result: state, resultText: run ? RUN_TEXT[state] : "Couldn't run", meta: run ? runMeta(run, offset) : [],
+    result: state, resultText: run ? RUN_TEXT[state] : "Couldn't run", meta: run ? runMeta(run, offset, t.recordedOn) : [],
     testNote: run ? '' : String(t.note || "It couldn't run."), stepsText: plural(steps.length, 'step'), steps, junit,
     stepsOpen: state !== 'passed' && state !== 'fixed',
   };

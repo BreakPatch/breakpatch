@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { allOpen, buildView, junitXml, printableParts, REPORT_TEMPLATE, reportHtml, type ReportInput } from '.';
 import { parse, render, TemplateError } from './render';
-import { countsText, isoText, reportRows, seconds, shortTime, whenText } from './view';
+import { countsText, isoText, reportRows, seconds, shortTime, whenText, type ReportTestInput } from './view';
 import { xmlEscape } from './junit';
 import { whereText } from '../runWords';
 import { setOsForTests } from '../osWords';
@@ -32,13 +32,35 @@ describe('the same files as breakpatch-ci', () => {
 });
 
 describe('Where: the run\'s own machine, the same as breakpatch-ci (where.json)', () => {
-  const CASES = JSON.parse(fs.readFileSync(join(dir, 'where.json'), 'utf8')) as { run: Parameters<typeof whereText>[0]; where: string }[];
+  // `recordedOn`: the test's. `where`: one answer whoever makes the report, or one per computer
+  // making it (a desktop run that records no system and whose test's system isn't known).
+  type Case = { run: Parameters<typeof whereText>[0]; recordedOn?: { os?: string }; where: string | Record<'mac' | 'windows' | 'linux', string> };
+  const CASES = JSON.parse(fs.readFileSync(join(dir, 'where.json'), 'utf8')) as Case[];
   for (const os of ['mac', 'windows', 'linux'] as const) {
-    it(`whoever looks at it (on ${os})`, () => {
+    it(`whoever makes the report (on ${os})`, () => {
       setOsForTests(os);
-      try { for (const c of CASES) expect(whereText(c.run), JSON.stringify(c.run)).toBe(c.where); } finally { setOsForTests(null); }
+      try {
+        for (const c of CASES) expect(whereText(c.run, c.recordedOn), JSON.stringify(c)).toBe(typeof c.where === 'string' ? c.where : c.where[os]);
+      } finally { setOsForTests(null); }
     });
   }
+
+  it('a desktop run with no system of its own reads "This Mac" on a Mac again', () => {
+    setOsForTests('mac');
+    try { expect(whereText({ source: 'desktop' })).toBe('This Mac'); } finally { setOsForTests(null); }
+  });
+
+  it('the report passes the test\'s recorded system on to Where', () => {
+    setOsForTests('mac');
+    try {
+      const where = (t: ReportTestInput) => buildView({ ...INPUT.run, tests: [t] }).tests[0].meta.find(m => m.k === 'Where')?.v;
+      const t = INPUT.run.tests[0];
+      const plain = { ...t, run: { ...t.run!, systemMismatch: undefined } };
+      expect(where(plain)).toBe('This Mac');
+      expect(where({ ...plain, recordedOn: { os: 'Windows' } })).toBe('This PC');
+      expect(where({ ...t, recordedOn: { os: 'macOS' } })).toBe('This PC');   // its mismatch says Linux
+    } finally { setOsForTests(null); }
+  });
 });
 
 describe('the report', () => {

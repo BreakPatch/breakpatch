@@ -29,7 +29,7 @@ import { ExportDialog } from '../report/ExportDialog';
 import { reportInput, type ExportTest } from '../../lib/report/collect';
 import { removePrinted } from '../../lib/report/print';
 import { getEngine } from '../../engine';
-import type { Run, Step } from '../../data/types';
+import type { RecordedOn, Run, Step } from '../../data/types';
 import '../run/run.css';
 import { thisComputer, ThisComputer } from '../../lib/osWords';
 
@@ -79,7 +79,7 @@ export default function SuiteRunScreen() {
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   // Each test's saved run and the steps it ran, for Export (by the test's place in the suite).
-  const results = useRef(new Map<number, { run: Run | null; steps: Step[] }>());
+  const results = useRef(new Map<number, { run: Run | null; steps: Step[]; recordedOn?: RecordedOn }>());
   const [exporting, setExporting] = useState(false);
   useEffect(() => removePrinted, []);
 
@@ -100,7 +100,7 @@ export default function SuiteRunScreen() {
         const out = await start(test, { notify: false });
         if (!out || !alive.current) return;                       // left the screen
         if (out.run) runIds.push(out.run.id);
-        results.current.set(i, { run: out.run, steps: out.steps });
+        results.current.set(i, { run: out.run, steps: out.steps, recordedOn: out.recordedOn });
         const stopped = out.ended.steps.some(s => s.reason === 'stopped');
         const failed = out.ended.steps.filter(s => s.result === 'failed').pop();
         const flat = preorder(out.steps);
@@ -254,7 +254,7 @@ export default function SuiteRunScreen() {
               const got = results.current.get(i);
               const t = findTest(it.appId, it.testId);
               return got?.run
-                ? { appName: it.appName, name: it.name, steps: got.steps, run: got.run, viewport: t?.viewport }
+                ? { appName: it.appName, name: it.name, steps: got.steps, run: got.run, viewport: t?.viewport, recordedOn: got.recordedOn }
                 : { appName: it.appName, name: it.name, steps: [], run: null, note: it.note ?? (it.state === 'notRun' ? "It didn't run: the suite was stopped." : "It couldn't run.") };
             }),
           })} />

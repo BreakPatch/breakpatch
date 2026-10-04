@@ -16,12 +16,18 @@ export const WHERE: Record<RunSource, { label: string; icon: string }> = {
 /**
  * Where a run ran, in words about the run's own machine (not the one showing it), so the app's
  * report and breakpatch-ci's (report/view.py where_text) say the same: a desktop run says "This
- * Mac" or "This PC" by the system it ran on when the run records it (ranOn, or a system mismatch's
- * ranOn), else "Desktop app". The runner's and CI's runs say so.
+ * Mac" or "This PC" by the system it ran on. A run records that system only when it differs from
+ * where the test was recorded (ranOn, or a system mismatch's ranOn). Without one it ran on the
+ * test's own system (`recordedOn`, when known), else on this computer: the one making the report.
+ * A system it doesn't know says "Desktop app". The runner's and CI's runs say so.
  */
-export function whereText(run: { source: RunSource | string; ranOn?: { os?: string }; systemMismatch?: { ranOn?: { os?: string } } }): string {
+export function whereText(
+  run: { source: RunSource | string; ranOn?: { os?: string }; systemMismatch?: { ranOn?: { os?: string } } },
+  recordedOn?: { os?: string },
+): string {
   if (run.source !== 'desktop') return WHERE[run.source as RunSource]?.label ?? String(run.source ?? '');
-  const os = run.ranOn?.os ?? run.systemMismatch?.ranOn?.os;
+  const os = run.ranOn?.os || run.systemMismatch?.ranOn?.os || (run.systemMismatch ? undefined : recordedOn?.os);
+  if (!os) return isMac() ? 'This Mac' : 'This PC';
   if (os === 'macOS') return 'This Mac';
   if (os === 'Windows' || os === 'Linux') return 'This PC';
   return 'Desktop app';
