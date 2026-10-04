@@ -8,7 +8,7 @@ Breakpatch has four editions. **Community** is free and open source (Apache 2.0)
 | Machine licences | None | 1, no extras | 1 included, more can be bought | 5 included, more can be bought |
 | Where tests live | A tests folder | A tests folder or Git; a workspace of your own is optional | A workspace hosted by Breakpatch, or in the customer's own Firebase | The same as Team |
 
-Hosted workspaces (Breakpatch Cloud, no Firebase set-up) are built for Team and Business and will be the default way to get a workspace when they open; the customer's own Firebase stays as "Host it yourself". In the app they're behind the Team module's `HOSTED_OPEN` switch (`app/cloud/config.ts`), off until Breakpatch Cloud opens: until then the app says "Hosted by Breakpatch opens soon".
+Hosted workspaces (Breakpatch Cloud, no Firebase set-up) are built for Team and Business and will be the default way to get a workspace when they open; the customer's own Firebase stays as "Host it yourself". In the app they're behind the Team module's `HOSTED_OPEN` switch (`app/cloud/config.ts`), off until Breakpatch Cloud opens: until then the app says "Hosted by Breakpatch isn't open yet".
 
 ## Community (free)
 

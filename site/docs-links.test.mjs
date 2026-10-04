@@ -103,7 +103,8 @@ test('notes render as notes, never as a comment in the text', () => {
 
 test('nothing says Coming soon for Team, Business, Solo or hosting: they are coming later', () => {
   for (const m of MD.matchAll(/<!--\s*(?:soon|solo-soon)\s*-->\s*(.*)/g)) assert.match(m[1], /^Coming later\./, m[1]);
-  assert.doesNotMatch(MD, /Opens soon/);
+  assert.doesNotMatch(MD, /Opens soon/i);
+  assert.doesNotMatch(MD, /\(coming soon\)/i);   // the EU and EEA countries in the hosted list
 });
 
 test('a program’s output is shown without a Copy button, and wraps on a phone', () => {

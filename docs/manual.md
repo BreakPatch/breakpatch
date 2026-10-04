@@ -487,7 +487,7 @@ This Mac stays signed in to your Breakpatch account, so next time the list opens
 
 ### Create the hosted workspace
 
-A licence's admin does this once, after getting Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name, choose the country your company is in and press **Create workspace**. You're its first admin, and the licence's other admins are invited. Your data is stored in Europe. Hosting for companies in the EU and the EEA isn't open yet: those countries say *(coming soon)* in the list, and choosing one offers **Host it yourself** instead.
+A licence's admin does this once, after getting Team or Business. Sign in as above with the address the licence has for its admin, then choose **Create a hosted workspace**, give it a name, choose the country your company is in and press **Create workspace**. You're its first admin, and the licence's other admins are invited. Your data is stored in Europe. Hosting for companies in the EU and the EEA isn't open yet: those countries say *(coming later)* in the list, and choosing one offers **Host it yourself** instead.
 
 Creating it turns on [encryption](#encryption-and-the-recovery-code): the workspace's key is made on your Mac, and Breakpatch never has it. Straight away, Breakpatch shows the workspace's **recovery code**: save it (**Save recovery kit (PDF)** or **Copy code**) and type back the 4 characters it asks for. The window stays open until you do, or until you choose **Skip, I'll make a new one later** and confirm. Without the code, losing every Mac that has the key means losing the tests.
 
