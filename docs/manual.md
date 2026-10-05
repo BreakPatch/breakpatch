@@ -54,7 +54,7 @@ Breakpatch is **Community** for now: free and open source, for one person on one
 
 ## Install
 
-You need a Mac with Apple Silicon, 16 GB of memory and macOS 14 or later. Linux comes next, then Windows: see the [roadmap](https://github.com/BreakPatch/breakpatch/issues/48).
+You need a Mac with Apple Silicon, 16 GB of memory and macOS 14 or later. Linux is in preview: see [Breakpatch on Linux (preview)](#breakpatch-on-linux-preview). Windows comes after that: see the [roadmap](https://github.com/BreakPatch/breakpatch/issues/48).
 
 Open Terminal and paste this:
 
@@ -79,6 +79,37 @@ curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall
 This removes the app only. Your tests stay in the folder you picked, saved secrets stay in your Keychain, and the AI assistant and Breakpatch's data stay in `~/Library/Application Support/Breakpatch`. Delete that folder to free the space.
 
 **Breakpatch's certificate.** Breakpatch is signed with its own certificate, "Breakpatch Code Signing", not with Apple's Developer ID. Every release is signed with the same one, so macOS knows each update is the same app and your saved secrets stay available without Keychain prompts. macOS doesn't mark files downloaded with `curl` as quarantined, so Breakpatch opens straight away.
+
+### Breakpatch on Linux (preview)
+
+The Linux app is a preview. Expect rough edges, and tell us what you find: [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20on%20Linux). Not every release has it yet.
+
+You need 64-bit Linux on an Intel or AMD processor (x86_64), with glibc 2.35 or later: Ubuntu 22.04 or later, Debian 12 or later, or Fedora 36 or later. Arm (a Raspberry Pi) isn't supported for the app. For running tests there, see [breakpatch-ci on Linux](#breakpatch-ci-on-linux).
+
+**Install.** Open a terminal and paste the same command:
+
+```sh
+curl -fsSL https://breakpatch.dev/install | sh
+```
+
+It downloads the AppImage from [GitHub Releases](https://github.com/BreakPatch/breakpatch/releases) and checks it against the release's checksums. If you have `minisign`, it also checks the signature with Breakpatch's update key. It puts Breakpatch in `~/.local/bin/breakpatch` and adds it to your apps menu. It doesn't need your password, and it refuses to run with `sudo`.
+
+**FUSE.** An AppImage needs FUSE to start: the `fusermount3` command, from the `fuse3` package. Most desktops have it. If yours doesn't, the install command says so. Install it with `sudo apt install fuse3` (Ubuntu, Debian) or `sudo dnf install fuse3` (Fedora), then open Breakpatch.
+
+**Or the .deb package.** Each Linux release also has a `.deb` for Ubuntu and Debian. Download it from the release and install it with `sudo apt install ./breakpatch_<version>_amd64.deb`. Use one or the other, not both. The install command leaves a `.deb` install alone and tells you how to update it.
+
+**Updating.** Breakpatch updates itself, as on a Mac (see [Updates](#updates)). With the `.deb`, installing an update asks for your password. Running the install command again updates the AppImage too.
+
+**Links and workspace files.** `breakpatch://` links and `.bpworkspace` files open in Breakpatch. If Breakpatch is already open, they go to the open window. The `.deb` sets this up when it's installed. The AppImage sets it up for your account each time it starts.
+
+**What's different from the Mac.**
+
+- Saved secrets go in your keyring (GNOME Keyring or KWallet). Without one, Breakpatch says: "Install or unlock a keyring such as GNOME Keyring or KWallet, then try again." It never saves them in a file instead.
+- Shortcuts use Ctrl, not ⌘.
+- The AI assistant doesn't run on Linux yet. It needs Apple Silicon for now.
+- Breakpatch's data and the test browser are in `~/.local/share/Breakpatch`.
+
+**Uninstalling.** `curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall` removes the AppImage and the apps menu entry. Your tests stay in their folder, saved secrets stay in your keyring, and Breakpatch's data stays in `~/.local/share/Breakpatch` and `~/.local/share/dev.breakpatch.app`. For the `.deb`, use `sudo apt remove breakpatch`.
 
 
 ## Start on this Mac
