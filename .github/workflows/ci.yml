@@ -294,6 +294,29 @@ jobs:
       - name: Test breakpatch-ci's install command against fake releases
         run: bash scripts/test-install-ci.sh
 
+  # The GitHub Action (action/, issue #6) and the workflows: actionlint on every workflow,
+  # shellcheck on the action's scripts and the release scripts, and the action's own test (its
+  # scripts against a fake release and a stand-in breakpatch-ci). actionlint is built from its
+  # tagged source with the runner's Go; shellcheck is on the runner image.
+  lint-actions:
+    name: GitHub Action and workflows (actionlint, shellcheck)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: actionlint
+        run: |
+          GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          "$RUNNER_TEMP/bin/actionlint" -color
+      - name: shellcheck
+        run: shellcheck action/scripts/*.sh action/test.sh scripts/test-ci-containers.sh site/install-ci
+      - name: The action's scripts
+        run: bash action/test.sh
+
   # breakpatch-ci as a release builds it, Linux only (the macOS wheel is built by release.yml on
   # a tag, never here). Both wheels are built with a throwaway licence key made in this job
   # (its private half only in RUNNER_TEMP, never uploaded), installed into a clean Python 3.11
@@ -362,6 +385,13 @@ jobs:
           python breakpatch-team/engine/scripts/smoke_ci_wheel.py run --ci "$RUNNER_TEMP/breakpatch-ci/bin/breakpatch-ci" \
             --seed-file "$RUNNER_TEMP/ci-smoke.seed" --site breakpatch/engine/tests/site \
             --version "$(node -p "require('./breakpatch/app/package.json').version")"
+      # The same wheels through site/install-ci in clean ubuntu:22.04, ubuntu:24.04 and debian:12
+      # containers: no Python, no curl, none of Chromium's libraries to start with.
+      - name: Install it in clean containers, as a customer does
+        if: env.HAS_TEAM == 'true'
+        env:
+          TEAM_DIR: breakpatch-team
+        run: bash breakpatch/scripts/test-ci-containers.sh --dist "$RUNNER_TEMP/dist" --seed "$RUNNER_TEMP/ci-smoke.seed"
 
   badges:
     name: Coverage badges (main only)
