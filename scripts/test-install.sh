@@ -11,6 +11,10 @@
 # it with shellcheck, installing shellcheck with apt when it's missing. Needs python3, node,
 # curl, tar, shasum and openssl.
 #
+# The Linux desktop app (a preview) installs on Linux x86_64: the fake releases carry a stand-in
+# AppImage, and getconf (glibc), dpkg-query (a .deb install), pgrep, fusermount and the desktop
+# database tools are small scripts too.
+#
 # The private beta (BREAKPATCH_GITHUB_TOKEN) runs against a stand-in for api.github.com and
 # objects.githubusercontent.com: one https server that answers for both names (the certificate
 # has them), which curl reaches through connect-to lines in the test home's .curlrc. So the
@@ -82,16 +86,31 @@ EOF
   chmod +x "$1/Breakpatch.app/Contents/MacOS/breakpatch"
 }
 
+# $1 file, $2 version: a stand-in for the Linux AppImage. Started, it logs "started <version>";
+# --appimage-extract PATTERN unpacks the icon into ./squashfs-root, as the real one does.
+make_appimage() {
+  cat > "$1" <<EOF
+#!/bin/sh
+if [ "\$1" = --appimage-extract ]; then
+  mkdir -p squashfs-root/usr/share/icons/hicolor/128x128/apps
+  echo "icon $2" > squashfs-root/usr/share/icons/hicolor/128x128/apps/breakpatch.png
+  exit 0
+fi
+echo "started $2 \$*" >> "\$FAKE_STATE/log"
+EOF
+}
+
 # $1 API root name, $2 version, then options: latest (also releases/latest), bad-sum, no-sums,
 # foreign (the files are listed on another host), dotdot (listed with ../ in their address),
-# prerelease, draft.
+# prerelease, draft, mac-only (no Linux AppImage).
 make_release() {
-  local api=$1 version=$2 tag="v$2" latest=0 badsum=0 nosums=0 pre=0 draft=0 dl stage url
+  local api=$1 version=$2 tag="v$2" latest=0 badsum=0 nosums=0 pre=0 draft=0 linux=1 dl stage url
   shift 2
   url="$base/$api/download/$tag"
   for o in "$@"; do
     case "$o" in
       latest) latest=1 ;; bad-sum) badsum=1 ;; no-sums) nosums=1 ;; prerelease) pre=1 ;; draft) draft=1 ;;
+      mac-only) linux=0 ;;
       foreign) url="https://localhost:$port/$api/download/$tag" ;;
       dotdot) url="$base/$api/download/$tag/../../../good/download/v1.1.0" ;;
     esac
@@ -105,11 +124,16 @@ make_release() {
   printf 'untrusted comment: signature from tauri secret key\nRUQbw3MJi+i+MQ==\ntrusted comment: timestamp:0\nAAAA\n' \
     | base64 | tr -d '\n' > "$dl/Breakpatch_aarch64.app.tar.gz.sig"
   echo "dmg" > "$dl/Breakpatch_${version}_aarch64.dmg"
+  if [ "$linux" -eq 1 ]; then
+    make_appimage "$dl/Breakpatch_amd64.AppImage" "$version"
+    cp "$dl/Breakpatch_aarch64.app.tar.gz.sig" "$dl/Breakpatch_amd64.AppImage.sig"
+    echo "deb" > "$dl/breakpatch_${version}_amd64.deb"
+  fi
   echo "{}" > "$dl/latest.json"
   if [ "$nosums" -eq 0 ]; then
-    (cd "$dl" && shasum -a 256 Breakpatch_* latest.json > SHA256SUMS)
+    (cd "$dl" && shasum -a 256 -- * > SHA256SUMS)   # expanded before SHA256SUMS exists
     if [ "$badsum" -eq 1 ]; then
-      sed -i 's/^[0-9a-f]\{64\}\(  Breakpatch_aarch64.app.tar.gz\)$/0000000000000000000000000000000000000000000000000000000000000000\1/' "$dl/SHA256SUMS"
+      sed -i 's/^[0-9a-f]\{64\}\(  Breakpatch_\(aarch64.app.tar.gz\|amd64.AppImage\)\)$/0000000000000000000000000000000000000000000000000000000000000000\1/' "$dl/SHA256SUMS"
     fi
   fi
   # The latest release as one line (like api.github.com), the tagged one indented: the
@@ -149,6 +173,7 @@ make_release bad 1.2.0 latest bad-sum
 make_release nosums 1.3.0 latest no-sums
 make_release foreign 1.4.0 latest foreign
 make_release dotdot 1.5.0 latest dotdot
+make_release maconly 1.6.0 latest mac-only
 mkdir -p "$srv/empty/releases"
 echo "[]" > "$srv/empty/releases/list.json"
 
@@ -368,6 +393,27 @@ for a in "\$@"; do case "\$a" in @*) stat -c '%a' "\${a#@}" >> "\$FAKE_STATE/aut
 if [ "\$1" = --version ] && [ -n "\${FAKE_CURL_VERSION:-}" ]; then echo "curl \$FAKE_CURL_VERSION (x86_64-apple-darwin23.0)"; exit 0; fi
 exec $real_curl "\$@"
 EOF
+# Linux: glibc FAKE_GLIBC (none: no getconf answer, as on musl); FAKE_DEB=1, Breakpatch's .deb
+# is installed; pgrep finds the app while $FAKE_STATE/running exists; fusermount is there unless
+# the case takes it off PATH.
+cat > "$shims/getconf" <<'EOF'
+#!/bin/sh
+[ "$1" = GNU_LIBC_VERSION ] && [ "${FAKE_GLIBC:-2.39}" != none ] && { echo "glibc ${FAKE_GLIBC:-2.39}"; exit 0; }
+exit 1
+EOF
+cat > "$shims/dpkg-query" <<'EOF'
+#!/bin/sh
+[ "${FAKE_DEB:-0}" = 1 ] || { echo "dpkg-query: no packages found matching breakpatch" >&2; exit 1; }
+printf 'ii '
+EOF
+cat > "$shims/pgrep" <<'EOF'
+#!/bin/sh
+[ -f "$FAKE_STATE/running" ]
+EOF
+for t in fusermount3 update-desktop-database update-mime-database; do
+  # shellcheck disable=SC2016  # the $ are the shim's
+  printf '#!/bin/sh\necho "%s $*" >> "$FAKE_STATE/log"\n' "$t" > "$shims/$t"
+done
 chmod +x "$shims"/* "$mshims"/* "$cshims"/*
 
 # ---------------------------------------------------------------- helpers
@@ -457,6 +503,36 @@ expect_token_only_to_api() {
   if [ -s "$c/state/auth-mode" ] && ! grep -qvx 600 "$c/state/auth-mode"; then ok "the header file is 0600"; else bad "the header file's mode: $(tr '\n' ' ' < "$c/state/auth-mode")"; fi
 }
 
+# run_linux [VAR=value…] [-- args]: the installer on Linux x86_64, with no display.
+run_linux() { run FAKE_OS=Linux FAKE_ARCH=x86_64 DISPLAY= WAYLAND_DISPLAY= "$@"; }
+lbin() { printf '%s' "$c/home/.local/bin/breakpatch"; }
+lentry() { printf '%s' "$c/home/.local/share/applications/breakpatch.desktop"; }
+# shellcheck disable=SC2088  # messages, with a ~ to show
+expect_linux_app() {   # VERSION: the AppImage of that release is installed, and can run
+  if [ -x "$(lbin)" ] && grep -qF "started $1" "$(lbin)"; then ok "the $1 AppImage is ~/.local/bin/breakpatch"; else bad "~/.local/bin/breakpatch isn't the $1 AppImage"; fi
+}
+# shellcheck disable=SC2088
+expect_no_linux_app() { if [ ! -e "$(lbin)" ]; then ok "no ~/.local/bin/breakpatch"; else bad "~/.local/bin/breakpatch is there"; fi; }
+expect_entry() { if grep -qxF -- "$1" "$(lentry)" 2>/dev/null; then ok "desktop entry: $1"; else bad "desktop entry hasn't: $1 ($(tr '\n' ';' < "$(lentry)" 2>/dev/null))"; fi; }
+expect_linux_clean() {
+  local left="" f
+  for f in "$c/tmp"/* "$c/tmp"/.[!.]* "$c/home/.local/bin"/.[!.]* "$c/home/.local/share/applications"/*.new; do
+    [ ! -e "$f" ] || left="$left $f"
+  done
+  if [ -z "$left" ]; then ok "nothing left behind"; else bad "left behind:$left"; fi
+}
+# A PATH without fusermount (FUSE isn't installed).
+nofuse_path() {
+  local d="$c/nofuse" f n
+  mkdir -p "$d"
+  for f in "$shims"/* /usr/local/bin/* /usr/bin/* /bin/*; do
+    n=$(basename "$f")
+    case "$n" in fusermount | fusermount3) continue ;; esac
+    [ -e "$d/$n" ] || ln -s "$f" "$d/$n"
+  done
+  printf '%s' "$d"
+}
+
 # A dummy app installed by hand, as an earlier install would have left it.
 preinstall() { make_app "$1" "$2"; echo "old" > "$1/Breakpatch.app/Contents/old-file"; }
 
@@ -474,6 +550,10 @@ if grep -qx "MINISIGN_KEY=$want_key" "$script"; then ok "the minisign key is the
 if grep -qF '$$' "$script"; then bad "site/install makes a name from the process id (guessable)"; else ok "no guessable staging names"; fi
 # shellcheck disable=SC2016
 if grep -qF 'mktemp -d "$dest/' "$script"; then ok "staging folders come from mktemp"; else bad "staging folders don't come from mktemp"; fi
+
+# shellcheck disable=SC2016  # the literal ${…} in the script
+want_glibc=$(sed -n 's/^glibc_max=${BP_GLIBC_MAX:-\(.*\)}$/\1/p' "$repo/scripts/linux-release-files.sh")
+if grep -qx "GLIBC_MIN=$want_glibc" "$script"; then ok "the Linux glibc floor is the release check's ($want_glibc)"; else bad "GLIBC_MIN in site/install isn't scripts/linux-release-files.sh's ($want_glibc)"; fi
 
 for sh_name in "sh" "bash --posix"; do
   read -r -a shell_cmd <<< "$sh_name"
@@ -544,7 +624,7 @@ for sh_name in "sh" "bash --posix"; do
   expect_version "$apps" 1.1.0
 
   new_case not-a-mac
-  run FAKE_OS=Linux
+  run FAKE_OS=FreeBSD
   expect_code 1
   expect_out "Breakpatch needs a Mac with Apple Silicon (M1 or later) and macOS 14 or later."
   expect_no_app "$apps"
@@ -859,6 +939,149 @@ for sh_name in "sh" "bash --posix"; do
   expect_no_app "$apps"
   expect_no_log "open"
   expect_no_out "Installing"
+
+  # ---- Linux x86_64 (the desktop app's preview)
+
+  new_case linux-fresh-install
+  run_piped FAKE_OS=Linux FAKE_ARCH=x86_64 DISPLAY= WAYLAND_DISPLAY=
+  expect_code 0
+  expect_out "Installing Breakpatch 1.1.0…"
+  expect_out "Checked the download against the release's checksums. Install minisign to also check it's signed by Breakpatch."
+  expect_out "Breakpatch is in ~/.local/bin/breakpatch, and in your apps menu."
+  expect_out "Open it from your apps menu."
+  expect_linux_app 1.1.0
+  expect_entry "Exec=\"$(lbin)\" %u"
+  expect_entry "MimeType=x-scheme-handler/breakpatch;application/x-breakpatch-workspace;"
+  expect_entry "Icon=breakpatch"
+  if grep -qx "icon 1.1.0" "$c/home/.local/share/icons/hicolor/128x128/apps/breakpatch.png" 2>/dev/null; then ok "the icon is in place"; else bad "no icon"; fi
+  expect_log "update-desktop-database $c/home/.local/share/applications"
+  expect_no_log "started"
+  expect_no_app "$apps"
+  expect_no_log "codesign"
+  expect_linux_clean
+
+  new_case linux-update-and-open
+  run_linux BREAKPATCH_VERSION=1.0.0
+  expect_code 0
+  expect_linux_app 1.0.0
+  run_linux DISPLAY=:99
+  expect_code 0
+  expect_out "Updating Breakpatch to 1.1.0…"
+  expect_out "Opening it now."
+  expect_linux_app 1.1.0
+  for _ in $(seq 50); do grep -q started "$c/state/log" && break; sleep 0.1; done
+  expect_log "started 1.1.0"
+  expect_linux_clean
+
+  new_case linux-update-while-open
+  run_linux
+  touch "$c/state/running"
+  : > "$c/state/log"
+  run_linux WAYLAND_DISPLAY=wayland-0
+  expect_code 0
+  expect_out "Breakpatch is open: quit it and open it again to use 1.1.0."
+  expect_no_out "Opening it now."
+  sleep 0.2
+  expect_no_log "started"
+  expect_linux_app 1.1.0
+
+  new_case linux-without-fuse
+  run_linux DISPLAY=:99 PATH="$(nofuse_path)"
+  expect_code 0
+  expect_out "Breakpatch is an AppImage, which needs FUSE to start, and this computer doesn't have it."
+  expect_out "sudo apt install"
+  expect_no_out "Opening it now."
+  expect_linux_app 1.1.0
+
+  new_case linux-bad-checksum
+  run_linux BREAKPATCH_VERSION=1.0.0
+  run_linux BREAKPATCH_API="$base/bad" BREAKPATCH_DOWNLOADS="$base/bad/download/"
+  expect_code 1
+  expect_out "The download doesn't match its checksum, so it wasn't installed."
+  expect_linux_app 1.0.0
+  expect_linux_clean
+
+  new_case linux-release-without-linux
+  run_linux BREAKPATCH_API="$base/maconly" BREAKPATCH_DOWNLOADS="$base/maconly/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.6.0 has no Linux version. The Linux app is a preview"
+  expect_no_linux_app
+
+  new_case linux-files-from-elsewhere
+  run_linux BREAKPATCH_API="$base/foreign" BREAKPATCH_DOWNLOADS="$base/foreign/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.4.0 lists a file that isn't from Breakpatch's releases, so nothing was installed."
+  expect_no_linux_app
+
+  new_case linux-needs-x86_64-and-glibc
+  run_linux FAKE_ARCH=aarch64
+  expect_code 1
+  expect_out "Breakpatch for Linux needs a 64-bit Intel or AMD processor (x86_64) and glibc 2.35 or later: Ubuntu 22.04, Debian 12, Fedora 36 or later. This computer has aarch64."
+  run_linux FAKE_GLIBC=2.31
+  expect_code 1
+  expect_out "This computer has glibc 2.31."
+  run_linux FAKE_GLIBC=2.35
+  expect_code 0
+  run_linux FAKE_GLIBC=none
+  expect_code 1
+  expect_out "Couldn't find glibc on this computer."
+
+  new_case linux-from-the-deb
+  run_linux FAKE_DEB=1
+  expect_code 1
+  expect_out "Breakpatch is installed from its .deb package here, so update it the same way"
+  expect_no_linux_app
+  run_linux FAKE_DEB=1 -- --uninstall
+  expect_code 1
+  expect_out "Remove it with: sudo apt remove breakpatch"
+
+  new_case linux-minisign
+  run_linux PATH="$mshims:$shims:$PATH"
+  expect_code 0
+  expect_log "minisign -V -q -P RWQbw3MJi+i+MQ97FPaAqkP2nnccBb+ySDCUH1PqiwViaG6y9TNEQszX -m"
+  expect_no_out "Install minisign"
+  run_linux PATH="$mshims:$shims:$PATH" FAKE_MINISIGN=bad BREAKPATCH_VERSION=1.0.0
+  expect_code 1
+  expect_out "The download isn't signed with Breakpatch's key, so it wasn't installed."
+  expect_linux_app 1.1.0
+  expect_linux_clean
+
+  new_case linux-bin-folder-with-a-quote
+  run_linux BREAKPATCH_BIN="$c/home/my\"bin"
+  expect_code 1
+  expect_out "the path has a character a desktop entry can't hold"
+
+  new_case linux-uninstall
+  run_linux
+  mkdir -p "$c/home/.local/share/mime/packages" "$c/home/.local/share/Breakpatch"
+  echo x > "$c/home/.local/share/mime/packages/breakpatch.xml"
+  echo x > "$c/home/.local/share/applications/breakpatch-handler.desktop"
+  echo model > "$c/home/.local/share/Breakpatch/weights"
+  run_linux -- --uninstall
+  expect_code 0
+  expect_out "Removed Breakpatch from ~/.local/bin and your apps menu."
+  expect_out "Your tests are still in the tests folder you picked."
+  # shellcheck disable=SC2088
+  expect_out "~/.local/share/Breakpatch and ~/.local/share/dev.breakpatch.app"
+  expect_no_linux_app
+  for f in applications/breakpatch.desktop applications/breakpatch-handler.desktop mime/packages/breakpatch.xml icons/hicolor/128x128/apps/breakpatch.png; do
+    if [ ! -e "$c/home/.local/share/$f" ]; then ok "removed $f"; else bad "$f is still there"; fi
+  done
+  expect_log "update-mime-database $c/home/.local/share/mime"
+  if [ -f "$c/home/.local/share/Breakpatch/weights" ]; then ok "Breakpatch's data is kept"; else bad "Breakpatch's data was deleted"; fi
+  run_linux -- --uninstall
+  expect_code 0
+  expect_out "Nothing to remove."
+
+  new_case linux-help-and-root
+  run_linux -- --help
+  expect_code 0
+  expect_out "Installs or updates Breakpatch on this computer (Linux x86_64, a preview)."
+  expect_no_out "this Mac"
+  run_linux FAKE_UID=0
+  expect_code 1
+  expect_out "Don't run the installer with sudo or as root."
+  expect_no_linux_app
 done
 
 echo

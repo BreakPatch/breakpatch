@@ -1,5 +1,6 @@
 #!/bin/sh
-# Installs or updates Breakpatch, the Mac app for recording UI tests.
+# Installs or updates Breakpatch, the Mac app for recording UI tests. On Linux x86_64 it installs
+# the Linux app, a preview: see "Linux (a preview)" below. Everything else here is the Mac's.
 #
 #   curl -fsSL https://breakpatch.dev/install | sh                           install or update
 #   curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh  a given version
@@ -55,6 +56,9 @@ CERT_SHA256=25D8516500459226D00A500DEDDE0D13094B3BB48E560068B737BBA62427948E
 MINISIGN_KEY=RWQbw3MJi+i+MQ97FPaAqkP2nnccBb+ySDCUH1PqiwViaG6y9TNEQszX
 APP=Breakpatch.app
 BUNDLE_ID=dev.breakpatch.app
+# The release file to install: the Mac's update archive (the Linux path sets the AppImage's).
+ARCHIVE_RE='[.]app[.]tar[.]gz$'
+linux=0
 # shellcheck disable=SC2088  # written as ~ on purpose: it's shown, not used
 SUPPORT_DIR='~/Library/Application Support/Breakpatch'
 
@@ -336,9 +340,13 @@ find_release() {
   fi
 
   asset_names >"$tmp/assets.txt"
-  archive=$(awk '$2 ~ /\.app\.tar\.gz$/ { print $2; exit }' "$tmp/assets.txt")
-  archive_i=$(awk '$2 ~ /\.app\.tar\.gz$/ { print $1; exit }' "$tmp/assets.txt")
+  # The Mac's .app.tar.gz, or on Linux the AppImage (ARCHIVE_RE).
+  archive=$(awk -v re="$ARCHIVE_RE" '$2 ~ re { print $2; exit }' "$tmp/assets.txt")
+  archive_i=$(awk -v re="$ARCHIVE_RE" '$2 ~ re { print $1; exit }' "$tmp/assets.txt")
   sums_i=$(awk '$2 == "SHA256SUMS" { print $1; exit }' "$tmp/assets.txt")
+  if [ "$linux" -eq 1 ] && [ -z "$archive_i" ] && [ -n "$sums_i" ]; then
+    fail "Breakpatch $version has no Linux version. The Linux app is a preview, and not every release has it yet. Try BREAKPATCH_CHANNEL=beta, or see $RELEASES."
+  fi
   if [ -z "$archive_i" ] || [ -z "$sums_i" ]; then
     fail "Breakpatch $version can't be installed with this command. Try an older version with BREAKPATCH_VERSION, or write to support@breakpatch.dev."
   fi
@@ -522,21 +530,242 @@ do_uninstall() {
   say "The AI assistant and Breakpatch's data are still in $SUPPORT_DIR. Delete that folder to free the space."
 }
 
+# ---------------------------------------------------------------- Linux (a preview)
+#
+# On Linux x86_64 (glibc 2.35 or later: Ubuntu 22.04, Debian 12 and later) it installs the
+# release's AppImage, Breakpatch_amd64.AppImage, for this account: as ~/.local/bin/breakpatch,
+# with a desktop entry and an icon in ~/.local/share, so Breakpatch is in the apps menu and opens
+# breakpatch:// links and .bpworkspace files. The download is checked against SHA256SUMS and,
+# with minisign installed, against Breakpatch's update key. No sudo. When Breakpatch was
+# installed from its .deb package, the package manager owns it, so this stops and says so.
+#
+# More environment, on Linux:
+#   BREAKPATCH_BIN       the folder for the app (default ~/.local/bin)
+#   XDG_DATA_HOME        where the desktop entry and the icon go (default ~/.local/share)
+
+# The glibc the Linux app is built against (Ubuntu 22.04's).
+GLIBC_MIN=2.35
+
+usage_linux() {
+  cat <<'EOF'
+Installs or updates Breakpatch on this computer (Linux x86_64, a preview).
+
+  curl -fsSL https://breakpatch.dev/install | sh
+  curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh
+  curl -fsSL https://breakpatch.dev/install | BREAKPATCH_CHANNEL=beta sh
+  curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall
+
+Options:
+  --uninstall  remove Breakpatch (your tests and the AI assistant stay)
+  --help       show this
+
+It installs to ~/.local/bin/breakpatch, with a desktop entry for the apps menu.
+EOF
+}
+
+check_linux() {
+  need="Breakpatch for Linux needs a 64-bit Intel or AMD processor (x86_64) and glibc $GLIBC_MIN or later: Ubuntu 22.04, Debian 12, Fedora 36 or later."
+  case "$(uname -m)" in
+    x86_64 | amd64) ;;
+    *) fail "$need This computer has $(uname -m)." ;;
+  esac
+  glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{ print $2 }')
+  case "$glibc" in
+    [0-9]*.[0-9]*) ;;
+    *) fail "$need Couldn't find glibc on this computer." ;;
+  esac
+  gmaj=${glibc%%.*} gmin=${glibc#*.}
+  gmin=${gmin%%.*}
+  wmaj=${GLIBC_MIN%%.*} wmin=${GLIBC_MIN#*.}
+  if [ "$gmaj" -lt "$wmaj" ] || { [ "$gmaj" -eq "$wmaj" ] && [ "$gmin" -lt "$wmin" ]; }; then
+    fail "$need This computer has glibc $glibc."
+  fi
+}
+
+check_linux_tools() {
+  for tool in curl awk sed; do
+    command -v "$tool" >/dev/null 2>&1 \
+      || fail "The installer needs $tool, which isn't on this computer's PATH. Install it and run this again."
+  done
+  command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 \
+    || fail "The installer needs sha256sum (coreutils), which isn't on this computer's PATH."
+}
+
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{ print $1 }' | tr 'A-F' 'a-f'
+}
+
+# The package manager owns a .deb install: two copies would fight over the same links and files.
+from_deb() {
+  command -v dpkg-query >/dev/null 2>&1 || return 1
+  case "$(dpkg-query -W -f='${db:Status-Abbrev}' breakpatch 2>/dev/null)" in
+    i*) return 0 ;;
+  esac
+  return 1
+}
+
+linux_paths() {
+  bin_dir=${BREAKPATCH_BIN:-$HOME/.local/bin}
+  data_dir=${XDG_DATA_HOME:-$HOME/.local/share}
+  dest_bin="$bin_dir/breakpatch"
+  entry="$data_dir/applications/breakpatch.desktop"
+  icon="$data_dir/icons/hicolor/128x128/apps/breakpatch.png"
+}
+
+# The app is open: `pgrep` where there is one (procps), else unknown, so not open.
+linux_running() {
+  command -v pgrep >/dev/null 2>&1 && pgrep -x breakpatch >/dev/null 2>&1
+}
+
+# A desktop entry's Exec line takes the path in double quotes; these characters would need escapes.
+check_exec_path() {
+  case "$1" in
+    *[\"\`\$\\%]* | *"
+"*) fail "Breakpatch can't be put in $(pretty "$1"): the path has a character a desktop entry can't hold. Set BREAKPATCH_BIN to another folder." ;;
+  esac
+}
+
+# The apps menu entry. The app also registers breakpatch:// links and .bpworkspace files itself
+# each time it starts (a hidden breakpatch-handler.desktop and the file type in ~/.local/share/mime).
+write_entry() {
+  mkdir -p "$data_dir/applications" || fail "Couldn't make the folder $(pretty "$data_dir/applications")."
+  cat >"$entry.new" <<EOF || fail "Couldn't write $(pretty "$entry")."
+[Desktop Entry]
+Type=Application
+Name=Breakpatch
+Comment=Record and replay web UI tests on your computer
+Exec="$dest_bin" %u
+Icon=breakpatch
+Terminal=false
+Categories=Development;
+MimeType=x-scheme-handler/breakpatch;application/x-breakpatch-workspace;
+StartupWMClass=breakpatch
+EOF
+  mv "$entry.new" "$entry" || fail "Couldn't write $(pretty "$entry")."
+  if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database "$data_dir/applications" >/dev/null 2>&1 || true; fi
+}
+
+# The icon, from inside the AppImage (its own extractor needs no FUSE). Not having one is fine.
+copy_icon() {
+  (cd "$tmp" && "./$archive" --appimage-extract 'usr/share/icons/hicolor/128x128/apps/breakpatch.png') >/dev/null 2>&1 || true
+  if [ -f "$tmp/squashfs-root/usr/share/icons/hicolor/128x128/apps/breakpatch.png" ]; then
+    if mkdir -p "${icon%/*}"; then cp "$tmp/squashfs-root/usr/share/icons/hicolor/128x128/apps/breakpatch.png" "$icon" 2>/dev/null || true; fi
+  fi
+  rm -rf "$tmp/squashfs-root"
+}
+
+# An AppImage mounts itself with FUSE, through fusermount (from fuse3, or fuse).
+check_fuse() {
+  if command -v fusermount3 >/dev/null 2>&1 || command -v fusermount >/dev/null 2>&1; then return 0; fi
+  say "Breakpatch is an AppImage, which needs FUSE to start, and this computer doesn't have it."
+  say "Install it, then open Breakpatch: sudo apt install fuse3 (Ubuntu, Debian) or sudo dnf install fuse3 (Fedora)."
+  return 1
+}
+
+cleanup_linux() {
+  if [ -n "${staged:-}" ]; then rm -f "$staged"; fi
+  if [ -n "${tmp:-}" ]; then rm -rf "$tmp"; fi
+}
+
+do_install_linux() {
+  check_linux
+  check_linux_tools
+  if from_deb; then
+    fail "Breakpatch is installed from its .deb package here, so update it the same way: download the new .deb from $RELEASES and install it with sudo apt install ./<file>.deb. To use this command instead, remove the package first: sudo apt remove breakpatch."
+  fi
+  linux_paths
+  check_exec_path "$dest_bin"
+  tmp=$(mktemp -d "${TMPDIR:-/tmp}/breakpatch-install.XXXXXX") || fail "Couldn't make a temporary folder."
+  staged=""
+  trap cleanup_linux EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+
+  setup_token
+  find_release
+  if [ -e "$dest_bin" ]; then say "Updating Breakpatch to $version…"; else say "Installing Breakpatch $version…"; fi
+
+  download "$archive_url" "$tmp/$archive" \
+    || fail "The download stopped. Check your connection and run this again."
+  download "$sums_url" "$tmp/SHA256SUMS" \
+    || fail "Couldn't download the checksums. Check your connection and run this again."
+  expected=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/SHA256SUMS" | tr 'A-F' 'a-f')
+  actual=$(sha256_of "$tmp/$archive")
+  [ -n "$expected" ] || fail "Breakpatch $version has no checksum for $archive, so it wasn't installed."
+  [ "$actual" = "$expected" ] \
+    || fail "The download doesn't match its checksum, so it wasn't installed. Run this again. If it keeps happening, tell us: https://github.com/BreakPatch/breakpatch/issues"
+  check_signature
+  command -v minisign >/dev/null 2>&1 \
+    || say "Checked the download against the release's checksums. Install minisign to also check it's signed by Breakpatch."
+  drop_token
+
+  chmod 755 "$tmp/$archive"
+  copy_icon
+  mkdir -p "$bin_dir" || fail "Couldn't make the folder $(pretty "$bin_dir")."
+  staged=$(mktemp "$bin_dir/.breakpatch.new.XXXXXXXX" 2>/dev/null) || { staged=""; fail "Couldn't write to $(pretty "$bin_dir")."; }
+  cp "$tmp/$archive" "$staged" || fail "Couldn't write to $(pretty "$bin_dir")."
+  chmod 755 "$staged" || fail "Couldn't write to $(pretty "$bin_dir")."
+  # A rename over the old file: an open Breakpatch keeps running the old one until it quits.
+  mv -f "$staged" "$dest_bin" || fail "Couldn't put Breakpatch in $(pretty "$bin_dir")."
+  staged=""
+  write_entry
+
+  say "Breakpatch is in $(pretty "$dest_bin"), and in your apps menu."
+  fuse=0
+  check_fuse || fuse=1
+  if linux_running; then
+    say "Breakpatch is open: quit it and open it again to use $version."
+  elif [ "$fuse" -eq 0 ] && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
+    say "Opening it now."
+    nohup "$dest_bin" >/dev/null 2>&1 &
+  elif [ "$fuse" -eq 0 ]; then
+    say "Open it from your apps menu."
+  fi
+}
+
+do_uninstall_linux() {
+  if from_deb; then
+    fail "Breakpatch is installed from its .deb package here. Remove it with: sudo apt remove breakpatch"
+  fi
+  linux_paths
+  handler="$data_dir/applications/breakpatch-handler.desktop"
+  mime="$data_dir/mime/packages/breakpatch.xml"
+  if [ ! -e "$dest_bin" ] && [ ! -e "$entry" ] && [ ! -e "$handler" ]; then
+    say "Breakpatch isn't in $(pretty "$bin_dir"). Nothing to remove."
+    return 0
+  fi
+  rm -f "$dest_bin" "$entry" "$handler" "$icon" || fail "Couldn't remove Breakpatch from $(pretty "$bin_dir")."
+  if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database "$data_dir/applications" >/dev/null 2>&1 || true; fi
+  if [ -e "$mime" ]; then
+    rm -f "$mime"
+    if command -v update-mime-database >/dev/null 2>&1; then update-mime-database "$data_dir/mime" >/dev/null 2>&1 || true; fi
+  fi
+  say "Removed Breakpatch from $(pretty "$bin_dir") and your apps menu."
+  if linux_running; then say "It's still open: it goes when you quit it."; fi
+  say "Your tests are still in the tests folder you picked."
+  say "The AI assistant and Breakpatch's data are still in $(pretty "$data_dir/Breakpatch") and $(pretty "$data_dir/dev.breakpatch.app"). Delete those folders to free the space."
+}
+
 main() {
   # The token stays in this shell only: nothing the installer runs gets it in its environment.
   token=${BREAKPATCH_GITHUB_TOKEN:-}
   unset BREAKPATCH_GITHUB_TOKEN
+  # Linux (a preview) has its own install and uninstall; everything else is the Mac's.
+  if [ "$(uname -s)" = Linux ]; then
+    linux=1
+    ARCHIVE_RE='_amd64[.]AppImage$'
+  fi
   action=do_install
   while [ $# -gt 0 ]; do
     case "$1" in
       --uninstall) action=do_uninstall ;;
-      -h | --help) usage; return 0 ;;
+      -h | --help) if [ "$linux" -eq 1 ]; then usage_linux; else usage; fi; return 0 ;;
       *) fail "Unknown option $1. Run with --help to see the options." ;;
     esac
     shift
   done
   check_not_root
-  "$action"
+  if [ "$linux" -eq 1 ]; then "${action}_linux"; else "$action"; fi
 }
 
 main "$@"
