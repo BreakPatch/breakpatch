@@ -99,6 +99,71 @@ def browser_status() -> dict:
     return out
 
 
+# Where the pinned Chromium keeps its program, by Playwright's folder names (Chrome for Testing on
+# x64, Playwright's own build on arm64, and older builds).
+CHROMIUM_FOLDERS = ("chrome-linux64", "chrome-linux-arm64", "chrome-linux")
+
+
+def chromium_path() -> Path | None:
+    """The Chromium program the engine starts on Linux: BP_CHROMIUM's, else the pinned one in
+    config.browsers_dir(). None when it isn't there."""
+    exe = config.chromium_executable()
+    if exe:
+        return Path(exe) if Path(exe).is_file() else None
+    rev = pinned_browser().get("revision")
+    if not rev:
+        return None
+    base = config.browsers_dir() / f"chromium-{rev}"
+    for sub in CHROMIUM_FOLDERS:
+        if (base / sub / "chrome").is_file():
+            return base / sub / "chrome"
+    return None
+
+
+_NOT_FOUND = re.compile(r"^\s*(\S+)\s+=>\s+not found\s*$")
+
+
+def missing_libraries(exe: Path | None = None, run=subprocess.run) -> list[str]:
+    """Linux only: the system libraries Chromium needs that this machine hasn't got (what `ldd`
+    says is "not found"), sorted. Empty elsewhere, when everything is there, or when it can't tell
+    (no Chromium, no ldd). Libraries in Chromium's own folder count as there, as when it starts."""
+    if not sys.platform.startswith("linux"):
+        return []
+    exe = exe or chromium_path()
+    if exe is None or not Path(exe).is_file():
+        return []
+    ldd = shutil.which("ldd")
+    if not ldd:
+        return []
+    folder = str(Path(exe).parent)
+    env = dict(os.environ, LD_LIBRARY_PATH=":".join(p for p in (os.environ.get("LD_LIBRARY_PATH"), folder) if p))
+    try:
+        out = run([ldd, str(exe)], capture_output=True, text=True, env=env, timeout=30).stdout or ""
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return sorted({m.group(1) for line in out.splitlines() if (m := _NOT_FOUND.match(line))})
+
+
+# What Chromium (or Playwright, before it starts it) says when the system lacks a library.
+_LIBRARY_ERRORS = ("error while loading shared libraries", "missing dependencies to run browsers",
+                   "Host system is missing dependencies")
+
+
+def is_library_error(text: str) -> bool:
+    return any(s in text for s in _LIBRARY_ERRORS)
+
+
+def libraries_message(missing: list[str], python: str | None = None) -> str:
+    """The plain words for a Linux machine that lacks Chromium's libraries, with the one command
+    that adds them (Playwright's install-deps, for Ubuntu and Debian)."""
+    names = ", ".join(missing[:5]) + (f" and {len(missing) - 5} more" if len(missing) > 5 else "")
+    lacks = "this machine is missing system libraries it needs" + (f" ({names})" if missing else "")
+    sudo = "" if hasattr(os, "geteuid") and os.geteuid() == 0 else "sudo "
+    return (f"The browser can't start: {lacks}. Install them once, as an administrator: "
+            f"{sudo}{python or sys.executable} -m playwright install-deps chromium. "
+            "That works on Ubuntu and Debian. On another Linux, install the packages that have those libraries.")
+
+
 _SIZE = re.compile(r"(\d+)%\s+of\s+([\d.]+)\s*(B|KiB|MiB|GiB|KB|MB|GB)", re.I)
 _UNITS = {"b": 1, "kib": 2**10, "mib": 2**20, "gib": 2**30, "kb": 1e3, "mb": 1e6, "gb": 1e9}
 
