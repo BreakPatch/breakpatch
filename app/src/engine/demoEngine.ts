@@ -1,7 +1,7 @@
 // Simulated engine for the browser preview and tests. Timings follow the prototype:
 // "Checking the screen…" ~1 s, run steps ~750 ms each, AI thinking ~1.5 s.
 import type { Box, Explanation, FailReason, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
+import { EngineError, MODELS, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
 import { edition } from '../edition';
 import { hasFeature } from '../edition/features';
 import { labelFor } from './labels';
@@ -42,7 +42,7 @@ export class DemoEngine implements Engine {
     return { memoryGb: this.memoryGb, chip: 'Apple M2 Pro', os: 'macOS 15.1', engineVersion: '0.1.0-demo',
       edition: edition.name, // the demo engine is whatever edition the app is
       browser: { installed: this.browserInstalled, version: this.browserInstalled ? 'Chromium 131' : undefined },
-      model: { installed: this.modelInstalled, repo: this.modelRepo, revision: 'main', sizeBytes: this.modelRepo.includes('8B') ? 5.2e9 : 3.1e9 },
+      model: { installed: this.modelInstalled, repo: this.modelRepo, revision: this.modelRepo === MODELS.larger.repo ? MODELS.larger.revision : MODELS.standard.revision, sizeBytes: this.modelRepo.includes('8B') ? 5.2e9 : 3.1e9 },
       system: { os: 'macOS', osVersion: '15.1', arch: 'arm64', chromium: '131.0.6778.33' } };
   }
 

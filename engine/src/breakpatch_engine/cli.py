@@ -37,6 +37,9 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--dir", required=True)
     d.add_argument("--files", default="{}")     # the allowlist from models.py: name -> SHA-256
 
+    r = sub.add_parser("_runtime_download")  # internal: the pausable llama.cpp runtime download
+    r.add_argument("--spec", required=True)     # the runtimes.py entry, as JSON
+
     raw = sys.argv[1:] if argv is None else argv
     if raw[:1] == ["run"]:
         print("The CI command line is part of Breakpatch Team: install breakpatch-team-engine and use "
@@ -53,6 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "_download":
         from .install import download_main
         return download_main(args.repo, args.revision, args.dir, args.files)
+    if args.cmd == "_runtime_download":
+        from .runtimes import download_main as runtime_download
+        return runtime_download(args.spec)
     ap.print_help()
     return EXIT_USAGE
 

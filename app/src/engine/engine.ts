@@ -6,14 +6,23 @@ export interface SystemInfo {
   /** "team" when the engine has the Breakpatch Team engine (healing) built in. */
   edition: 'community' | 'team';
   browser: { installed: boolean; version?: string };
-  model: { installed: boolean; repo?: string; revision?: string; sizeBytes?: number; path?: string };
+  /** `format`: "mlx" (the Mac) or "gguf" (llama.cpp, off the Mac). Missing from an older engine (MLX). */
+  model: { installed: boolean; repo?: string; revision?: string; sizeBytes?: number; path?: string; format?: ModelFormat };
   /** This system, as a recording saves it in `recordedOn`. Missing from an older engine. */
   system?: RecordedOn;
+  /** What runs the AI assistant here: "mlx" on Apple Silicon, "llamacpp" elsewhere. Missing from an older engine. */
+  runtime?: AiRuntime;
+  /** Off the Mac: whether the llama.cpp runtime is installed (engine `setup.installRuntime`). */
+  llamacpp?: { installed: boolean; build?: string; backend?: 'cpu' | 'vulkan'; path?: string; exe?: string };
 }
+
+export type AiRuntime = 'mlx' | 'llamacpp';
+export type ModelFormat = 'mlx' | 'gguf';
 
 export type SetupTaskName = 'browser' | 'model';
 export interface SetupProgress {
-  task: SetupTaskName; state: 'busy' | 'paused' | 'done' | 'failed';
+  /** `runtime`: the llama.cpp runtime off the Mac (engine `setup.installRuntime`). */
+  task: SetupTaskName | 'runtime'; state: 'busy' | 'paused' | 'done' | 'failed';
   doneBytes?: number; totalBytes?: number; etaSeconds?: number; message?: string;
 }
 
@@ -199,6 +208,22 @@ export const MODELS = {
   standard: { repo: 'OscarShaitan/Qwen3-VL-4B-Instruct-4bit', revision: '4e992f95b3b3ae22b4f25201b1b9d960448a5a1a', label: 'Standard', approxBytes: 3.0e9 },
   larger: { repo: 'OscarShaitan/Qwen3-VL-8B-Instruct-4bit', revision: '5a5a1651d020507af5d6a4c5443a82b3775952e0', label: 'Larger', approxBytes: 5.0e9 },
 } as const;
+
+/**
+ * The AI assistant off the Mac, on llama.cpp (engine models.py, format "gguf"). Not offered by setup
+ * yet (plan P2.6). TODO(owner): the mirrored repo's commit SHA, as in models.py.
+ */
+export const LLAMACPP_MODELS = {
+  standard: { repo: 'OscarShaitan/Qwen3-VL-4B-Instruct-GGUF', revision: 'main', label: 'Standard', approxBytes: 3.3e9 },
+} as const;
+
+/** The models a runtime can use: MLX on the Mac, GGUF with llama.cpp. */
+export function modelsFor(runtime: AiRuntime | undefined) { return runtime === 'llamacpp' ? LLAMACPP_MODELS : MODELS; }
+
+/** Whether the installed model is this one, at this revision (an older revision isn't "installed"). */
+export function isInstalled(info: SystemInfo['model'], model: { repo: string; revision: string }) {
+  return info.installed && info.repo === model.repo && info.revision === model.revision;
+}
 
 /** Setup always installs the Standard (4B) assistant. The Larger (8B) one is only downloaded
  *  when someone asks for it: it needs 32 GB and gives no big accuracy gain. */

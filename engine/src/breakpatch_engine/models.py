@@ -10,8 +10,16 @@ both after the download and again every time the model is loaded.
 The app's table (app/src/engine/engine.ts, MODELS) names the same repos and revisions;
 tests/test_models.py checks they agree.
 
-`python -m breakpatch_engine.models --check-release` exits 1 while a model isn't pinned to a
-commit with a hash for every file; scripts/build-release.sh runs it for --release builds.
+Two formats (plan §2.3 item 4): `mlx` (a Hugging Face folder for mlx-vlm, the Mac) and `gguf`
+(llama.cpp: one language model file and one vision projector, "mmproj", everywhere else). A GGUF
+model folder may hold only `*.gguf` files and the marker; each file must start with the GGUF magic
+and name the expected `general.architecture` (`qwen3vl` for the model, `clip` for the projector).
+GGUF files hold no code: llama.cpp reads tensors and metadata, and runs the chat template in its
+own template engine, not Python.
+
+`python -m breakpatch_engine.models --check-release [--format mlx|gguf]` exits 1 while a model of
+that format (default: the one this platform's app uses, `mlx` on a Mac, `gguf` elsewhere) isn't
+pinned to a commit with a hash for every file; scripts/build-release.sh runs it for --release builds.
 """
 from __future__ import annotations
 
@@ -22,6 +30,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
+from . import config
 from .protocol import EngineError
 
 # Pinned 2026-09-28 from the owner's Hugging Face account (2FA on). To move to another repo or
@@ -30,6 +39,7 @@ from .protocol import EngineError
 #   python -m breakpatch_engine.models --hash-dir <a downloaded copy of the model>
 ALLOWED: dict[str, dict] = {
     "OscarShaitan/Qwen3-VL-4B-Instruct-4bit": {
+        "format": "mlx",
         "revision": "4e992f95b3b3ae22b4f25201b1b9d960448a5a1a",
         "files": {
             ".gitattributes": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
@@ -51,6 +61,7 @@ ALLOWED: dict[str, dict] = {
         },
     },
     "OscarShaitan/Qwen3-VL-8B-Instruct-4bit": {
+        "format": "mlx",
         "revision": "5a5a1651d020507af5d6a4c5443a82b3775952e0",
         "files": {
             ".gitattributes": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
@@ -72,7 +83,26 @@ ALLOWED: dict[str, dict] = {
             "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
         },
     },
+    # llama.cpp (Linux first, then Windows; plan §2.1): Q4_K_M language model plus F16 projector.
+    # TODO(owner): mirror Qwen/Qwen3-VL-4B-Instruct-GGUF (or ggml-org's) into this repo, check the
+    # files were converted by a llama.cpp that matches runtimes.BUILD, and put the commit SHA here,
+    # the real file names in "files" and "gguf", and each file's SHA-256 (--hash-dir). Until then a
+    # development build downloads these names from `main` with a warning; a release refuses them.
+    # Phase 0 (P0.2) may change the quantisation (Q4_0 on Arm, Q8_0 projector) or the size (2B).
+    "OscarShaitan/Qwen3-VL-4B-Instruct-GGUF": {
+        "format": "gguf",
+        "revision": "main",                                              # TODO(owner): commit SHA
+        "files": {
+            "Qwen3VL-4B-Instruct-Q4_K_M.gguf": "",                       # TODO(owner): SHA-256
+            "mmproj-Qwen3VL-4B-Instruct-F16.gguf": "",                   # TODO(owner): SHA-256
+        },
+        "gguf": {"model": "Qwen3VL-4B-Instruct-Q4_K_M.gguf", "mmproj": "mmproj-Qwen3VL-4B-Instruct-F16.gguf"},
+    },
 }
+FORMATS = ("mlx", "gguf")
+# general.architecture in each GGUF file (llama.cpp's names for Qwen3-VL and its vision projector).
+GGUF_ARCH = {"model": "qwen3vl", "mmproj": "clip"}
+GGUF_MAGIC = b"GGUF"
 
 # Files that are code, or can hold code (pickles), and never belong in an MLX model.
 CODE_SUFFIXES = (".py", ".pyc", ".pyo", ".pyd", ".so", ".dylib", ".dll", ".exe", ".sh", ".bat",
@@ -88,6 +118,8 @@ class Model:
     repo: str
     revision: str
     files: dict[str, str] = field(default_factory=dict)     # file name -> SHA-256 (hex)
+    format: str = "mlx"
+    gguf: dict[str, str] = field(default_factory=dict)      # gguf only: {"model": file, "mmproj": file}
 
     @property
     def pinned(self) -> bool:
@@ -96,7 +128,21 @@ class Model:
 
 
 def table() -> dict[str, Model]:
-    return {repo: Model(repo, e["revision"], dict(e.get("files") or {})) for repo, e in ALLOWED.items()}
+    return {repo: Model(repo, e["revision"], dict(e.get("files") or {}), e.get("format") or "mlx",
+                        dict(e.get("gguf") or {})) for repo, e in ALLOWED.items()}
+
+
+def default_format() -> str:
+    """The model format this platform's app uses: MLX on a Mac, GGUF (llama.cpp) elsewhere."""
+    return "mlx" if sys.platform == "darwin" else "gguf"
+
+
+def gguf_files(repo: str | None) -> tuple[str, str] | None:
+    """(model file, projector file) of a GGUF model in the table, or None."""
+    m = table().get(repo or "")
+    if m is None or m.format != "gguf" or not m.gguf.get("model") or not m.gguf.get("mmproj"):
+        return None
+    return m.gguf["model"], m.gguf["mmproj"]
 
 
 def entry(repo: str | None, revision: str | None) -> Model:
@@ -107,6 +153,9 @@ def entry(repo: str | None, revision: str | None) -> Model:
     if (revision or "main") != m.revision:
         raise EngineError("bad_request", "This version of the AI assistant isn't one Breakpatch can use.",
                           f"{repo} revision {revision!r}, allowed {m.revision!r}")
+    if config.is_release() and not m.pinned:
+        raise EngineError("bad_request", "This AI assistant isn't ready for this version of Breakpatch yet.",
+                          f"{repo} isn't pinned (models.py TODO)")
     return m
 
 
@@ -169,9 +218,94 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
+def _read_exact(f, n: int) -> bytes:
+    b = f.read(n)
+    if len(b) != n:
+        raise Refused("the GGUF file ends too early")
+    return b
+
+
+GGUF_SIZES = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8}   # value type -> bytes
+GGUF_STRING, GGUF_ARRAY = 8, 9
+GGUF_MAX_KV = 4096
+GGUF_MAX_STRING = 1 << 20
+
+
+def gguf_architecture(path: Path) -> str:
+    """`general.architecture` from a GGUF file's header (version 2 or 3). Raises Refused when the
+    file isn't GGUF or doesn't say. Reads only the metadata before that key (it comes first)."""
+    import struct
+
+    def string(f) -> bytes:
+        (n,) = struct.unpack("<Q", _read_exact(f, 8))
+        if n > GGUF_MAX_STRING:
+            raise Refused("a GGUF metadata string is too long")
+        return _read_exact(f, n)
+
+    def skip(f, vtype: int) -> None:
+        if vtype in GGUF_SIZES:
+            _read_exact(f, GGUF_SIZES[vtype])
+        elif vtype == GGUF_STRING:
+            string(f)
+        elif vtype == GGUF_ARRAY:
+            (etype,) = struct.unpack("<I", _read_exact(f, 4))
+            (count,) = struct.unpack("<Q", _read_exact(f, 8))
+            if etype in GGUF_SIZES:
+                f.seek(GGUF_SIZES[etype] * count, 1)
+            elif etype == GGUF_STRING:
+                for _ in range(count):
+                    string(f)
+            else:
+                raise Refused(f"unsupported GGUF array of type {etype}")
+        else:
+            raise Refused(f"unknown GGUF value type {vtype}")
+
+    try:
+        with open(path, "rb") as f:
+            if _read_exact(f, 4) != GGUF_MAGIC:
+                raise Refused(f"{path.name} isn't a GGUF file")
+            (version,) = struct.unpack("<I", _read_exact(f, 4))
+            if version not in (2, 3):
+                raise Refused(f"{path.name} is GGUF version {version}, not 2 or 3")
+            _tensors, kv_count = struct.unpack("<QQ", _read_exact(f, 16))
+            for _ in range(min(kv_count, GGUF_MAX_KV)):
+                key = string(f)
+                (vtype,) = struct.unpack("<I", _read_exact(f, 4))
+                if key == b"general.architecture":
+                    if vtype != GGUF_STRING:
+                        raise Refused(f"{path.name}: general.architecture isn't a string")
+                    return string(f).decode("utf-8", "replace")
+                skip(f, vtype)
+    except OSError as e:
+        raise Refused(f"{path.name} can't be read: {e}") from None
+    raise Refused(f"{path.name} doesn't name its architecture")
+
+
+def check_gguf_dir(folder: Path, m: Model) -> None:
+    """A GGUF model folder: only `*.gguf` files and the marker, both named files present and of
+    the expected architecture."""
+    for f in folder.rglob("*"):
+        rel = f.relative_to(folder)
+        if f.is_dir() or f.name == MARKER and rel == Path(MARKER):
+            continue
+        if not f.name.lower().endswith(".gguf"):
+            raise Refused(f"not a GGUF file: {rel}")
+    for role, want in GGUF_ARCH.items():
+        name = m.gguf.get(role)
+        if not name:
+            raise Refused(f"{m.repo} names no {role} file")
+        path = folder / check_name(name)
+        if not path.is_file():
+            raise Refused(f"{name} is missing")
+        got = gguf_architecture(path)
+        if got != want:
+            raise Refused(f"{name} is a {got!r} model, not {want!r}")
+
+
 def check_model_dir(folder: Path) -> None:
     """Load-time check of an installed model: it's one from the table, has no code files, no config
-    naming code, and (once pinned) every listed file matches its shipped SHA-256. Raises Refused."""
+    naming code, and (once pinned) every listed file matches its shipped SHA-256. GGUF models are
+    also checked by check_gguf_dir. Raises Refused."""
     folder = Path(folder)
     try:
         info = json.loads((folder / MARKER).read_text())
@@ -180,21 +314,40 @@ def check_model_dir(folder: Path) -> None:
     m = table().get(info.get("repo") or "")
     if m is None or info.get("revision") != m.revision:
         raise Refused(f"{info.get('repo')} at {info.get('revision')} isn't an allowed model")
+    if (info.get("format") or "mlx") != m.format:
+        raise Refused(f"{m.repo} was installed as {info.get('format') or 'mlx'}, not {m.format}")
     for f in folder.rglob("*"):
         if f.is_file() and f.name.lower().endswith(CODE_SUFFIXES):
             raise Refused(f"code file in the model: {f.relative_to(folder)}")
-    check_configs(folder)
+    if m.format == "gguf":
+        check_gguf_dir(folder, m)
+    else:
+        check_configs(folder)
     if m.files:
         for name, want in m.files.items():
             path = folder / check_name(name)
+            # An empty hash is a development placeholder (models.py TODO): its file is still
+            # required, and a release build never gets this far with one (entry() refuses it).
+            if not want:
+                if not path.is_file():
+                    raise Refused(f"{name} is missing")
+                continue
             if not path.is_file() or sha256_of(path) != want:
                 raise Refused(f"{name} doesn't match its checksum")
 
 
-def release_problems() -> list[str]:
-    """Why this table can't ship in a release: every model needs a commit and a hash per file."""
+def release_problems(formats: tuple[str, ...] | None = None) -> list[str]:
+    """Why this table can't ship in a release: every model of these formats (default: this
+    platform's, default_format()) needs a commit and a hash per file."""
+    formats = formats or (default_format(),)
     out = []
     for m in table().values():
+        if m.format not in formats:
+            continue
+        if m.format not in FORMATS:
+            out.append(f"{m.repo}: unknown format {m.format!r}")
+        if m.format == "gguf" and not gguf_files(m.repo):
+            out.append(f"{m.repo}: no model and mmproj files named")
         if not COMMIT.match(m.revision):
             out.append(f"{m.repo}: revision {m.revision!r} isn't a commit SHA")
         if not m.files:
@@ -222,7 +375,13 @@ def hash_dir(folder: Path) -> dict[str, str]:
 
 def main(argv: list[str]) -> int:
     if argv[:1] == ["--check-release"]:
-        problems = release_problems()
+        formats = None
+        if argv[1:2] == ["--format"] and len(argv) == 3 and argv[2] in FORMATS:
+            formats = (argv[2],)
+        elif len(argv) != 1:
+            print("usage: python -m breakpatch_engine.models --check-release [--format mlx|gguf]", file=sys.stderr)
+            return 2
+        problems = release_problems(formats)
         for p in problems:
             print(f"models: {p}", file=sys.stderr)
         if problems:
@@ -232,7 +391,8 @@ def main(argv: list[str]) -> int:
     if argv[:1] == ["--hash-dir"] and len(argv) == 2:
         print(json.dumps(hash_dir(Path(argv[1])), indent=4))
         return 0
-    print("usage: python -m breakpatch_engine.models --check-release | --hash-dir FOLDER", file=sys.stderr)
+    print("usage: python -m breakpatch_engine.models --check-release [--format mlx|gguf] | --hash-dir FOLDER",
+          file=sys.stderr)
     return 2
 
 
