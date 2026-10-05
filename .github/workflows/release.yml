@@ -24,6 +24,18 @@ name: Release
 #               the real licence keys only, never the public test key.
 #   publish     needs build; the only job that can write (contents: write). It downloads the
 #               build's files, checks SHA256SUMS and creates the GitHub release. No checkout.
+#   app-linux-x64, publish-linux
+#               The Linux x64 desktop app (a preview): the Team edition as an AppImage and a .deb,
+#               built by the same script in an Ubuntu 22.04 container (glibc 2.35, so it runs on
+#               22.04 and later and on Debian 12), tag runs only, in the `release` environment.
+#               It needs only the updater key: nothing is code signed on Linux.
+#               scripts/linux-release-files.sh checks the bundles and names the files.
+#               publish-linux runs after publish, so macOS never waits for Linux and a Linux
+#               failure leaves the release as it is (with a warning). It adds the files, merges the
+#               Linux platforms into latest.json and adds their lines to SHA256SUMS.
+#   sign-sums   last: downloads every file of the release, checks it against SHA256SUMS and signs
+#               SHA256SUMS with GPG (SHA256SUMS.asc). Without the GPG_SIGNING_KEY secret it says so
+#               and signs nothing.
 #   ci-linux, ci-macos, ci-linux-arm64, ci-windows-x64, publish-ci
 #               breakpatch-ci (Team, for CI machines), built and published after the app: they
 #               need publish, so the app and Community never wait for them, and a failure here
@@ -46,6 +58,8 @@ name: Release
 #               (tagged linux_x86_64: only for glibc 2.39 and later). ci-windows-x64 (a preview)
 #               builds under Git Bash on windows-latest (MSVC for Nuitka). The arm64 and Windows
 #               jobs reuse ci-linux's engine wheel, like ci-macos.
+#   test-build-linux  manual runs: the same, unsigned Community, AppImage and .deb in the
+#               Ubuntu 22.04 container, kept 3 days.
 #   test-build  manual runs (workflow_dispatch): an unsigned Community build on macOS, with no
 #               secrets at all (not even the Team repo token), kept as a workflow artifact for
 #               3 days. It tries the macOS build, the AI assistant bundle and the hardened
@@ -65,12 +79,16 @@ name: Release
 #     secrets  TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD,
 #              BP_CODESIGN_P12, BP_CODESIGN_P12_PASSWORD (or the APPLE_* ones),
 #              TEAM_REPO_TOKEN (fine-grained, breakpatch-team only, Contents read-only)
+#              GPG_SIGNING_KEY (ASCII-armoured secret key that signs SHA256SUMS; optional) and
+#              GPG_SIGNING_KEY_PASSPHRASE (if it has one)
 #   vars (repository)  TEAM_REPO  the Team repo. Default BreakPatch/breakpatch-team
 #                      TEAM_REF   its branch or tag to build (default main)
 #                      MANYLINUX_X64_IMAGE, MANYLINUX_ARM64_IMAGE  the manylinux_2_28 images,
 #                                 pinned by digest (quay.io/pypa/manylinux_2_28_x86_64@sha256:…);
 #                                 without them the jobs use the moving tag and warn
 #                      CI_MANYLINUX  off: ci-linux builds on the runner, not in the container
+#                      UBUNTU_2204_IMAGE  the Linux desktop build's container, pinned by digest
+#                                 (ubuntu:22.04@sha256:…); default ubuntu:22.04
 
 on:
   push:
@@ -260,6 +278,196 @@ jobs:
             echo "Published $GITHUB_REF_NAME as a prerelease; Latest is ${latest:-none yet}."
           fi
 
+  # ---------------------------------------------------------------- Linux x64 desktop (a preview)
+
+  app-linux-x64:
+    name: Linux x64 desktop (preview; AppImage and .deb)
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    environment: release
+    # Ubuntu 22.04 (glibc 2.35, WebKitGTK 4.1), so the app runs on 22.04 and later and on Debian 12.
+    # The repository variable UBUNTU_2204_IMAGE pins it by digest (ubuntu:22.04@sha256:…).
+    container:
+      image: ${{ vars.UBUNTU_2204_IMAGE || 'ubuntu:22.04' }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      # linuxdeploy (the AppImage tool) is an AppImage itself, and a container has no FUSE.
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    defaults:
+      run:
+        shell: bash
+        working-directory: breakpatch
+    steps:
+      # Before the checkout: git (a real clone), lsb-release (setup-python reads it to pick its
+      # Ubuntu 22.04 build), the WebKitGTK and GTK libraries, and the tools the bundles need.
+      - name: System packages (Ubuntu 22.04)
+        working-directory: /
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git lsb-release build-essential pkg-config file patchelf \
+            xdg-utils desktop-file-utils shared-mime-info \
+            libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+          echo "glibc $(ldd --version | head -n 1 | awk '{ print $NF }')"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: breakpatch
+          persist-credentials: false
+      - name: Check out the Team module
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ vars.TEAM_REPO || 'BreakPatch/breakpatch-team' }}
+          ref: ${{ vars.TEAM_REF || 'main' }}
+          token: ${{ secrets.TEAM_REPO_TOKEN }}
+          path: breakpatch-team
+          persist-credentials: false
+      # No caches on a tag build (security review S5).
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Tag matches the app version
+        run: |
+          app_version=$(node -p "require('./app/package.json').version")
+          if [ "v$app_version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match app/package.json version $app_version"
+            exit 1
+          fi
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master, 2026-09
+        with:
+          toolchain: 1.98.1
+      # As on macOS: everything third-party first, with no secret in the environment.
+      - name: Install dependencies (no secrets)
+        env:
+          PYTHON: python
+          ENGINE_EXTRAS: dev,hardening
+        run: bash scripts/build-release.sh --edition team --deps-only
+      # Only the updater key: nothing is code signed on Linux. It signs the AppImage and the .deb
+      # (their .sig files, which the in-app updater checks).
+      - name: Build the Team edition
+        env:
+          TEAM_DIR: breakpatch-team
+          ENGINE_EXTRAS: dev,hardening
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bash scripts/build-release.sh --edition team --bundles deb,appimage --no-deps --release
+      # Checks the bundles (contents, desktop entry, glibc 2.35 at most, version) and names the
+      # files for the release; latest-linux.json holds this platform's updater entries.
+      - name: Collect the release files
+        id: files
+        run: |
+          version=$(node -p "require('./app/package.json').version")
+          out="$RUNNER_TEMP/release-linux"
+          bash scripts/linux-release-files.sh --release --version "$version" \
+            --url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$version/" \
+            app/src-tauri/target/release/bundle "$out"
+          echo "dir=$out" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: breakpatch-release-linux-x64
+          path: ${{ steps.files.outputs.dir }}
+          if-no-files-found: error
+          retention-days: 3
+
+  # Adds the Linux files to the release publish made, after it: macOS never waits for Linux, and a
+  # Linux failure leaves the macOS release as it is (a warning, no Linux files). latest.json gets
+  # the Linux entries merged in, and SHA256SUMS a line per new file (and latest.json's new one).
+  publish-linux:
+    name: Publish the Linux desktop app
+    needs: [publish, app-linux-x64]
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # adds files to the release made by publish
+    steps:
+      - name: Built?
+        id: built
+        env:
+          LINUX: ${{ needs.app-linux-x64.result }}
+        run: |
+          if [ "$LINUX" = success ]; then echo "ok=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "::warning::The Linux desktop app wasn't built ($LINUX); it isn't in this release."
+          echo "ok=0" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: steps.built.outputs.ok == '1'
+        with:
+          name: breakpatch-release-linux-x64
+          path: linux
+      - name: Check, merge and publish
+        if: steps.built.outputs.ok == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          (cd linux && sha256sum --check --strict SHA256SUMS)
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --pattern latest.json --dir old
+          if awk '{ print $2 }' old/SHA256SUMS linux/SHA256SUMS | sort | uniq -d | grep .; then
+            echo "::error::the release already has files with these names"; exit 1
+          fi
+          # latest.json: the macOS one with the Linux platforms added; a platform already there fails.
+          jq -e --slurpfile l linux/latest-linux.json '(.platforms | keys) as $have | [$l[0] | keys[] | select(IN($have[]))] == []' old/latest.json >/dev/null \
+            || { echo "::error::latest.json already has a Linux platform"; exit 1; }
+          jq --slurpfile l linux/latest-linux.json '.platforms += $l[0]' old/latest.json > latest.json
+          jq . latest.json
+          { grep -v '  latest\.json$' old/SHA256SUMS; cat linux/SHA256SUMS; sha256sum latest.json; } > SHA256SUMS
+          cat SHA256SUMS
+          files=()
+          while read -r _ name; do files+=("linux/$name"); done < linux/SHA256SUMS
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --repo "$GITHUB_REPOSITORY"
+          gh release upload "$GITHUB_REF_NAME" latest.json SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+
+  # SHA256SUMS signed with GPG (SHA256SUMS.asc), once every file is in the release: after the
+  # macOS, Linux and breakpatch-ci files. Every file is downloaded and checked against it first.
+  # The key is the `release` environment's secret GPG_SIGNING_KEY (an ASCII-armoured secret key;
+  # GPG_SIGNING_KEY_PASSPHRASE if it has one). Without it the job says so and signs nothing.
+  sign-sums:
+    name: Sign SHA256SUMS (GPG)
+    needs: [publish, publish-linux, publish-ci]
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write   # adds SHA256SUMS.asc to the release
+    steps:
+      - name: Download the release and check every file
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --dir release
+          cd release
+          rm -f SHA256SUMS.asc
+          sha256sum --check --strict SHA256SUMS
+          unlisted=$(comm -23 <(printf '%s\n' * | grep -vx SHA256SUMS | sort) <(awk '{ print $2 }' SHA256SUMS | sort))
+          if [ -n "$unlisted" ]; then echo "::error::not in SHA256SUMS: $unlisted"; exit 1; fi
+      - name: Sign SHA256SUMS
+        working-directory: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_KEY_PASSPHRASE: ${{ secrets.GPG_SIGNING_KEY_PASSPHRASE }}
+        run: |
+          if [ -z "$GPG_SIGNING_KEY" ]; then
+            echo "::warning::The secret GPG_SIGNING_KEY isn't set, so SHA256SUMS isn't signed: this release has no SHA256SUMS.asc."
+            exit 0
+          fi
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          trap 'gpgconf --kill gpg-agent; rm -rf "$GNUPGHOME"' EXIT
+          printf '%s\n' "$GPG_SIGNING_KEY" | gpg --batch --quiet --import
+          fpr=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')
+          if [ -z "$fpr" ]; then echo "::error::GPG_SIGNING_KEY holds no secret key"; exit 1; fi
+          sign=(gpg --batch --local-user "$fpr" --armor --detach-sign --output SHA256SUMS.asc)
+          if [ -n "$GPG_SIGNING_KEY_PASSPHRASE" ]; then
+            printf '%s' "$GPG_SIGNING_KEY_PASSPHRASE" | "${sign[@]}" --pinentry-mode loopback --passphrase-fd 0 SHA256SUMS
+          else
+            "${sign[@]}" SHA256SUMS
+          fi
+          gpg --batch --verify SHA256SUMS.asc SHA256SUMS
+          echo "Signed SHA256SUMS with $fpr"
+          gh release upload "$GITHUB_REF_NAME" SHA256SUMS.asc --clobber --repo "$GITHUB_REPOSITORY"
+
   # ---------------------------------------------------------------- breakpatch-ci (after the app)
 
   ci-linux:
@@ -446,7 +654,9 @@ jobs:
 
   publish-ci:
     name: Publish breakpatch-ci
-    needs: [ci-linux, ci-macos, ci-linux-arm64, ci-windows-x64]
+    # After publish-linux too, which also rewrites SHA256SUMS: one at a time, so neither loses
+    # the other's lines. Its result doesn't matter here.
+    needs: [ci-linux, ci-macos, ci-linux-arm64, ci-windows-x64, publish-linux]
     # The Linux x86_64 files are enough to publish; the others are added when their job worked.
     if: ${{ !cancelled() && needs.ci-linux.result == 'success' }}
     runs-on: ubuntu-latest
@@ -539,5 +749,58 @@ jobs:
         with:
           name: breakpatch-community-test-macos-arm64
           path: app/src-tauri/target/${{ env.TARGET }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 3
+
+  test-build-linux:
+    name: Linux x64 (unsigned Community test build)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    # The release job's container, with no secrets at all: tries the Linux bundles before a tag.
+    container:
+      image: ${{ vars.UBUNTU_2204_IMAGE || 'ubuntu:22.04' }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+      PYTHON: python
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: System packages (Ubuntu 22.04)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git lsb-release build-essential pkg-config file patchelf \
+            xdg-utils desktop-file-utils shared-mime-info \
+            libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
+            libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master, 2026-09
+        with:
+          toolchain: 1.98.1
+      - name: Install dependencies
+        run: bash scripts/build-release.sh --deps-only
+      # No updater key: no .sig files and no latest-linux.json entries.
+      - name: Build (unsigned)
+        run: bash scripts/build-release.sh --bundles deb,appimage --no-deps
+      - name: Check the bundles
+        id: files
+        run: |
+          version=$(node -p "require('./app/package.json').version")
+          bash scripts/linux-release-files.sh --version "$version" app/src-tauri/target/release/bundle "$RUNNER_TEMP/linux"
+          echo "dir=$RUNNER_TEMP/linux" >> "$GITHUB_OUTPUT"   # the container's path, not runner.temp
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: breakpatch-community-test-linux-x64
+          path: ${{ steps.files.outputs.dir }}
           if-no-files-found: error
           retention-days: 3
