@@ -148,7 +148,29 @@ os.makedirs(os.path.join(os.environ["PLAYWRIGHT_BROWSERS_PATH"], "chromium-9999"
 '''
 engine = wheel("breakpatch_engine", {"breakpatch_engine/__init__.py": f'__version__ = "{version}"\n',
                                      "playwright/__init__.py": "", "playwright/__main__.py": playwright})
-ci = f'def main():\n    import sys\n    print("{version}")\n    return 0\n'
+ci = f'''def main():
+    import os, sys
+    args = sys.argv[1:]
+    state = os.environ.get("FAKE_STATE")
+    if state:
+        with open(os.path.join(state, "breakpatch-ci"), "a") as f:
+            f.write(" ".join(args) + "\\n")
+    if args[:1] == ["setup"] and os.environ.get("FAKE_SETUP") != "old":
+        libs = os.environ.get("FAKE_LIBS")
+        if not libs:
+            print("breakpatch-ci: Chromium has the system libraries it needs.", file=sys.stderr)
+            return 0
+        python = os.path.join(os.path.dirname(sys.prefix), "current", "bin", "python")
+        print("breakpatch-ci: The browser can't start: this machine is missing system libraries it needs ("
+              + libs + "). Install them once, as an administrator: sudo " + python
+              + " -m playwright install-deps chromium. That works on Ubuntu and Debian.", file=sys.stderr)
+        return 2
+    if args == ["licence", "release"]:
+        print('{{"released": ' + ("false" if os.environ.get("FAKE_RELEASE") == "no" else "true") + '}}')
+        return 0
+    print("{version}")
+    return 0
+'''
 team = wheel("breakpatch_team_engine", {"breakpatch_team_engine/__init__.py": "", "breakpatch_team_engine/ci.py": ci},
              {"breakpatch-ci": "breakpatch_team_engine.ci:main"})
 extra = wheel("sneaky", {"sneaky/__init__.py": ""}) if "extra" in opts else None
@@ -157,7 +179,9 @@ def sha(p):
     return hashlib.sha256(open(p, "rb").read()).hexdigest()
 
 for platform in ("linux-x86_64", "linux-arm64", "macos-arm64", "windows-x86_64"):
-    lines = ["# breakpatch-ci on " + platform, "# a comment with ./not-a-wheel.whl in it"]
+    # As scripts/ci-requirements.py writes it: its header names the install command's address.
+    lines = ["# breakpatch-ci on " + platform, "# a comment with ./not-a-wheel.whl in it",
+             "# Installed by https://breakpatch.dev/install-ci with:"]
     if "url" in opts:
         lines.append("evil @ https://example.com/evil-1.0-py3-none-any.whl --hash=sha256:" + "0" * 64)
     lines.append(f"./{os.path.basename(engine)} --hash=sha256:{sha(engine)}")
@@ -385,6 +409,17 @@ SH
 cat > "$shims/getconf" <<'SH'
 #!/bin/sh
 [ "$1" = LONG_BIT ] && echo "${FAKE_LONG_BIT:-64}"
+if [ "$1" = GNU_LIBC_VERSION ]; then
+  [ "${FAKE_GLIBC:-}" != none ] || exit 1
+  echo "glibc ${FAKE_GLIBC:-2.39}"
+fi
+SH
+# ldd says musl on Alpine (and nothing about glibc's version).
+real_ldd=$(command -v ldd || echo /usr/bin/ldd)
+cat > "$shims/ldd" <<SH
+#!/bin/sh
+if [ "\${FAKE_MUSL:-}" = 1 ]; then echo "musl libc (x86_64)" >&2; exit 1; fi
+exec $real_ldd "\$@"
 SH
 # A Python 3.11 that says it's FAKE_PY_VERSION (e.g. 3.12) or built for FAKE_PY_ARCH (arm64).
 pyshims="$work/py-shims"
@@ -521,10 +556,11 @@ for sh_name in "sh" "bash --posix"; do
   run_piped
   expect_code 0
   expect_out "Installing breakpatch-ci 1.1.0…"
-  expect_out "Linux is a preview: breakpatch-ci runs tests there, and they're recorded on a Mac."
+  expect_no_out "preview"
   expect_out "Installing the Python packages (checked against their hashes)…"
   expect_out "breakpatch-ci 1.1.0 is in ~/.breakpatch-ci."
-  expect_out "install the libraries it needs: sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium"
+  expect_out "Chromium has the system libraries it needs."
+  if grep -qx "setup" "$c/state/breakpatch-ci"; then ok "breakpatch-ci setup checked the libraries"; else bad "breakpatch-ci was run as: $(cat "$c/state/breakpatch-ci" 2>/dev/null)"; fi
   # shellcheck disable=SC2088  # the message shows a ~
   expect_out "~/.local/bin isn't on your PATH. Add it, for example: export PATH=\"$bin:\$PATH\""
   expect_out "https://breakpatch.dev/docs/#from-ci-with-breakpatch-ci"
@@ -577,8 +613,10 @@ for sh_name in "sh" "bash --posix"; do
   run FAKE_OS=Darwin FAKE_ARCH=arm64 BREAKPATCH_PYTHON="$pyshims/python-as" FAKE_PY_ARCH=arm64
   expect_code 0
   expect_out "Installing breakpatch-ci 1.1.0…"
-  expect_no_out "Linux is a preview"
+  expect_no_out "preview"
   expect_no_out "install-deps"
+  expect_no_out "system libraries"
+  if ! grep -qx "setup" "$c/state/breakpatch-ci" 2>/dev/null; then ok "no library check on a Mac"; else bad "setup ran on a Mac"; fi
   expect_version 1.1.0
   run FAKE_OS=Darwin FAKE_ARCH=x86_64 FAKE_TRANSLATED=1 BREAKPATCH_PYTHON="$pyshims/python-as" FAKE_PY_ARCH=arm64
   expect_code 0
@@ -588,8 +626,7 @@ for sh_name in "sh" "bash --posix"; do
   run FAKE_ARCH=aarch64 BREAKPATCH_PYTHON="$pyshims/python-as" FAKE_PY_ARCH=aarch64
   expect_code 0
   expect_out "Installing breakpatch-ci 1.1.0…"
-  expect_out "Linux is a preview: breakpatch-ci runs tests there, and they're recorded on a Mac."
-  expect_out "install the libraries it needs: sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium"
+  expect_out "Chromium has the system libraries it needs."
   expect_version 1.1.0
   run FAKE_ARCH=aarch64 BREAKPATCH_PYTHON="$pyshims/python-as" FAKE_PY_ARCH=x86_64
   expect_code 1
@@ -602,7 +639,7 @@ for sh_name in "sh" "bash --posix"; do
   expect_out "Breakpatch 1.4.0 has no breakpatch-ci for Linux arm64."
 
   new_case unsupported-machines
-  need="breakpatch-ci runs on a Mac with Apple Silicon (M1 or later) and macOS 14 or later, or on 64-bit Linux (x86_64 or arm64) as a preview."
+  need="breakpatch-ci runs on a Mac with Apple Silicon (M1 or later) and macOS 14 or later, or on 64-bit Linux (x86_64 or arm64)."
   run FAKE_OS=Darwin FAKE_ARCH=x86_64
   expect_code 1
   expect_out "$need This Mac has an Intel processor."
@@ -769,13 +806,65 @@ for sh_name in "sh" "bash --posix"; do
   expect_code 1
   expect_out "BREAKPATCH_VERSION is a version like 1.2.3 or 0.1.0-beta.1."
 
+  new_case system-libraries
+  run FAKE_LIBS="libnss3.so, libgbm.so.1"
+  expect_code 0
+  expect_out "The browser can't start: this machine is missing system libraries it needs (libnss3.so, libgbm.so.1). Install them once, as an administrator: sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium."
+  expect_version 1.1.0
+  # An older breakpatch-ci that doesn't check: the command, as before.
+  run FAKE_SETUP=old
+  expect_code 0
+  expect_out "If Chromium can't start, install the libraries it needs: sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium"
+  expect_clean
+
+  new_case glibc-and-musl
+  libc_need="breakpatch-ci needs a Linux with glibc 2.28 or later (Ubuntu 22.04, Debian 12, Raspberry Pi OS Bookworm, Fedora, or later), or the container image ghcr.io/breakpatch/ci."
+  run FAKE_GLIBC=2.27
+  expect_code 1
+  expect_out "$libc_need This machine has glibc 2.27."
+  run FAKE_GLIBC=1.99
+  expect_code 1
+  expect_out "This machine has glibc 1.99."
+  run FAKE_GLIBC=none FAKE_MUSL=1
+  expect_code 1
+  expect_out "$libc_need This machine uses musl (Alpine, for example), not glibc."
+  expect_none
+  run FAKE_GLIBC=2.28
+  expect_code 0
+  run FAKE_GLIBC=none
+  expect_code 0
+  expect_out "Reinstalling breakpatch-ci 1.1.0…"
+  # macOS has no glibc to check.
+  run FAKE_OS=Darwin FAKE_ARCH=arm64 BREAKPATCH_PYTHON="$pyshims/python-as" FAKE_PY_ARCH=arm64 FAKE_GLIBC=2.17
+  expect_code 0
+
+  new_case python-download-needs-tar
+  notar="$work/no-tar"
+  mkdir -p "$notar"
+  for f in "$nopy"/*; do n=$(basename "$f"); case "$n" in tar | gzip) ;; *) ln -sf "$(readlink "$f")" "$notar/$n" ;; esac; done
+  run BREAKPATCH_PYTHON= PATH="$shims:$notar" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$pbs_sha"
+  expect_code 1
+  expect_out "The installer needs tar to unpack Python 3.11, and it isn't on this machine's PATH."
+  expect_none
+
   new_case uninstall
   run
   expect_code 0
   run_piped -- --uninstall
   expect_code 0
   expect_out "Removed breakpatch-ci and its browser from ~/.breakpatch-ci."
-  expect_out "Run breakpatch-ci licence release first to give the seat back"
+  expect_out "This machine's licence may still be taken. Free it in the back office"
+  if ! grep -q "licence" "$c/state/breakpatch-ci" 2>/dev/null; then ok "no licence release without the key"; else bad "licence release ran without a key"; fi
+  run
+  expect_code 0
+  run BREAKPATCH_LICENCE_KEY=BPK-test -- --uninstall
+  expect_code 0
+  expect_out "This machine's licence is given back."
+  if grep -qx "licence release" "$c/state/breakpatch-ci"; then ok "the licence went back before the files"; else bad "breakpatch-ci was run as: $(cat "$c/state/breakpatch-ci" 2>/dev/null)"; fi
+  run
+  run BREAKPATCH_LICENCE_KEY=BPK-test FAKE_RELEASE=no -- --uninstall
+  expect_code 0
+  expect_out "This machine's licence may still be taken."
   if [ ! -e "$home" ] && [ ! -e "$bin/breakpatch-ci" ]; then ok "the folder and the link are gone"; else bad "something is left"; fi
   run -- --uninstall
   expect_code 0
