@@ -33,7 +33,7 @@ name: Release
 #               Nuitka --module into a wheel (the Team repo's engine/scripts/build_ci_wheel.sh,
 #               the real licence keys only) and breakpatch-ci-requirements-<platform>.txt, which
 #               https://breakpatch.dev/install-ci installs with pip --require-hashes. ci-linux
-#               (Linux x86_64, a preview) runs on ubuntu, ci-macos (the supported platform) on
+#               (Linux x86_64) runs on ubuntu, ci-macos on
 #               macos-15; both in the `release` environment for TEAM_REPO_TOKEN, installing their
 #               dependencies from the hashed locks first, with no secret in the environment.
 #               publish-ci adds the files to the release and their lines to SHA256SUMS; the
@@ -41,7 +41,7 @@ name: Release
 #               The Linux jobs build inside a manylinux_2_28 container
 #               (scripts/build-manylinux.sh), so the Team wheel is tagged manylinux_2_28_<arch>
 #               and loads on glibc 2.28 and later (Debian 12, Raspberry Pi OS, Ubuntu 22.04):
-#               ci-linux on ubuntu-24.04, ci-linux-arm64 on ubuntu-24.04-arm (both previews).
+#               ci-linux on ubuntu-24.04, ci-linux-arm64 on ubuntu-24.04-arm.
 #               The repository variable CI_MANYLINUX=off builds ci-linux on the runner as before
 #               (tagged linux_x86_64: only for glibc 2.39 and later). ci-windows-x64 (a preview)
 #               builds under Git Bash on windows-latest (MSVC for Nuitka). The arm64 and Windows
@@ -271,7 +271,7 @@ jobs:
   # ---------------------------------------------------------------- breakpatch-ci (after the app)
 
   ci-linux:
-    name: breakpatch-ci, Linux x86_64 (preview)
+    name: breakpatch-ci, Linux x86_64
     needs: publish
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
@@ -365,7 +365,7 @@ jobs:
           retention-days: 3
 
   ci-linux-arm64:
-    name: breakpatch-ci, Linux arm64 (preview; Raspberry Pi)
+    name: breakpatch-ci, Linux arm64 (and Raspberry Pi)
     needs: ci-linux
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04-arm

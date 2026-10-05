@@ -746,7 +746,7 @@ To run a suite on the local runner Mac instead, add a [run request](#run-request
 **What you need**
 
 - A Breakpatch Team licence with a free **machine licence** for the CI machine. Machine licences count separately from people's seats.
-- A Mac with Apple Silicon and macOS 14 or later, for example GitHub's `macos-15` runners or a Codemagic Mac. Linux (x86_64 and arm64, a Raspberry Pi too) and Windows x64 work as a preview: they run tests, but record them on a Mac. See [breakpatch-ci on Linux](#breakpatch-ci-on-linux), [breakpatch-ci on Windows](#breakpatch-ci-on-windows) and [Raspberry Pi runner](#raspberry-pi-runner).
+- A Mac with Apple Silicon and macOS 14 or later (for example GitHub's `macos-15` runners or a Codemagic Mac), or 64-bit Linux on x86_64 or arm64 (a Raspberry Pi too). Linux runs tests; you record them on a Mac. Windows x64 works as a preview. See [breakpatch-ci on Linux](#breakpatch-ci-on-linux), [breakpatch-ci in a container](#breakpatch-ci-in-a-container), [breakpatch-ci on Windows](#breakpatch-ci-on-windows) and [Raspberry Pi runner](#raspberry-pi-runner).
 - Python 3.11 on that machine. When there's none, the install command downloads it.
 - One run at a time per machine licence. To run tests in parallel, give each parallel job its own machine licence and its own `BREAKPATCH_MACHINE_ID`.
 - The workspace's `.bpworkspace` file (Settings → Workspace → Invite teammates → **Save as file**), committed to your repo. It holds only the workspace's public details, never a password or key.
@@ -762,7 +762,7 @@ curl -fsSL https://breakpatch.dev/install-ci | sh
 
 <!-- prelaunch --> Public release coming soon. Until then, this command and the CI examples below that use it don't work. Join the list: [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list)
 
-It installs `breakpatch-ci` and the test browser in `~/.breakpatch-ci` and links the command into `~/.local/bin`. It checks every download against the release's checksums, and needs no administrator password. In GitHub Actions the next steps can run `breakpatch-ci` straight away; elsewhere, add `~/.local/bin` to `PATH` or use the full path. Running it again updates to the latest version, `BREAKPATCH_VERSION=1.2.3` installs a given one, and `sh -s -- --uninstall` removes it. You can [read the script](https://breakpatch.dev/install-ci) first.
+It installs `breakpatch-ci` and the test browser in `~/.breakpatch-ci` and links the command into `~/.local/bin`. It checks every download against the release's checksums, and needs no administrator password. In GitHub Actions the next steps can run `breakpatch-ci` straight away; elsewhere, add `~/.local/bin` to `PATH` or use the full path. Running it again updates to the latest version, `BREAKPATCH_VERSION=1.2.3` installs a given one, and `sh -s -- --uninstall` removes it. With `BREAKPATCH_LICENCE_KEY` set, `--uninstall` first gives the machine licence back. You can [read the script](https://breakpatch.dev/install-ci) first.
 
 **Run a suite from the workspace**
 
@@ -812,7 +812,7 @@ Shared steps are read from `apps/<app>/shared/` next to `tests/`. The run isn't 
 |---|---|
 | `0` | The test or suite passed (a suite *passed with fixes* too). |
 | `1` | A test failed: a check didn't match, or something wasn't there. The JSON says which step and why. |
-| `2` | Nothing ran, or not all of it could: the test file or its shared steps, the workspace file, the suite or test couldn't be read, the CI account couldn't sign in, a secret isn't allowed on a test's sites, or something went wrong inside `breakpatch-ci` (`code: "internal"`). The JSON has a `code` and a message. |
+| `2` | Nothing ran, or not all of it could: the test file or its shared steps, the workspace file, the suite or test couldn't be read, the CI account couldn't sign in, a secret isn't allowed on a test's sites, the browser can't start because Linux is missing system libraries (`code: "libraries"`), or something went wrong inside `breakpatch-ci` (`code: "internal"`). The JSON has a `code` and a message. |
 | `3` | There's no usable licence, or it's for another workspace. The JSON and the log say why. |
 
 If a run can't be saved in the workspace (for example the security rules are out of date), the log says so and the JSON has `"saved": false`. The exit code is still the test's result.
@@ -925,7 +925,8 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 - **Exit code 3 after the clock changed or a long time offline**: the machine checks its licence online at least once a week. Make sure it can reach `https://account.breakpatch.dev`.
 - **"The saved secret STAGING_PASSWORD isn't on this Mac"**: set `BP_SECRET_STAGING_PASSWORD` in the job, and add the name to `--secret` if you use it.
 - **"The browser isn't installed yet"**: run the install command again. If `BP_BROWSERS_PATH` or `PLAYWRIGHT_BROWSERS_PATH` is set in the job, `breakpatch-ci` looks there instead: unset it.
-- **Linux: the browser doesn't start**: install the libraries it needs with `sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium`.
+- **Linux: "The browser can't start: this machine is missing system libraries it needs"**: install them once with the command in the message, `sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium`. That works on Ubuntu and Debian. On another Linux, install the packages that have the libraries the message names. Or use the [container image](#breakpatch-ci-in-a-container), which has them.
+- **Linux: "breakpatch-ci needs a Linux with glibc 2.28 or later"**: the system is too old, or it's Alpine (musl). Use Ubuntu 22.04, Debian 12 or later, or the [container image](#breakpatch-ci-in-a-container).
 - **Exit code 2 with "wrong email or password"**: check `BREAKPATCH_CI_EMAIL` and `BREAKPATCH_CI_PASSWORD` in the job's secrets.
 - **Exit code 2 with "not CI"** or "isn't a member of this workspace": the account needs the *CI* role. Sign in to Breakpatch with it once, then an admin changes its role in Settings → Members.
 - **Exit code 2 with "The workspace refused the CI account"**: publish the latest security rules (Settings → Workspace → **Copy security rules**).
@@ -936,17 +937,19 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 
 ### breakpatch-ci on Linux
 
-`breakpatch-ci` runs on 64-bit Linux, on x86_64 and on arm64 (a Raspberry Pi 4 or 5, or an arm server), as a preview: it runs tests there, and you record them on a Mac. It needs a system from the last few years (glibc 2.28 or later): Ubuntu 22.04 or later, Debian 12 or later, Raspberry Pi OS Bookworm (64-bit) or later, Fedora. A 32-bit system isn't supported, even on a 64-bit Raspberry Pi.
+`breakpatch-ci` runs on 64-bit Linux, on x86_64 and on arm64 (a Raspberry Pi 4 or 5, or an arm server). It runs tests there; you record them on a Mac. It needs a system from the last few years (glibc 2.28 or later): Ubuntu 22.04 or later, Debian 12 or later, Raspberry Pi OS Bookworm (64-bit) or later, Fedora. Alpine (musl) and 32-bit systems aren't supported, even on a 64-bit Raspberry Pi; the install command says so.
 
 The install command is the same. When the machine has no Python 3.11 (Ubuntu 24.04 and Raspberry Pi OS come with a newer one), it downloads Python 3.11 into `~/.breakpatch-ci` and checks it against the checksum written in the install command. To use your own, set `BREAKPATCH_PYTHON`.
 
-Chromium needs some system libraries. Install them once per machine, as an administrator:
+Chromium needs some system libraries. At the end, the install command checks they're there. When some are missing, it names them and the command that adds them. Run it once per machine, as an administrator:
 
 ```sh
 sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
 ```
 
-`breakpatch-ci setup` installs the test browser again if it's missing (it needs no licence) and prints that line too.
+That command works on Ubuntu and Debian (and Raspberry Pi OS). On Fedora or another Linux, install the packages that have the libraries named.
+
+`breakpatch-ci setup` makes the same check at any time, and installs the test browser again if it's missing. It needs no licence. It ends with exit code `0` when Chromium can start and `2` when it can't, and its JSON lists what's missing (`libraries.missing`). A `run` makes the check too, before it takes a licence: when a library is missing, nothing runs and it ends with exit code `2` and `code: "libraries"`, not as a failed test.
 
 On Linux, Chromium's own sandbox is off by default, because containers and most CI machines can't start it. On a machine that can (your own Linux server, a Raspberry Pi), turn it on with `BP_SANDBOX=1`.
 
@@ -982,6 +985,69 @@ ui-tests:
 ```
 
 Set `BREAKPATCH_LICENCE_KEY`, `BREAKPATCH_CI_EMAIL`, `BREAKPATCH_CI_PASSWORD` and `BP_SECRET_STAGING_PASSWORD` as masked CI/CD variables. The job runs as root in the container, which the install command allows.
+
+### breakpatch-ci in a container
+
+Releases after 0.1.0 also come as a container image, `ghcr.io/breakpatch/ci`, for x86_64 and arm64. It has `breakpatch-ci`, the test browser and the system libraries the browser needs, so a job needs no install step. Each version has its own tag, for example `ghcr.io/breakpatch/ci:1.2.3`, and `latest` is the newest release (never a beta). Use a version's tag in CI, so a new release doesn't change your pipeline without you knowing.
+
+The image keeps the machine licence in `/var/lib/breakpatch`. Point `BREAKPATCH_LICENCE_FILE` at a folder your CI keeps between jobs instead.
+
+**GitHub Actions**
+
+```yaml
+jobs:
+  ui-tests:
+    runs-on: ubuntu-24.04
+    container: ghcr.io/breakpatch/ci:1.2.3
+    concurrency: breakpatch-ci          # one run at a time per machine licence
+    env:
+      BREAKPATCH_LICENCE_KEY: ${{ secrets.BREAKPATCH_LICENCE_KEY }}
+      BREAKPATCH_MACHINE_ID: github-acme-web
+      BREAKPATCH_LICENCE_FILE: ${{ github.workspace }}/.breakpatch/licence.json
+      BREAKPATCH_CI_EMAIL: ${{ secrets.BREAKPATCH_CI_EMAIL }}
+      BREAKPATCH_CI_PASSWORD: ${{ secrets.BREAKPATCH_CI_PASSWORD }}
+      BP_SECRET_STAGING_PASSWORD: ${{ secrets.STAGING_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .breakpatch
+          key: breakpatch-licence-${{ github.run_id }}
+          restore-keys: breakpatch-licence-
+      - run: >-
+          breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --version released
+          --label "GitHub · build ${{ github.run_number }}" --secret STAGING_PASSWORD=https://staging.acme.com --screenshots shots
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: breakpatch-screenshots
+          path: shots
+```
+
+For arm64, use `runs-on: ubuntu-24.04-arm`: the same tag has both.
+
+**GitLab CI**
+
+```yaml
+ui-tests:
+  image: ghcr.io/breakpatch/ci:1.2.3
+  resource_group: breakpatch-ci        # one run at a time per machine licence
+  variables:
+    BREAKPATCH_MACHINE_ID: gitlab-acme-web
+    BREAKPATCH_LICENCE_FILE: $CI_PROJECT_DIR/.breakpatch/licence.json
+  cache:
+    key: breakpatch-licence
+    paths: [.breakpatch]
+  script:
+    - >-
+      breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --version released
+      --label "GitLab · pipeline $CI_PIPELINE_ID" --secret STAGING_PASSWORD=https://staging.acme.com --screenshots shots
+  artifacts:
+    when: on_failure
+    paths: [shots]
+```
+
+Set `BREAKPATCH_LICENCE_KEY`, `BREAKPATCH_CI_EMAIL`, `BREAKPATCH_CI_PASSWORD` and `BP_SECRET_STAGING_PASSWORD` as masked CI/CD variables, as above. On a GitLab runner for arm64, the same image works.
 
 ### breakpatch-ci on Windows
 
@@ -1034,7 +1100,7 @@ The task runs `breakpatch-ci run --workspace … --suite …` at those times, as
 
 ### Raspberry Pi runner
 
-A Raspberry Pi makes a cheap, always-on machine that replays your workspace's suites on a schedule and reports into the workspace, like a CI job that never stops. It's `breakpatch-ci` on Linux, so it's a preview too, and it isn't a runner of its own yet: a systemd timer starts each run (below). It replays tests. It doesn't record them (record on a Mac).
+A Raspberry Pi makes a cheap, always-on machine that replays your workspace's suites on a schedule and reports into the workspace, like a CI job that never stops. It's `breakpatch-ci` on Linux. It isn't a runner of its own yet: a systemd timer starts each run (below). It replays tests. It doesn't record them (record on a Mac).
 
 **Which Pi.** These are our recommendations; we haven't measured every model yet.
 
