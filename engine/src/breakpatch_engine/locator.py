@@ -1,7 +1,15 @@
 """AI assistant: finds a described element on a screenshot (spec §7, §10.2, §10.5, §11.2).
 
-The model sits behind the `Locator` interface so tests can inject a fake one. `mlx-vlm` only
-exists on Apple Silicon and is imported lazily on first use; nothing else in the engine needs it.
+The model sits behind the `Locator` interface so tests can inject a fake one. `VisionLocator` holds
+what every backend shares, so they can't drift apart: the prompts, the four methods (`locate`,
+`describe`, `intent`, `judge`) and the parsing of the replies. A backend only says how to ask the
+model one question (`_generate`):
+
+- `MlxLocator` (here): Qwen3-VL through mlx-vlm on Apple Silicon. `mlx-vlm` only exists there and is
+  imported lazily on first use; nothing else in the engine needs it.
+- `LlamaCppLocator` (llamacpp.py): Qwen3-VL GGUF through a `llama-server` child process, everywhere else.
+
+tools/model-test imports the prompts and parsers from here too (plan §2.4).
 """
 from __future__ import annotations
 
@@ -175,7 +183,63 @@ def parse_describe(text: str) -> dict | None:
     return None
 
 
-class MlxLocator:
+class VisionLocator:
+    """The four methods on top of one question to a vision model: `_generate(image, prompt)`
+    returns the model's reply text (blocking; it runs in a worker thread)."""
+
+    def available(self) -> bool:
+        raise NotImplementedError
+
+    def _generate(self, image: Image.Image, prompt: str) -> str:
+        raise NotImplementedError
+
+    async def _ask(self, image: Image.Image, prompt: str) -> str:
+        return await asyncio.to_thread(self._generate, image, prompt)
+
+    async def locate(self, image: Image.Image, description: str) -> list[int] | None:
+        desc = description.replace('"', "'").strip()
+        text = await self._ask(image, LOCATE_PROMPT.format(desc=desc))
+        return parse_bbox(text, image.width, image.height)
+
+    async def judge(self, image: Image.Image, note: str) -> dict | None:
+        text = await self._ask(image, JUDGE_PROMPT.format(note=note.replace('"', "'").strip()))
+        return parse_judge(text)
+
+    async def intent(self, image: Image.Image, sentence: str) -> dict | None:
+        text = await self._ask(image, INTENT_PROMPT.format(sentence=sentence.replace('"', "'").strip()))
+        return parse_intent(text)
+
+    async def describe(self, image: Image.Image, at: Sequence[float]) -> dict | None:
+        x = round(at[0] * 1000 / image.width)
+        y = round(at[1] * 1000 / image.height)
+        text = await self._ask(image, DESCRIBE_PROMPT.format(x=x, y=y))
+        return parse_describe(text)
+
+
+# setup.warmUp: one look at a page drawn here, so it needs no file and no network.
+WARMUP_TARGET = "the Sign in button"
+
+
+def warmup_image(width: int = 1280, height: int = 800) -> Image.Image:
+    """A plain sign-in page at the engine's viewport size, with a Sign in button to find."""
+    from PIL import ImageDraw
+    im = Image.new("RGB", (width, height), (246, 247, 249))
+    d = ImageDraw.Draw(im)
+    d.rectangle([0, 0, width, 56], fill=(32, 41, 64))
+    d.text((24, 20), "Acme", fill=(255, 255, 255))
+    cx = width // 2
+    d.rectangle([cx - 180, 200, cx + 180, 560], fill=(255, 255, 255), outline=(220, 222, 228))
+    d.text((cx - 160, 230), "Sign in to Acme", fill=(20, 20, 20))
+    for i, label in enumerate(("Email", "Password")):
+        y = 290 + i * 80
+        d.text((cx - 160, y), label, fill=(80, 80, 80))
+        d.rectangle([cx - 160, y + 18, cx + 160, y + 54], outline=(200, 202, 210))
+    d.rectangle([cx - 160, 470, cx + 160, 514], fill=(37, 99, 235))
+    d.text((cx - 22, 486), "Sign in", fill=(255, 255, 255))
+    return im
+
+
+class MlxLocator(VisionLocator):
     """Qwen3-VL through mlx-vlm, loaded on first use and kept in memory."""
 
     def __init__(self, model_path: Path, max_tokens: int = 96):
@@ -233,22 +297,3 @@ class MlxLocator:
             text = out if isinstance(out, str) else getattr(out, "text", str(out))
             log.info("model reply: %s", text[:300])
             return text
-
-    async def locate(self, image: Image.Image, description: str) -> list[int] | None:
-        desc = description.replace('"', "'").strip()
-        text = await asyncio.to_thread(self._generate, image, LOCATE_PROMPT.format(desc=desc))
-        return parse_bbox(text, image.width, image.height)
-
-    async def judge(self, image: Image.Image, note: str) -> dict | None:
-        text = await asyncio.to_thread(self._generate, image, JUDGE_PROMPT.format(note=note.replace('"', "'").strip()))
-        return parse_judge(text)
-
-    async def intent(self, image: Image.Image, sentence: str) -> dict | None:
-        text = await asyncio.to_thread(self._generate, image, INTENT_PROMPT.format(sentence=sentence.replace('"', "'").strip()))
-        return parse_intent(text)
-
-    async def describe(self, image: Image.Image, at: Sequence[float]) -> dict | None:
-        x = round(at[0] * 1000 / image.width)
-        y = round(at[1] * 1000 / image.height)
-        text = await asyncio.to_thread(self._generate, image, DESCRIBE_PROMPT.format(x=x, y=y))
-        return parse_describe(text)
