@@ -279,7 +279,8 @@ function Install-BreakpatchCi {
     $lines = Get-Content -LiteralPath (Join-Path $files $script:reqs)
     $wheels = @($lines | ForEach-Object { if ($_ -match '^\./([A-Za-z0-9][A-Za-z0-9._-]*\.whl) --hash=sha256:[0-9a-f]{64}$') { $Matches[1] } })
     $local = @($lines | Where-Object { $_ -match '^[^#A-Za-z0-9 ]' })
-    $urls = @($lines | Where-Object { $_ -match '://|@ ' })
+    # Comment lines don't count (the file's header names the install command's own address).
+    $urls = @($lines | Where-Object { $_ -notmatch '^\s*#' -and $_ -match '://|@ ' })
     if ($wheels.Count -ne 2 -or $local.Count -ne 2 -or $urls.Count -ne 0 -or
         -not ($wheels | Where-Object { $_ -like 'breakpatch_engine-*' }) -or -not ($wheels | Where-Object { $_ -like 'breakpatch_team_engine-*' })) {
       Fail "Breakpatch $version's breakpatch-ci files can't be read, so nothing was installed. Write to support@breakpatch.dev."

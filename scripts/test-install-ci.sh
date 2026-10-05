@@ -157,7 +157,9 @@ def sha(p):
     return hashlib.sha256(open(p, "rb").read()).hexdigest()
 
 for platform in ("linux-x86_64", "linux-arm64", "macos-arm64", "windows-x86_64"):
-    lines = ["# breakpatch-ci on " + platform, "# a comment with ./not-a-wheel.whl in it"]
+    # As scripts/ci-requirements.py writes it: its header names the install command's address.
+    lines = ["# breakpatch-ci on " + platform, "# a comment with ./not-a-wheel.whl in it",
+             "# Installed by https://breakpatch.dev/install-ci with:"]
     if "url" in opts:
         lines.append("evil @ https://example.com/evil-1.0-py3-none-any.whl --hash=sha256:" + "0" * 64)
     lines.append(f"./{os.path.basename(engine)} --hash=sha256:{sha(engine)}")

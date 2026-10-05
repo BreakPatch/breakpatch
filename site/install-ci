@@ -526,7 +526,7 @@ download_files() {
   local_lines=$(LC_ALL=C grep -c '^[^#A-Za-z0-9 ]' "$tmp/files/$reqs" || true)
   if ! grep -q '^breakpatch_engine-' "$tmp/wheels.txt" || ! grep -q '^breakpatch_team_engine-' "$tmp/wheels.txt" \
     || [ "$(wc -l <"$tmp/wheels.txt" | tr -d ' ')" -ne 2 ] || [ "$local_lines" -ne 2 ] \
-    || LC_ALL=C grep -q '://\|@ ' "$tmp/files/$reqs"; then
+    || LC_ALL=C grep -v '^[[:space:]]*#' "$tmp/files/$reqs" | LC_ALL=C grep -q '://\|@ '; then
     fail "Breakpatch $version's breakpatch-ci files can't be read, so nothing was installed. Write to support@breakpatch.dev."
   fi
   while IFS= read -r wheel; do
