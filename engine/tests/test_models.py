@@ -184,6 +184,42 @@ def test_the_gguf_check_refuses_other_files(tmp_path, gtable, monkeypatch, chang
     assert why in str(e.value)
 
 
+def test_gguf_hashes_are_remembered_until_a_file_changes(tmp_path, gtable, monkeypatch):
+    """llama-server starts again after every idle stop: an unchanged ~3 GB model isn't hashed again."""
+    import os
+    monkeypatch.setattr(models, "_HASHED", {})
+    d = ginstalled(tmp_path, gtable)
+    hashed = []
+    real = models.sha256_of
+    monkeypatch.setattr(models, "sha256_of", lambda p: (hashed.append(Path(p).name), real(p))[1])
+    models.check_model_dir(d)
+    assert sorted(hashed) == ["m.gguf", "mm.gguf"]
+    hashed.clear()
+    models.check_model_dir(d)
+    assert hashed == []                                        # same size and mtime: not read again
+    # Changed in place, same size: the new mtime means it's hashed, and refused.
+    body = bytearray((d / "m.gguf").read_bytes())
+    body[-1] ^= 1
+    (d / "m.gguf").write_bytes(bytes(body))
+    st = (d / "m.gguf").stat()
+    os.utime(d / "m.gguf", ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))
+    with pytest.raises(models.Refused):
+        models.check_model_dir(d)
+    assert hashed == ["m.gguf"]
+
+
+def test_mlx_hashes_are_checked_every_time_as_before(tmp_path, table, monkeypatch):
+    monkeypatch.setattr(models, "_HASHED", {})
+    d = installed(tmp_path, table)
+    hashed = []
+    real = models.sha256_of
+    monkeypatch.setattr(models, "sha256_of", lambda p: (hashed.append(1), real(p))[1])
+    models.check_model_dir(d)
+    first = len(hashed)
+    models.check_model_dir(d)
+    assert first and len(hashed) == 2 * first and models._HASHED == {}
+
+
 def test_the_architecture_is_found_after_other_metadata(tmp_path):
     import struct
     arr = struct.pack("<IQ", 8, 2) + b"".join(struct.pack("<Q", len(w)) + w for w in (b"a", b"bc"))

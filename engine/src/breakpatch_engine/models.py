@@ -320,10 +320,38 @@ def check_gguf_dir(folder: Path, m: Model) -> None:
             raise Refused(f"{name} is a {got!r} model, not {want!r}")
 
 
+# GGUF files whose SHA-256 matched, by (path, device, inode, size, mtime): llama-server starts
+# again after every idle stop, and rehashing ~3 GB at each start would make it slow. A file that
+# changes gets a new mtime (or size), so it's hashed again. Successes only.
+_HASHED: dict[tuple, str] = {}
+
+
+def _file_key(path: Path) -> tuple | None:
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (str(path.resolve()), st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+
+
+def _matches(path: Path, want: str, cache: bool) -> bool:
+    if not path.is_file():
+        return False
+    key = _file_key(path) if cache else None
+    if key is not None and _HASHED.get(key) == want:
+        return True
+    if sha256_of(path) != want:
+        return False
+    if key is not None and _file_key(path) == key:       # unchanged while it was read
+        _HASHED[key] = want
+    return True
+
+
 def check_model_dir(folder: Path) -> None:
     """Load-time check of an installed model: it's one from the table, has no code files, no config
     naming code, and (once pinned) every listed file matches its shipped SHA-256. GGUF models are
-    also checked by check_gguf_dir. Raises Refused."""
+    also checked by check_gguf_dir, and their hashes are remembered by size and mtime (_HASHED);
+    an MLX model is hashed every time, as before. Raises Refused."""
     folder = Path(folder)
     try:
         info = json.loads((folder / MARKER).read_text())
@@ -350,7 +378,7 @@ def check_model_dir(folder: Path) -> None:
                 if not path.is_file():
                     raise Refused(f"{name} is missing")
                 continue
-            if not path.is_file() or sha256_of(path) != want:
+            if not _matches(path, want, cache=m.format == "gguf"):
                 raise Refused(f"{name} doesn't match its checksum")
 
 
