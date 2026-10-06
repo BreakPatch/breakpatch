@@ -47,6 +47,7 @@ class Files:
     def __init__(self, chunk=32 * 1024, delay=0.02):
         self.blobs: dict[str, bytes] = {}
         self.ranges: list[str] = []
+        self.refuse_ranges = False          # answer every Range request 416, as a confused server might
         self.chunk, self.delay = chunk, delay
         files = self
 
@@ -68,6 +69,12 @@ class Files:
                 if rng:
                     files.ranges.append(rng)
                     start = int(rng.split("=")[1].split("-")[0])
+                    if start >= len(body) or files.refuse_ranges:
+                        self.send_response(416)
+                        self.send_header("Content-Range", f"bytes */{len(body)}")
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
                 part = body[start:]
                 self.send_response(206 if rng else 200)
                 if rng:
@@ -229,6 +236,101 @@ def test_plain_http_only_to_this_machine_and_never_in_a_release(monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     with pytest.raises(EngineError):
         runtimes.entry("cpu", PLATFORM)
+
+
+def part_file(e: dict, backend="cpu") -> Path:
+    return (config.runtimes_dir() / runtimes.PARTIAL_DIR /
+            f"llamacpp-{e['build']}-{PLATFORM}-{backend}.{e['archive']}.part")
+
+
+async def test_a_416_on_resume_means_the_part_file_is_whole(served, monkeypatch):
+    """A download killed after its last byte but before the checks: the Range request asks for
+    bytes past the end, the server says 416, and the file is checked and unpacked as it is."""
+    body = build_archive(big=64 * 1024)
+    e = pin(monkeypatch, served, body, size=0)                 # no size to compare with first
+    part = part_file(e)
+    part.parent.mkdir(parents=True)
+    part.write_bytes(body)
+    await install.Setup(lambda e: None).install_runtime("cpu")
+    assert served.ranges == [f"bytes={len(body)}-"]
+    assert runtimes.installed_runtime()["installed"] is True and not part.exists()
+
+
+async def test_a_416_with_the_wrong_size_starts_again_from_the_first_byte(served, monkeypatch):
+    body = build_archive(big=64 * 1024)
+    e = pin(monkeypatch, served, body)
+    part = part_file(e)
+    part.parent.mkdir(parents=True)
+    part.write_bytes(b"not what the server has")
+    served.refuse_ranges = True
+    await install.Setup(lambda e: None).install_runtime("cpu")
+    assert served.ranges == ["bytes=23-"]                      # the resume, then a fresh request
+    assert runtimes.installed_runtime()["installed"] is True
+
+
+async def test_a_folder_left_half_unpacked_is_removed_at_the_next_download(served, monkeypatch):
+    import os
+    pin(monkeypatch, served, build_archive(big=1024))
+    root = config.runtimes_dir()
+    dead = root / "llamacpp-b9999-cpu.unpacking-999999999"     # no such process
+    alive = root / f"llamacpp-b9999-cpu.unpacking-{os.getppid()}"   # another download still going
+    for d in (dead, alive):
+        (d / "bin").mkdir(parents=True)
+    await install.Setup(lambda e: None).install_runtime("cpu")
+    assert not dead.exists() and alive.is_dir()
+    assert runtimes.installed_runtime()["installed"] is True
+
+
+def tar_with(kind, name: str, target: str) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as t:
+        body = b"x"
+        info = tarfile.TarInfo("bin/llama-server")
+        info.size = len(body)
+        t.addfile(info, io.BytesIO(body))
+        info = tarfile.TarInfo(name)
+        info.type, info.linkname = kind, target
+        t.addfile(info)
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("kind,target", [
+    (tarfile.LNKTYPE, "../../outside"),          # a hard link to a file outside the folder
+    (tarfile.LNKTYPE, "/etc/passwd"),            # ... by an absolute path
+    (tarfile.SYMTYPE, "/etc/passwd"),            # an absolute symbolic link
+])
+def test_links_out_of_the_folder_are_refused(tmp_path, kind, target):
+    archive = tmp_path / "a.tar.gz"
+    archive.write_bytes(tar_with(kind, "bin/link", target))
+    (tmp_path / "outside").write_text("secret")
+    with pytest.raises(runtimes.Refused):
+        runtimes.unpack(archive, tmp_path / "rt" / "dest", "tar.gz")
+    assert not (tmp_path / "rt" / "dest" / "bin" / "link").exists()
+
+
+def test_a_symbolic_link_in_a_zip_is_refused(tmp_path):
+    archive = tmp_path / "a.zip"
+    with zipfile.ZipFile(archive, "w") as z:
+        z.writestr("llama-server.exe", b"MZ")
+        info = zipfile.ZipInfo("escape")
+        info.external_attr = (0o120777 << 16)           # S_IFLNK: a symbolic link, as Info-ZIP stores it
+        z.writestr(info, "../../outside")
+    with pytest.raises(runtimes.Refused) as e:
+        runtimes.unpack(archive, tmp_path / "dest", "zip")
+    assert "not a plain file" in str(e.value)
+    assert not (tmp_path / "dest" / "escape").exists()
+
+
+def test_an_entry_without_a_size_isnt_pinned(monkeypatch):
+    good = {"build": "b1234", "url": "https://example.com/llama.tar.gz", "sha256": "a" * 64, "size": 10,
+            "exe": "bin/llama-server", "archive": "tar.gz"}
+    assert runtimes.pinned(good)
+    for size in (0, None, "", -5, "x"):
+        assert not runtimes.pinned({**good, "size": size})
+    monkeypatch.setattr(runtimes, "RUNTIMES", {(PLATFORM, "cpu"): {**good, "size": 0}})
+    assert runtimes.release_problems() and runtimes.main(["--check-release"]) == 1
+    monkeypatch.setattr(runtimes, "RUNTIMES", {(PLATFORM, "cpu"): good})
+    assert runtimes.release_problems() == [] and runtimes.main(["--check-release"]) == 0
 
 
 def test_the_shipped_table_is_marked_todo_until_the_owner_pins_it():

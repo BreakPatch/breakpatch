@@ -10,13 +10,17 @@ here. There's no development exception: an entry without a SHA-256 can't be inst
   release's) is ignored, and removed once the pinned one is in.
 - The download is resumable and pausable like the model's: a child process (`_runtime_download`)
   writes `<runtimes>/.partial/<archive>.part` and continues it with an HTTP Range request; a pause
-  stops the child. The archive is checked against its SHA-256 before anything is unpacked.
+  stops the child (SIGTERM, which it turns into a normal exit, so a half-unpacked folder goes). A
+  416 answer to the Range request means the part file is already whole: it goes straight to the
+  checks, or, when its size isn't the pinned one, starts again from the first byte. The archive is
+  checked against its SHA-256 before anything is unpacked. Unpacking happens in
+  `llamacpp-*.unpacking-<pid>`; one left by a download that was killed is removed by the next.
 - Archives are `.tar.gz` (Linux) or `.zip` (Windows, later). Members must stay inside the folder:
   no absolute paths, no `..`, no links that point outside, no device files (tarfile's `data`
   filter); set-uid bits are dropped.
 
 `python -m breakpatch_engine.runtimes --check-release` exits 1 while an available entry has a
-placeholder URL or no SHA-256. TODO(owner): build or mirror the binaries (plan §2.3: our own Linux
+placeholder URL, no SHA-256 or no size (scripts/build-release.sh runs it off macOS). TODO(owner): build or mirror the binaries (plan §2.3: our own Linux
 builds in the manylinux_2_28 container with GGML_BACKEND_DL=ON GGML_CPU_ALL_VARIANTS=ON) and fill
 in BUILD, each `url`, `sha256` and `size`, then check `LlamaServer.command`'s flags against that
 build's `llama-server --help`.
@@ -28,6 +32,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 import stat
 import sys
 import tarfile
@@ -83,8 +88,13 @@ def platform_id() -> str:
 
 
 def pinned(e: dict) -> bool:
+    """A real https URL, a SHA-256 and the archive's size in bytes."""
+    try:
+        size = int(e.get("size") or 0)
+    except (TypeError, ValueError):
+        size = 0
     return bool(SHA256.match(e.get("sha256") or "")) and str(e.get("url") or "").startswith("https://") \
-        and ".invalid/" not in str(e.get("url"))
+        and ".invalid/" not in str(e.get("url")) and size > 0
 
 
 def entry(backend: str = "cpu", platform: str | None = None) -> dict:
@@ -142,7 +152,7 @@ def release_problems() -> list[str]:
         if e.get("later"):
             continue
         if not pinned(e):
-            out.append(f"{platform} {backend}: no real URL and SHA-256 yet (TODO in runtimes.py)")
+            out.append(f"{platform} {backend}: no real URL, SHA-256 and size yet (TODO in runtimes.py)")
         if not re.fullmatch(r"b\d+", str(e.get("build"))) or e.get("build") == "b0000":
             out.append(f"{platform} {backend}: build {e.get('build')!r} isn't a llama.cpp build number")
     return out
@@ -189,6 +199,25 @@ def unpack(archive: Path, dest: Path, kind: str) -> None:
 
 # ---------------------------------------------------------------- download child process
 
+UNPACKING = ".unpacking-"
+
+
+def remove_stale_unpacking(root: Path) -> None:
+    """Removes `llamacpp-*.unpacking-<pid>` folders left by a download that was killed while it
+    unpacked. One whose process is still running (another engine's download, POSIX) stays."""
+    for d in root.glob(f"llamacpp-*{UNPACKING}*"):
+        pid = d.name.rsplit(UNPACKING, 1)[-1]
+        if pid.isdigit() and int(pid) != os.getpid() and os.name == "posix":
+            try:
+                os.kill(int(pid), 0)
+                continue                                # still running
+            except ProcessLookupError:
+                pass
+            except OSError:                             # someone else's process: not ours to judge
+                continue
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def download_main(spec: str) -> int:
     """Runs in a child process (`_runtime_download`), so a pause can simply stop it. `spec` is the
     entry as JSON (url, sha256, size, exe, archive, build, backend, platform). Prints JSON lines:
@@ -214,6 +243,30 @@ def download_main(spec: str) -> int:
     final = runtime_dir(e)
     part = root / PARTIAL_DIR / f"llamacpp-{e['build']}-{e.get('platform')}-{e['backend']}.{e.get('archive') or 'tar.gz'}.part"
     proxy = net.proxy_for(url)
+    # A pause stops this process with SIGTERM: as a normal exit, so the `finally` below removes a
+    # half-unpacked folder (the part file stays, to resume).
+    try:
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    except ValueError:                                  # not the main thread (a test calling it directly)
+        pass
+    remove_stale_unpacking(root)
+
+    def fetch(have: int) -> None:
+        handlers = [urllib.request.ProxyHandler({"https": proxy, "http": proxy} if proxy else {})]
+        if url.startswith("https://"):
+            handlers.append(urllib.request.HTTPSHandler(context=net.ssl_context()))
+        opener = urllib.request.build_opener(*handlers)
+        req = urllib.request.Request(url, headers={"User-Agent": "Breakpatch",
+                                                   **({"Range": f"bytes={have}-"} if have else {})})
+        with opener.open(req, timeout=60) as r:
+            mode = "ab" if have and r.status == 206 else "wb"     # the server ignored the Range: start over
+            with open(part, mode) as f:
+                while True:
+                    chunk = r.read(256 * 1024)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+
     try:
         part.parent.mkdir(parents=True, exist_ok=True)
         say({"total": size or None})
@@ -222,20 +275,17 @@ def download_main(spec: str) -> int:
             part.unlink()
             have = 0
         if not size or have < size:
-            handlers = [urllib.request.ProxyHandler({"https": proxy, "http": proxy} if proxy else {})]
-            if url.startswith("https://"):
-                handlers.append(urllib.request.HTTPSHandler(context=net.ssl_context()))
-            opener = urllib.request.build_opener(*handlers)
-            req = urllib.request.Request(url, headers={"User-Agent": "Breakpatch",
-                                                       **({"Range": f"bytes={have}-"} if have else {})})
-            with opener.open(req, timeout=60) as r:
-                mode = "ab" if have and r.status == 206 else "wb"     # the server ignored the Range: start over
-                with open(part, mode) as f:
-                    while True:
-                        chunk = r.read(256 * 1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
+            try:
+                fetch(have)
+            except urllib.error.HTTPError as err:
+                # 416 to a resumed request: the server has nothing after `have` bytes, so the part
+                # file is whole. Checked below; with a size that isn't the pinned one, start over.
+                if err.code != 416 or not have:
+                    raise
+                log.info("runtime download: 416 at %s bytes: the part file is complete", have)
+                if size and have != size:
+                    part.unlink(missing_ok=True)
+                    fetch(0)
         say({"verifying": True})
         got = part.stat().st_size
         if size and got != size:
@@ -244,7 +294,7 @@ def download_main(spec: str) -> int:
         if sha256_of(part) != want:
             part.unlink(missing_ok=True)
             raise RuntimeError("checksum mismatch")
-        tmp = final.with_name(final.name + f".unpacking-{os.getpid()}")
+        tmp = final.with_name(final.name + f"{UNPACKING}{os.getpid()}")
         shutil.rmtree(tmp, ignore_errors=True)
         try:
             unpack(part, tmp, str(e.get("archive") or "tar.gz"))
