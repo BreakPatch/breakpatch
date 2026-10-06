@@ -263,73 +263,16 @@ class Setup:
         if t.running:
             raise EngineError("busy", "The AI assistant is already downloading.")
         t.running, t.paused = True, False
-        if not m.pinned:
-            log.warning("%s isn't pinned to a commit with file hashes yet (models.py TODO): development "
-                        "download, checked against the Hub's own hashes only", repo)
-        dest = model_path(repo)
-        dest.mkdir(parents=True, exist_ok=True)
-        cmd = self_command() + ["_download", "--repo", repo, "--revision", m.revision, "--dir", str(dest),
-                                "--files", json.dumps(m.files)]
-        env = hub_env(os.environ)
-        total = 0
-        result: dict | None = None
-        error: dict | None = None
         try:
-            t.proc = await asyncio.create_subprocess_exec(*cmd, env=env, stdout=asyncio.subprocess.PIPE,
-                                                          stderr=asyncio.subprocess.PIPE)
-
-            async def read_stdout():
-                nonlocal total, result, error
-                async for raw in t.proc.stdout:
-                    try:
-                        msg = json.loads(raw)
-                    except ValueError:
-                        continue
-                    if "total" in msg:
-                        total = int(msg["total"])
-                    elif "verifying" in msg:
-                        self.emit({"task": "model", "state": "busy", "doneBytes": total, "totalBytes": total,
-                                   "etaSeconds": 0, "message": "Checking the download"})
-                    elif "done" in msg:
-                        result = msg
-                    elif "error" in msg:
-                        error = msg
-                    elif "warning" in msg:
-                        log.warning("download: %s", msg["warning"])
-
-            async def drain_stderr():
-                async for raw in t.proc.stderr:
-                    log.info("download: %s", raw.decode(errors="replace").rstrip())
-
-            async def ticker():
-                samples: list[tuple[float, int]] = []
-                while True:
-                    await asyncio.sleep(0.5)
-                    done = dir_bytes(dest)
-                    now = time.monotonic()
-                    samples = [s for s in samples if now - s[0] < 10] + [(now, done)]
-                    eta = None
-                    if total and len(samples) > 1 and samples[-1][1] > samples[0][1]:
-                        rate = (samples[-1][1] - samples[0][1]) / (samples[-1][0] - samples[0][0])
-                        eta = max(0, round((total - done) / rate))
-                    self.emit({"task": "model", "state": "busy", "doneBytes": min(done, total) if total else done,
-                               "totalBytes": total or None, "etaSeconds": eta})
-
-            tick = asyncio.create_task(ticker())
-            try:
-                await asyncio.gather(read_stdout(), drain_stderr())
-                code = await t.proc.wait()
-            finally:
-                tick.cancel()
-            if t.paused:
-                self.emit({"task": "model", "state": "paused", "doneBytes": dir_bytes(dest), "totalBytes": total or None})
-                raise EngineError("stopped", "The download is paused.")
-            if code != 0 or result is None:
-                msg = (error or {}).get("error", "The download stopped.")
-                kind = (error or {}).get("kind", "network")
-                self.emit({"task": "model", "state": "failed", "message": msg})
-                raise EngineError(kind if kind in ("network", "not_found", "bad_request") else "network",
-                                  msg, (error or {}).get("details"))
+            if not m.pinned:
+                log.warning("%s isn't pinned to a commit with file hashes yet (models.py TODO): development "
+                            "download, checked against the Hub's own hashes only", repo)
+            dest = model_path(repo)
+            dest.mkdir(parents=True, exist_ok=True)
+            cmd = self_command() + ["_download", "--repo", repo, "--revision", m.revision, "--dir", str(dest),
+                                    "--files", json.dumps(m.files)]
+            result = await self._run_download_child("model", cmd, env=hub_env(os.environ),
+                                                    measure=lambda: dir_bytes(dest), total=0)
             size = int(result.get("sizeBytes", 0))
             write_marker(dest, repo, m.revision, result.get("commit"), size, m.format)
             self.emit({"task": "model", "state": "done", "doneBytes": size, "totalBytes": size, "etaSeconds": 0})
@@ -348,55 +291,70 @@ class Setup:
         if t.running:
             raise EngineError("busy", "The AI runtime is already downloading.")
         t.running, t.paused = True, False
-        total = int(e.get("size") or 0) or None
-        part_dir = config.runtimes_dir() / runtimes.PARTIAL_DIR
-        cmd = self_command() + ["_runtime_download", "--spec", json.dumps(e)]
-        result: dict | None = None
-        error: dict | None = None
         try:
-            t.proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
-                                                          stderr=asyncio.subprocess.PIPE)
-
-            async def read_stdout():
-                nonlocal total, result, error
-                async for raw in t.proc.stdout:
-                    try:
-                        msg = json.loads(raw)
-                    except ValueError:
-                        continue
-                    if "total" in msg:
-                        total = msg["total"] or total
-                    elif "verifying" in msg:
-                        self.emit({"task": "runtime", "state": "busy", "doneBytes": total, "totalBytes": total,
-                                   "etaSeconds": 0, "message": "Checking the download"})
-                    elif "done" in msg:
-                        result = msg
-                    elif "error" in msg:
-                        error = msg
-
-            async def drain_stderr():
-                async for raw in t.proc.stderr:
-                    log.info("runtime download: %s", raw.decode(errors="replace").rstrip())
-
-            tick = asyncio.create_task(self._ticker("runtime", lambda: dir_bytes(part_dir), lambda: total))
-            try:
-                await asyncio.gather(read_stdout(), drain_stderr())
-                code = await t.proc.wait()
-            finally:
-                tick.cancel()
-            if t.paused:
-                self.emit({"task": "runtime", "state": "paused", "doneBytes": dir_bytes(part_dir), "totalBytes": total})
-                raise EngineError("stopped", "The download is paused.")
-            if code != 0 or result is None:
-                msg = (error or {}).get("error", "The download stopped.")
-                kind = (error or {}).get("kind", "network")
-                self.emit({"task": "runtime", "state": "failed", "message": msg})
-                raise EngineError(kind if kind in ("network", "not_found", "bad_request") else "network",
-                                  msg, (error or {}).get("details"))
+            part_dir = config.runtimes_dir() / runtimes.PARTIAL_DIR
+            cmd = self_command() + ["_runtime_download", "--spec", json.dumps(e)]
+            total = int(e.get("size") or 0) or None
+            result = await self._run_download_child("runtime", cmd, measure=lambda: dir_bytes(part_dir), total=total)
+            total = result.get("_total") or total
             self.emit({"task": "runtime", "state": "done", "doneBytes": total, "totalBytes": total, "etaSeconds": 0})
             return {"path": result["done"], "build": e["build"], "backend": e["backend"]}
         finally:
             t.running, t.proc = False, None
+
+    async def _run_download_child(self, task: str, cmd: list[str], *, measure: Callable[[], int],
+                                  total: int | None, env: dict | None = None) -> dict:
+        """Runs a download child process (`_download`, `_runtime_download`) for `task` and turns its
+        JSON lines into setup.progress events: {"total"}, {"verifying"}, {"warning"}, then {"done"}
+        or {"error", "details", "kind"}. Returns the "done" line (with `_total`, the total it said).
+        A pause (Setup.pause stops the child) raises `stopped`; a failure, the child's error.
+        The caller sends the "done" event, once it has recorded what was installed."""
+        t = self.tasks[task]
+        result: dict | None = None
+        error: dict | None = None
+        t.proc = await asyncio.create_subprocess_exec(*cmd, env=env, stdout=asyncio.subprocess.PIPE,
+                                                      stderr=asyncio.subprocess.PIPE)
+        proc = t.proc
+
+        async def read_stdout():
+            nonlocal total, result, error
+            async for raw in proc.stdout:
+                try:
+                    msg = json.loads(raw)
+                except ValueError:
+                    continue
+                if "total" in msg:
+                    total = int(msg["total"] or 0) or total
+                elif "verifying" in msg:
+                    self.emit({"task": task, "state": "busy", "doneBytes": total, "totalBytes": total,
+                               "etaSeconds": 0, "message": "Checking the download"})
+                elif "done" in msg:
+                    result = msg
+                elif "error" in msg:
+                    error = msg
+                elif "warning" in msg:
+                    log.warning("%s download: %s", task, msg["warning"])
+
+        async def drain_stderr():
+            async for raw in proc.stderr:
+                log.info("%s download: %s", task, raw.decode(errors="replace").rstrip())
+
+        tick = asyncio.create_task(self._ticker(task, measure, lambda: total))
+        try:
+            await asyncio.gather(read_stdout(), drain_stderr())
+            code = await proc.wait()
+        finally:
+            tick.cancel()
+        if t.paused:
+            self.emit({"task": task, "state": "paused", "doneBytes": measure(), "totalBytes": total or None})
+            raise EngineError("stopped", "The download is paused.")
+        if code != 0 or result is None:
+            msg = (error or {}).get("error", "The download stopped.")
+            kind = (error or {}).get("kind", "network")
+            self.emit({"task": task, "state": "failed", "message": msg})
+            raise EngineError(kind if kind in ("network", "not_found", "bad_request") else "network",
+                              msg, (error or {}).get("details"))
+        return {**result, "_total": total}
 
     async def _ticker(self, task: str, measure: Callable[[], int], total: Callable[[], int | None]) -> None:
         """setup.progress every half second while a download child runs: bytes so far and an ETA
