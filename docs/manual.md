@@ -92,7 +92,7 @@ You need 64-bit Linux on an Intel or AMD processor (x86_64), with glibc 2.35 or 
 curl -fsSL https://breakpatch.dev/install | sh
 ```
 
-It downloads the AppImage from [GitHub Releases](https://github.com/BreakPatch/breakpatch/releases) and checks it against the release's checksums. If you have `minisign`, it also checks the signature with Breakpatch's update key. It puts Breakpatch in `~/.local/bin/breakpatch` and adds it to your apps menu. It doesn't need your password, and it refuses to run with `sudo`.
+It downloads the AppImage from [GitHub Releases](https://github.com/BreakPatch/breakpatch/releases) and checks it against the release's checksums. If you have `gpg`, it also checks the checksums are signed by Breakpatch's release key, which is built into the install command; until that key is published, it says plainly that it couldn't check who published the download. If you have `minisign`, it also checks the signature with Breakpatch's update key. Nothing it downloads runs before those checks pass. It puts Breakpatch in `~/.local/bin/breakpatch` and adds it to your apps menu. It doesn't need your password, and it refuses to run with `sudo`.
 
 **FUSE.** An AppImage needs FUSE to start: the `fusermount3` command, from the `fuse3` package. Most desktops have it. If yours doesn't, the install command says so. Install it with `sudo apt install fuse3` (Ubuntu, Debian) or `sudo dnf install fuse3` (Fedora), then open Breakpatch.
 
@@ -109,7 +109,7 @@ It downloads the AppImage from [GitHub Releases](https://github.com/BreakPatch/b
 - The AI assistant doesn't run on Linux yet. It needs Apple Silicon for now.
 - Breakpatch's data and the test browser are in `~/.local/share/Breakpatch`.
 
-**Uninstalling.** `curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall` removes the AppImage and the apps menu entry. Your tests stay in their folder, saved secrets stay in your keyring, and Breakpatch's data stays in `~/.local/share/Breakpatch` and `~/.local/share/dev.breakpatch.app`. For the `.deb`, use `sudo apt remove breakpatch`.
+**Uninstalling.** `curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall` removes the AppImage, the apps menu entry and the link and workspace file defaults it set for your account. Your tests stay in their folder, saved secrets stay in your keyring, and Breakpatch's data stays in `~/.local/share/Breakpatch` and `~/.local/share/dev.breakpatch.app`. For the `.deb`, use `sudo apt remove breakpatch`.
 
 
 ## Start on this Mac

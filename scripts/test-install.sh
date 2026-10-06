@@ -87,11 +87,13 @@ EOF
 }
 
 # $1 file, $2 version: a stand-in for the Linux AppImage. Started, it logs "started <version>";
-# --appimage-extract PATTERN unpacks the icon into ./squashfs-root, as the real one does.
+# --appimage-extract PATTERN unpacks the icon into ./squashfs-root, as the real one does, and logs
+# "extracted <version>" (the installer runs it only once every check has passed).
 make_appimage() {
   cat > "$1" <<EOF
 #!/bin/sh
 if [ "\$1" = --appimage-extract ]; then
+  echo "extracted $2" >> "\$FAKE_STATE/log"
   mkdir -p squashfs-root/usr/share/icons/hicolor/128x128/apps
   echo "icon $2" > squashfs-root/usr/share/icons/hicolor/128x128/apps/breakpatch.png
   exit 0
@@ -100,17 +102,33 @@ echo "started $2 \$*" >> "\$FAKE_STATE/log"
 EOF
 }
 
+# The release signing key (SHA256SUMS.asc), a throwaway one for these tests, and another key
+# that isn't Breakpatch's. site/install has a placeholder; $work/install-gpg is a copy with this
+# key built in.
+gpg_home="$work/gpg"
+mkdir -m 700 "$gpg_home" "$gpg_home/other"
+gpg_quiet() { gpg --batch --quiet --no-tty "$@" >/dev/null 2>&1; }
+GNUPGHOME="$gpg_home" gpg_quiet --passphrase '' --quick-gen-key 'Breakpatch release (test) <release@example.com>' ed25519 sign never
+GNUPGHOME="$gpg_home/other" gpg_quiet --passphrase '' --quick-gen-key 'Someone else <x@example.com>' ed25519 sign never
+gpg_fpr=$(GNUPGHOME="$gpg_home" gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')
+GNUPGHOME="$gpg_home" gpg --batch --armor --export "$gpg_fpr" > "$work/release-key.asc"
+# shellcheck disable=SC2329  # run by the EXIT trap
+stop_gpg() { GNUPGHOME="$gpg_home" gpgconf --kill all 2>/dev/null || true; GNUPGHOME="$gpg_home/other" gpgconf --kill all 2>/dev/null || true; }
+trap 'stop_gpg; cleanup' EXIT
+
 # $1 API root name, $2 version, then options: latest (also releases/latest), bad-sum, no-sums,
 # foreign (the files are listed on another host), dotdot (listed with ../ in their address),
-# prerelease, draft, mac-only (no Linux AppImage).
+# prerelease, draft, mac-only (no Linux AppImage), signed (SHA256SUMS.asc by the release key),
+# signed-by-other (by another key).
 make_release() {
-  local api=$1 version=$2 tag="v$2" latest=0 badsum=0 nosums=0 pre=0 draft=0 linux=1 dl stage url
+  local api=$1 version=$2 tag="v$2" latest=0 badsum=0 nosums=0 pre=0 draft=0 linux=1 signer="" dl stage url
   shift 2
   url="$base/$api/download/$tag"
   for o in "$@"; do
     case "$o" in
       latest) latest=1 ;; bad-sum) badsum=1 ;; no-sums) nosums=1 ;; prerelease) pre=1 ;; draft) draft=1 ;;
       mac-only) linux=0 ;;
+      signed) signer=$gpg_home ;; signed-by-other) signer=$gpg_home/other ;;
       foreign) url="https://localhost:$port/$api/download/$tag" ;;
       dotdot) url="$base/$api/download/$tag/../../../good/download/v1.1.0" ;;
     esac
@@ -134,6 +152,9 @@ make_release() {
     (cd "$dl" && shasum -a 256 -- * > SHA256SUMS)   # expanded before SHA256SUMS exists
     if [ "$badsum" -eq 1 ]; then
       sed -i 's/^[0-9a-f]\{64\}\(  Breakpatch_\(aarch64.app.tar.gz\|amd64.AppImage\)\)$/0000000000000000000000000000000000000000000000000000000000000000\1/' "$dl/SHA256SUMS"
+    fi
+    if [ -n "$signer" ]; then
+      GNUPGHOME="$signer" gpg --batch --quiet --yes --armor --detach-sign --output "$dl/SHA256SUMS.asc" "$dl/SHA256SUMS"
     fi
   fi
   # The latest release as one line (like api.github.com), the tagged one indented: the
@@ -174,6 +195,9 @@ make_release nosums 1.3.0 latest no-sums
 make_release foreign 1.4.0 latest foreign
 make_release dotdot 1.5.0 latest dotdot
 make_release maconly 1.6.0 latest mac-only
+make_release signed 1.7.0 latest signed
+make_release badsig 1.7.0 latest signed-by-other
+make_release signedbadsum 1.7.0 latest signed bad-sum
 mkdir -p "$srv/empty/releases"
 echo "[]" > "$srv/empty/releases/list.json"
 
@@ -533,6 +557,18 @@ nofuse_path() {
   printf '%s' "$d"
 }
 
+# A PATH without gpg.
+nogpg_path() {
+  local d="$c/nogpg" f n
+  mkdir -p "$d"
+  for f in "$shims"/* /usr/local/bin/* /usr/bin/* /bin/*; do
+    n=$(basename "$f")
+    case "$n" in gpg | gpg2) continue ;; esac
+    [ -e "$d/$n" ] || ln -s "$f" "$d/$n"
+  done
+  printf '%s' "$d"
+}
+
 # A dummy app installed by hand, as an earlier install would have left it.
 preinstall() { make_app "$1" "$2"; echo "old" > "$1/Breakpatch.app/Contents/old-file"; }
 
@@ -550,6 +586,20 @@ if grep -qx "MINISIGN_KEY=$want_key" "$script"; then ok "the minisign key is the
 if grep -qF '$$' "$script"; then bad "site/install makes a name from the process id (guessable)"; else ok "no guessable staging names"; fi
 # shellcheck disable=SC2016
 if grep -qF 'mktemp -d "$dest/' "$script"; then ok "staging folders come from mktemp"; else bad "staging folders don't come from mktemp"; fi
+
+# A copy of the installer with the test release key built in (the real one has a placeholder).
+python3 - "$script" "$work/install-gpg" "$gpg_fpr" "$work/release-key.asc" <<'PY'
+import re, sys
+src, dst, fpr, key = sys.argv[1:]
+s = open(src).read()
+s, n1 = re.subn(r"(?m)^GPG_FINGERPRINT=.*$", "GPG_FINGERPRINT=" + fpr, s)
+s, n2 = re.subn(r"(?m)^GPG_PUBLIC_KEY=''$", lambda m: "GPG_PUBLIC_KEY='" + open(key).read().strip() + "'", s)
+assert n1 == n2 == 1, (n1, n2)
+open(dst, "w").write(s)
+PY
+if grep -qx "GPG_FINGERPRINT=TODO-owner" "$script"; then ok "the release key is a placeholder (TODO(owner)), and the installer says so"
+elif grep -qx "GPG_FINGERPRINT=[0-9A-F]\{40\}" "$script"; then ok "the release key's fingerprint is 40 hex digits"
+else bad "GPG_FINGERPRINT in site/install is neither the placeholder nor a fingerprint"; fi
 
 # shellcheck disable=SC2016  # the literal ${…} in the script
 want_glibc=$(sed -n 's/^glibc_max=${BP_GLIBC_MAX:-\(.*\)}$/\1/p' "$repo/scripts/linux-release-files.sh")
@@ -995,11 +1045,58 @@ for sh_name in "sh" "bash --posix"; do
 
   new_case linux-bad-checksum
   run_linux BREAKPATCH_VERSION=1.0.0
+  : > "$c/state/log"
   run_linux BREAKPATCH_API="$base/bad" BREAKPATCH_DOWNLOADS="$base/bad/download/"
   expect_code 1
   expect_out "The download doesn't match its checksum, so it wasn't installed."
+  expect_no_log "extracted"                      # the download was never run
   expect_linux_app 1.0.0
   expect_linux_clean
+
+  # ---- who published it: SHA256SUMS.asc, with gpg and the release key built in
+
+  new_case linux-publisher-placeholder
+  run_linux
+  expect_code 0
+  expect_out "Breakpatch's publisher wasn't checked: this installer has no release signing key yet."
+  expect_linux_app 1.1.0
+
+  new_case linux-publisher-checked
+  script="$work/install-gpg" run_linux BREAKPATCH_API="$base/signed" BREAKPATCH_DOWNLOADS="$base/signed/download/"
+  expect_code 0
+  expect_out "The checksums are signed by Breakpatch's release key ($gpg_fpr)."
+  expect_no_out "publisher wasn't checked"
+  expect_linux_app 1.7.0
+  expect_log "extracted 1.7.0"
+  expect_linux_clean
+
+  new_case linux-publisher-someone-else
+  script="$work/install-gpg" run_linux BREAKPATCH_API="$base/badsig" BREAKPATCH_DOWNLOADS="$base/badsig/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.7.0's checksums aren't signed by Breakpatch's release key, so nothing was installed."
+  expect_no_log "extracted"
+  expect_no_linux_app
+  expect_linux_clean
+
+  new_case linux-publisher-unsigned-release
+  script="$work/install-gpg" run_linux
+  expect_code 1
+  expect_out "Breakpatch 1.1.0's checksums aren't signed (it has no SHA256SUMS.asc), so nothing was installed."
+  expect_no_log "extracted"
+  expect_no_linux_app
+
+  new_case linux-publisher-signed-but-changed
+  script="$work/install-gpg" run_linux BREAKPATCH_API="$base/signedbadsum" BREAKPATCH_DOWNLOADS="$base/signedbadsum/download/"
+  expect_code 1
+  expect_out "The download doesn't match its checksum, so it wasn't installed."
+  expect_no_log "extracted"
+  expect_no_linux_app
+
+  new_case linux-publisher-without-gpg
+  script="$work/install-gpg" run_linux BREAKPATCH_API="$base/signed" BREAKPATCH_DOWNLOADS="$base/signed/download/" PATH="$(nogpg_path)"
+  expect_code 0
+  expect_out "Install gpg to also check the checksums are signed by Breakpatch's release key."
+  expect_linux_app 1.7.0
 
   new_case linux-release-without-linux
   run_linux BREAKPATCH_API="$base/maconly" BREAKPATCH_DOWNLOADS="$base/maconly/download/"
@@ -1057,6 +1154,12 @@ for sh_name in "sh" "bash --posix"; do
   echo x > "$c/home/.local/share/mime/packages/breakpatch.xml"
   echo x > "$c/home/.local/share/applications/breakpatch-handler.desktop"
   echo model > "$c/home/.local/share/Breakpatch/weights"
+  # The defaults the app set with xdg-mime, among another app's.
+  mkdir -p "$c/home/.config"
+  printf '%s\n' '[Default Applications]' 'text/html=firefox.desktop' \
+    'x-scheme-handler/breakpatch=breakpatch-handler.desktop' 'application/x-breakpatch-workspace=breakpatch-handler.desktop;' \
+    '' '[Added Associations]' 'application/x-breakpatch-workspace=other.desktop;breakpatch-handler.desktop;' \
+    > "$c/home/.config/mimeapps.list"
   run_linux -- --uninstall
   expect_code 0
   expect_out "Removed Breakpatch from ~/.local/bin and your apps menu."
@@ -1068,6 +1171,9 @@ for sh_name in "sh" "bash --posix"; do
     if [ ! -e "$c/home/.local/share/$f" ]; then ok "removed $f"; else bad "$f is still there"; fi
   done
   expect_log "update-mime-database $c/home/.local/share/mime"
+  want_list=$'[Default Applications]\ntext/html=firefox.desktop\n\n[Added Associations]\napplication/x-breakpatch-workspace=other.desktop;'
+  if [ "$(cat "$c/home/.config/mimeapps.list")" = "$want_list" ]; then ok "the app's defaults are out of mimeapps.list, the rest is kept"
+  else bad "mimeapps.list: $(tr '\n' '|' < "$c/home/.config/mimeapps.list")"; fi
   if [ -f "$c/home/.local/share/Breakpatch/weights" ]; then ok "Breakpatch's data is kept"; else bad "Breakpatch's data was deleted"; fi
   run_linux -- --uninstall
   expect_code 0

@@ -360,6 +360,13 @@ find_release() {
     sig_url=$(asset_url "$sig_i")
     check_asset "$archive.sig" "$sig_url"
   fi
+  # Linux: the checksums' OpenPGP signature (check_publisher).
+  asc_url=""
+  asc_i=$(awk '$2 == "SHA256SUMS.asc" { print $1; exit }' "$tmp/assets.txt")
+  if [ "$linux" -eq 1 ] && [ -n "$asc_i" ]; then
+    asc_url=$(asset_url "$asc_i")
+    check_asset SHA256SUMS.asc "$asc_url"
+  fi
 }
 
 # ---------------------------------------------------------------- who made it
@@ -535,9 +542,15 @@ do_uninstall() {
 # On Linux x86_64 (glibc 2.35 or later: Ubuntu 22.04, Debian 12 and later) it installs the
 # release's AppImage, Breakpatch_amd64.AppImage, for this account: as ~/.local/bin/breakpatch,
 # with a desktop entry and an icon in ~/.local/share, so Breakpatch is in the apps menu and opens
-# breakpatch:// links and .bpworkspace files. The download is checked against SHA256SUMS and,
-# with minisign installed, against Breakpatch's update key. No sudo. When Breakpatch was
-# installed from its .deb package, the package manager owns it, so this stops and says so.
+# breakpatch:// links and .bpworkspace files. No sudo. When Breakpatch was installed from its .deb
+# package, the package manager owns it, so this stops and says so.
+#
+# Who published it: with gpg on this computer, the release's SHA256SUMS must carry a valid
+# signature (SHA256SUMS.asc, release.yml's sign-sums job) by Breakpatch's release key, whose
+# fingerprint and public key are built into this script (GPG_FINGERPRINT, GPG_PUBLIC_KEY). Then the
+# download must match SHA256SUMS, and with minisign installed, Breakpatch's update key. Only after
+# all of that is the AppImage ever run (for its icon, with --appimage-extract). While the release
+# key is a placeholder (TODO(owner) below), it says plainly that the publisher wasn't checked.
 #
 # More environment, on Linux:
 #   BREAKPATCH_BIN       the folder for the app (default ~/.local/bin)
@@ -545,6 +558,13 @@ do_uninstall() {
 
 # The glibc the Linux app is built against (Ubuntu 22.04's).
 GLIBC_MIN=2.35
+
+# The OpenPGP key that signs each release's SHA256SUMS (SHA256SUMS.asc): its fingerprint (40 hex
+# digits, upper case) and its public key (gpg --armor --export). TODO(owner): once the release
+# environment's GPG_SIGNING_KEY exists, put its fingerprint and public key here. While they're
+# placeholders, the installer says the publisher wasn't checked.
+GPG_FINGERPRINT=TODO-owner
+GPG_PUBLIC_KEY=''
 
 usage_linux() {
   cat <<'EOF'
@@ -664,7 +684,59 @@ check_fuse() {
 
 cleanup_linux() {
   if [ -n "${staged:-}" ]; then rm -f "$staged"; fi
+  if [ -n "${gnupg:-}" ] && [ -d "$gnupg" ]; then GNUPGHOME="$gnupg" gpgconf --kill all >/dev/null 2>&1 || true; fi
   if [ -n "${tmp:-}" ]; then rm -rf "$tmp"; fi
+}
+
+# check_publisher: with gpg here and the release key built in, SHA256SUMS must be signed by that
+# key (SHA256SUMS.asc), checked in a keyring of its own that holds only that key. Sets publisher:
+# checked, no-gpg or no-key (the built-in key is a placeholder).
+check_publisher() {
+  case "$GPG_FINGERPRINT" in
+    *[!0-9A-F]* | '') publisher=no-key; return 0 ;;
+  esac
+  if [ ${#GPG_FINGERPRINT} -ne 40 ] || [ -z "$GPG_PUBLIC_KEY" ]; then publisher=no-key; return 0; fi
+  if ! command -v gpg >/dev/null 2>&1; then publisher=no-gpg; return 0; fi
+  bad_sig="Breakpatch $version's checksums aren't signed by Breakpatch's release key, so nothing was installed. Tell us: https://github.com/BreakPatch/breakpatch/issues"
+  [ -n "$asc_url" ] || fail "Breakpatch $version's checksums aren't signed (it has no SHA256SUMS.asc), so nothing was installed. Tell us: https://github.com/BreakPatch/breakpatch/issues"
+  download "$asc_url" "$tmp/SHA256SUMS.asc" \
+    || fail "Couldn't download the checksums' signature. Check your connection and run this again."
+  gnupg="$tmp/g"
+  (umask 077 && mkdir "$gnupg") || fail "Couldn't make a temporary folder."
+  # Its exit code isn't the answer (2 when no gpg-agent can start, as with a long TMPDIR, though
+  # the key is imported): the keyring's contents are.
+  printf '%s\n' "$GPG_PUBLIC_KEY" | GNUPGHOME="$gnupg" gpg --batch --quiet --no-autostart --import >/dev/null 2>&1 || true
+  got=$(GNUPGHOME="$gnupg" gpg --batch --no-autostart --with-colons --list-keys 2>/dev/null | awk -F: '$1 == "fpr" { print $10; exit }')
+  [ -n "$got" ] \
+    || fail "This installer's release key can't be read, so nothing was installed. Tell us: https://github.com/BreakPatch/breakpatch/issues"
+  [ "$got" = "$GPG_FINGERPRINT" ] \
+    || fail "This installer's release key isn't the one its fingerprint names, so nothing was installed. Tell us: https://github.com/BreakPatch/breakpatch/issues"
+  GNUPGHOME="$gnupg" gpg --batch --no-autostart --status-fd 1 --verify "$tmp/SHA256SUMS.asc" "$tmp/SHA256SUMS" \
+    >"$tmp/gpg-status" 2>/dev/null || fail "$bad_sig"
+  awk -v f="$GPG_FINGERPRINT" '$1 == "[GNUPG:]" && $2 == "VALIDSIG" && ($3 == f || $NF == f) { ok = 1 } END { exit !ok }' "$tmp/gpg-status" \
+    || fail "$bad_sig"
+  publisher=checked
+}
+
+# The defaults the app set for its links and workspace files (xdg-mime default, in mimeapps.list)
+# name its handler entry, which uninstall removes: those go too. Other apps' entries stay.
+clean_mimeapps() {
+  for list in "${XDG_CONFIG_HOME:-$HOME/.config}/mimeapps.list" "$data_dir/applications/mimeapps.list"; do
+    if [ ! -f "$list" ] || ! grep -q 'breakpatch-handler\.desktop' "$list"; then continue; fi
+    LC_ALL=C awk '
+      {
+        eq = index($0, "=")
+        key = eq ? substr($0, 1, eq - 1) : ""
+        if ((key == "x-scheme-handler/breakpatch" || key == "application/x-breakpatch-workspace") && index($0, "breakpatch-handler.desktop")) {
+          n = split(substr($0, eq + 1), apps, ";"); keep = ""
+          for (i = 1; i <= n; i++) if (apps[i] != "" && apps[i] != "breakpatch-handler.desktop") keep = keep apps[i] ";"
+          if (keep != "") print key "=" keep
+          next
+        }
+        print
+      }' "$list" >"$list.breakpatch-new" && cat "$list.breakpatch-new" >"$list"
+    rm -f "$list.breakpatch-new"
+  done
 }
 
 do_install_linux() {
@@ -676,7 +748,7 @@ do_install_linux() {
   linux_paths
   check_exec_path "$dest_bin"
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/breakpatch-install.XXXXXX") || fail "Couldn't make a temporary folder."
-  staged=""
+  staged="" gnupg="" publisher=""
   trap cleanup_linux EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
@@ -689,6 +761,9 @@ do_install_linux() {
     || fail "The download stopped. Check your connection and run this again."
   download "$sums_url" "$tmp/SHA256SUMS" \
     || fail "Couldn't download the checksums. Check your connection and run this again."
+  # Nothing downloaded is run before these checks pass: the checksums' signature (with gpg), the
+  # checksum, then the update key's signature (with minisign).
+  check_publisher
   expected=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1; exit }' "$tmp/SHA256SUMS" | tr 'A-F' 'a-f')
   actual=$(sha256_of "$tmp/$archive")
   [ -n "$expected" ] || fail "Breakpatch $version has no checksum for $archive, so it wasn't installed."
@@ -697,6 +772,11 @@ do_install_linux() {
   check_signature
   command -v minisign >/dev/null 2>&1 \
     || say "Checked the download against the release's checksums. Install minisign to also check it's signed by Breakpatch."
+  case "$publisher" in
+    checked) say "The checksums are signed by Breakpatch's release key ($GPG_FINGERPRINT)." ;;
+    no-gpg) say "Install gpg to also check the checksums are signed by Breakpatch's release key." ;;
+    *) say "Breakpatch's publisher wasn't checked: this installer has no release signing key yet. The download matches the release's checksums, which only shows it arrived intact." ;;
+  esac
   drop_token
 
   chmod 755 "$tmp/$archive"
@@ -735,6 +815,7 @@ do_uninstall_linux() {
     return 0
   fi
   rm -f "$dest_bin" "$entry" "$handler" "$icon" || fail "Couldn't remove Breakpatch from $(pretty "$bin_dir")."
+  clean_mimeapps
   if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database "$data_dir/applications" >/dev/null 2>&1 || true; fi
   if [ -e "$mime" ]; then
     rm -f "$mime"
