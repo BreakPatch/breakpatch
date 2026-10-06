@@ -62,9 +62,9 @@ Open Terminal and paste this:
 curl -fsSL https://breakpatch.dev/install | sh
 ```
 
-<!-- prelaunch --> Public release coming soon. Until then, this command doesn't work. Join the list: [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list)
-
 It checks your Mac, downloads the latest Breakpatch from [GitHub Releases](https://github.com/BreakPatch/breakpatch/releases) (over https only, and only from Breakpatch's own releases), checks the download against the release's checksums, checks the app is signed with Breakpatch's certificate, puts Breakpatch in Applications and opens it. If you have `minisign`, it also checks the download's signature with Breakpatch's update key. If your account can't write to Applications, it uses `~/Applications` instead. It never asks for your password, changes nothing else on your Mac and sends nothing about you or your Mac to Breakpatch. Don't run it with `sudo`: it refuses to run as root. You can [read the script](https://breakpatch.dev/install) first.
+
+Breakpatch Community is a beta: it works, but expect some rough edges. Tell us about problems in [GitHub issues](https://github.com/BreakPatch/breakpatch/issues) or at [support@breakpatch.dev](mailto:support@breakpatch.dev), and new versions arrive by themselves (see [Updates](#updates)).
 
 For a given version, put it in front of `sh`: `curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh`.
 
@@ -759,8 +759,6 @@ To run a suite on the local runner Mac instead, add a [run request](#run-request
 ```sh
 curl -fsSL https://breakpatch.dev/install-ci | sh
 ```
-
-<!-- prelaunch --> Public release coming soon. Until then, this command and the CI examples below that use it don't work. Join the list: [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20release%20list)
 
 It installs `breakpatch-ci` and the test browser in `~/.breakpatch-ci` and links the command into `~/.local/bin`. It checks every download against the release's checksums, and needs no administrator password. In GitHub Actions the next steps can run `breakpatch-ci` straight away; elsewhere, add `~/.local/bin` to `PATH` or use the full path. Running it again updates to the latest version, `BREAKPATCH_VERSION=1.2.3` installs a given one, and `sh -s -- --uninstall` removes it. You can [read the script](https://breakpatch.dev/install-ci) first.
 

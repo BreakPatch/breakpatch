@@ -209,7 +209,7 @@ test('the Solo card (hidden until it’s on sale): $16 a month billed yearly or 
     'The CI command line, with 1 machine licence: one test run at a time', 'Your tests stay in your folder or in Git. Connecting your own workspace is optional',
     'one Solo per company', 'For more people, choose Team']) assert.ok(card.includes(s), s);
   // Between Community and Team.
-  assert.ok(HTML.indexOf('plan-solo') > HTML.indexOf('<h2>Community</h2>') && HTML.indexOf('plan-solo') < HTML.indexOf('plan-team'));
+  assert.ok(HTML.indexOf('plan-solo') > HTML.indexOf('id="community-title"') && HTML.indexOf('plan-solo') < HTML.indexOf('plan-team'));
   const p = await load(cfg());
   assert.equal(p.$('solo-price').textContent, '$16');
   assert.equal(p.$('solo-per').textContent, 'per month, billed yearly');

@@ -1,11 +1,10 @@
 <!--
   Badges. The CI badge (GitHub Actions) and the coverage badges (shields.io reading
-  raw.githubusercontent.com/BreakPatch/breakpatch/badges/*.json) both need to read this repo, so
-  while it's private they don't render for anyone outside it, and shields.io can't read the
-  coverage files at all. They work for everyone once the repo is public. The coverage files are
-  written to the orphan branch `badges` by the `badges` job in .github/workflows/ci.yml on every
-  push to main, with the workflow's own token. The latest release badge fills in with the first
-  public release.
+  raw.githubusercontent.com/BreakPatch/breakpatch/badges/*.json) read this public repo. The
+  coverage files are written to the orphan branch `badges` by the `badges` job in
+  .github/workflows/ci.yml on every push to main, with the workflow's own token. The latest
+  release badge shows GitHub's Latest release (a beta, until the first stable one). Take the
+  "Community: beta" badge out with the first stable release.
 -->
 
 <p align="center">
@@ -20,6 +19,8 @@
 </h1>
 
 <p align="center"><strong>Here to find what breaks.</strong></p>
+
+<p align="center"><img src="https://img.shields.io/badge/Community-beta-E0714A" alt="Community: beta"></p>
 
 <p align="center">
   AI-powered UI testing that runs on your Mac. Click through your web app, replay it any time, and see exactly what broke. No code, no selectors, no cloud.*
@@ -69,12 +70,18 @@ release's checksums, puts Breakpatch in Applications and opens it. It never asks
 and you can [read the script](https://breakpatch.dev/install) first. This command is the only way
 to install Breakpatch: there's no disk image to download.
 
+**Breakpatch Community is a beta.** It works, but expect some rough edges. Tell us about problems
+in [GitHub issues](https://github.com/BreakPatch/breakpatch/issues) or at
+[support@breakpatch.dev](mailto:support@breakpatch.dev). New betas arrive by themselves through
+the app's updates.
+
 On first launch you pick a folder for your tests, and setup gets the Mac ready by itself: the test
 browser and the AI assistant (about 3 GB, downloaded once). After that, Breakpatch updates itself.
 
 - **A given version:** `curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh`
-- **The newest beta:** `curl -fsSL https://breakpatch.dev/install | BREAKPATCH_CHANNEL=beta sh`
-  (without it you only ever get stable releases)
+- **The newest beta:** `curl -fsSL https://breakpatch.dev/install | BREAKPATCH_CHANNEL=beta sh`.
+  Until the first stable release the plain command installs the newest beta too; after that,
+  without `BREAKPATCH_CHANNEL=beta` you only get stable releases.
 - **Uninstall:** `curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall` (removes the
   app; your tests and saved secrets stay where they are)
 
@@ -310,37 +317,30 @@ exist.
   requests are taken together, tested locally, in one bundle commit rather than one merge each,
   to save Actions minutes.
 
-### Private beta
+### Betas and updates
 
-While `BreakPatch/breakpatch` is private, the install command can't see its releases without a
-token. To install a beta the real way, on a Mac:
+The release workflow (`.github/workflows/release.yml`, the publish job) decides what the install
+command and the in-app updater see. Both read GitHub's **Latest** release: the plain command asks
+for `releases/latest`, and the updater reads `releases/latest/download/latest.json`
+(`app/src-tauri/tauri.conf.json`). GitHub never makes a prerelease Latest, so:
 
-```
-curl -fsSL https://breakpatch.dev/install | BREAKPATCH_GITHUB_TOKEN=<token> BREAKPATCH_CHANNEL=beta sh
-```
+- **Until the first stable release**, a beta tag (`v0.1.0-beta.1`, with a `-`) is published as a
+  normal release marked Latest. `curl -fsSL https://breakpatch.dev/install | sh` installs it, and
+  installed betas update to the next one (0.1.0-beta.2 is newer than 0.1.0-beta.1) and then to
+  the first stable release (0.1.0 is newer than any 0.1.0 beta).
+- **Once a stable release exists**, beta tags are published as GitHub prereleases, never Latest:
+  stable copies never see them. `BREAKPATCH_CHANNEL=beta` takes the newest release, betas
+  included; `BREAKPATCH_VERSION=0.2.0-beta.1` a given one.
+- The job checks the result (a beta that should be Latest and isn't, or a prerelease that became
+  Latest, fails it), and takes the release notes from `docs/releases/<tag>.md` at the tagged
+  commit when there is one. `scripts/test-install.sh` runs the job's script against a stand-in
+  for `gh`.
+- The tag must match `app/package.json`, `app/src-tauri/Cargo.toml` and
+  `engine/src/breakpatch_engine/__init__.py` (the release workflow checks);
+  `engine/pyproject.toml` has the PEP 440 spelling (`0.1.0b1`).
 
-- **The token:** a fine-grained personal access token (GitHub → Settings → Developer settings →
-  Fine-grained tokens), repository access `BreakPatch/breakpatch` only, permission Contents
-  read-only, expiring in 7 days. Revoke it when the beta is done. The command line goes into
-  your shell history with it.
-- **What the script does with it:** sends it as `Authorization: Bearer` to `https://api.github.com`
-  only (it refuses a `BREAKPATCH_API` elsewhere), from a 0600 header file that curl reads with
-  `-H @file` and that's deleted once the downloads are done, so it's never printed or in `ps`.
-  The files come from the API's asset addresses (`/releases/assets/{id}`, `Accept:
-  application/octet-stream`), which redirect to `objects.githubusercontent.com`; curl drops the
-  header on the way (another host). The checksum, signature and certificate checks are the same.
-  `scripts/test-install.sh` checks all of this against a stand-in for GitHub.
-- **Betas:** a tag with a `-` (`v0.1.0-beta.1`) is published as a GitHub prerelease, never
-  "Latest". So the stable updater feed (`releases/latest/download/latest.json`) and the plain
-  install command skip it. `BREAKPATCH_CHANNEL=beta` takes the newest release, betas included;
-  `BREAKPATCH_VERSION=0.1.0-beta.1` a given one. The tag must match `app/package.json`,
-  `app/src-tauri/Cargo.toml` and `engine/src/breakpatch_engine/__init__.py` (the release
-  workflow checks); `engine/pyproject.toml` has the PEP 440 spelling (`0.1.0b1`).
-- **Updates:** the in-app updater reads the feed without a token, so while the repository is
-  private it finds nothing. Run the command again for the next beta. Once a stable release is
-  out, beta copies update to it (0.1.0 is newer than 0.1.0-beta.1).
-- **When the repository is public** the token isn't needed: drop `BREAKPATCH_GITHUB_TOKEN` and
-  delete the token. The script's token mode can go then too.
+`BREAKPATCH_GITHUB_TOKEN`, which the install commands take, was for the private beta while the
+repository was private. It isn't needed now.
 
 ### Roadmap
 

@@ -1,7 +1,6 @@
 // breakpatch.dev: GitHub links, the phone menu, copy buttons, where-you-are highlighting. No framework.
 
-// Every GitHub link on the site is <a data-gh="/path">. Change this one line to move them all
-// (the repository is private until the public release, so these 404 for visitors until then).
+// Every GitHub link on the site is <a data-gh="/path">. Change this one line to move them all.
 const GITHUB = 'https://github.com/BreakPatch/breakpatch';
 document.querySelectorAll('[data-gh]').forEach(a => { a.href = GITHUB + a.dataset.gh; });
 
