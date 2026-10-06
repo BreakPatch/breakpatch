@@ -32,9 +32,10 @@ def test_gguf_placeholders_are_only_refused_for_a_gguf_release(monkeypatch):
     gguf = [r for r, m in models.table().items() if m.format == "gguf"]
     assert gguf and all(any(p.startswith(r) for r in gguf) for p in problems)
     assert models.main(["--check-release", "--format", "gguf"]) == (1 if problems else 0)
-    monkeypatch.setattr(models.sys, "platform", "darwin")
+    from breakpatch_engine import runtimes
+    monkeypatch.setattr(runtimes, "runtime_name", lambda: "mlx")
     assert models.default_format() == "mlx" and models.main(["--check-release"]) == 0
-    monkeypatch.setattr(models.sys, "platform", "linux")
+    monkeypatch.setattr(runtimes, "runtime_name", lambda: "llamacpp")
     assert models.default_format() == "gguf"
     assert models.main(["--check-release", "--format", "onnx"]) == 2
 
@@ -209,12 +210,28 @@ def test_an_unhashed_development_entry_still_needs_its_files(tmp_path, gtable, m
     assert "missing" in str(e.value)
 
 
+def test_entry_refuses_a_model_this_machine_cant_run(gtable, monkeypatch):
+    from breakpatch_engine import runtimes
+    monkeypatch.setitem(models.ALLOWED, "Org/M", {"format": "mlx", "revision": "a" * 40, "files": {"config.json": "b" * 64}})
+    monkeypatch.setattr(runtimes, "runtime_name", lambda: "llamacpp")      # Linux, Windows, an Intel Mac
+    with pytest.raises(EngineError) as e:
+        models.entry("Org/M", "a" * 40)
+    assert e.value.code == "bad_request" and "doesn't run on this computer" in e.value.message
+    assert models.entry("Org/G", "main").format == "gguf"
+    monkeypatch.setattr(runtimes, "runtime_name", lambda: "mlx")           # Apple Silicon, as before
+    assert models.entry("Org/M", "a" * 40).format == "mlx"
+    with pytest.raises(EngineError):
+        models.entry("Org/G", "main")
+
+
 def test_a_release_build_refuses_an_unpinned_model(gtable, monkeypatch):
     import sys
+    from breakpatch_engine import runtimes
+    monkeypatch.setattr(runtimes, "runtime_name", lambda: "llamacpp")
     assert models.entry("Org/G", "main").format == "gguf"
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     with pytest.raises(EngineError) as e:
         models.entry("Org/G", "main")
     assert e.value.code == "bad_request"
-    monkeypatch.setattr(models, "ALLOWED", {"Org/M": {"revision": "a" * 40, "files": {"config.json": "b" * 64}}})
+    monkeypatch.setattr(models, "ALLOWED", {"Org/M": {"format": "gguf", "revision": "a" * 40, "files": {"m.gguf": "b" * 64}}})
     assert models.entry("Org/M", "a" * 40).pinned                 # a pinned one is fine

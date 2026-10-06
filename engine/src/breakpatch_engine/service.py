@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import Callable
@@ -31,53 +33,74 @@ EXPLAIN_DRAIN_S = 30.0
 def default_locator_factory() -> Callable[[], Locator]:
     """The installed model, or NoLocator. The model itself only loads on first use.
 
-    - An MLX model (on a Mac; also a marker from before `format` existed) with mlx-vlm importable:
-      MlxLocator, exactly as before llama.cpp existed.
+    The installed model's format must be the one this machine's AI runtime loads
+    (models.format_for(runtimes.runtime_name()), the one place that decides); otherwise NoLocator,
+    with the reason in its error's details.
+
+    - An MLX model (on Apple Silicon; also a marker from before `format` existed) with mlx-vlm
+      importable: MlxLocator, exactly as before llama.cpp existed.
     - A GGUF model with this platform's llama.cpp runtime installed: LlamaCppLocator.
     - Otherwise NoLocator.
 
-    The function has a `close()` that stops a llama-server it started (Engine.shutdown calls it)."""
+    The function has a `close()` that stops a llama-server it started (Engine.shutdown calls it,
+    and so does an atexit hook, registered once for the factory). A locator replaced by another
+    model's is closed on a thread of its own, so the event loop never waits for it."""
+    from . import models, runtimes
     cache: dict[tuple, Locator] = {}
+    registered = False
 
-    def close() -> None:
-        for loc in list(cache.values()):
+    def close_all(locs: list) -> None:
+        for loc in locs:
             stop = getattr(loc, "close", None)
             if stop is not None:
                 try:
                     stop()
                 except Exception as e:  # noqa: BLE001
                     log.warning("couldn't stop the AI assistant: %s", e)
+
+    def close() -> None:
+        locs = list(cache.values())
         cache.clear()
+        close_all(locs)
 
     def get() -> Locator:
+        nonlocal registered
         info = install.installed_model()
         if not info.get("installed"):
             return NoLocator()
         path = info["path"]
         fmt = info.get("format") or "mlx"
+        runtime = runtimes.runtime_name()
+        if fmt != models.format_for(runtime):
+            return NoLocator(f"the installed model is {fmt}; this computer's AI runtime ({runtime}) "
+                             f"loads {models.format_for(runtime)}")
         if fmt == "mlx":
             if not MlxLocator.importable():
                 return NoLocator()
             key: tuple = ("mlx", path)
             make: Callable[[], Locator] = lambda: MlxLocator(Path(path))  # noqa: E731
-        elif fmt == "gguf":
-            from . import runtimes
+        else:
             from .llamacpp import LlamaCppLocator
             rt = runtimes.installed_runtime()
             if not rt.get("installed"):
                 return NoLocator()
             key = ("gguf", path, rt["path"], rt["backend"])
             make = lambda: LlamaCppLocator(Path(path), rt, repo=info.get("repo"))  # noqa: E731
-        else:
-            return NoLocator()
         if key not in cache:
-            close()   # a different model was installed: drop the old one from memory
+            # A different model was installed: drop the old one from memory, off this thread
+            # (stopping llama-server can take seconds, and this runs on the event loop).
+            old = list(cache.values())
+            cache.clear()
+            if old:
+                threading.Thread(target=close_all, args=(old,), name="ai-assistant-close", daemon=True).start()
             cache[key] = make()
+            if not registered:
+                atexit.register(close)
+                registered = True
         return cache[key]
 
     get.close = close  # type: ignore[attr-defined]
     return get
-
 
 
 def near_param(v) -> dict | None:
@@ -177,6 +200,9 @@ class Engine:
             raise EngineError("busy", "Wait for the run or the step to finish first.")
         loc = self.locator_fn()
         if not loc.available():
+            reason = getattr(loc, "reason", None)
+            if reason:
+                raise EngineError("not_ready", "The AI assistant that's installed doesn't run on this computer.", reason)
             raise EngineError("not_ready", "The AI assistant isn't downloaded yet. Finish setup to use it.")
         image = loc_mod.warmup_image()
         load = None

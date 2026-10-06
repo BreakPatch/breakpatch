@@ -67,12 +67,18 @@ class Locator(Protocol):
 
 
 class NoLocator:
-    """Used when no model is installed: locate is unavailable, describe returns nothing."""
+    """Used when no model is installed, or the installed one can't run here (`reason`, for the
+    error's details): locate is unavailable, describe returns nothing."""
+
+    def __init__(self, reason: str | None = None):
+        self.reason = reason
 
     def available(self) -> bool:
         return False
 
     async def locate(self, image, description):
+        if self.reason:
+            raise EngineError("not_ready", "The AI assistant that's installed doesn't run on this computer.", self.reason)
         raise EngineError("not_ready", "The AI assistant isn't downloaded yet. Finish setup to use it.")
 
     async def describe(self, image, at):

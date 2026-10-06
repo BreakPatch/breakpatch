@@ -44,7 +44,7 @@ Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`,
 | `system.info` | – | `{ memoryGb, chip, os, engineVersion, edition, licence: Licence, browser: {installed, version}, model: {installed, repo?, revision?, sizeBytes?, path?, format?}, system: RecordedOn, runtime: "mlx"\|"llamacpp", llamacpp?: {installed, build?, backend?, path?, exe?} }` — `llamacpp` only off Apple Silicon (see AI runtime off the Mac) |
 | `licence.set` | `{ token: string \| null }` | `Licence` — sent by the shell only (see Licence below) |
 | `setup.installBrowser` | – | `{ version }` — emits `setup.progress` with `task: "browser"` |
-| `setup.downloadModel` | `{ repo, revision }` | `{ path, sizeBytes }` — resumable; emits `setup.progress` with `task: "model"`. Only a model in the engine's table (below), at its revision; anything else is `bad_request` before anything is fetched |
+| `setup.downloadModel` | `{ repo, revision }` | `{ path, sizeBytes }` — resumable; emits `setup.progress` with `task: "model"`. Only a model in the engine's table (below), at its revision, of this machine's format (see AI runtime off the Mac); anything else is `bad_request` before anything is fetched |
 | `setup.installRuntime` | `{ backend? }` | `{ path, build, backend }` — off the Mac: downloads, checks and unpacks the pinned llama.cpp runtime (`backend` `"cpu"`, the default; `"vulkan"` later); resumable; emits `setup.progress` with `task: "runtime"` |
 | `setup.warmUp` | – | `{ runtime, backend?, loadSeconds, seconds, found }` — one look by the AI assistant at a page the engine draws, to say how long a look takes here; `not_ready` without a model, `busy` during a run or a recording step |
 | `setup.pause` | `{ task }` | `{}` — pauses a download (`browser`, `model` or `runtime`); calling the start method again resumes |
@@ -121,9 +121,13 @@ and `"llamacpp"` everywhere else. There, the AI assistant is a GGUF model run by
   A server that stops by itself is started again once and the question asked again; if it stops
   again, `not_ready`, and after 3 crashes in 10 minutes it isn't started again until the engine
   restarts.
-- The engine uses llama.cpp when the installed model's `format` is `gguf` and the runtime is
-  installed; an MLX model with mlx-vlm importable is used as before; otherwise there's no AI
-  assistant (`not_ready` where one is needed).
+- `runtime` decides the model format: `mlx` with `"mlx"`, `gguf` with `"llamacpp"` (an Intel Mac
+  too). `setup.downloadModel` refuses a model of the other format (`bad_request`, "This AI
+  assistant doesn't run on this computer."), and an installed one of the other format is no AI
+  assistant (`not_ready`, "The AI assistant that's installed doesn't run on this computer.", with
+  the reason in `details`). The engine uses llama.cpp when the installed model is `gguf` and the
+  runtime is installed; an MLX model with mlx-vlm importable is used as before; otherwise there's
+  no AI assistant (`not_ready` where one is needed). The app reads only `runtime` to choose.
 
 `edition` is `"team"` when the Breakpatch Team engine (`breakpatch_team_engine`) is installed and
 registered itself through `plugins.py` (healing and `run.explain` on), otherwise `"community"`. The app compares it

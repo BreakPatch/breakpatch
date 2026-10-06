@@ -15,7 +15,8 @@ def allow(monkeypatch, hub, revision="main", files=None):
     """Puts the fake Hub's repo in the model table, with the SHA-256 of each of its files."""
     if files is None:
         files = {n: hashlib.sha256(b).hexdigest() for n, b in hub.files.items()}
-    monkeypatch.setitem(models.ALLOWED, hub.repo, {"revision": revision, "files": files})
+    # In this machine's format (models.entry refuses a model its AI runtime can't load).
+    monkeypatch.setitem(models.ALLOWED, hub.repo, {"revision": revision, "files": files, "format": models.default_format()})
 
 
 @pytest.fixture
@@ -85,7 +86,7 @@ async def test_download_pause_resume_and_remove(hub):
     assert hashlib.sha256(weights.read_bytes()).digest() == hashlib.sha256(hub.files["model.safetensors"]).digest()
     assert events[-1]["state"] == "done"
     info = install.system_info()["model"]
-    assert info["installed"] and info["repo"] == hub.repo and info["revision"] == "main" and info["format"] == "mlx"
+    assert info["installed"] and info["repo"] == hub.repo and info["revision"] == "main" and info["format"] == models.default_format()
     assert info["sizeBytes"] == got["sizeBytes"] and info["path"] == got["path"]
 
     await setup.remove_model()
@@ -94,7 +95,7 @@ async def test_download_pause_resume_and_remove(hub):
 
 
 async def test_download_unknown_repo_fails_plainly(hub, monkeypatch):
-    monkeypatch.setitem(models.ALLOWED, "Org/Missing", {"revision": "main", "files": {"config.json": "0" * 64}})
+    monkeypatch.setitem(models.ALLOWED, "Org/Missing", {"revision": "main", "files": {"config.json": "0" * 64}, "format": models.default_format()})
     events = []
     setup = install.Setup(events.append)
     with pytest.raises(EngineError) as e:

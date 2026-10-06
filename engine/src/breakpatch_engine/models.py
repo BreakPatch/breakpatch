@@ -17,9 +17,14 @@ and name the expected `general.architecture` (`qwen3vl` for the model, `clip` fo
 GGUF files hold no code: llama.cpp reads tensors and metadata, and runs the chat template in its
 own template engine, not Python.
 
+Which format a machine uses follows from its AI runtime, runtimes.runtime_name() (the one place
+that decides): `mlx` with the "mlx" runtime (Apple Silicon), `gguf` with "llamacpp" (everywhere
+else, an Intel Mac too). entry() refuses a model of the other format, so setup can't download one
+this machine can't run.
+
 `python -m breakpatch_engine.models --check-release [--format mlx|gguf]` exits 1 while a model of
-that format (default: the one this platform's app uses, `mlx` on a Mac, `gguf` elsewhere) isn't
-pinned to a commit with a hash for every file; scripts/build-release.sh runs it for --release builds.
+that format (default: this machine's, default_format()) isn't pinned to a commit with a hash for
+every file; scripts/build-release.sh runs it for --release builds.
 """
 from __future__ import annotations
 
@@ -132,9 +137,19 @@ def table() -> dict[str, Model]:
                         dict(e.get("gguf") or {})) for repo, e in ALLOWED.items()}
 
 
+# The model format each AI runtime (runtimes.runtime_name()) loads.
+RUNTIME_FORMATS = {"mlx": "mlx", "llamacpp": "gguf"}
+
+
+def format_for(runtime: str) -> str:
+    return RUNTIME_FORMATS.get(runtime, "gguf")
+
+
 def default_format() -> str:
-    """The model format this platform's app uses: MLX on a Mac, GGUF (llama.cpp) elsewhere."""
-    return "mlx" if sys.platform == "darwin" else "gguf"
+    """The model format this machine uses: its runtime's (runtimes.runtime_name()), so MLX on
+    Apple Silicon and GGUF (llama.cpp) everywhere else."""
+    from . import runtimes
+    return format_for(runtimes.runtime_name())
 
 
 def gguf_files(repo: str | None) -> tuple[str, str] | None:
@@ -153,6 +168,9 @@ def entry(repo: str | None, revision: str | None) -> Model:
     if (revision or "main") != m.revision:
         raise EngineError("bad_request", "This version of the AI assistant isn't one Breakpatch can use.",
                           f"{repo} revision {revision!r}, allowed {m.revision!r}")
+    if m.format != default_format():
+        raise EngineError("bad_request", "This AI assistant doesn't run on this computer.",
+                          f"{repo} is {m.format}; this computer's AI runtime uses {default_format()}")
     if config.is_release() and not m.pinned:
         raise EngineError("bad_request", "This AI assistant isn't ready for this version of Breakpatch yet.",
                           f"{repo} isn't pinned (models.py TODO)")
