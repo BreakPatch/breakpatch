@@ -9,8 +9,12 @@
 #   install.sh install    makes a Python 3.11 environment (BP_PYTHON, from actions/setup-python)
 #                         and installs from that file with pip --require-hashes --only-binary=:all:.
 #
-# The same checks as https://breakpatch.dev/install-ci: https only, files only from the release,
-# exactly the two wheels and no package addresses. GH_TOKEN (the job's token) is sent to
+# The same checks as https://breakpatch.dev/install-ci (site/install-ci): https only, files only
+# from the release, exactly the two wheels and no package addresses. It doesn't run install-ci
+# itself: that isn't a release file (so the action couldn't check it against SHA256SUMS), and it
+# installs its own Python and Chromium where the action uses setup-python and its cache. Instead
+# action/test.sh runs both against the same fake releases and fails when they disagree: change
+# one, change the other. GH_TOKEN (the job's token) is sent to
 # api.github.com only; curl doesn't send it on to the asset host a download redirects to.
 # Environment: BP_DIR (where it all goes), BP_VERSION, BP_REPO (default BreakPatch/breakpatch),
 # GH_TOKEN, BP_PYTHON, RUNNER_OS, RUNNER_ARCH, GITHUB_OUTPUT.

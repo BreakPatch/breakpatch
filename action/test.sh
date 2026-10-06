@@ -2,7 +2,8 @@
 # Tests the action's scripts on Linux, without GitHub: install.sh against a fake release served
 # over https from this machine (stand-in wheels, so pip installs offline), run.sh with a stand-in
 # breakpatch-ci that passes, fails or can't run tests by their names, and summary.py's table,
-# JSON and outputs. Needs python3.11, curl, openssl and sha256sum.
+# JSON and outputs; and install.sh against site/install-ci on the same release (they must accept
+# and refuse the same releases). Needs python3.11, curl, openssl and sha256sum.
 #
 #   bash action/test.sh
 set -euo pipefail
@@ -42,7 +43,9 @@ def wheel(name, files, scripts=None):
             z.writestr(n, d)
     return path
 ci = "def main():\n    print('1.2.3')\n    return 0\n"
-e = wheel("breakpatch_engine", {"breakpatch_engine/__init__.py": ""})
+# A playwright stand-in, so site/install-ci's Chromium step has something to run (the parity cases).
+e = wheel("breakpatch_engine", {"breakpatch_engine/__init__.py": "", "playwright/__init__.py": "",
+                                "playwright/__main__.py": "import sys\nsys.exit(0)\n"})
 t = wheel("breakpatch_team_engine", {"breakpatch_team_engine/__init__.py": "", "breakpatch_team_engine/ci.py": ci},
           {"breakpatch-ci": "breakpatch_team_engine.ci:main"})
 sha = lambda p: hashlib.sha256(open(p, "rb").read()).hexdigest()
@@ -52,16 +55,21 @@ for plat in ("linux-x86_64", "linux-arm64"):
         f"./{os.path.basename(e)} --hash=sha256:{sha(e)}\n./{os.path.basename(t)} --hash=sha256:{sha(t)}\n")
 PY
 (cd "$dl" && sha256sum -- * > SHA256SUMS)
+mkdir "$work/orig" && cp "$dl"/* "$work/orig/"         # as published, for the parity cases
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work/tls/key.pem" -out "$work/tls/cert.pem" -days 1 \
   -subj /CN=127.0.0.1 -addext "subjectAltName=IP:127.0.0.1" >/dev/null 2>&1
 port=$("$py" -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
-"$py" - "$work/srv" <<'PY'
-import json, os, shutil, sys
-srv = sys.argv[1]
+# Each file is served by its asset address (the action, a token's way) and its download address
+# (site/install-ci without a token): both are links to the one file in dl/.
+"$py" - "$work/srv" "$port" <<'PY'
+import json, os, sys
+srv, port = sys.argv[1], sys.argv[2]
 assets = []
 for i, n in enumerate(sorted(os.listdir(f"{srv}/dl")), 100):
-    shutil.copy(f"{srv}/dl/{n}", f"{srv}/api/releases/assets/{i}")
-    assets.append({"id": i, "name": n})
+    os.symlink(f"{srv}/dl/{n}", f"{srv}/api/releases/assets/{i}")
+    assets.append({"id": i, "name": n, "url": f"https://127.0.0.1:{port}/api/releases/assets/{i}",
+                   "browser_download_url": f"https://127.0.0.1:{port}/dl/v1.2.3/{n}"})
+os.symlink(".", f"{srv}/dl/v1.2.3")
 doc = {"tag_name": "v1.2.3", "assets": assets}
 json.dump(doc, open(f"{srv}/api/releases/latest", "w"))
 json.dump(doc, open(f"{srv}/api/releases/tags/v1.2.3", "w"))
@@ -196,6 +204,66 @@ summ
 contains "a suite's tests are rows" "$work/summary.md" "| Buy | ❌ failed | Press Buy | notFound |"
 code=0; runit BP_SUITE=smoke-7f3a > "$work/log" 2>&1 || code=$?
 contains "a suite needs a workspace" "$work/log" "suite needs workspace"
+
+# ---------------------------------------------------------------- install.sh and site/install-ci agree
+
+# install.sh repeats site/install-ci's checks (it can't run it: the install command isn't a release
+# file, and it would install its own Python and Chromium where the action uses setup-python and
+# its cache). So both run against the same fake release, as published and changed in the ways a
+# release must never be accepted, and must accept and refuse the same ones.
+install_ci="$here/../site/install-ci"
+if [ ! -f "$install_ci" ]; then
+  echo "install.sh and site/install-ci: skipped (no site/install-ci next to the action)"
+else
+  echo "install.sh and site/install-ci agree"
+  reqs="$dl/breakpatch-ci-requirements-linux-x86_64.txt"
+  restore() { for f in "$work/orig"/*; do cat "$f" > "$dl/$(basename "$f")"; done; }
+  resum() { (cd "$work/orig" && for f in *; do [ "$f" = SHA256SUMS ] || sha256sum -- "$dl/$f" | sed "s#  .*#  $f#"; done) > "$dl/SHA256SUMS"; }
+  ci_inst() {
+    rm -rf "$work/ci-home"; mkdir -p "$work/ci-home"
+    env -u GITHUB_PATH HOME="$work/ci-home" BREAKPATCH_API="https://127.0.0.1:$port/api" \
+      BREAKPATCH_DOWNLOADS="https://127.0.0.1:$port/dl/" BREAKPATCH_PYTHON="$py" BREAKPATCH_VERSION=1.2.3 \
+      BREAKPATCH_CI_HOME="$work/ci-home/.breakpatch-ci" BREAKPATCH_CI_BIN="$work/ci-home/bin" PIP_NO_INDEX=1 \
+      sh "$install_ci"
+  }
+  # parity NAME accept|refuse: runs both on the release as it is now.
+  parity() {
+    local a=0 b=0 want=$2
+    rm -rf "$work/bp"; : > "$work/out"
+    inst BP_VERSION=1.2.3 > "$work/plog" 2>&1 || a=$?
+    ci_inst > "$work/clog" 2>&1 || b=$?
+    local got_a=accept got_b=accept
+    [ "$a" -eq 0 ] || got_a=refuse
+    [ "$b" -eq 0 ] || got_b=refuse
+    if [ "$got_a" = "$want" ] && [ "$got_b" = "$want" ]; then ok "$1: both $want"
+    else bad "$1: install.sh says $got_a, site/install-ci $got_b, expected $want"; sed 's/^/      /' "$work/plog" "$work/clog" | tail -6; fi
+    restore
+  }
+  sha=$(printf '%064d' 0)
+  parity "as published" accept
+  printf 'x' >> "$dl/breakpatch_team_engine-1.2.3-py3-none-any.whl"
+  parity "a wheel changed after SHA256SUMS" refuse
+  printf '# changed\n' >> "$reqs"
+  parity "the requirements file changed after SHA256SUMS" refuse
+  grep -v 'requirements-linux-x86_64' "$work/orig/SHA256SUMS" > "$dl/SHA256SUMS"
+  parity "the requirements file not in SHA256SUMS" refuse
+  printf 'evil @ https://example.com/evil-1.0-py3-none-any.whl\n' >> "$reqs"; resum
+  parity "a package by address" refuse
+  printf -- '--index-url https://example.com/simple\n' >> "$reqs"; resum
+  parity "another package index" refuse
+  printf -- '--extra-index-url=https://example.com/simple\n' >> "$reqs"; resum
+  parity "an extra package index" refuse
+  printf './breakpatch_extra-1.2.3-py3-none-any.whl --hash=sha256:%s\n' "$sha" >> "$reqs"; resum
+  parity "a third wheel" refuse
+  grep -v '^\./breakpatch_team_engine' "$work/orig/breakpatch-ci-requirements-linux-x86_64.txt" > "$reqs"; resum
+  parity "no Team engine wheel" refuse
+  printf './../breakpatch_engine-1.2.3-py3-none-any.whl --hash=sha256:%s\n' "$sha" >> "$reqs"; resum
+  parity "a wheel outside the release" refuse
+  printf '# Docs: https://breakpatch.dev/docs/ @ the install command\n' >> "$reqs"; resum
+  parity "a comment naming an address" accept
+  awk '{ print toupper($1) " *" $2 }' "$work/orig/SHA256SUMS" > "$dl/SHA256SUMS"
+  parity "SHA256SUMS in upper case, binary mode" accept
+fi
 
 # ---------------------------------------------------------------- the screenshots' artifact name
 
