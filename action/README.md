@@ -56,6 +56,7 @@ The CI account, the workspace file and saved secrets work as in the manual: [Fro
 | `fail-on-fix` | `false` | `true` fails a test that needed fixing. |
 | `machine-id` | `github-<repository ID>` | A fixed name for this pipeline's machine licence, so every job reuses one. Give parallel jobs a name each. |
 | `upload-screenshots` | `on-failure` | Upload the failed steps' screenshots as an artifact: `on-failure`, `always` or `never`. They can show personal data. |
+| `artifact-name` | unique per job | The screenshots artifact's name. The default, `breakpatch-screenshots-<job>-<job index>-<hash>-<attempt>`, differs for each matrix leg and each set of `tests` or `suite`, so several uses in one run don't collide. |
 | `secrets` | | Saved secrets the tests may use, one per line: `NAME`, or `NAME=https://site` for workspace tests. Each value comes from `BP_SECRET_<NAME>` in `env`. |
 | `github-token` | the job's token | Reads the release from GitHub. |
 

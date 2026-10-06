@@ -197,6 +197,26 @@ contains "a suite's tests are rows" "$work/summary.md" "| Buy | ❌ failed | Pre
 code=0; runit BP_SUITE=smoke-7f3a > "$work/log" 2>&1 || code=$?
 contains "a suite needs a workspace" "$work/log" "suite needs workspace"
 
+# ---------------------------------------------------------------- the screenshots' artifact name
+
+echo "artifact-name.sh"
+aname() { : > "$work/aout"; env GITHUB_OUTPUT="$work/aout" BP_JOB=ui BP_ATTEMPT=1 "$@" bash "$here/scripts/artifact-name.sh" > "$work/alog" 2>&1; sed -n 's/^name=//p' "$work/aout"; }
+leg0=$(aname BP_JOB_INDEX=0 BP_TESTS='tests/*.json')
+leg1=$(aname BP_JOB_INDEX=1 BP_TESTS='tests/*.json')
+other=$(aname BP_JOB_INDEX=0 BP_TESTS='smoke/*.json')
+suite=$(aname BP_JOB_INDEX=0 BP_TESTS='tests/*.json' BP_SUITE=smoke)
+case "$leg0" in breakpatch-screenshots-ui-0-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-1) ok "the default names the job, its index, a hash and the attempt ($leg0)" ;; *) bad "default name: $leg0" ;; esac
+if [ "$leg0" != "$leg1" ]; then ok "two matrix legs get two names"; else bad "two matrix legs collide: $leg0"; fi
+if [ "$leg0" != "$other" ] && [ "$leg0" != "$suite" ]; then ok "two uses with other tests or a suite get two names"; else bad "other tests collide"; fi
+expect "the same leg and tests give the same name" "$(aname BP_JOB_INDEX=0 BP_TESTS='tests/*.json')" "$leg0"
+expect "artifact-name replaces it" "$(aname BP_ARTIFACT_NAME=my-shots BP_JOB_INDEX=3)" my-shots
+expect "a name upload-artifact refuses fails here" "$(aname BP_ARTIFACT_NAME='a/b')" ""
+contains "and says why" "$work/alog" "artifact-name can't have any of"
+# shellcheck disable=SC2016  # the text of action.yml, not shell
+contains "action.yml passes the matrix leg's index" "$here/action.yml" 'BP_JOB_INDEX: ${{ strategy.job-index }}'
+# shellcheck disable=SC2016
+contains "and uploads under that name" "$here/action.yml" 'name: ${{ steps.artifact.outputs.name }}'
+
 echo
 if [ ${#failures[@]} -eq 0 ]; then echo "action/test.sh: all $pass checks passed"; exit 0; fi
 echo "action/test.sh: ${#failures[@]} failed"; printf '  %s\n' "${failures[@]}"; exit 1

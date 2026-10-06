@@ -43,6 +43,9 @@ inputs:
   secrets:
     description: Saved secrets the tests may use, one --secret value per line (NAME, or NAME=https://site for workspace tests). Their values come from BP_SECRET_<NAME> in the job's env.
     default: ""
+  artifact-name:
+    description: The screenshots artifact's name. The default is unique per job, matrix leg and tests, breakpatch-screenshots-<job>-<job index>-<hash of tests and suite>-<attempt>.
+    default: ""
   github-token:
     description: Reads the release from GitHub (the default is the job's own token).
     default: ${{ github.token }}
@@ -169,14 +172,28 @@ runs:
         path: ~/.breakpatch-ci-action/licence
         key: breakpatch-licence-${{ inputs.machine-id }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+    # Artifact names are unique within a run: one per job, matrix leg and set of tests.
+    - name: Name the screenshots' artifact
+      id: artifact
+      if: always() && steps.summary.outputs.shots != ''
+      shell: bash
+      env:
+        BP_ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        BP_JOB: ${{ github.job }}
+        BP_JOB_INDEX: ${{ strategy.job-index }}
+        BP_TESTS: ${{ inputs.tests }}
+        BP_SUITE: ${{ inputs.suite }}
+        BP_ATTEMPT: ${{ github.run_attempt }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/artifact-name.sh"
+
     - name: Upload the screenshots
       if: >-
-        always() && steps.summary.outputs.shots != '' &&
+        always() && steps.summary.outputs.shots != '' && steps.artifact.outputs.name != '' &&
         (inputs.upload-screenshots == 'always' ||
          (inputs.upload-screenshots == 'on-failure' && steps.summary.outputs.result != 'passed'))
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
-        name: breakpatch-screenshots-${{ github.job }}-${{ github.run_attempt }}
+        name: ${{ steps.artifact.outputs.name }}
         path: ${{ runner.temp }}/breakpatch-ci/screenshots
         retention-days: 14
 
