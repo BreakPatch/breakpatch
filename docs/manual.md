@@ -1019,9 +1019,11 @@ Set `BREAKPATCH_LICENCE_KEY`, `BREAKPATCH_CI_EMAIL`, `BREAKPATCH_CI_PASSWORD` an
 
 ### breakpatch-ci in a container
 
-Releases after 0.1.0 also come as a container image, `ghcr.io/breakpatch/ci`, for x86_64 and arm64. It has `breakpatch-ci`, the test browser and the system libraries the browser needs, so a job needs no install step. Each version has its own tag, for example `ghcr.io/breakpatch/ci:1.2.3`, and `latest` is the newest release (never a beta). Use a version's tag in CI, so a new release doesn't change your pipeline without you knowing.
+Releases after 0.1.0 also come as a container image, `ghcr.io/breakpatch/ci`, for x86_64 and arm64. It has `breakpatch-ci`, the test browser and the system libraries the browser needs, so a job needs no install step. Each version has its own tag, for example `ghcr.io/breakpatch/ci:1.2.3`, and `latest` is the Latest release on GitHub (never a beta). Use a version's tag in CI, so a new release doesn't change your pipeline without you knowing.
 
 The image keeps the machine licence in `/var/lib/breakpatch`. Point `BREAKPATCH_LICENCE_FILE` at a folder your CI keeps between jobs instead.
+
+The image runs as the user `breakpatch` (uid 1000), not root, and that user owns `/var/lib/breakpatch` and the working folder `/work`. Where your CI checks out the code as another user, the job can't write there: run the container as root instead. In GitHub Actions, add `options: --user root` under `container:` (as below); with Docker, `docker run --user root`; in GitLab CI, nothing is needed by default.
 
 **GitHub Actions**
 
@@ -1029,7 +1031,9 @@ The image keeps the machine licence in `/var/lib/breakpatch`. Point `BREAKPATCH_
 jobs:
   ui-tests:
     runs-on: ubuntu-24.04
-    container: ghcr.io/breakpatch/ci:1.2.3
+    container:
+      image: ghcr.io/breakpatch/ci:1.2.3
+      options: --user root              # the job's checkout belongs to the runner's user
     concurrency: breakpatch-ci          # one run at a time per machine licence
     env:
       BREAKPATCH_LICENCE_KEY: ${{ secrets.BREAKPATCH_LICENCE_KEY }}

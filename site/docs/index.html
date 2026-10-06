@@ -505,13 +505,16 @@ await addDoc(collection(getFirestore(app, 'breakpatch'), 'runRequests'), {
     paths: [shots]</code></pre></div>
 <p>Set <code>BREAKPATCH_LICENCE_KEY</code>, <code>BREAKPATCH_CI_EMAIL</code>, <code>BREAKPATCH_CI_PASSWORD</code> and <code>BP_SECRET_STAGING_PASSWORD</code> as masked CI/CD variables. The job runs as root in the container, which the install command allows.</p>
 <h3 id="breakpatch-ci-in-a-container">breakpatch-ci in a container</h3>
-<p>Releases after 0.1.0 also come as a container image, <code>ghcr.io/breakpatch/ci</code>, for x86_64 and arm64. It has <code>breakpatch-ci</code>, the test browser and the system libraries the browser needs, so a job needs no install step. Each version has its own tag, for example <code>ghcr.io/breakpatch/ci:1.2.3</code>, and <code>latest</code> is the newest release (never a beta). Use a version's tag in CI, so a new release doesn't change your pipeline without you knowing.</p>
+<p>Releases after 0.1.0 also come as a container image, <code>ghcr.io/breakpatch/ci</code>, for x86_64 and arm64. It has <code>breakpatch-ci</code>, the test browser and the system libraries the browser needs, so a job needs no install step. Each version has its own tag, for example <code>ghcr.io/breakpatch/ci:1.2.3</code>, and <code>latest</code> is the Latest release on GitHub (never a beta). Use a version's tag in CI, so a new release doesn't change your pipeline without you knowing.</p>
 <p>The image keeps the machine licence in <code>/var/lib/breakpatch</code>. Point <code>BREAKPATCH_LICENCE_FILE</code> at a folder your CI keeps between jobs instead.</p>
+<p>The image runs as the user <code>breakpatch</code> (uid 1000), not root, and that user owns <code>/var/lib/breakpatch</code> and the working folder <code>/work</code>. Where your CI checks out the code as another user, the job can't write there: run the container as root instead. In GitHub Actions, add <code>options: --user root</code> under <code>container:</code> (as below); with Docker, <code>docker run --user root</code>; in GitLab CI, nothing is needed by default.</p>
 <p><strong>GitHub Actions</strong></p>
 <div class="code"><button class="copy" type="button">Copy</button><pre><code data-lang="yaml">jobs:
   ui-tests:
     runs-on: ubuntu-24.04
-    container: ghcr.io/breakpatch/ci:1.2.3
+    container:
+      image: ghcr.io/breakpatch/ci:1.2.3
+      options: --user root              # the job's checkout belongs to the runner's user
     concurrency: breakpatch-ci          # one run at a time per machine licence
     env:
       BREAKPATCH_LICENCE_KEY: ${{ secrets.BREAKPATCH_LICENCE_KEY }}

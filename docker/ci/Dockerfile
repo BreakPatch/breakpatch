@@ -44,10 +44,23 @@ RUN --mount=type=secret,id=github_token,env=BREAKPATCH_GITHUB_TOKEN \
  && breakpatch-ci setup >/dev/null \
  && test "$(breakpatch-ci --version)" = "${BREAKPATCH_VERSION#v}"
 
+# Runs as `breakpatch` (uid 1000, gid 1000), not root. Ubuntu's own uid-1000 user (`ubuntu`) makes
+# way for it. It owns the machine licence's folder and the working folder; breakpatch-ci and
+# Chromium in /opt/breakpatch-ci stay root's, read-only to it. The folder stays writable by any
+# user (sticky, like /tmp), so `--user` with another uid works too. Where the CI checks out as
+# another user (GitHub Actions `container:` jobs), run as root instead: `options: --user root`
+# there, `docker run --user root` elsewhere (docs/manual.md, breakpatch-ci in a container).
+RUN if getent passwd 1000 >/dev/null; then userdel --remove "$(getent passwd 1000 | cut -d: -f1)" 2>/dev/null || true; fi \
+ && if getent group 1000 >/dev/null; then groupdel "$(getent group 1000 | cut -d: -f1)"; fi \
+ && groupadd --gid 1000 breakpatch \
+ && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash breakpatch
+
 # The machine licence is kept here unless BREAKPATCH_LICENCE_FILE says where: point that at a
 # folder your CI caches between jobs.
 ENV BP_HOME=/var/lib/breakpatch
-RUN mkdir -p /var/lib/breakpatch && chmod 1777 /var/lib/breakpatch
+RUN mkdir -p /var/lib/breakpatch /work \
+ && chown breakpatch:breakpatch /var/lib/breakpatch /work \
+ && chmod 1777 /var/lib/breakpatch
 
 LABEL org.opencontainers.image.title="breakpatch-ci" \
       org.opencontainers.image.description="Breakpatch's command line for CI, with its Chromium" \
@@ -55,5 +68,6 @@ LABEL org.opencontainers.image.title="breakpatch-ci" \
       org.opencontainers.image.url="https://breakpatch.dev/docs/#breakpatch-ci-in-a-container" \
       org.opencontainers.image.version="${BREAKPATCH_VERSION}"
 
+USER breakpatch
 WORKDIR /work
 CMD ["breakpatch-ci", "--help"]
