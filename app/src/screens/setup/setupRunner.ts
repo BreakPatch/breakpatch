@@ -1,6 +1,6 @@
 // Drives first-launch setup through the engine: test browser, this Mac's memory, AI assistant.
 // Kept apart from the screen so the order, skipping, pause/resume and retry are testable.
-import { MODELS, modelFor, type Engine, type SetupProgress, type SetupTaskName, type SystemInfo } from '../../engine/engine';
+import { MODELS, isInstalled, modelFor, type Engine, type SetupProgress, type SetupTaskName, type SystemInfo } from '../../engine/engine';
 import type { TaskState } from '../../state/session';
 
 export type RowKey = 'browser' | 'mac' | 'model';
@@ -65,6 +65,7 @@ export class SetupRunner {
   }
 
   private onProgress(p: SetupProgress) {
+    if (p.task !== 'browser' && p.task !== 'model') return;   // the llama.cpp runtime has no row yet (plan P2.6)
     const row = this.snap.rows[p.task];
     if (row.state === 'done') return;
     if (row.state === 'paused' && p.state === 'busy') return;   // a late tick from before the pause
@@ -109,7 +110,9 @@ export class SetupRunner {
       task = 'model';
       if (this.snap.rows.model.state !== 'done') {
         const model = this.snap.model!;
-        if (info.model.installed && info.model.repo === model.repo) this.setRow('model', { state: 'done' });
+        // The same repo at another revision (an older release's) is downloaded again: the engine
+        // only loads the revision in its table.
+        if (isInstalled(info.model, model)) this.setRow('model', { state: 'done' });
         else {
           this.setRow('model', { state: 'busy', totalBytes: this.snap.rows.model.totalBytes ?? this.snap.modelBytes ?? undefined });
           const r = await this.engine.downloadModel(model.repo, model.revision);

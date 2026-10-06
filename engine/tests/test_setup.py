@@ -31,7 +31,11 @@ def hub(monkeypatch):
 
 def test_system_info_shape():
     info = install.system_info()
-    assert set(info) == {"memoryGb", "chip", "os", "engineVersion", "edition", "licence", "browser", "model", "system"}
+    keys = {"memoryGb", "chip", "os", "engineVersion", "edition", "licence", "browser", "model", "system", "runtime"}
+    assert set(info) == keys | ({"llamacpp"} if info["runtime"] == "llamacpp" else set())
+    assert info["runtime"] == ("mlx" if sys.platform == "darwin" else "llamacpp")
+    if info["runtime"] == "llamacpp":
+        assert info["llamacpp"] == {"installed": False}
     assert info["edition"] in ("community", "team")
     assert isinstance(info["memoryGb"], (int, float)) and info["memoryGb"] > 0
     assert info["model"] == {"installed": False}
@@ -81,7 +85,7 @@ async def test_download_pause_resume_and_remove(hub):
     assert hashlib.sha256(weights.read_bytes()).digest() == hashlib.sha256(hub.files["model.safetensors"]).digest()
     assert events[-1]["state"] == "done"
     info = install.system_info()["model"]
-    assert info["installed"] and info["repo"] == hub.repo and info["revision"] == "main"
+    assert info["installed"] and info["repo"] == hub.repo and info["revision"] == "main" and info["format"] == "mlx"
     assert info["sizeBytes"] == got["sizeBytes"] and info["path"] == got["path"]
 
     await setup.remove_model()

@@ -1,4 +1,5 @@
-"""Setup: this machine's details, the pinned Chromium and the AI model (spec §7, §16)."""
+"""Setup: this machine's details, the pinned Chromium, the AI model (spec §7, §16) and, off the Mac,
+the llama.cpp runtime that runs it (runtimes.py)."""
 from __future__ import annotations
 
 import asyncio
@@ -124,7 +125,7 @@ class Task:
 class Setup:
     def __init__(self, emit: Progress):
         self.emit = emit
-        self.tasks = {"browser": Task(), "model": Task()}
+        self.tasks = {"browser": Task(), "model": Task(), "runtime": Task()}
 
     async def pause(self, task: str) -> None:
         t = self.tasks.get(task)
@@ -265,11 +266,88 @@ class Setup:
                 raise EngineError(kind if kind in ("network", "not_found", "bad_request") else "network",
                                   msg, (error or {}).get("details"))
             size = int(result.get("sizeBytes", 0))
-            write_marker(dest, repo, m.revision, result.get("commit"), size)
+            write_marker(dest, repo, m.revision, result.get("commit"), size, m.format)
             self.emit({"task": "model", "state": "done", "doneBytes": size, "totalBytes": size, "etaSeconds": 0})
             return {"path": str(dest), "sizeBytes": size}
         finally:
             t.running, t.proc = False, None
+
+    # ------------------------------------------------------------ llama.cpp runtime (off the Mac)
+
+    async def install_runtime(self, backend: str | None = None) -> dict:
+        """Downloads, checks and unpacks this platform's pinned llama.cpp runtime (runtimes.py).
+        Pausable and resumable like the model; progress events have `task: "runtime"`."""
+        from . import runtimes
+        e = runtimes.entry(backend or "cpu")         # only a pinned build for this platform
+        t = self.tasks["runtime"]
+        if t.running:
+            raise EngineError("busy", "The AI runtime is already downloading.")
+        t.running, t.paused = True, False
+        total = int(e.get("size") or 0) or None
+        part_dir = config.runtimes_dir() / runtimes.PARTIAL_DIR
+        cmd = self_command() + ["_runtime_download", "--spec", json.dumps(e)]
+        result: dict | None = None
+        error: dict | None = None
+        try:
+            t.proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE,
+                                                          stderr=asyncio.subprocess.PIPE)
+
+            async def read_stdout():
+                nonlocal total, result, error
+                async for raw in t.proc.stdout:
+                    try:
+                        msg = json.loads(raw)
+                    except ValueError:
+                        continue
+                    if "total" in msg:
+                        total = msg["total"] or total
+                    elif "verifying" in msg:
+                        self.emit({"task": "runtime", "state": "busy", "doneBytes": total, "totalBytes": total,
+                                   "etaSeconds": 0, "message": "Checking the download"})
+                    elif "done" in msg:
+                        result = msg
+                    elif "error" in msg:
+                        error = msg
+
+            async def drain_stderr():
+                async for raw in t.proc.stderr:
+                    log.info("runtime download: %s", raw.decode(errors="replace").rstrip())
+
+            tick = asyncio.create_task(self._ticker("runtime", lambda: dir_bytes(part_dir), lambda: total))
+            try:
+                await asyncio.gather(read_stdout(), drain_stderr())
+                code = await t.proc.wait()
+            finally:
+                tick.cancel()
+            if t.paused:
+                self.emit({"task": "runtime", "state": "paused", "doneBytes": dir_bytes(part_dir), "totalBytes": total})
+                raise EngineError("stopped", "The download is paused.")
+            if code != 0 or result is None:
+                msg = (error or {}).get("error", "The download stopped.")
+                kind = (error or {}).get("kind", "network")
+                self.emit({"task": "runtime", "state": "failed", "message": msg})
+                raise EngineError(kind if kind in ("network", "not_found", "bad_request") else "network",
+                                  msg, (error or {}).get("details"))
+            self.emit({"task": "runtime", "state": "done", "doneBytes": total, "totalBytes": total, "etaSeconds": 0})
+            return {"path": result["done"], "build": e["build"], "backend": e["backend"]}
+        finally:
+            t.running, t.proc = False, None
+
+    async def _ticker(self, task: str, measure: Callable[[], int], total: Callable[[], int | None]) -> None:
+        """setup.progress every half second while a download child runs: bytes so far and an ETA
+        from the last 10 seconds."""
+        samples: list[tuple[float, int]] = []
+        while True:
+            await asyncio.sleep(0.5)
+            done, whole = measure(), total()
+            now = time.monotonic()
+            samples = [x for x in samples if now - x[0] < 10] + [(now, done)]
+            eta = None
+            if whole and len(samples) > 1 and samples[-1][1] > samples[0][1]:
+                rate = (samples[-1][1] - samples[0][1]) / (samples[-1][0] - samples[0][0])
+                eta = max(0, round((whole - done) / rate))
+            self.emit({"task": task, "state": "busy", "doneBytes": min(done, whole) if whole else done,
+                       "totalBytes": whole or None, "etaSeconds": eta})
 
     async def remove_model(self) -> None:
         if self.tasks["model"].running:
@@ -322,9 +400,10 @@ def dir_bytes(path: Path) -> int:
     return total
 
 
-def write_marker(dest: Path, repo: str, revision: str, commit: str | None, size: int) -> None:
+def write_marker(dest: Path, repo: str, revision: str, commit: str | None, size: int, fmt: str = "mlx") -> None:
+    """The install record. `format` is "mlx" or "gguf"; a record without it (an older engine's) is MLX."""
     (dest / MARKER).write_text(json.dumps({"repo": repo, "revision": revision, "commit": commit,
-                                           "sizeBytes": size, "installedAt": time.time()}))
+                                           "sizeBytes": size, "installedAt": time.time(), "format": fmt}))
 
 
 def installed_model() -> dict:
@@ -345,14 +424,19 @@ def installed_model() -> dict:
         return {"installed": False}
     info, d = best
     return {"installed": True, "repo": info.get("repo"), "revision": info.get("revision"),
-            "sizeBytes": info.get("sizeBytes"), "path": str(d)}
+            "sizeBytes": info.get("sizeBytes"), "path": str(d), "format": info.get("format") or "mlx"}
 
 
 def system_info() -> dict:
-    from . import plugins, systems
-    return {"memoryGb": memory_gb(), "chip": chip(), "os": os_name(), "engineVersion": __version__,
-            "edition": plugins.edition(), "licence": plugins.licence_status(), "browser": browser_status(),
-            "model": installed_model(), "system": systems.current()}
+    """`runtime` says what runs the AI assistant here: "mlx" on Apple Silicon, "llamacpp" elsewhere,
+    where `llamacpp` says whether its runtime is installed (runtimes.installed_runtime)."""
+    from . import plugins, runtimes, systems
+    out = {"memoryGb": memory_gb(), "chip": chip(), "os": os_name(), "engineVersion": __version__,
+           "edition": plugins.edition(), "licence": plugins.licence_status(), "browser": browser_status(),
+           "model": installed_model(), "system": systems.current(), "runtime": runtimes.runtime_name()}
+    if out["runtime"] == "llamacpp":
+        out["llamacpp"] = runtimes.installed_runtime()
+    return out
 
 
 # ---------------------------------------------------------------- download child process
@@ -469,13 +553,16 @@ def download_main(repo: str, revision: str, dest: str, files: str | None = None)
                 wanted.append((name, s.size, sha))
         wanted.sort(key=lambda w: int(w[1] or 0))                    # small files first
         total = sum(int(w[1] or 0) for w in wanted)
+        unhashed = [w[0] for w in wanted if not w[2]]
+        if allow and unhashed:
+            say({"warning": f"{repo}: no SHA-256 in models.py for {unhashed} yet: development download"})
         say({"total": total, "commit": commit})
         for name, size, sha in wanted:
             fetch(name, size, sha, commit)
         say({"verifying": True})
         if allow:
             for name, sha in allow.items():
-                if models.sha256_of(root / name) != sha:
+                if sha and models.sha256_of(root / name) != sha:
                     (root / name).unlink(missing_ok=True)
                     raise RuntimeError(f"checksum mismatch for {name}")
         models.check_configs(root)

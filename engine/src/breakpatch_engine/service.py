@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -28,19 +29,53 @@ EXPLAIN_DRAIN_S = 30.0
 
 
 def default_locator_factory() -> Callable[[], Locator]:
-    """The installed model, or NoLocator. The model itself only loads on first use."""
-    cache: dict[str, Locator] = {}
+    """The installed model, or NoLocator. The model itself only loads on first use.
+
+    - An MLX model (on a Mac; also a marker from before `format` existed) with mlx-vlm importable:
+      MlxLocator, exactly as before llama.cpp existed.
+    - A GGUF model with this platform's llama.cpp runtime installed: LlamaCppLocator.
+    - Otherwise NoLocator.
+
+    The function has a `close()` that stops a llama-server it started (Engine.shutdown calls it)."""
+    cache: dict[tuple, Locator] = {}
+
+    def close() -> None:
+        for loc in list(cache.values()):
+            stop = getattr(loc, "close", None)
+            if stop is not None:
+                try:
+                    stop()
+                except Exception as e:  # noqa: BLE001
+                    log.warning("couldn't stop the AI assistant: %s", e)
+        cache.clear()
 
     def get() -> Locator:
         info = install.installed_model()
-        if not info.get("installed") or not MlxLocator.importable():
+        if not info.get("installed"):
             return NoLocator()
         path = info["path"]
-        if path not in cache:
-            cache.clear()   # a different model was installed: drop the old one from memory
-            cache[path] = MlxLocator(Path(path))
-        return cache[path]
+        fmt = info.get("format") or "mlx"
+        if fmt == "mlx":
+            if not MlxLocator.importable():
+                return NoLocator()
+            key: tuple = ("mlx", path)
+            make: Callable[[], Locator] = lambda: MlxLocator(Path(path))  # noqa: E731
+        elif fmt == "gguf":
+            from . import runtimes
+            from .llamacpp import LlamaCppLocator
+            rt = runtimes.installed_runtime()
+            if not rt.get("installed"):
+                return NoLocator()
+            key = ("gguf", path, rt["path"], rt["backend"])
+            make = lambda: LlamaCppLocator(Path(path), rt, repo=info.get("repo"))  # noqa: E731
+        else:
+            return NoLocator()
+        if key not in cache:
+            close()   # a different model was installed: drop the old one from memory
+            cache[key] = make()
+        return cache[key]
 
+    get.close = close  # type: ignore[attr-defined]
     return get
 
 
@@ -88,6 +123,8 @@ class Engine:
             "setup.downloadModel": lambda p: self.setup.download_model(p.get("repo"), p.get("revision")),
             "setup.pause": lambda p: self.setup.pause(p.get("task")),
             "setup.removeModel": self.remove_model,
+            "setup.installRuntime": lambda p: self.setup.install_runtime(p.get("backend")),
+            "setup.warmUp": self.warm_up,
             "browser.open": self.browser_open,
             "browser.close": self.browser_close,
             "browser.navigate": self.browser_navigate,
@@ -130,6 +167,30 @@ class Engine:
             raise EngineError("busy", "Wait for the run to finish before removing the AI assistant.")
         await self.setup.remove_model()
         return {}
+
+    async def warm_up(self, p: dict) -> dict:
+        """One look with the AI assistant at a page drawn by the engine (locator.warmup_image), to
+        say how long a look takes on this machine: `{ runtime, backend?, loadSeconds, seconds,
+        found }`. `loadSeconds` is the time to start it (null when it was already running)."""
+        from . import locator as loc_mod, runtimes
+        if self._activity is not None:
+            raise EngineError("busy", "Wait for the run or the step to finish first.")
+        loc = self.locator_fn()
+        if not loc.available():
+            raise EngineError("not_ready", "The AI assistant isn't downloaded yet. Finish setup to use it.")
+        image = loc_mod.warmup_image()
+        load = None
+        warm = getattr(loc, "warm", None)
+        if warm is not None:
+            load = await asyncio.to_thread(warm)
+        t = time.perf_counter()
+        box = await loc.locate(image, loc_mod.WARMUP_TARGET)
+        out = {"runtime": runtimes.runtime_name(), "loadSeconds": load,
+               "seconds": round(time.perf_counter() - t, 2), "found": box is not None}
+        if getattr(loc, "backend", None):
+            out["backend"] = loc.backend
+        log.info("warm-up: %s", out)
+        return out
 
     # ---------------------------------------------------------------- browser
 
@@ -484,4 +545,7 @@ class Engine:
                     t.proc.terminate()
                 except ProcessLookupError:
                     pass
+        close = getattr(self.locator_fn, "close", None)
+        if close is not None:
+            await asyncio.to_thread(close)          # stops llama-server, if one was started
         await self.browser.close()

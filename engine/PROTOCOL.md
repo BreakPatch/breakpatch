@@ -41,20 +41,23 @@ Error codes: `bad_request`, `not_ready` (browser or model missing), `not_found`,
 ### System and setup
 | Method | Params | Result |
 |---|---|---|
-| `system.info` | – | `{ memoryGb, chip, os, engineVersion, edition, licence: Licence, browser: {installed, version}, model: {installed, repo?, revision?, sizeBytes?, path?}, system: RecordedOn }` |
+| `system.info` | – | `{ memoryGb, chip, os, engineVersion, edition, licence: Licence, browser: {installed, version}, model: {installed, repo?, revision?, sizeBytes?, path?, format?}, system: RecordedOn, runtime: "mlx"\|"llamacpp", llamacpp?: {installed, build?, backend?, path?, exe?} }` — `llamacpp` only off Apple Silicon (see AI runtime off the Mac) |
 | `licence.set` | `{ token: string \| null }` | `Licence` — sent by the shell only (see Licence below) |
 | `setup.installBrowser` | – | `{ version }` — emits `setup.progress` with `task: "browser"` |
 | `setup.downloadModel` | `{ repo, revision }` | `{ path, sizeBytes }` — resumable; emits `setup.progress` with `task: "model"`. Only a model in the engine's table (below), at its revision; anything else is `bad_request` before anything is fetched |
-| `setup.pause` | `{ task }` | `{}` — pauses a download; calling the start method again resumes |
+| `setup.installRuntime` | `{ backend? }` | `{ path, build, backend }` — off the Mac: downloads, checks and unpacks the pinned llama.cpp runtime (`backend` `"cpu"`, the default; `"vulkan"` later); resumable; emits `setup.progress` with `task: "runtime"` |
+| `setup.warmUp` | – | `{ runtime, backend?, loadSeconds, seconds, found }` — one look by the AI assistant at a page the engine draws, to say how long a look takes here; `not_ready` without a model, `busy` during a run or a recording step |
+| `setup.pause` | `{ task }` | `{}` — pauses a download (`browser`, `model` or `runtime`); calling the start method again resumes |
 | `setup.removeModel` | – | `{}` — `busy` while a run is going |
 | `engine.quit` | – | `{}` — then stops as when stdin closes: in-flight requests get 3 s, Chromium is closed, exit 0 |
 
 `setup.progress` data: `{ task, state: "busy"|"paused"|"done"|"failed", doneBytes?, totalBytes?, etaSeconds?, message? }`.
 
 Pausing: `setup.pause` answers `{}` at once; the pending `setup.installBrowser` /
-`setup.downloadModel` call then fails with code `stopped` (and a `paused` progress event is
+`setup.downloadModel` / `setup.installRuntime` call then fails with code `stopped` (and a `paused` progress event is
 sent). Calling it again continues. The model download keeps partial files in
-`<model folder>/.partial/` and resumes them with HTTP Range requests. The browser install is
+`<model folder>/.partial/` and resumes them with HTTP Range requests; the runtime download keeps
+its archive in `<runtimes folder>/.partial/` the same way. The browser install is
 Playwright's own and restarts the current archive when resumed.
 
 **Which models, and which files** (`engine/src/breakpatch_engine/models.py`). Loading a model can
@@ -73,9 +76,54 @@ names the same repos and revisions (a test checks they agree). A download:
 
 Loading checks the folder again (the table entry, no code files, no such config key, the hashes)
 and fails with `not_ready` otherwise; the processor is loaded with `trust_remote_code=False`.
-Until the owner pins the models (the `TODO(owner)` in models.py) the table holds placeholders at
-`main` with no hashes: development builds download them with a warning, checked against the Hub's
-LFS hashes, still without code files; `scripts/build-release.sh --release` refuses to build.
+Until the owner pins a model (the `TODO(owner)` in models.py) its entry is a placeholder at
+`main`, with no file list (every file but code is fetched) or file names without hashes (only
+those files): development builds download it with a warning, checked against the Hub's LFS hashes
+where there are any, still without code files. A release build refuses to download it
+(`bad_request`), and `scripts/build-release.sh --release` refuses to build while a model of the
+platform's format isn't pinned (`--check-release [--format mlx|gguf]`; MLX on a Mac, GGUF
+elsewhere).
+
+Each entry has a `format`: `mlx` (a Hugging Face folder for mlx-vlm, the Mac) or `gguf`
+(llama.cpp, off the Mac: one language-model file and one vision projector, "mmproj"). A GGUF model
+folder may hold only `*.gguf` files and the marker; each must start with the GGUF magic and name
+the expected `general.architecture` in its header (`qwen3vl` for the model, `clip` for the
+projector). The marker (`.breakpatch-model.json`) records `repo`, `revision`, `commit`,
+`sizeBytes`, `installedAt` and `format` (a marker without `format`, from an older engine, is MLX),
+and `system.info`'s `model.format` repeats it. "Installed" means at the table's revision: the app
+compares `repo` and `revision`, and downloads the model again when the revision differs (the
+engine wouldn't load the old one).
+
+**AI runtime off the Mac (llama.cpp).** `runtime` in `system.info` is `"mlx"` on Apple Silicon
+and `"llamacpp"` everywhere else. There, the AI assistant is a GGUF model run by `llama-server`
+(engine/src/breakpatch_engine/llamacpp.py), which the engine downloads itself with
+`setup.installRuntime` (runtimes.py):
+
+- Only the build pinned in `runtimes.RUNTIMES` for this platform (`linux-x86_64`, `linux-arm64`;
+  Vulkan later), from its URL, checked against its SHA-256 before anything is unpacked. There is
+  no development exception: without a SHA-256 the call fails with `not_ready` ("This build of
+  Breakpatch doesn't have the AI runtime for this computer yet."). A platform with none fails
+  with `not_ready` "The AI assistant can't run on this computer yet."; an unknown `backend` is
+  `bad_request`. Plain `http://` only to this machine, and only in development builds.
+- Unpacked into `<runtimes folder>/llamacpp-<build>-<backend>/` with a marker. Archive members must
+  stay inside it (no absolute paths, `..` or links pointing out; plain files, folders and links
+  only), or the call fails with `bad_request` and nothing is installed. Only the pinned build
+  counts as installed (`system.info` `llamacpp`); other builds' folders are removed once it's in.
+- The engine starts `llama-server` on first use, on 127.0.0.1 and a free port, with a new random
+  API key each start, passed in a 0600 file (`--api-key-file`), never on the command line. It gets
+  only the environment variables it needs (never `BP_SECRET_*` or the licence key). It's ready
+  when `/health` answers 200; it's stopped after 10 minutes without a request, at engine shutdown,
+  and (Linux) by the kernel if the engine dies.
+- Each question is `POST /v1/chat/completions`: the screenshot as a base64 PNG `data:` URL, then
+  the same prompt as on the Mac, `temperature: 0`, `max_tokens: 96`, `seed: 7` (tools/model-test
+  asks the same way). The reply is parsed as on the Mac, and an unreadable reply is no answer
+  (`record.locate` `null`). An answer slower than 180 s (CPU) or 30 s (GPU) fails with `not_ready`.
+  A server that stops by itself is started again once and the question asked again; if it stops
+  again, `not_ready`, and after 3 crashes in 10 minutes it isn't started again until the engine
+  restarts.
+- The engine uses llama.cpp when the installed model's `format` is `gguf` and the runtime is
+  installed; an MLX model with mlx-vlm importable is used as before; otherwise there's no AI
+  assistant (`not_ready` where one is needed).
 
 `edition` is `"team"` when the Breakpatch Team engine (`breakpatch_team_engine`) is installed and
 registered itself through `plugins.py` (healing and `run.explain` on), otherwise `"community"`. The app compares it
@@ -551,6 +599,7 @@ with `error` one of `invalid`, `refused`, `redirect`, `secret`, `unreachable`, `
 |---|---|---|
 | `BP_HOME` | `~/Library/Application Support/Breakpatch` (Linux: `~/.local/share/Breakpatch`; Windows: `%LOCALAPPDATA%\Breakpatch`) | base folder |
 | `BP_MODELS_DIR` | `$BP_HOME/models` | model downloads |
+| `BP_RUNTIMES_DIR` | `$BP_HOME/runtimes` | the llama.cpp runtime off the Mac |
 | `BP_BROWSERS_PATH` | `$PLAYWRIGHT_BROWSERS_PATH`, else `$BP_HOME/browsers` | Chromium |
 | `BP_SCREENSHOTS_DIR` | `$BP_HOME/screenshots` | failure/heal screenshots (`<runId>/<n>-<stepId>.png`) |
 | `BP_CHROMIUM` | – | explicit Chromium binary (development, CI images) |

@@ -41,6 +41,12 @@ def models_dir() -> Path:
     return Path(env).expanduser() if env else app_home() / "models"
 
 
+def runtimes_dir() -> Path:
+    """The llama.cpp runtime off the Mac (runtimes.py)."""
+    env = os.environ.get("BP_RUNTIMES_DIR")
+    return Path(env).expanduser() if env else app_home() / "runtimes"
+
+
 def browsers_dir() -> Path:
     """Where Playwright's Chromium lives. An existing PLAYWRIGHT_BROWSERS_PATH wins (developer machines, CI)."""
     env = os.environ.get("BP_BROWSERS_PATH") or os.environ.get("PLAYWRIGHT_BROWSERS_PATH")

@@ -45,7 +45,7 @@ describe('SetupRunner', () => {
   });
 
   it('skips what is already installed', async () => {
-    const { engine } = fakeEngine({ browser: { installed: true }, model: { installed: true, repo: MODELS.standard.repo, sizeBytes: 3.1e9 } });
+    const { engine } = fakeEngine({ browser: { installed: true }, model: { installed: true, repo: MODELS.standard.repo, revision: MODELS.standard.revision, sizeBytes: 3.1e9 } });
     const r = new SetupRunner(engine, 0);
     r.start(); await tick(); await tick(); await tick();
     expect(r.done).toBe(true);
@@ -54,12 +54,27 @@ describe('SetupRunner', () => {
   });
 
   it('keeps the larger model when someone already chose it', async () => {
-    const { engine } = fakeEngine({ memoryGb: 32, browser: { installed: true }, model: { installed: true, repo: MODELS.larger.repo } });
+    const { engine } = fakeEngine({ memoryGb: 32, browser: { installed: true }, model: { installed: true, repo: MODELS.larger.repo, revision: MODELS.larger.revision } });
     const r = new SetupRunner(engine, 0);
     r.start(); await tick(); await tick(); await tick();
     expect(r.done).toBe(true);
     expect(r.state.model).toBe(MODELS.larger);
     expect(engine.downloadModel).not.toHaveBeenCalled();
+  });
+
+  it('downloads the model again when another revision of it is installed', async () => {
+    const { engine } = fakeEngine({ browser: { installed: true }, model: { installed: true, repo: MODELS.standard.repo, revision: '0'.repeat(40), sizeBytes: 3.1e9 } });
+    const r = new SetupRunner(engine, 0);
+    r.start(); await tick(); await tick(); await tick();
+    expect(r.done).toBe(false);
+    expect(engine.downloadModel).toHaveBeenCalledWith(MODELS.standard.repo, MODELS.standard.revision);
+  });
+
+  it('ignores progress of the llama.cpp runtime, which has no row yet', async () => {
+    const { engine, emit } = fakeEngine({ browser: { installed: true } });
+    const r = new SetupRunner(engine, 0);
+    emit({ task: 'runtime', state: 'busy', doneBytes: 1, totalBytes: 2 });
+    expect(states(r)).toEqual(['waiting', 'waiting', 'waiting']);
   });
 
   it('never picks the larger model on its own', async () => {
