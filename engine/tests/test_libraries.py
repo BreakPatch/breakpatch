@@ -123,3 +123,34 @@ def test_other_launch_errors_are_unchanged():
 def test_the_real_ldd_reads_a_real_program():
     # /bin/sh needs only libc, which every Linux has.
     assert install.missing_libraries(install.Path("/bin/sh"), run=subprocess.run) == []
+
+
+# ---------------------------------------------------------------- system_libraries: breakpatch-ci's surface
+
+def test_system_libraries_checks_on_linux_with_chromium_and_ldd(chrome, monkeypatch):
+    from breakpatch_engine import system_libraries
+    monkeypatch.setattr(install, "missing_libraries", lambda: ["libgbm.so.1"])
+    assert system_libraries.check() == (True, ["libgbm.so.1"])
+    assert system_libraries.message(["libgbm.so.1"], "/py") == install.libraries_message(["libgbm.so.1"], "/py")
+
+
+def test_system_libraries_cant_tell_without_linux_chromium_or_ldd(chrome, monkeypatch):
+    from breakpatch_engine import system_libraries
+    monkeypatch.setattr(install, "missing_libraries", lambda: pytest.fail("nothing to look at"))
+    monkeypatch.setattr(install.shutil, "which", lambda name: None)              # no ldd
+    assert system_libraries.check() == (False, [])
+    monkeypatch.setattr(install.shutil, "which", lambda name: "/usr/bin/ldd")
+    chrome.unlink()                                                              # no Chromium
+    assert system_libraries.check() == (False, [])
+    monkeypatch.setattr(install.sys, "platform", "darwin")
+    assert system_libraries.check() == (False, [])
+
+
+def test_system_libraries_never_raises(chrome, monkeypatch):
+    from breakpatch_engine import system_libraries
+
+    def boom():
+        raise OSError("ldd went away")
+    monkeypatch.setattr(install, "missing_libraries", boom)
+    assert system_libraries.check() == (False, [])
+    assert system_libraries.__all__ == ["check", "message"]
