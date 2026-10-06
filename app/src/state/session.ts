@@ -18,7 +18,8 @@ import { osText } from '../lib/osWords';
 
 export type Theme = 'dark' | 'light' | 'system';
 export type SetupTask = 'browser' | 'mac' | 'model';
-export type TaskState = 'waiting' | 'busy' | 'paused' | 'done' | 'failed';
+/** `skipped`: not for this computer yet (the AI assistant where the engine's runtime is llama.cpp). */
+export type TaskState = 'waiting' | 'busy' | 'paused' | 'done' | 'failed' | 'skipped';
 
 export interface Prefs {
   theme: Theme;

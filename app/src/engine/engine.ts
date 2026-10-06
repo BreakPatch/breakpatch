@@ -211,22 +211,29 @@ export const MODELS = {
 
 /**
  * The AI assistant off the Mac, on llama.cpp (engine models.py, format "gguf"). Not offered by setup
- * yet (plan P2.6). TODO(owner): the mirrored repo's commit SHA, as in models.py.
+ * yet: until the llama.cpp runtime has its own setup row (plan P2.6), setup skips the AI assistant
+ * where `runtime` is "llamacpp". TODO(owner): the mirrored repo's commit SHA, as in models.py.
  */
 export const LLAMACPP_MODELS = {
   standard: { repo: 'OscarShaitan/Qwen3-VL-4B-Instruct-GGUF', revision: 'main', label: 'Standard', approxBytes: 3.3e9 },
 } as const;
 
-/** The models a runtime can use: MLX on the Mac, GGUF with llama.cpp. */
-export function modelsFor(runtime: AiRuntime | undefined) { return runtime === 'llamacpp' ? LLAMACPP_MODELS : MODELS; }
+/** One AI assistant setup can download. */
+export interface ModelChoice { readonly repo: string; readonly revision: string; readonly label: string; readonly approxBytes: number }
+
+/** The models a runtime can use: MLX on Apple Silicon, GGUF with llama.cpp (everywhere else). The
+ *  engine's `system.info` `runtime` is the only thing that decides; an older engine without it is MLX. */
+export function modelsFor(runtime: AiRuntime | undefined): { standard: ModelChoice; larger?: ModelChoice } {
+  return runtime === 'llamacpp' ? LLAMACPP_MODELS : MODELS;
+}
 
 /** Whether the installed model is this one, at this revision (an older revision isn't "installed"). */
 export function isInstalled(info: SystemInfo['model'], model: { repo: string; revision: string }) {
   return info.installed && info.repo === model.repo && info.revision === model.revision;
 }
 
-/** Setup always installs the Standard (4B) assistant. The Larger (8B) one is only downloaded
- *  when someone asks for it: it needs 32 GB and gives no big accuracy gain. */
-export function modelFor(_memoryGb: number) { return MODELS.standard; }
+/** Setup always installs the Standard (4B) assistant of this machine's runtime. The Larger (8B)
+ *  one is only downloaded when someone asks for it: it needs 32 GB and gives no big accuracy gain. */
+export function modelFor(_memoryGb: number, runtime?: AiRuntime): ModelChoice { return modelsFor(runtime).standard; }
 export function canUseLarger(memoryGb: number) { return memoryGb >= 32; }
 export function modelLabel(repo: string | undefined) { return repo === MODELS.larger.repo ? MODELS.larger.label : MODELS.standard.label; }

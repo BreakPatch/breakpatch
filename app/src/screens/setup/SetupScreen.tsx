@@ -8,7 +8,7 @@ import type { TaskState } from '../../state/session';
 import { BrandPanel, GateSplit } from '../../components/shell/GateWindow';
 import { firstNameOf } from '../../data/local/folder';
 import { baseName } from '../../data/local/storage';
-import { ROWS, SetupRunner, type Row, type RowKey, type SetupSnapshot } from './setupRunner';
+import { ROWS, SetupRunner, complete, type Row, type RowKey, type SetupSnapshot } from './setupRunner';
 import './setup.css';
 import { useSystem } from '../../state/system';
 import { startingText } from '../../components/shell/EngineStarting';
@@ -21,6 +21,7 @@ const LOOK: Record<TaskState, { icon: string; word: string; cls: string }> = {
   paused: { icon: 'pause_circle', word: 'Paused', cls: 'paused' },
   done: { icon: 'check_circle', word: 'Done', cls: 'done' },
   failed: { icon: 'error', word: "Didn't work", cls: 'failed' },
+  skipped: { icon: 'schedule', word: 'Later', cls: 'skipped' },
 };
 const FAILED_LEDE: Record<RowKey, string> = {
   browser: "The test browser didn't install. The rest waits until it does.",
@@ -68,15 +69,17 @@ export default function SetupScreen() {
   const rows = snap.rows;
   const failed = ROWS.find(k => rows[k].state === 'failed');
   const paused = ROWS.find(k => rows[k].state === 'paused');
-  const ready = ROWS.every(k => rows[k].state === 'done');
+  const ready = ROWS.every(k => complete(rows[k].state));
+  const noModel = snap.info?.runtime === 'llamacpp';   // the engine runs the AI assistant with llama.cpp: not offered yet
   const first = firstNameOf(user);
   const modelLabel = snap.model?.label.toLowerCase() ?? 'standard';
 
   const note = (k: RowKey, r: Row): string | undefined => {
-    if (r.state === 'paused' || r.state === 'failed') return r.reason;
+    if (r.state === 'paused' || r.state === 'failed' || r.state === 'skipped') return r.reason;
     // Until the engine first answers, the first row says what is going on instead of sitting at 0%.
     if (!engineReady && k === ROWS[0] && r.state !== 'done') return startingText(firstStart);
     if (r.state !== 'done') return undefined;
+    if (k === 'mac' && snap.info && noModel) return `${ThisComputer()} has ${snap.info.memoryGb} GB of memory.`;
     if (k === 'mac' && snap.info) return `${ThisComputer()} has ${snap.info.memoryGb} GB of memory, so you get the ${modelLabel} AI assistant${snap.modelBytes ? ` (${size(snap.modelBytes)})` : ''}.`;
     if (k === 'model' && snap.modelBytes) return `${size(snap.modelBytes)}, checked and ready.`;
     return undefined;
@@ -90,7 +93,8 @@ export default function SetupScreen() {
     heading = 'Setup paused';
     lede = at ? `The download stopped at ${at}. Nothing's lost.` : "The download stopped. Nothing's lost.";
     foot = at ? `Continues from ${at}, not from the start.` : 'Continues where it stopped, not from the start.';
-  } else if (ready) { heading = "You're set up."; lede = osText("The browser and AI assistant are on this Mac. You won't see this again."); }
+  } else if (ready && noModel) { heading = "You're set up."; lede = osText('The test browser is on this Mac. The AI assistant comes in a later update.'); }
+  else if (ready) { heading = "You're set up."; lede = osText("The browser and AI assistant are on this Mac. You won't see this again."); }
   else { heading = osText('Getting this Mac ready'); lede = 'Takes about 5 minutes on office Wi-Fi. You can leave it running.'; foot = 'Safe to close. It picks up where it left off.'; }
 
   const details = failed ? [

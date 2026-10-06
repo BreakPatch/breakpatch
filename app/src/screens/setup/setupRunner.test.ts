@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { EngineError, MODELS, type Engine, type EngineEvents, type SystemInfo } from '../../engine/engine';
-import { SetupRunner } from './setupRunner';
+import { EngineError, LLAMACPP_MODELS, MODELS, type Engine, type EngineEvents, type SystemInfo } from '../../engine/engine';
+import { NOT_YET, SetupRunner } from './setupRunner';
 
 type Deferred<T> = { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void };
 function deferred<T>(): Deferred<T> {
@@ -75,6 +75,41 @@ describe('SetupRunner', () => {
     const r = new SetupRunner(engine, 0);
     emit({ task: 'runtime', state: 'busy', doneBytes: 1, totalBytes: 2 });
     expect(states(r)).toEqual(['waiting', 'waiting', 'waiting']);
+  });
+
+  it('on a Mac (runtime mlx, or an older engine without runtime) downloads the MLX model as before', async () => {
+    for (const runtime of ['mlx', undefined] as const) {
+      const { engine, calls } = fakeEngine({ runtime, browser: { installed: true } });
+      const r = new SetupRunner(engine, 0);
+      r.start(); await tick(); await tick(); await tick();
+      expect(r.state.model).toBe(MODELS.standard);
+      expect(calls.modelArgs).toEqual([[MODELS.standard.repo, MODELS.standard.revision]]);
+      calls.model[0].resolve({ path: '/m', sizeBytes: 3.1e9 }); await tick();
+      expect(states(r)).toEqual(['done', 'done', 'done']);
+    }
+  });
+
+  it('where the engine runs llama.cpp, never downloads the Mac model and skips the row with a plain note', async () => {
+    const { engine } = fakeEngine({ runtime: 'llamacpp', os: 'Ubuntu 24.04', browser: { installed: true } });
+    const r = new SetupRunner(engine, 0);
+    r.start(); await tick(); await tick(); await tick();
+    expect(engine.downloadModel).not.toHaveBeenCalled();
+    expect(r.state.model).toBe(LLAMACPP_MODELS.standard);
+    expect(states(r)).toEqual(['done', 'done', 'skipped']);
+    expect(r.state.rows.model.reason).toBe(NOT_YET);
+    expect(r.state.rows.model.state).not.toBe('done');
+    expect(r.done).toBe(true);                                  // setup can finish without it
+    r.start(); await tick(); await tick();                       // and starting again leaves it skipped
+    expect(states(r)).toEqual(['done', 'done', 'skipped']);
+    expect(engine.downloadModel).not.toHaveBeenCalled();
+  });
+
+  it('decides by the engine\'s runtime only, so an Intel Mac (macOS, llamacpp) skips the model too', async () => {
+    const { engine } = fakeEngine({ runtime: 'llamacpp', os: 'macOS 15.1', chip: 'Intel Core i7', browser: { installed: true } });
+    const r = new SetupRunner(engine, 0);
+    r.start(); await tick(); await tick(); await tick();
+    expect(engine.downloadModel).not.toHaveBeenCalled();
+    expect(r.state.rows.model.state).toBe('skipped');
   });
 
   it('never picks the larger model on its own', async () => {

@@ -1,6 +1,10 @@
 // Drives first-launch setup through the engine: test browser, this Mac's memory, AI assistant.
 // Kept apart from the screen so the order, skipping, pause/resume and retry are testable.
-import { MODELS, isInstalled, modelFor, type Engine, type SetupProgress, type SetupTaskName, type SystemInfo } from '../../engine/engine';
+// The AI assistant follows the engine's `runtime` (system.info), nothing else: MLX models on Apple
+// Silicon; where it's llama.cpp, the row is skipped with a plain note until the llama.cpp runtime
+// has a setup row of its own (plan P2.6). A skipped row never counts as downloaded, but setup can
+// finish without it.
+import { isInstalled, modelFor, modelsFor, type Engine, type ModelChoice, type SetupProgress, type SetupTaskName, type SystemInfo } from '../../engine/engine';
 import type { TaskState } from '../../state/session';
 
 export type RowKey = 'browser' | 'mac' | 'model';
@@ -17,12 +21,17 @@ export interface Row {
 export interface SetupSnapshot {
   rows: Record<RowKey, Row>;
   info: SystemInfo | null;
-  model: (typeof MODELS)[keyof typeof MODELS] | null;
+  model: ModelChoice | null;
   /** Size of the AI assistant on disk once downloaded (or the expected size before). */
   modelBytes: number | null;
 }
 
 const OFFLINE = 'Lost connection to the internet.';
+/** The model row's note where the engine runs the AI assistant with llama.cpp. */
+export const NOT_YET = "The AI assistant for this computer comes in a later update. Everything else works without it.";
+
+/** Whether a row needs nothing more: done, or skipped (not for this computer yet). */
+export const complete = (s: TaskState) => s === 'done' || s === 'skipped';
 
 export class SetupRunner {
   private snap: SetupSnapshot = { rows: { browser: { state: 'waiting' }, mac: { state: 'waiting' }, model: { state: 'waiting' } }, info: null, model: null, modelBytes: null };
@@ -41,7 +50,7 @@ export class SetupRunner {
   subscribe(l: (s: SetupSnapshot) => void) { this.listeners.add(l); return () => { this.listeners.delete(l); }; }
   dispose() { this.gen++; this.off(); this.listeners.clear(); }
 
-  get done() { return ROWS.every(k => this.snap.rows[k].state === 'done'); }
+  get done() { return ROWS.every(k => complete(this.snap.rows[k].state)); }
 
   /** Starts or resumes from the first task that isn't done. Downloads continue where they stopped. */
   start() { void this.run(); }
@@ -60,14 +69,14 @@ export class SetupRunner {
   private set(p: Partial<SetupSnapshot>) { this.snap = { ...this.snap, ...p }; this.listeners.forEach(l => l(this.snap)); }
   private setRow(k: RowKey, r: Partial<Row>, replace = false) {
     const row: Row = replace ? { state: 'waiting', ...r } : { ...this.snap.rows[k], ...r };
-    if (row.state !== 'paused' && row.state !== 'failed') { row.reason = undefined; row.details = undefined; }
+    if (row.state !== 'paused' && row.state !== 'failed' && row.state !== 'skipped') { row.reason = undefined; row.details = undefined; }
     this.set({ rows: { ...this.snap.rows, [k]: row } });
   }
 
   private onProgress(p: SetupProgress) {
     if (p.task !== 'browser' && p.task !== 'model') return;   // the llama.cpp runtime has no row yet (plan P2.6)
     const row = this.snap.rows[p.task];
-    if (row.state === 'done') return;
+    if (complete(row.state)) return;
     if (row.state === 'paused' && p.state === 'busy') return;   // a late tick from before the pause
     const bytes = { doneBytes: p.doneBytes ?? row.doneBytes, totalBytes: p.totalBytes ?? row.totalBytes, etaSeconds: p.etaSeconds };
     if (p.state === 'paused') this.setRow(p.task, { ...bytes, state: 'paused', reason: p.message ?? row.reason ?? OFFLINE });
@@ -100,15 +109,19 @@ export class SetupRunner {
         this.setRow('mac', { state: 'busy' });
         await new Promise(r => setTimeout(r, this.macCheckMs));   // long enough to see it happen
         if (stale()) return;
-        // Keep a larger assistant someone chose on purpose; otherwise install the standard one.
-        const model = info.model.installed && info.model.repo === MODELS.larger.repo ? MODELS.larger : modelFor(info.memoryGb);
+        // Keep a larger assistant someone chose on purpose; otherwise install the standard one, of
+        // the models this machine's runtime loads.
+        const larger = modelsFor(info.runtime).larger;
+        const model = larger && info.model.installed && info.model.repo === larger.repo ? larger : modelFor(info.memoryGb, info.runtime);
         const sameRepo = info.model.repo === model.repo;
         this.set({ model, modelBytes: (sameRepo && info.model.sizeBytes) || model.approxBytes });
         this.setRow('mac', { state: 'done' });
       }
 
       task = 'model';
-      if (this.snap.rows.model.state !== 'done') {
+      if (!complete(this.snap.rows.model.state) && info.runtime === 'llamacpp') {
+        this.setRow('model', { state: 'skipped', reason: NOT_YET });
+      } else if (!complete(this.snap.rows.model.state)) {
         const model = this.snap.model!;
         // The same repo at another revision (an older release's) is downloaded again: the engine
         // only loads the revision in its table.

@@ -21,5 +21,7 @@
 .su-row.paused .su-state { color: var(--fixed); }
 .su-row.paused .su-bar > div { background: var(--fixed); }
 .su-row.failed .su-icon, .su-row.failed .su-state { color: var(--failed); }
+.su-row.skipped .su-icon, .su-row.skipped .su-state { color: var(--text-faint); }
+.su-row.skipped .su-name { color: var(--text-muted); }
 
 .su-actions { display: flex; align-items: center; gap: 12px; min-height: 44px; }
