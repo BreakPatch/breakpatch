@@ -317,9 +317,11 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           "$RUNNER_TEMP/bin/actionlint" -color
       - name: shellcheck
-        run: shellcheck action/scripts/*.sh action/test.sh scripts/test-ci-containers.sh site/install-ci
+        run: shellcheck action/scripts/*.sh action/test.sh scripts/test-ci-containers.sh site/install-ci scripts/linux-release-merge.sh scripts/test-release-merge.sh
       - name: The action's scripts
         run: bash action/test.sh
+      - name: The release's Linux merge (publish-linux)
+        run: bash scripts/test-release-merge.sh
 
   # breakpatch-ci as a release builds it, Linux only (the macOS wheel is built by release.yml on
   # a tag, never here). Both wheels are built with a throwaway licence key made in this job

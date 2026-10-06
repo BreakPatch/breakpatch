@@ -25,6 +25,10 @@ name: Release
 #   publish     needs build; the only job that can write (contents: write). It downloads the
 #               build's files, checks SHA256SUMS and creates the GitHub release. No checkout.
 #   app-linux-x64, publish-linux
+#               Only while the repository variable LINUX_DESKTOP is `on`: until the llama.cpp
+#               runtime and the GGUF model are pinned (build-release.sh --release refuses them
+#               off macOS), a tag would only fail there and wait for an approval it can't use.
+#               Without it both are skipped, and publish-ci and sign-sums go on as before.
 #               The Linux x64 desktop app (a preview): the Team edition as an AppImage and a .deb,
 #               built by the same script in an Ubuntu 22.04 container (glibc 2.35, so it runs on
 #               22.04 and later and on Debian 12), tag runs only, in the `release` environment.
@@ -32,7 +36,9 @@ name: Release
 #               scripts/linux-release-files.sh checks the bundles and names the files.
 #               publish-linux runs after publish, so macOS never waits for Linux and a Linux
 #               failure leaves the release as it is (with a warning). It adds the files, merges the
-#               Linux platforms into latest.json and adds their lines to SHA256SUMS.
+#               Linux platforms into latest.json and adds their lines to SHA256SUMS. Safe to re-run:
+#               a file the release already has must have the same SHA-256 (it's uploaded again
+#               with --clobber), and a Linux platform already in latest.json the same entry.
 #   sign-sums   last: downloads every file of the release, checks it against SHA256SUMS and signs
 #               SHA256SUMS with GPG (SHA256SUMS.asc). Without the GPG_SIGNING_KEY secret it says so
 #               and signs nothing.
@@ -65,7 +71,8 @@ name: Release
 #               x86_64 and arm64; then install-deps, setup, and a run without a licence (exit 3).
 #   ci-image-build, ci-image
 #               ghcr.io/breakpatch/ci:<version> (docker/ci/Dockerfile), amd64 and arm64, each on its
-#               own runner, joined into one tag; `latest` on stable releases only. The only jobs
+#               own runner, joined into one tag; `latest` only when this release is GitHub's
+#               Latest release (never a prerelease, nor an older version's fix). The only jobs
 #               with packages: write. Repository variable CI_IMAGE_BASE: the base image, pinned
 #               by digest (ubuntu:24.04@sha256:…); without it, the moving ubuntu:24.04.
 #   test-build  manual runs (workflow_dispatch): an unsigned Community build on macOS, with no
@@ -97,6 +104,9 @@ name: Release
 #                      CI_MANYLINUX  off: ci-linux builds on the runner, not in the container
 #                      UBUNTU_2204_IMAGE  the Linux desktop build's container, pinned by digest
 #                                 (ubuntu:22.04@sha256:…); default ubuntu:22.04
+#                      LINUX_DESKTOP  on: build and publish the Linux desktop app (app-linux-x64,
+#                                 publish-linux). TODO(owner): turn on once runtimes.py and the
+#                                 GGUF model in models.py are pinned.
 
 on:
   push:
@@ -290,7 +300,8 @@ jobs:
 
   app-linux-x64:
     name: Linux x64 desktop (preview; AppImage and .deb)
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # Only with the repository variable LINUX_DESKTOP=on (see the top of this file).
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.LINUX_DESKTOP == 'on'
     runs-on: ubuntu-24.04
     environment: release
     # Ubuntu 22.04 (glibc 2.35, WebKitGTK 4.1), so the app runs on 22.04 and later and on Debian 12.
@@ -386,7 +397,9 @@ jobs:
   publish-linux:
     name: Publish the Linux desktop app
     needs: [publish, app-linux-x64]
-    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    # Skipped with app-linux-x64 while LINUX_DESKTOP isn't on; publish-ci and sign-sums need it,
+    # and run whatever its result (!cancelled()).
+    if: ${{ !cancelled() && needs.publish.result == 'success' && vars.LINUX_DESKTOP == 'on' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write   # adds files to the release made by publish
@@ -399,6 +412,13 @@ jobs:
           if [ "$LINUX" = success ]; then echo "ok=1" >> "$GITHUB_OUTPUT"; exit 0; fi
           echo "::warning::The Linux desktop app wasn't built ($LINUX); it isn't in this release."
           echo "ok=0" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: steps.built.outputs.ok == '1'
+        with:
+          path: merge
+          sparse-checkout: scripts/linux-release-merge.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         if: steps.built.outputs.ok == '1'
         with:
@@ -411,20 +431,14 @@ jobs:
         run: |
           (cd linux && sha256sum --check --strict SHA256SUMS)
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --pattern latest.json --dir old
-          if awk '{ print $2 }' old/SHA256SUMS linux/SHA256SUMS | sort | uniq -d | grep .; then
-            echo "::error::the release already has files with these names"; exit 1
-          fi
-          # latest.json: the macOS one with the Linux platforms added; a platform already there fails.
-          jq -e --slurpfile l linux/latest-linux.json '(.platforms | keys) as $have | [$l[0] | keys[] | select(IN($have[]))] == []' old/latest.json >/dev/null \
-            || { echo "::error::latest.json already has a Linux platform"; exit 1; }
-          jq --slurpfile l linux/latest-linux.json '.platforms += $l[0]' old/latest.json > latest.json
-          jq . latest.json
-          { grep -v '  latest\.json$' old/SHA256SUMS; cat linux/SHA256SUMS; sha256sum latest.json; } > SHA256SUMS
-          cat SHA256SUMS
-          files=()
-          while read -r _ name; do files+=("linux/$name"); done < linux/SHA256SUMS
-          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --repo "$GITHUB_REPOSITORY"
-          gh release upload "$GITHUB_REF_NAME" latest.json SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+          # Safe to re-run: the release's own copy of a file must have the same SHA-256, and a Linux
+          # platform already in latest.json the same entry (scripts/test-release-merge.sh).
+          bash merge/scripts/linux-release-merge.sh old linux merged
+          jq . merged/latest.json
+          cat merged/SHA256SUMS
+          mapfile -t files < merged/upload.txt
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload "$GITHUB_REF_NAME" merged/latest.json merged/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
 
   # SHA256SUMS signed with GPG (SHA256SUMS.asc), once every file is in the release: after the
   # macOS, Linux and breakpatch-ci files. Every file is downloaded and checked against it first.
@@ -820,6 +834,7 @@ jobs:
     if: ${{ !cancelled() && needs.ci-image-build.result != 'skipped' }}
     runs-on: ubuntu-24.04
     permissions:
+      contents: read     # asks which release is Latest (the repository may be private)
       packages: write
     env:
       IMAGE: ghcr.io/breakpatch/ci
@@ -829,7 +844,7 @@ jobs:
           pattern: ci-image-digest-*
           merge-multiple: true
           path: digests
-      - name: Tag the version (and latest, for a stable release)
+      - name: Tag the version (and latest, when this is the Latest release)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -838,7 +853,16 @@ jobs:
           if [ ! -f digests/arm64 ]; then echo "::warning::the arm64 image wasn't built; the tag is amd64 only."; fi
           version=${GITHUB_REF_NAME#v}
           tags=(-t "$IMAGE:$version")
-          case "$version" in *-*) ;; *) tags+=(-t "$IMAGE:latest") ;; esac
+          # `latest` follows GitHub's Latest release: never a prerelease, nor a fix to an older
+          # version released after a newer one.
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          case "$version" in
+            *-*) echo "A prerelease: $IMAGE:latest stays where it is." ;;
+            *)
+              if [ "$latest" = "$GITHUB_REF_NAME" ]; then tags+=(-t "$IMAGE:latest")
+              else echo "::notice::$GITHUB_REF_NAME isn't the Latest release (${latest:-none}): $IMAGE:latest stays where it is."
+              fi ;;
+          esac
           refs=()
           for f in digests/*; do refs+=("$IMAGE@$(cat "$f")"); done
           docker buildx imagetools create "${tags[@]}" "${refs[@]}"

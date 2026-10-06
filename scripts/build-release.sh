@@ -545,6 +545,17 @@ check_model_pins() {
 }
 check_model_pins
 
+# Off macOS the AI assistant runs on llama.cpp, whose runtime build must be pinned for a release
+# too (engine/src/breakpatch_engine/runtimes.py): a real URL, a SHA-256 and a size for every build.
+# macOS builds don't use it and don't check it.
+check_runtime_pins() {
+  [ "$darwin" -eq 0 ] || return 0
+  if "$py" -m breakpatch_engine.runtimes --check-release; then return 0; fi
+  [ "$release" -eq 0 ] || die "--release needs the llama.cpp runtime pinned in engine/src/breakpatch_engine/runtimes.py (see its TODO)"
+  echo "build-release: WARNING: the llama.cpp runtime isn't pinned yet: fine to try, not to publish" >&2
+}
+check_runtime_pins
+
 # Start from Community either way: a Team link or Team engine left by an earlier build goes.
 to_community
 
