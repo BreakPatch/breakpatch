@@ -1,0 +1,3 @@
+# Only the install command goes into the image build.
+*
+!site/install-ci

@@ -1,0 +1,194 @@
+name: Breakpatch UI tests
+description: Run Breakpatch UI tests in GitHub Actions with breakpatch-ci, with a job summary, failure screenshots and outputs.
+author: Breakpatch
+branding:
+  icon: check-square
+  color: green
+
+# A composite action, kept self-contained (it moves to BreakPatch/run later). It installs
+# breakpatch-ci for the runner (Linux x64 and arm64, macOS on Apple Silicon, Windows x64) from
+# BreakPatch/breakpatch's releases, checking every file against the release's SHA256SUMS, keeps
+# Chromium and the machine licence in the Actions cache, runs the tests one after another, and
+# fails the job when one fails. scripts/ holds the steps; inputs reach them only as environment
+# variables, never pasted into a script.
+
+inputs:
+  tests:
+    description: Test files to run, as glob patterns (separate several with spaces or new lines). Ignored when suite is set.
+    default: breakpatch-tests/apps/*/tests/*.json
+  suite:
+    description: A suite in your workspace to run instead (its ID or name). Needs workspace, and the CI account's BREAKPATCH_CI_EMAIL and BREAKPATCH_CI_PASSWORD in the job's env.
+    default: ""
+  licence-key:
+    description: Your Breakpatch licence key. Keep it in a secret.
+    required: true
+  workspace:
+    description: Your workspace's .bpworkspace file, or hosted:<workspace>. Needed for suite; optional for test files.
+    default: ""
+  version:
+    description: The breakpatch-ci version, like 1.2.3, or latest.
+    default: latest
+  auto-fix:
+    description: true lets the AI assistant fix a step whose button moved (needs a licence with Fixed automatically, on a Mac with the AI assistant).
+    default: "false"
+  fail-on-fix:
+    description: true fails a test that needed fixing.
+    default: "false"
+  machine-id:
+    description: A fixed name for this pipeline's machine licence, so every job reuses one.
+    default: github-${{ github.repository_id }}
+  upload-screenshots:
+    description: Upload the failed steps' screenshots as an artifact. on-failure, always or never.
+    default: on-failure
+  secrets:
+    description: Saved secrets the tests may use, one --secret value per line (NAME, or NAME=https://site for workspace tests). Their values come from BP_SECRET_<NAME> in the job's env.
+    default: ""
+  github-token:
+    description: Reads the release from GitHub (the default is the job's own token).
+    default: ${{ github.token }}
+
+outputs:
+  result:
+    description: passed, failed, or error (a test couldn't run, or there's no usable licence).
+    value: ${{ steps.summary.outputs.result }}
+  passed:
+    description: How many tests passed.
+    value: ${{ steps.summary.outputs.passed }}
+  failed:
+    description: How many tests failed or didn't run.
+    value: ${{ steps.summary.outputs.failed }}
+  json:
+    description: The path of a JSON file with every test's result.
+    value: ${{ steps.summary.outputs.json }}
+
+runs:
+  using: composite
+  steps:
+    - name: Python 3.11 for breakpatch-ci
+      id: python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: "3.11"
+        update-environment: false
+
+    - name: Download breakpatch-ci and check it against SHA256SUMS
+      id: download
+      shell: bash
+      env:
+        BP_DIR: ${{ runner.temp }}/breakpatch-ci
+        BP_VERSION: ${{ inputs.version }}
+        BP_PYTHON: ${{ steps.python.outputs.python-path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/install.sh" download
+
+    - name: Install breakpatch-ci
+      id: install
+      shell: bash
+      env:
+        BP_DIR: ${{ runner.temp }}/breakpatch-ci
+        BP_PYTHON: ${{ steps.python.outputs.python-path }}
+        BP_REQUIREMENTS: ${{ steps.download.outputs.requirements }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/install.sh" install
+
+    # Chromium is the same for every job of one breakpatch-ci build: the key is its
+    # requirements file's SHA-256, which pins Playwright and so Chromium.
+    - name: Restore Chromium
+      id: chromium
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.breakpatch-ci-action/browsers
+        key: breakpatch-chromium-${{ steps.download.outputs.platform }}-${{ steps.download.outputs.key }}
+
+    - name: Set up Chromium (and its system libraries on Linux)
+      shell: bash
+      env:
+        BIN: ${{ steps.install.outputs.bin }}
+        PY: ${{ steps.install.outputs.python }}
+      run: |
+        export BP_BROWSERS_PATH="$HOME/.breakpatch-ci-action/browsers"
+        code=0; "$BIN/breakpatch-ci" setup > "$RUNNER_TEMP/breakpatch-setup.json" || code=$?
+        if [ "$code" -ne 0 ] && [ "$RUNNER_OS" = Linux ] && grep -q '"missing": \[$' "$RUNNER_TEMP/breakpatch-setup.json"; then
+          echo "Adding the system libraries Chromium needs (playwright install-deps chromium)…"
+          if [ "$(id -u)" -eq 0 ]; then "$PY" -m playwright install-deps chromium; else sudo -n "$PY" -m playwright install-deps chromium; fi
+          code=0; "$BIN/breakpatch-ci" setup > "$RUNNER_TEMP/breakpatch-setup.json" || code=$?
+        fi
+        [ "$code" -eq 0 ] || { echo "::error::breakpatch-ci setup failed: Chromium can't be used on this runner."; exit 1; }
+
+    - name: Keep Chromium for the next jobs
+      if: steps.chromium.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.breakpatch-ci-action/browsers
+        key: ${{ steps.chromium.outputs.cache-primary-key }}
+
+    # The machine licence file, kept between jobs of this repository: most runs then don't need
+    # to check online, and the usage counts it collects go with the next check.
+    - name: Restore the machine licence
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.breakpatch-ci-action/licence
+        key: breakpatch-licence-${{ inputs.machine-id }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: breakpatch-licence-${{ inputs.machine-id }}-
+
+    - name: Run the tests
+      id: run
+      shell: bash
+      env:
+        BP_DIR: ${{ runner.temp }}/breakpatch-ci
+        BP_CI: ${{ steps.install.outputs.bin }}/breakpatch-ci
+        BP_TESTS: ${{ inputs.tests }}
+        BP_SUITE: ${{ inputs.suite }}
+        BP_WORKSPACE: ${{ inputs.workspace }}
+        BP_AUTO_FIX: ${{ inputs.auto-fix }}
+        BP_FAIL_ON_FIX: ${{ inputs.fail-on-fix }}
+        BP_SECRETS: ${{ inputs.secrets }}
+        BP_LABEL: GitHub · ${{ github.workflow }} · run ${{ github.run_number }}
+        BREAKPATCH_LICENCE_KEY: ${{ inputs.licence-key }}
+        BREAKPATCH_MACHINE_ID: ${{ inputs.machine-id }}
+      run: |
+        export BP_BROWSERS_PATH="$HOME/.breakpatch-ci-action/browsers"
+        export BREAKPATCH_LICENCE_FILE="$HOME/.breakpatch-ci-action/licence/licence.json"
+        mkdir -p "$HOME/.breakpatch-ci-action/licence"
+        bash "$GITHUB_ACTION_PATH/scripts/run.sh"
+
+    - name: Summary
+      id: summary
+      if: always() && steps.run.outcome != 'skipped'
+      shell: bash
+      env:
+        BP_DIR: ${{ runner.temp }}/breakpatch-ci
+        PY: ${{ steps.python.outputs.python-path }}
+      run: |
+        "$PY" "$GITHUB_ACTION_PATH/scripts/summary.py" "$BP_DIR"
+        echo "shots=$(find "$BP_DIR/screenshots" -type f 2>/dev/null | head -n 1)" >> "$GITHUB_OUTPUT"
+
+    - name: Keep the machine licence
+      if: always() && steps.run.outcome != 'skipped'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.breakpatch-ci-action/licence
+        key: breakpatch-licence-${{ inputs.machine-id }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+    - name: Upload the screenshots
+      if: >-
+        always() && steps.summary.outputs.shots != '' &&
+        (inputs.upload-screenshots == 'always' ||
+         (inputs.upload-screenshots == 'on-failure' && steps.summary.outputs.result != 'passed'))
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: breakpatch-screenshots-${{ github.job }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/breakpatch-ci/screenshots
+        retention-days: 14
+
+    - name: Fail the job when a test failed
+      if: always() && steps.summary.outputs.result != ''
+      shell: bash
+      env:
+        RESULT: ${{ steps.summary.outputs.result }}
+        FAILED: ${{ steps.summary.outputs.failed }}
+      run: |
+        case "$RESULT" in
+          passed) echo "Breakpatch: every test passed." ;;
+          failed) echo "::error::Breakpatch: $FAILED test(s) failed. See the job summary."; exit 1 ;;
+          *) echo "::error::Breakpatch: a test couldn't run. See the job summary and the log."; exit 1 ;;
+        esac

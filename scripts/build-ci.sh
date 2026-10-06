@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds what https://breakpatch.dev/install-ci installs: breakpatch-ci, the Team command line for
-# CI, for this machine (macOS arm64; Linux x86_64 and arm64, and Windows x64, as previews). The release workflow
+# CI, for this machine (macOS arm64; Linux x86_64 and arm64; Windows x64, a preview). The release workflow
 # (.github/workflows/release.yml, after the app) and CI (.github/workflows/ci.yml, with a
 # throwaway key) run this script; so can you, with the Team checkout next to this repo.
 #

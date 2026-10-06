@@ -91,7 +91,9 @@ straight away.
 | macOS | 14 Sonoma or later |
 | Disk | About 3 GB for the AI assistant, plus the test browser |
 
-Linux comes next, then Windows: see the [roadmap](https://github.com/BreakPatch/breakpatch/issues/48).
+The app is for the Mac today. Linux comes next, then Windows: see the [roadmap](https://github.com/BreakPatch/breakpatch/issues/48).
+`breakpatch-ci`, the command line for CI (Team), runs on the Mac and on 64-bit Linux (x86_64 and
+arm64), and on Windows x64 as a preview.
 
 ## What it does
 

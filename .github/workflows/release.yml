@@ -45,7 +45,7 @@ name: Release
 #               Nuitka --module into a wheel (the Team repo's engine/scripts/build_ci_wheel.sh,
 #               the real licence keys only) and breakpatch-ci-requirements-<platform>.txt, which
 #               https://breakpatch.dev/install-ci installs with pip --require-hashes. ci-linux
-#               (Linux x86_64, a preview) runs on ubuntu, ci-macos (the supported platform) on
+#               (Linux x86_64) runs on ubuntu, ci-macos on
 #               macos-15; both in the `release` environment for TEAM_REPO_TOKEN, installing their
 #               dependencies from the hashed locks first, with no secret in the environment.
 #               publish-ci adds the files to the release and their lines to SHA256SUMS; the
@@ -53,13 +53,21 @@ name: Release
 #               The Linux jobs build inside a manylinux_2_28 container
 #               (scripts/build-manylinux.sh), so the Team wheel is tagged manylinux_2_28_<arch>
 #               and loads on glibc 2.28 and later (Debian 12, Raspberry Pi OS, Ubuntu 22.04):
-#               ci-linux on ubuntu-24.04, ci-linux-arm64 on ubuntu-24.04-arm (both previews).
+#               ci-linux on ubuntu-24.04, ci-linux-arm64 on ubuntu-24.04-arm.
 #               The repository variable CI_MANYLINUX=off builds ci-linux on the runner as before
 #               (tagged linux_x86_64: only for glibc 2.39 and later). ci-windows-x64 (a preview)
 #               builds under Git Bash on windows-latest (MSVC for Nuitka). The arm64 and Windows
 #               jobs reuse ci-linux's engine wheel, like ci-macos.
 #   test-build-linux  manual runs: the same, unsigned Community, AppImage and .deb in the
 #               Ubuntu 22.04 container, kept 3 days.
+#   smoke-ci-linux  after publish-ci: the published breakpatch-ci installed with this tag's
+#               site/install-ci in clean ubuntu:22.04, ubuntu:24.04 and debian:12 containers, on
+#               x86_64 and arm64; then install-deps, setup, and a run without a licence (exit 3).
+#   ci-image-build, ci-image
+#               ghcr.io/breakpatch/ci:<version> (docker/ci/Dockerfile), amd64 and arm64, each on its
+#               own runner, joined into one tag; `latest` on stable releases only. The only jobs
+#               with packages: write. Repository variable CI_IMAGE_BASE: the base image, pinned
+#               by digest (ubuntu:24.04@sha256:…); without it, the moving ubuntu:24.04.
 #   test-build  manual runs (workflow_dispatch): an unsigned Community build on macOS, with no
 #               secrets at all (not even the Team repo token), kept as a workflow artifact for
 #               3 days. It tries the macOS build, the AI assistant bundle and the hardened
@@ -471,7 +479,7 @@ jobs:
   # ---------------------------------------------------------------- breakpatch-ci (after the app)
 
   ci-linux:
-    name: breakpatch-ci, Linux x86_64 (preview)
+    name: breakpatch-ci, Linux x86_64
     needs: publish
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
@@ -565,7 +573,7 @@ jobs:
           retention-days: 3
 
   ci-linux-arm64:
-    name: breakpatch-ci, Linux arm64 (preview; Raspberry Pi)
+    name: breakpatch-ci, Linux arm64 (and Raspberry Pi)
     needs: ci-linux
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04-arm
@@ -711,6 +719,130 @@ jobs:
           cat new-sums.txt
           gh release upload "$GITHUB_REF_NAME" ci/* --repo "$GITHUB_REPOSITORY"
           gh release upload "$GITHUB_REF_NAME" SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+
+  # ---------------------------------------------------------------- after breakpatch-ci is published
+
+  # The published release, installed as a customer installs it, in clean containers: the install
+  # command from this tag, then the system libraries, then setup and a run without a licence
+  # (exit 3). No secrets: the release is read with this run's own token (the repository may still
+  # be private). A failure here doesn't undo the release; it says the install is broken.
+  smoke-ci-linux:
+    name: breakpatch-ci install, ${{ matrix.image }} (${{ matrix.arch }})
+    needs: [publish-ci, ci-linux-arm64]
+    if: ${{ !cancelled() && needs.publish-ci.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:22.04", "ubuntu:24.04", "debian:12"]
+        # arm64 only when its breakpatch-ci was built and published.
+        arch: ${{ fromJSON(needs.ci-linux-arm64.result == 'success' && '["x86_64", "arm64"]' || '["x86_64"]') }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    container: ${{ matrix.image }}
+    steps:
+      - name: curl (the images have none)
+        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          sparse-checkout: site/install-ci
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Install, add the libraries, set up, run
+        env:
+          BREAKPATCH_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          BREAKPATCH_VERSION=${GITHUB_REF_NAME#v} sh site/install-ci
+          export PATH="$HOME/.local/bin:$PATH"
+          "$HOME/.breakpatch-ci/current/bin/python" -m playwright install-deps chromium
+          breakpatch-ci setup
+          echo '{"name": "smoke", "startUrl": "about:blank", "steps": []}' > smoke.json
+          code=0; breakpatch-ci run --test smoke.json || code=$?
+          if [ "$code" -ne 3 ]; then echo "::error::without a licence key breakpatch-ci run should exit 3, not $code"; exit 1; fi
+          sh site/install-ci --uninstall
+
+  # ghcr.io/breakpatch/ci:<version> (docker/ci/Dockerfile), linux/amd64 and linux/arm64, each built
+  # on a machine of its kind (no emulation) from the published release, pushed by digest, then
+  # joined into one multi-arch tag by ci-image. Tag runs only; nothing here runs on a pull request.
+  # Plain docker and buildx commands (on the runner image), so no third-party action holds the
+  # package token. `latest` moves only on a stable release. arm64 is left out when its
+  # breakpatch-ci wasn't built.
+  ci-image-build:
+    name: Container image, ${{ matrix.platform }}
+    needs: [publish-ci, ci-linux-arm64]
+    if: ${{ !cancelled() && needs.publish-ci.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # arm64 only when its breakpatch-ci was built and published.
+        include: >-
+          ${{ fromJSON(needs.ci-linux-arm64.result == 'success'
+          && '[{"platform": "linux/amd64", "runner": "ubuntu-24.04", "name": "amd64"}, {"platform": "linux/arm64", "runner": "ubuntu-24.04-arm", "name": "arm64"}]'
+          || '[{"platform": "linux/amd64", "runner": "ubuntu-24.04", "name": "amd64"}]') }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read     # the release's files (the repository may be private)
+      packages: write    # pushes to ghcr.io/breakpatch/ci
+    env:
+      IMAGE: ghcr.io/breakpatch/ci
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Build and push by digest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLATFORM: ${{ matrix.platform }}
+          BASE: ${{ vars.CI_IMAGE_BASE || 'ubuntu:24.04' }}   # pin it: ubuntu:24.04@sha256:…
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          (umask 077 && printf '%s' "$GH_TOKEN" > "$RUNNER_TEMP/github-token")
+          docker buildx create --use --driver docker-container >/dev/null
+          docker buildx build . -f docker/ci/Dockerfile --platform "$PLATFORM" \
+            --build-arg "BREAKPATCH_VERSION=${GITHUB_REF_NAME#v}" --build-arg "BASE=$BASE" \
+            --secret "id=github_token,src=$RUNNER_TEMP/github-token" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file "$RUNNER_TEMP/metadata.json"
+          rm -f "$RUNNER_TEMP/github-token"
+          mkdir -p "$RUNNER_TEMP/digests"
+          digest=$(sed -n 's/.*"containerimage.digest": *"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' "$RUNNER_TEMP/metadata.json" | head -n 1)
+          [ -n "$digest" ] || { echo "::error::no digest in the build's metadata"; exit 1; }
+          echo "$digest" > "$RUNNER_TEMP/digests/${{ matrix.name }}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-image-digest-${{ matrix.name }}
+          path: ${{ runner.temp }}/digests/${{ matrix.name }}
+          if-no-files-found: error
+          retention-days: 1
+
+  ci-image:
+    name: Container image (multi-arch tag)
+    needs: ci-image-build
+    if: ${{ !cancelled() && needs.ci-image-build.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    env:
+      IMAGE: ghcr.io/breakpatch/ci
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: ci-image-digest-*
+          merge-multiple: true
+          path: digests
+      - name: Tag the version (and latest, for a stable release)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          [ -f digests/amd64 ] || { echo "::error::the amd64 image wasn't built"; exit 1; }
+          if [ ! -f digests/arm64 ]; then echo "::warning::the arm64 image wasn't built; the tag is amd64 only."; fi
+          version=${GITHUB_REF_NAME#v}
+          tags=(-t "$IMAGE:$version")
+          case "$version" in *-*) ;; *) tags+=(-t "$IMAGE:latest") ;; esac
+          refs=()
+          for f in digests/*; do refs+=("$IMAGE@$(cat "$f")"); done
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          docker buildx imagetools inspect "$IMAGE:$version"
 
   test-build:
     name: macOS arm64 (unsigned Community test build)

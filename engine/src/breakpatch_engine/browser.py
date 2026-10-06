@@ -176,9 +176,7 @@ class BrowserSession:
             self._browser = await self._pw.chromium.launch(**opts)
         except Exception as e:  # noqa: BLE001
             await self.close()
-            if "Executable doesn't exist" in str(e) or "executable" in str(e).lower():
-                raise EngineError("not_ready", "The browser isn't installed yet. Finish setup to install it.", str(e))
-            raise EngineError("internal", "The browser couldn't start.", str(e))
+            raise launch_error(e) from e
         self.context = await self._browser.new_context(
             viewport={"width": self.width, "height": self.height}, device_scale_factor=1,
             accept_downloads=True, locale="en-US", color_scheme="light")
@@ -691,6 +689,19 @@ class BrowserSession:
                     await self.page.bring_to_front()
                 except Exception:  # noqa: BLE001
                     pass
+
+
+def launch_error(e: Exception) -> EngineError:
+    """Why Chromium didn't start, in plain words: not installed (`not_ready`), missing system
+    libraries on Linux (`not_ready`, naming them and the command that adds them), or else
+    `internal`."""
+    text = str(e)
+    from . import install
+    if install.is_library_error(text):
+        return EngineError("not_ready", install.libraries_message(install.missing_libraries()), text)
+    if "Executable doesn't exist" in text or "executable" in text.lower():
+        return EngineError("not_ready", "The browser isn't installed yet. Finish setup to install it.", text)
+    return EngineError("internal", "The browser couldn't start.", text)
 
 
 def launch_options(headless: bool, width: int = 1280, height: int = 800) -> dict:
