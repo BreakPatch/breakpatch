@@ -259,6 +259,49 @@ def test_it_isnt_stopped_while_a_request_is_going(make, files):
     assert len(files.starts) == 1
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="PR_SET_PDEATHSIG is Linux only")
+def test_the_server_outlives_the_worker_thread_that_asked_for_it(make, files):
+    """PR_SET_PDEATHSIG fires when the *thread* that forked the child ends. The engine asks from
+    asyncio.to_thread workers, which can end at any time; the server must not go with them."""
+    import threading
+    s = make()
+    t = threading.Thread(target=s.ensure)
+    t.start()
+    t.join()
+    pid = files.starts[0]["pid"]
+    time.sleep(0.5)                              # time for a parent-death signal to arrive
+    assert s.running and not gone(pid, wait=0.1)
+    assert s.chat(body(), 10)["choices"] and len(files.starts) == 1
+    s.close()                                    # for good: the supervisor thread ends too
+    assert gone(pid) and not any(t.name == "llama-server-supervisor" and t.is_alive()
+                                 for t in threading.enumerate() if t is s._supervisor)
+
+
+def test_the_parent_death_hook_does_only_prctl_and_the_parent_check(monkeypatch):
+    if not sys.platform.startswith("linux"):
+        assert llamacpp._die_with_parent() is None
+        return
+    calls = []
+    import ctypes
+
+    class Lib:
+        def prctl(self, *a):
+            calls.append(("prctl", a))
+            return 0
+    monkeypatch.setattr(ctypes, "CDLL", lambda *a, **k: Lib())
+    monkeypatch.setattr(llamacpp.os, "getpid", lambda: 100)
+    monkeypatch.setattr(llamacpp.os, "getppid", lambda: 100)
+    monkeypatch.setattr(llamacpp.os, "_exit", lambda code: calls.append(("exit", code)))
+    hook = llamacpp._die_with_parent()
+    hook()
+    assert calls == [("prctl", (1, 15, 0, 0, 0))]
+    monkeypatch.setattr(llamacpp.os, "getppid", lambda: 1)            # the engine went before the prctl
+    hook = llamacpp._die_with_parent()
+    calls.clear()
+    hook()
+    assert calls == [("prctl", (1, 15, 0, 0, 0)), ("exit", 1)]
+
+
 def test_physical_cores_is_a_sensible_number():
     n = llamacpp.physical_cores()
     assert n is None or 1 <= n <= (os.cpu_count() or n)

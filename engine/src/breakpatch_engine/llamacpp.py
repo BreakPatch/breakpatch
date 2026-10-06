@@ -15,8 +15,11 @@ The server:
   deleted as soon as the server is ready (it reads it once, at start);
 - is ready when `GET /health` says 200 (it says 503 while the model loads);
 - gets only the environment it needs (`ENV_KEEP`): never the engine's secrets (`BP_SECRET_*`);
-- dies with the engine: stopped on engine shutdown, at exit, and on Linux by the kernel when the
-  engine goes (`PR_SET_PDEATHSIG`); on Windows the shell's Job Object takes it;
+- dies with the engine: stopped on engine shutdown, at exit (service.py's locator factory), and on
+  Linux by the kernel when the engine goes (`PR_SET_PDEATHSIG`); on Windows the shell's Job Object
+  takes it. The kernel sends that signal when the *thread* that started the child ends, not the
+  process, so every llama-server is started by one long-lived supervisor thread the LlamaServer
+  owns (never by an asyncio.to_thread worker, which may go first); it ends only in close();
 - stops after `idle_stop_s` without a request (10 minutes), which frees 3–5 GB, and starts again
   when it's next needed;
 - is started again once when it stops by itself (a crash), and the request is asked again; if it
@@ -29,13 +32,13 @@ than the timeout (30 s on a GPU, 180 s on a CPU) fails with `not_ready`.
 """
 from __future__ import annotations
 
-import atexit
 import base64
 import http.client
 import io
 import json
 import logging
 import os
+import queue
 import secrets
 import shutil
 import signal
@@ -125,7 +128,10 @@ def child_env(exe_dir: Path | None, base=None) -> dict:
 
 
 def _die_with_parent() -> Callable[[], None] | None:
-    """Linux: a preexec_fn that makes the kernel send llama-server SIGTERM when the engine dies."""
+    """Linux: a preexec_fn that makes the kernel send llama-server SIGTERM when the thread that
+    started it (LlamaServer's supervisor) ends, which is when the engine dies. Everything is looked
+    up before the fork; in the child it only calls prctl, then exits if the engine already went
+    (its parent changed between the fork and the prctl, so the signal would never come)."""
     if not sys.platform.startswith("linux"):
         return None
     try:
@@ -133,10 +139,13 @@ def _die_with_parent() -> Callable[[], None] | None:
         prctl = ctypes.CDLL(None, use_errno=True).prctl     # looked up before the fork
     except (OSError, AttributeError):
         return None
-    pr_set_pdeathsig = 1
+    pr_set_pdeathsig, sigterm, parent = 1, int(signal.SIGTERM), os.getpid()
+    getppid, exit_now = os.getppid, os._exit
 
     def run() -> None:
-        prctl(pr_set_pdeathsig, int(signal.SIGTERM), 0, 0, 0)
+        prctl(pr_set_pdeathsig, sigterm, 0, 0, 0)
+        if getppid() != parent:
+            exit_now(1)
     return run
 
 
@@ -175,7 +184,9 @@ class LlamaServer:
         self._idle_thread: threading.Thread | None = None
         self.starts = 0
         self.load_seconds: float | None = None
-        self._atexit = False
+        self._spawns: queue.Queue | None = None
+        self._supervisor: threading.Thread | None = None
+        self._spawn_lock = threading.Lock()
 
     # ------------------------------------------------------------ the process
 
@@ -254,14 +265,11 @@ class LlamaServer:
         else:
             kwargs["preexec_fn"] = _die_with_parent()
         started = self.clock()
-        self.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                     stderr=subprocess.STDOUT, env=child_env(self.exe_dir), **kwargs)
+        self.proc = self._popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, env=child_env(self.exe_dir), **kwargs)
         self.starts += 1
         self._drainer = threading.Thread(target=self._drain, args=(self.proc,), name="llama-server-log", daemon=True)
         self._drainer.start()
-        if not self._atexit:
-            atexit.register(self.stop)
-            self._atexit = True
         while True:
             code = self.proc.poll()
             if code is not None:
@@ -286,6 +294,51 @@ class LlamaServer:
         self._last_used = self.clock()
         log.info("llama-server ready on port %s after %.1f s", self.port, self.load_seconds)
         self._watch_idle()
+
+    # ------------------------------------------------------------ the supervisor thread
+
+    def _popen(self, cmd: list[str], **kwargs) -> subprocess.Popen:
+        """subprocess.Popen, on the supervisor thread when there's a preexec_fn (Linux), so the
+        kernel's parent-death signal is tied to a thread that lives as long as this server."""
+        if kwargs.get("preexec_fn") is None:
+            kwargs.pop("preexec_fn", None)
+            return subprocess.Popen(cmd, **kwargs)
+        with self._spawn_lock:
+            if self._supervisor is None or not self._supervisor.is_alive():
+                self._spawns = queue.Queue()
+                self._supervisor = threading.Thread(target=self._supervise, args=(self._spawns,),
+                                                    name="llama-server-supervisor", daemon=True)
+                self._supervisor.start()
+            spawns = self._spawns
+        done, box = threading.Event(), {}
+        spawns.put((cmd, kwargs, done, box))
+        done.wait()
+        if "error" in box:
+            raise box["error"]
+        return box["proc"]
+
+    @staticmethod
+    def _supervise(spawns: queue.Queue) -> None:
+        while True:
+            job = spawns.get()
+            if job is None:                         # close(): no server of ours is running
+                return
+            cmd, kwargs, done, box = job
+            try:
+                box["proc"] = subprocess.Popen(cmd, **kwargs)
+            except BaseException as e:  # noqa: BLE001 (handed to the caller)
+                box["error"] = e
+            finally:
+                done.set()
+
+    def close(self) -> None:
+        """Stops the server for good (the engine is going, or another model replaces this one),
+        and ends the supervisor thread once nothing it started is running."""
+        self.stop("closed")
+        with self._spawn_lock:
+            if self._supervisor is not None and self._spawns is not None:
+                self._spawns.put(None)
+            self._supervisor = self._spawns = None
 
     def _drain(self, proc: subprocess.Popen) -> None:
         try:
@@ -536,4 +589,4 @@ class LlamaCppLocator(VisionLocator):
 
     def close(self) -> None:
         if self.server is not None:
-            self.server.stop("engine shutdown")
+            self.server.close()
