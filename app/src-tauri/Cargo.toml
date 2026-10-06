@@ -92,6 +92,10 @@ keyring = "3"
 # fallback). macOS keeps `open -R` (folder.rs).
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 tauri-plugin-opener = "2"
+# One app at a time on Windows and Linux, where opening a .bpworkspace file or a breakpatch://
+# link starts a second process: it hands its arguments to the first (deep-link passes the links
+# on) and quits. macOS does that itself (RunEvent::Opened).
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 [dev-dependencies]
 tempfile = "3"

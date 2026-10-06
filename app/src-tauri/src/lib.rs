@@ -8,6 +8,8 @@
 mod engine;
 mod folder;
 mod licence;
+#[cfg(target_os = "linux")]
+mod linux_desktop;
 mod migration;
 mod net;
 mod os_words;
@@ -511,12 +513,33 @@ async fn trackers_create_issue(
 
 // ---- App -----------------------------------------------------------------------------------
 
+/// A second launch on Linux or Windows (tauri-plugin-single-instance): it quit, and handed over its
+/// arguments and the folder it was started in. Its breakpatch:// link has gone to the deep-link
+/// plugin already; its workspace files are read here, and this window comes to the front.
+#[cfg(not(target_os = "macos"))]
+fn second_launch(app: &tauri::AppHandle, argv: Vec<String>, cwd: String) {
+    let paths = workspace::launch_paths(argv.iter().skip(1), std::path::Path::new(&cwd));
+    workspace::open_paths(app, &app.state::<WorkspaceInbox>(), paths);
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let engine = Arc::new(EngineHost::default());
     let engine_for_setup = Arc::clone(&engine);
 
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // First, so a second launch hands over its arguments and quits before anything else starts
+    // (a second window, a second engine). The deep-link feature passes breakpatch:// links on to
+    // the deep-link plugin (the UI's onOpenUrl); opened workspace files are read here.
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(second_launch));
+
+    let app = builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -586,9 +609,22 @@ pub fn run() {
             #[cfg(not(target_os = "macos"))]
             {
                 let inbox = app.state::<WorkspaceInbox>();
-                workspace::open_paths(app.handle(), &inbox, std::env::args_os().skip(1).map(std::path::PathBuf::from));
-                #[cfg(debug_assertions)]
-                {
+                let cwd = std::env::current_dir().unwrap_or_default();
+                workspace::open_paths(app.handle(), &inbox, workspace::launch_paths(std::env::args_os().skip(1), &cwd));
+                // breakpatch:// and .bpworkspace for this account. An AppImage does it at each start
+                // (linux_desktop.rs); a .deb or the Windows installer did it when installed.
+                // Development builds register the scheme too.
+                #[cfg(target_os = "linux")]
+                let appimage = app.env().appimage.is_some();
+                #[cfg(not(target_os = "linux"))]
+                let appimage = false;
+                if appimage {
+                    #[cfg(target_os = "linux")]
+                    {
+                        let handle = app.handle().clone();
+                        tauri::async_runtime::spawn_blocking(move || linux_desktop::register_appimage(&handle));
+                    }
+                } else if cfg!(debug_assertions) {
                     use tauri_plugin_deep_link::DeepLinkExt;
                     if let Err(e) = app.deep_link().register_all() {
                         log::warn!("couldn't register the breakpatch:// scheme: {e}");
@@ -721,6 +757,29 @@ mod config_tests {
         let entry = include_str!("../linux/breakpatch.desktop");
         assert!(entry.lines().any(|l| l == "Exec={{exec}} %u"), "{entry}");
         assert!(entry.contains("MimeType={{mime_type}}"));
+    }
+
+    /// The .deb defines the .bpworkspace type (shared-mime-info's dpkg trigger updates the
+    /// database), with the same file an AppImage writes for itself (linux_desktop.rs).
+    #[test]
+    fn the_linux_package_defines_the_workspace_file_type() {
+        let linux: Value = serde_json::from_str(include_str!("../tauri.linux.conf.json")).unwrap();
+        let files = &linux["bundle"]["linux"]["deb"]["files"];
+        assert_eq!(files, &serde_json::json!({"/usr/share/mime/packages/breakpatch.xml": "linux/breakpatch-mime.xml"}));
+        let xml = include_str!("../linux/breakpatch-mime.xml");
+        let assoc = &conf()["bundle"]["fileAssociations"][0];
+        assert!(xml.contains(&format!(r#"<mime-type type="{}">"#, assoc["mimeType"].as_str().unwrap())));
+        assert!(xml.contains(r#"<glob pattern="*.bpworkspace"/>"#));
+    }
+
+    /// One app at a time on Linux and Windows: a second launch hands its links to the first
+    /// through the deep-link plugin, so both are there (Cargo.toml).
+    #[test]
+    fn a_second_launch_passes_its_links_on() {
+        let cargo = include_str!("../Cargo.toml");
+        let line = cargo.lines().find(|l| l.starts_with("tauri-plugin-single-instance")).expect("single-instance");
+        assert!(line.contains(r#"features = ["deep-link"]"#), "{line}");
+        assert!(cargo.contains("tauri-plugin-deep-link = "));
     }
 
     /// The UI may show local notifications when a run finishes (lib/notify.ts).

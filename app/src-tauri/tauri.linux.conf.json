@@ -13,7 +13,10 @@
           "xdg-utils",
           "desktop-file-utils"
         ],
-        "desktopTemplate": "linux/breakpatch.desktop"
+        "desktopTemplate": "linux/breakpatch.desktop",
+        "files": {
+          "/usr/share/mime/packages/breakpatch.xml": "linux/breakpatch-mime.xml"
+        }
       }
     }
   },

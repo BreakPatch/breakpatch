@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The .bpworkspace file type (shared-mime-info). The .deb installs it as
+     /usr/share/mime/packages/breakpatch.xml; an AppImage writes it to
+     ~/.local/share/mime/packages/ when it starts (src/linux_desktop.rs). -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-breakpatch-workspace">
+    <comment>Breakpatch workspace connection</comment>
+    <sub-class-of type="application/json"/>
+    <glob pattern="*.bpworkspace"/>
+  </mime-type>
+</mime-info>
