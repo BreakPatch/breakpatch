@@ -31,13 +31,15 @@
 #
 # Environment:
 #   BREAKPATCH_VERSION   install this version (1.2.3, v1.2.3 or 0.1.0-beta.1) instead of the latest
-#   BREAKPATCH_CHANNEL   stable (default): the latest release, never a beta (GitHub's
-#                        releases/latest skips prereleases); beta: the newest release, betas included
-#   BREAKPATCH_GITHUB_TOKEN  private beta only, while BreakPatch/breakpatch is a private repository:
-#                        a GitHub token that can read it. It's sent to https://api.github.com only
-#                        (never after a redirect to another host), never shown, and never put on a
-#                        command line: curl reads the header from a file only this account can
-#                        read, deleted as soon as the downloads are done.
+#   BREAKPATCH_CHANNEL   stable (default): GitHub's latest release (releases/latest skips
+#                        prereleases; until the first stable release, release.yml makes the newest
+#                        beta the latest); beta: the newest release, betas included
+#   BREAKPATCH_GITHUB_TOKEN  not needed: BreakPatch/breakpatch is public. It was for the private
+#                        beta, while the repository was private: a GitHub token that can read it.
+#                        It's sent to https://api.github.com only (never after a redirect to another
+#                        host), never shown, and never put on a command line: curl reads the
+#                        header from a file only this account can read, deleted as soon as the
+#                        downloads are done.
 #   BREAKPATCH_APPS_DIR  the folder to install into (default /Applications)
 #   BREAKPATCH_API       the GitHub API address of the repository (for tests and mirrors)
 #   BREAKPATCH_DOWNLOADS where the release files must come from (for tests and mirrors; https only)

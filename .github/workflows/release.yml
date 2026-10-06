@@ -1,9 +1,10 @@
 name: Release
 
 # Push a tag like v0.2.0 (matching app/package.json "version") to build, sign and publish
-# Breakpatch for Apple Silicon. A tag with a "-" (v0.1.0-beta.1) is published as a GitHub
-# prerelease: never "Latest", so it stays out of the stable updater feed and the default install
-# command (see the publish job). The release carries the .app.tar.gz + .sig (updates,
+# Breakpatch for Apple Silicon. A tag with a "-" (v0.1.0-beta.1) is a beta. While there's no
+# stable release yet, a beta is published as the "Latest" release, so the default install command
+# and the in-app updater get it; once there is one, betas are GitHub prereleases, never "Latest"
+# (see the publish job). The release carries the .app.tar.gz + .sig (updates,
 # and what the install command https://breakpatch.dev/install downloads), latest.json, which
 # the in-app updater reads from the URL in app/src-tauri/tauri.conf.json
 # (plugins.updater.endpoints), and SHA256SUMS, which the install command checks against.
@@ -221,13 +222,18 @@ jobs:
         with:
           name: breakpatch-release
           path: release
-      # Published straight away. The stable updater feed is releases/latest/download/latest.json
+      # Published straight away. The updater feed is releases/latest/download/latest.json
       # (app/src-tauri/tauri.conf.json), and releases/latest is the release marked "Latest",
       # which GitHub never makes a draft or a prerelease. The install command's default is the
-      # same releases/latest. So each release carries its own latest.json, and a prerelease's
-      # (a tag with "-", v0.1.0-beta.1) is only reachable at its own tag: stable copies never
-      # see it, and beta copies move on to the next stable release (0.1.0 > 0.1.0-beta.1).
-      # Betas install with BREAKPATCH_CHANNEL=beta or BREAKPATCH_VERSION.
+      # same releases/latest. So each release carries its own latest.json, and:
+      #   - a stable tag (no "-", v0.1.0) is published as before: GitHub makes the newest Latest;
+      #   - a beta tag (with "-", v0.1.0-beta.2) while no stable release exists yet is published
+      #     as Latest too, not as a prerelease: the plain install command installs it and beta
+      #     copies update to it (0.1.0-beta.2 > 0.1.0-beta.1, and later 0.1.0 > 0.1.0-beta.2);
+      #   - a beta tag once a stable release exists is a prerelease, never Latest: stable copies
+      #     never see it. It installs with BREAKPATCH_CHANNEL=beta or BREAKPATCH_VERSION.
+      # The notes are docs/releases/<tag>.md at the tagged commit when it exists (read through the
+      # API: this job has no checkout), else a line on how to install.
       - name: Check and publish
         working-directory: release
         env:
@@ -235,29 +241,52 @@ jobs:
         run: |
           sha256sum --check --strict SHA256SUMS
           version=${GITHUB_REF_NAME#v}
+          install="Install or update from Terminal: \`curl -fsSL https://breakpatch.dev/install | sh\` (Apple Silicon, macOS 14 or later). Installed copies update themselves."
           case "$GITHUB_REF_NAME" in
             *-*)
-              prerelease=1
-              flags=(--prerelease --latest=false)
-              notes="Beta. Install or update from Terminal: \`curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=$version sh\`, or the newest beta with \`BREAKPATCH_CHANNEL=beta\` (Apple Silicon, macOS 14 or later). Betas aren't offered to stable copies." ;;
+              # Published stable releases (drafts and beta tags don't count). A failed request
+              # fails the job, so a beta is never made Latest by mistake.
+              tags=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.draft | not) | .tag_name')
+              stable=$(printf '%s\n' "$tags" | grep -v -e - | grep . | head -n 1 || true)
+              if [ -z "$stable" ]; then
+                kind=beta-latest
+                flags=(--latest)
+              else
+                kind=prerelease
+                flags=(--prerelease --latest=false)
+                install="Beta. Install or update from Terminal: \`curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=$version sh\`, or the newest beta with \`BREAKPATCH_CHANNEL=beta\` (Apple Silicon, macOS 14 or later). Betas aren't offered to stable copies."
+              fi ;;
             *)
-              prerelease=0
-              flags=()
-              notes="Install or update from Terminal: \`curl -fsSL https://breakpatch.dev/install | sh\` (Apple Silicon, macOS 14 or later). Installed copies update themselves." ;;
+              kind=stable
+              flags=() ;;   # GitHub makes the newest version Latest, as before
           esac
+          notes="$RUNNER_TEMP/notes.md"
+          if gh api "repos/$GITHUB_REPOSITORY/contents/docs/releases/$GITHUB_REF_NAME.md?ref=$GITHUB_SHA" \
+               -H 'Accept: application/vnd.github.raw' > "$notes" 2>/dev/null && [ -s "$notes" ]; then
+            echo "Notes: docs/releases/$GITHUB_REF_NAME.md"
+          else
+            printf '%s\n' "$install" > "$notes"
+          fi
           gh release create "$GITHUB_REF_NAME" ./* \
             --repo "$GITHUB_REPOSITORY" \
             --title "Breakpatch $GITHUB_REF_NAME" \
-            --notes "$notes" \
+            --notes-file "$notes" \
             "${flags[@]}"
-          if [ "$prerelease" -eq 1 ]; then
-            # The stable feed must still be a stable release (or none yet: HTTP 404).
-            latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          if [ "$kind" = stable ]; then
+            echo "Published $GITHUB_REF_NAME; Latest is ${latest:-none}."
+          elif [ "$kind" = prerelease ]; then
+            # The stable feed must still be the stable release.
             if [ "$latest" = "$GITHUB_REF_NAME" ]; then
               echo "::error::$GITHUB_REF_NAME became the Latest release: mark it as a prerelease in the release's settings now"
               exit 1
             fi
-            echo "Published $GITHUB_REF_NAME as a prerelease; Latest is ${latest:-none yet}."
+            echo "Published $GITHUB_REF_NAME as a prerelease; Latest is ${latest:-none}."
+          elif [ "$latest" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::$GITHUB_REF_NAME isn't the Latest release (Latest is ${latest:-none}), so the install command and the updater don't see it: mark it as Latest in the release's settings"
+            exit 1
+          else
+            echo "Published $GITHUB_REF_NAME as the Latest release (no stable release yet)."
           fi
 
   # ---------------------------------------------------------------- breakpatch-ci (after the app)

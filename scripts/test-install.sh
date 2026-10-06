@@ -11,6 +11,10 @@
 # it with shellcheck, installing shellcheck with apt when it's missing. Needs python3, node,
 # curl, tar, shasum and openssl.
 #
+# It also runs release.yml's publish script against a stand-in for gh, for which release becomes
+# GitHub's Latest (what the plain command and the in-app updater get): the newest beta until
+# there's a stable release, then only stable ones.
+#
 # The private beta (BREAKPATCH_GITHUB_TOKEN) runs against a stand-in for api.github.com and
 # objects.githubusercontent.com: one https server that answers for both names (the certificate
 # has them), which curl reaches through connect-to lines in the test home's .curlrc. So the
@@ -145,6 +149,13 @@ make_release good 1.1.0 latest
 make_release good 1.2.0-beta.1 prerelease
 make_release good 1.3.0-beta.1 prerelease draft
 make_list good v1.3.0-beta.1 v1.2.0-beta.1 v1.1.0 v1.0.0
+# The public beta, before any stable release: release.yml publishes a beta tag as Latest (not a
+# prerelease) while there's no stable release, so releases/latest is the newest beta.
+make_release betafirst 0.1.0-beta.1 latest
+make_list betafirst v0.1.0-beta.1
+make_release betanext 0.1.0-beta.1
+make_release betanext 0.1.0-beta.2 latest
+make_list betanext v0.1.0-beta.2 v0.1.0-beta.1
 make_release bad 1.2.0 latest bad-sum
 make_release nosums 1.3.0 latest no-sums
 make_release foreign 1.4.0 latest foreign
@@ -475,6 +486,80 @@ if grep -qF '$$' "$script"; then bad "site/install makes a name from the process
 # shellcheck disable=SC2016
 if grep -qF 'mktemp -d "$dest/' "$script"; then ok "staging folders come from mktemp"; else bad "staging folders don't come from mktemp"; fi
 
+# ---------------------------------------------------------------- release.yml: which release is Latest
+
+# The publish job's "Check and publish" script, run with bash -e (as Actions runs it) against a
+# stand-in for gh: a beta tag is published as Latest while there's no stable release (so the
+# plain install command and the updater's releases/latest get it, as beta-is-latest-before-stable
+# below checks), and as a prerelease once there is one. Notes come from docs/releases/<tag>.md at
+# the tagged commit when the API has it.
+current="release.yml publish"
+echo "$current"
+pub="$work/publish"
+mkdir -p "$pub/bin" "$pub/release"
+awk '
+  /^  publish:/ { job = 1 }
+  job && /- name: Check and publish/ { step = 1 }
+  step && /^        run: \|/ { on = 1; next }
+  on && /^          / { print substr($0, 11); next }
+  on && /^ *$/ { print ""; next }
+  on { exit }' "$repo/.github/workflows/release.yml" > "$pub/step.sh"
+cat > "$pub/bin/gh" <<'GH'
+#!/bin/sh
+echo "gh $*" >> "$PUB_LOG"
+case "$*" in
+  *"releases?per_page=100"*) [ "$FAKE_RELEASES" != fail ] || exit 1; for t in $FAKE_RELEASES; do echo "$t"; done ;;
+  *contents/docs/releases/*) if [ -n "$FAKE_NOTES" ]; then echo "$FAKE_NOTES"; else echo '{"message":"Not Found"}'; exit 1; fi ;;
+  "release create"*) ;;
+  *releases/latest*) if [ -n "$FAKE_LATEST" ]; then echo "$FAKE_LATEST"; else exit 1; fi ;;
+  *) echo "gh: unexpected $*" >&2; exit 2 ;;
+esac
+GH
+chmod +x "$pub/bin/gh"
+echo app > "$pub/release/Breakpatch_aarch64.app.tar.gz"
+(cd "$pub/release" && shasum -a 256 Breakpatch_aarch64.app.tar.gz > SHA256SUMS)
+# publish TAG "PUBLISHED TAGS" LATEST-AFTERWARDS [NOTES]: sets $out, $code, and $created (the
+# gh release create line).
+publish() {
+  : > "$pub/log"
+  rm -f "$pub/notes.md"
+  set +e
+  out=$(cd "$pub/release" && env PATH="$pub/bin:$PATH" PUB_LOG="$pub/log" GITHUB_REF_NAME="$1" FAKE_RELEASES="$2" \
+        FAKE_LATEST="$3" FAKE_NOTES="${4:-}" GITHUB_REPOSITORY=BreakPatch/breakpatch GITHUB_SHA=0123abc \
+        RUNNER_TEMP="$pub" bash -e "$pub/step.sh" 2>&1)
+  code=$?
+  set -e
+  created=$(grep '^gh release create' "$pub/log" || true)
+}
+expect_created() { if [[ "$created" == *"$1" ]]; then ok "created with:$1"; else bad "created: '$created', expected it to end with:$1"; fi; }
+if grep -q 'gh release create' "$pub/step.sh"; then ok "found the publish script"; else bad "couldn't read the publish step from release.yml"; fi
+publish v0.1.0-beta.1 "" v0.1.0-beta.1 "Breakpatch Community beta"
+expect_code 0
+expect_created " --latest"
+expect_out "as the Latest release (no stable release yet)"
+if grep -qx "Breakpatch Community beta" "$pub/notes.md"; then ok "notes from docs/releases/v0.1.0-beta.1.md"; else bad "notes: $(cat "$pub/notes.md")"; fi
+if grep -qF 'contents/docs/releases/v0.1.0-beta.1.md?ref=0123abc' "$pub/log"; then ok "notes read at the tagged commit"; else bad "notes not read at the tag: $(tr '\n' ';' < "$pub/log")"; fi
+publish v0.1.0-beta.2 "v0.1.0-beta.1" v0.1.0-beta.2
+expect_code 0
+expect_created " --latest"
+if grep -qF 'curl -fsSL https://breakpatch.dev/install | sh`' "$pub/notes.md"; then ok "without a notes file: the plain install command"; else bad "notes: $(cat "$pub/notes.md")"; fi
+publish v0.1.0-beta.3 "v0.1.0-beta.2" v0.1.0-beta.2
+expect_code 1
+expect_out "isn't the Latest release"
+publish v0.2.0-beta.1 "v0.2.0-beta.0 v0.1.0 v0.1.0-beta.2" v0.1.0
+expect_code 0
+expect_created " --prerelease --latest=false"
+expect_out "as a prerelease; Latest is v0.1.0."
+publish v0.2.0-beta.1 "v0.1.0" v0.2.0-beta.1
+expect_code 1
+expect_out "became the Latest release"
+publish v0.1.0 "v0.1.0-beta.2 v0.1.0-beta.1" v0.1.0
+expect_code 0
+expect_created " --notes-file $pub/notes.md"           # stable: GitHub makes the newest Latest
+publish v0.1.0-beta.2 fail ""
+expect_code 1
+if [ -z "$created" ]; then ok "the release list failed: nothing published"; else bad "published although the release list failed: $created"; fi
+
 for sh_name in "sh" "bash --posix"; do
   read -r -a shell_cmd <<< "$sh_name"
 
@@ -740,6 +825,30 @@ for sh_name in "sh" "bash --posix"; do
   run BREAKPATCH_CHANNEL=nightly
   expect_code 1
   expect_out "BREAKPATCH_CHANNEL is stable or beta, not nightly."
+
+  new_case beta-is-latest-before-stable
+  # The documented command, no variables: it installs the beta that's Latest...
+  run_piped BREAKPATCH_API="$base/betafirst" BREAKPATCH_DOWNLOADS="$base/betafirst/download/"
+  expect_code 0
+  expect_out "Installing Breakpatch 0.1.0-beta.1…"
+  expect_version "$apps" 0.1.0-beta.1
+  expect_log "open $apps/Breakpatch.app"
+  expect_clean
+  # ...and the next beta, once it's Latest, is an update (as the in-app updater sees it at
+  # releases/latest/download/latest.json).
+  run_piped BREAKPATCH_API="$base/betanext" BREAKPATCH_DOWNLOADS="$base/betanext/download/"
+  expect_code 0
+  expect_out "Updating Breakpatch 0.1.0-beta.1 to 0.1.0-beta.2…"
+  expect_version "$apps" 0.1.0-beta.2
+  expect_clean
+  # The beta channel and a pinned version agree.
+  run BREAKPATCH_API="$base/betanext" BREAKPATCH_DOWNLOADS="$base/betanext/download/" BREAKPATCH_CHANNEL=beta
+  expect_code 0
+  expect_out "Reinstalling Breakpatch 0.1.0-beta.2…"
+  run BREAKPATCH_API="$base/betanext" BREAKPATCH_DOWNLOADS="$base/betanext/download/" BREAKPATCH_VERSION=0.1.0-beta.1
+  expect_code 0
+  expect_out "Updating Breakpatch 0.1.0-beta.2 to 0.1.0-beta.1…"
+  expect_version "$apps" 0.1.0-beta.1
 
   new_case pinned-prerelease
   run BREAKPATCH_VERSION=1.2.0-beta.1

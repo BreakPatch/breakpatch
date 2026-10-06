@@ -38,13 +38,15 @@
 #
 # Environment:
 #   BREAKPATCH_VERSION   install this version (1.2.3, v1.2.3 or 0.1.0-beta.1) instead of the latest
-#   BREAKPATCH_CHANNEL   stable (default): the latest release, never a beta (GitHub's
-#                        releases/latest skips prereleases); beta: the newest release, betas included
-#   BREAKPATCH_GITHUB_TOKEN  private beta only, while BreakPatch/breakpatch is a private repository:
-#                        a GitHub token that can read it. It's sent to https://api.github.com only
-#                        (never after a redirect to another host), never shown, and never put on a
-#                        command line: curl reads the header from a file only this account can
-#                        read, deleted as soon as the downloads are done.
+#   BREAKPATCH_CHANNEL   stable (default): GitHub's latest release (releases/latest skips
+#                        prereleases; until the first stable release, release.yml makes the newest
+#                        beta the latest); beta: the newest release, betas included
+#   BREAKPATCH_GITHUB_TOKEN  not needed: BreakPatch/breakpatch is public. It was for the private
+#                        beta, while the repository was private: a GitHub token that can read it.
+#                        It's sent to https://api.github.com only (never after a redirect to another
+#                        host), never shown, and never put on a command line: curl reads the
+#                        header from a file only this account can read, deleted as soon as the
+#                        downloads are done.
 #   BREAKPATCH_PYTHON    the Python 3.11 to use (default python3.11, else python3 if it's 3.11,
 #                        else the pinned download)
 #   BREAKPATCH_PYTHON_DOWNLOAD  0: never download Python; without a 3.11, say how to get one
