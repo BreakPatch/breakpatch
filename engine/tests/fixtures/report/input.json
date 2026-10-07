@@ -93,6 +93,7 @@
       {
         "appName": "Web app",
         "name": "Invite a teammate",
+        "device": "iPhone 15 · 393 × 659",
         "steps": [
           { "id": "b1", "action": "click", "label": "Click Invite", "target": "Invite button" },
           { "id": "b2", "action": "write", "label": "Write address", "target": "Email field" }

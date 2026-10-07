@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ActionKind, Direction, Generated, SampleFile, StepGroup } from '../../data/types';
 import { secrets } from '../../platform';
-import { actionInfo, GENERATED_CHOICES, SAMPLES } from '../../engine/labels';
+import { actionInfo, GENERATED_CHOICES, SAMPLES, TOUCH_HIDDEN } from '../../engine/labels';
 import { countRows, findStep, TOKENS, numberOf } from '../../components/steps';
 import { Button, ChipSelect, Icon } from '../../components/ui';
 import { useLatched, usePresence } from '../../components/ui/presence';
@@ -24,7 +24,9 @@ type FloatBanner = { text: string; tone?: 'ok' | 'bad'; icon?: string; action?: 
 const sameBanner = (a: FloatBanner, b: FloatBanner) => a.text === b.text && a.tone === b.tone && a.icon === b.icon && a.action?.label === b.action?.label;
 const leaving = (closing: boolean) => closing ? { 'aria-hidden': true, inert: true } : {};
 
-export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, banner: bannerNow, describe = DESCRIBE_STEPS }: {
+export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, banner: bannerNow, describe = DESCRIBE_STEPS, touch = false }: {
+  /** A phone or tablet test: gestures are taps and presses, and the mouse-only ones aren't offered. */
+  touch?: boolean;
   /** The describe box (DESCRIBE_STEPS); the tests of describing turn it on. */
   describe?: boolean;
   rec: Recorder; appId: string; allowGroups: boolean; onInsertGroup: (g: StepGroup, version: number | 'latest') => void;
@@ -64,6 +66,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   }, [asking, rec]);
 
   useEffect(() => { void secrets.list().then(setSecretNames).catch(() => setSecretNames([])); }, []);
+  // Right click and Hover need a mouse: a touch test is never left on one.
+  useEffect(() => { if (touch && TOUCH_HIDDEN.has(action)) rec.setAction('click'); }, [touch, action, rec]);
   // Try again on a described step: its sentence is back in the box, ready to change.
   useEffect(() => { if (rec.refocus) inputRef.current?.focus(); }, [rec.refocus]);
   useEffect(() => { if (action === 'write' && o.writeSource === 'secret' && !o.secretRef && secretNames[0]) rec.setOptions({ secretRef: secretNames[0] }); }, [action, o.writeSource, o.secretRef, secretNames, rec]);
@@ -145,7 +149,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
       : !describe && action === 'upload'
       ? <span className="rec-inline rec-page-hint">{sampleChips()}</span>
       : onPage(action)
-      ? <span className="rec-inline rec-page-hint"><span className="grow">{pageHint(action)}</span>{!describe && action === 'waitUntil' && maxWaitBox()}</span>
+      ? <span className="rec-inline rec-page-hint"><span className="grow">{pageHint(action, touch)}</span>{!describe && action === 'waitUntil' && maxWaitBox()}</span>
       : <span className="rec-inline faint">{action === 'drag' ? 'Drag on the page from the start point to the end point, or click one and then the other.' : placeholderFor(action)}</span>;
   }
 
@@ -264,7 +268,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
           {field}
           <button ref={actionBtn} type="button" className={'rec-action-btn' + (menu !== 'closed' ? ' open' : '')} aria-haspopup="menu" aria-expanded={menu !== 'closed'}
             onClick={() => setMenu(m => (m === 'closed' ? 'menu' : 'closed'))}>
-            <Icon name={actionInfo(action).icon} size={16} />{shortName(action)}<Icon name={menu !== 'closed' ? 'expand_less' : 'expand_more'} size={16} className="faint" />
+            <Icon name={actionInfo(action).icon} size={16} />{shortName(action, touch)}<Icon name={menu !== 'closed' ? 'expand_less' : 'expand_more'} size={16} className="faint" />
           </button>
           {showSend && (
             <button type="button" className="rec-send" aria-label={input === 'describe' ? 'Ask the AI assistant' : 'Add step'}
@@ -274,7 +278,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
             </button>
           )}
         </div>
-        <ActionMenu open={menu === 'menu'} current={action} allowGroups={allowGroups} onPick={pick} onClose={closeMenu} />
+        <ActionMenu open={menu === 'menu'} current={action} allowGroups={allowGroups} touch={touch} onPick={pick} onClose={closeMenu} />
         {menu === 'picker' && (
           <SharedStepsPicker appId={appId} insertAs={countRows(rec.steps) + 1}
             onInsert={(g, v) => { setMenu('closed'); onInsertGroup(g, v); }}

@@ -34,3 +34,10 @@
 .cm-impact li.latest .icon, .cm-impact li.latest .cm-impact-mode { color: var(--accent); }
 .cm-impact li.pinned .icon, .cm-impact li.pinned .cm-impact-mode { color: var(--text-faint); }
 .cm-impact-mode { font-size: 12px; font-weight: 600; white-space: nowrap; }
+
+/* Size picker: computer sizes, then phones and tablets (data/devices.ts). */
+.cm-sizes-wrap { display: flex; flex-direction: column; gap: 8px; }
+.cm-sizes-title { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.cm-devices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cm-device { padding: 8px 10px; }
+.cm-device .cm-size-name { display: flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

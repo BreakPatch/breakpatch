@@ -3,8 +3,17 @@
 // as ISO strings and a newline at the end. Same data in → same bytes out.
 
 export const FORMAT = 'breakpatch';
-/** The folder format this app reads and writes. A higher number in breakpatch.json is from a newer app. */
+/** The folder format a new tests folder is written as. A number above NEWEST_READ_SCHEMA_VERSION in breakpatch.json is from a newer app. */
 export const SCHEMA_VERSION = 1;
+/**
+ * 2: a phone or tablet test (`viewport.device`, data/devices.ts), or an app whose default screen is
+ * one. Apps from before would run it as a desktop test and could save over it, so the first such
+ * file this app writes raises the folder to 2 (localBackend.ts raiseFormat): those apps then
+ * refuse the folder (NEWER_MESSAGE). A folder with no phone or tablet tests stays at 1.
+ */
+export const DEVICE_SCHEMA_VERSION = 2;
+/** The newest folder format this app reads and saves to. */
+export const NEWEST_READ_SCHEMA_VERSION = DEVICE_SCHEMA_VERSION;
 
 /** Keys that come first, in this order; then the rest alphabetically; then LAST. */
 const FIRST = [

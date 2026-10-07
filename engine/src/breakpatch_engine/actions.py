@@ -1,4 +1,7 @@
-"""Performs one step's action in the browser. Shared by recording and replay."""
+"""Performs one step's action in the browser. Shared by recording and replay.
+
+On a phone or tablet test (BrowserSession.touch) the same steps are touch input: a click is a tap,
+a double click two taps, a long click a long press, and swipe, scroll and drag move a finger."""
 from __future__ import annotations
 
 import asyncio
@@ -200,7 +203,7 @@ async def perform(b: BrowserSession, step: dict, ctx: Context, at: Sequence[floa
     elif a == "scroll":
         dx, dy = DIRECTIONS.get(step.get("direction") or "down", (0, 1))
         dist = float(step.get("distance") or 300)
-        await b.wheel(frm, dx * dist, dy * dist)
+        await b.scroll(frm, dx * dist, dy * dist)
     elif a == "write" and step.get("secretRef"):
         await write_secret(b, step["secretRef"], ctx, at)
     elif a == "write":

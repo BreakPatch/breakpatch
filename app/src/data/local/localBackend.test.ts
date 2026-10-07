@@ -71,7 +71,7 @@ describe('choosing a folder', () => {
   });
   it('refuses a newer format, a broken breakpatch.json and a missing folder', async () => {
     const st = new MemoryStorage();
-    st.poke('/new/breakpatch.json', '{"format":"breakpatch","schemaVersion":2,"name":"x"}');
+    st.poke('/new/breakpatch.json', '{"format":"breakpatch","schemaVersion":3,"name":"x"}');
     await expect(inspectFolder(st, '/new')).rejects.toThrow(NEWER_MESSAGE);
     await expect(LocalBackend.open({ storage: st, path: '/new', person: ana, live: false })).rejects.toMatchObject({ code: 'newer' });
     st.poke('/bad/breakpatch.json', '{ nope');

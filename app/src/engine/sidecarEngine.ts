@@ -40,7 +40,7 @@ export class SidecarEngine implements Engine {
   async pauseSetup(task: SetupTaskName) { await this.call('setup.pause', { task }); }
   async removeModel() { await this.call('setup.removeModel'); }
 
-  async openBrowser(url: string, viewport: Viewport) { await this.call('browser.open', { url, viewport: { width: viewport.width, height: viewport.height } }); }
+  async openBrowser(url: string, viewport: Viewport) { await this.call('browser.open', { url, viewport: { width: viewport.width, height: viewport.height, ...(viewport.device ? { device: viewport.device } : {}) } }); }
   async closeBrowser() { await this.call('browser.close'); }
   async navigate(nav: 'url' | 'reload' | 'back' | 'forward', url?: string) { await this.call('browser.navigate', { nav, url }); }
   async pointer(kind: 'move' | 'scroll', at: Point, dx?: number, dy?: number) { await this.call('browser.pointer', { kind, at, dx, dy }); }

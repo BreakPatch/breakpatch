@@ -1,16 +1,18 @@
 // The action list (ui-requirements §5.6) and what each action does with the page and the composer.
 import type { ActionKind } from '../../data/types';
-import { ACTIONS, actionInfo } from '../../engine/labels';
+import { ACTIONS, actionInfo, actionWords, TOUCH_HIDDEN } from '../../engine/labels';
 import type { LiveTool } from '../../components/live';
 
 /** Menu entries. Reload, Back and Forward are Go-to-address variants that record at once. */
 export interface MenuAction { id: string; kind: ActionKind; name: string; icon: string; nav?: 'reload' | 'back' | 'forward' }
 export interface MenuGroup { title: string; items: MenuAction[] }
 
-const item = (kind: ActionKind): MenuAction => { const a = actionInfo(kind); return { id: kind, kind, name: a.name, icon: a.icon }; };
+const item = (kind: ActionKind, touch = false): MenuAction => { const a = actionInfo(kind); return { id: kind, kind, name: actionWords(kind, touch).name, icon: a.icon }; };
 
-export function menuGroups(opts: { allowGroups: boolean }): MenuGroup[] {
-  const by = (g: string) => ACTIONS.filter(a => a.group === g).map(a => item(a.kind));
+/** `touch`: a phone or tablet test. Its gestures are named for touch (Tap, Long press), and Right click and Hover, which need a mouse, aren't offered. */
+export function menuGroups(opts: { allowGroups: boolean; touch?: boolean }): MenuGroup[] {
+  const touch = !!opts.touch;
+  const by = (g: string) => ACTIONS.filter(a => a.group === g && !(touch && TOUCH_HIDDEN.has(a.kind))).map(a => item(a.kind, touch));
   return [
     { title: 'Gestures', items: by('Gestures') },
     { title: 'Input', items: by('Input') },
@@ -32,7 +34,7 @@ export const SHORT: Partial<Record<ActionKind, string>> = {
   checkpoint: 'Checkpoint', loop: 'Repeat', group: 'Shared steps', waitUntil: 'Wait until', waitFor: 'Wait',
   navigate: 'Go to address', downloadCheck: 'Check download', upload: 'Upload file', drag: 'Drag and drop',
 };
-export const shortName = (k: ActionKind) => SHORT[k] ?? actionInfo(k).name;
+export const shortName = (k: ActionKind, touch = false) => SHORT[k] ?? actionWords(k, touch).name;
 
 /** Actions whose target on the page can be clicked or described. */
 export const POINT_KINDS = new Set<ActionKind>(['click', 'doubleClick', 'longClick', 'rightClick', 'hover', 'upload', 'swipe', 'scroll']);
@@ -79,8 +81,13 @@ export function placeholderFor(k: ActionKind): string {
   }
 }
 
-/** What to do on the page, where the describe box was (DESCRIBE_STEPS off). */
-export function pageHint(k: ActionKind): string {
+/** What to do on the page, where the describe box was (DESCRIBE_STEPS off). `touch`: a phone or tablet test. */
+export function pageHint(k: ActionKind, touch = false): string {
+  if (touch) switch (k) {
+    case 'click': return 'Click on the page to add a tap.';
+    case 'doubleClick': return 'Click what to double-tap on the page.';
+    case 'longClick': return 'Click what to long-press on the page. The step holds a finger down.';
+  }
   switch (k) {
     case 'waitUntil': return 'Draw a box around what should appear on the page, or click it.';
     case 'checkpoint': return 'Click the area to check on the page, or draw a box around it.';

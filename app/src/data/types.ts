@@ -5,7 +5,11 @@ export type Millis = number;
 
 export interface Person { uid: string; name: string; email: string }
 
-export interface Viewport { width: number; height: number; dpr: 1 }
+/**
+ * A test's screen, fixed when it's made. `device` names a phone or tablet preset (data/devices.ts):
+ * the page then has that device's size, user agent and a touch screen. None: a desktop test.
+ */
+export interface Viewport { width: number; height: number; dpr: 1; device?: string }
 
 export type Role = 'member' | 'admin' | 'runner' | 'ci';
 

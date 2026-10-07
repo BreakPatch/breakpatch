@@ -331,9 +331,11 @@ def where_text(run: dict, recorded_on: object = None) -> str:
     return "Desktop app"
 
 
-def run_meta(run: dict, offset: int, recorded_on: object = None) -> list[dict]:
+def run_meta(run: dict, offset: int, recorded_on: object = None, device: object = None) -> list[dict]:
     meta = [{"k": "Took", "v": took_text(run.get("durationMs"))}, {"k": "Run by", "v": run_by(run)},
             {"k": "Where", "v": where_text(run, recorded_on)},
+            # A phone or tablet test: "iPhone 15 · 393 × 659" (the test input's `device`).
+            {"k": "Device", "v": device if isinstance(device, str) else ""},
             {"k": "Machine", "v": str(run.get("machine") or "")},
             # breakpatch-ci's tier on that machine (systems.Tier.summary): "Simple runner: 4 GB of memory, …"
             {"k": "Runner", "v": str(run.get("runner") or "")}, {"k": "When", "v": when_text(run.get("startedAt"), offset)}]
@@ -356,7 +358,7 @@ def test_view(t: dict, index: int, offset: int, screenshots: bool, multi: bool) 
         v.pop("_reason", None)
     return {
         "anchor": f"test-{index + 1}", "name": name, "appName": str(t.get("appName") or ""), "multi": multi,
-        "result": state, "resultText": RUN_TEXT[state] if run else "Couldn't run", "meta": run_meta(run, offset, t.get("recordedOn")) if run else [],
+        "result": state, "resultText": RUN_TEXT[state] if run else "Couldn't run", "meta": run_meta(run, offset, t.get("recordedOn"), t.get("device")) if run else [],
         "testNote": "" if run else str(t.get("note") or "It couldn't run."),
         "stepsText": plural(len(views), "step"), "steps": views, "junit": j,
         # In a suite, a test that passed starts closed: what didn't pass is what's read first.

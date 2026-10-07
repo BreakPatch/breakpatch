@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from . import calls, config, explain, install, plugins
+from . import calls, config, explain, install, labels, plugins
 from .actions import parse_secrets
 from .browser import BrowserSession
 from .locator import Locator, MlxLocator, NoLocator
@@ -78,6 +78,7 @@ class Engine:
         self._browser_lock = asyncio.Lock()
         self._hand = False                      # "Use the page" is on
         self._hand_page = None
+        self._hand_finger = False               # a finger is down on a touch page ("Use the page")
         self._pending_chooser = None
 
     def handlers(self) -> dict:
@@ -182,6 +183,7 @@ class Engine:
             except Exception:  # noqa: BLE001
                 pass
             self._hand_page = None
+            self._hand_finger = False
             self._pending_chooser = None
         return {}
 
@@ -227,7 +229,9 @@ class Engine:
         button = p.get("button") if p.get("button") in ("left", "right", "middle") else "left"
         if kind in ("down", "up", "move", "click", "wheel") and pos is None:
             raise EngineError("bad_request", "The engine received a position it couldn't read.", repr(at))
-        if kind == "move":
+        if self.browser.touch and button == "left" and kind in ("down", "up", "move", "click"):
+            await self._hand_touch(kind, pos)
+        elif kind == "move":
             await page.mouse.move(*pos)
         elif kind == "down":
             await page.mouse.move(*pos)
@@ -251,6 +255,19 @@ class Engine:
             raise EngineError("bad_request", "The engine doesn't know that kind of input.", str(kind)[:20])
         log.debug("used the page: %s", kind)          # the kind only, never a key or text
         return {}
+
+    async def _hand_touch(self, kind: str, pos) -> None:
+        """The user's mouse on a phone or tablet's page is a finger: press, move while pressed, let go."""
+        if kind == "click":
+            await self.browser.tap(pos)
+        elif kind == "down":
+            self._hand_finger = True
+            await self.browser.touch_event("start", pos)
+        elif kind == "move" and self._hand_finger:
+            await self.browser.touch_event("move", pos)
+        elif kind == "up" and self._hand_finger:
+            self._hand_finger = False
+            await self.browser.touch_event("end")
 
     async def browser_pointer(self, p: dict) -> dict:
         self._not_during_run()
@@ -283,7 +300,13 @@ class Engine:
 
     async def record_point(self, p: dict) -> dict:
         phase = lambda ph: self.emit("record.checking", {"phase": ph})  # noqa: E731
-        return {"step": await self._recording(lambda: self.recorder.point(p, phase))}
+        return {"step": self._touch_words(await self._recording(lambda: self.recorder.point(p, phase)), p)}
+
+    def _touch_words(self, step, p: dict):
+        """On a phone or tablet, a step the engine named says "Tap", not "Click" (labels.touch_words)."""
+        if not self.browser.touch or not isinstance(step, dict) or p.get("label"):
+            return step
+        return labels.touch_words(step)
 
     async def record_checkpoint(self, p: dict) -> dict:
         phase = lambda ph: self.emit("record.checking", {"phase": ph})  # noqa: E731

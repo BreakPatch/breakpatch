@@ -12,12 +12,13 @@ import { getEngine } from '../../engine';
 import { Icon } from '../../components/ui';
 import { FileChooserDialog } from './FileChooserDialog';
 import { toolFor } from './actions';
+import { isTouch } from '../../data/devices';
 import { localId, type Recorder } from './useRecorder';
 import './recorder.css';
 import { osText, shortcutKeyDown } from '../../lib/osWords';
 
 export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, loading, onEditGroup, run }: {
-  rec: Recorder; appId: string; address: string; viewport: Pick<Viewport, 'width' | 'height'>;
+  rec: Recorder; appId: string; address: string; viewport: Pick<Viewport, 'width' | 'height' | 'device'>;
   /** Tests can insert shared steps; shared steps can't contain other shared steps. */
   allowGroups: boolean;
   loading?: boolean;
@@ -35,7 +36,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
   useEffect(() => { void secrets.list().then(setSecretNames).catch(() => setSecretNames([])); }, []);
   const groupSteps = useGroupSteps(appId, rec.steps);
   const sel = rec.selectedId ? findStep(rec.steps, rec.selectedId) : undefined;
-  const marker = sel && rec.ai.state === 'idle' && !run?.running ? stepMarker(sel, numberOf(rec.steps, sel.id), sel.id === rec.busyId ? rec.phaseText ?? undefined : undefined) : null;
+  const marker = sel && rec.ai.state === 'idle' && !run?.running ? stepMarker(sel, numberOf(rec.steps, sel.id), sel.id === rec.busyId ? rec.phaseText ?? undefined : undefined, isTouch(viewport)) : null;
   const pill = rec.checking ? <CheckingPill text={rec.phaseText ?? undefined} /> : rec.savedPill ? <SavedPill key={rec.savedPill} text={rec.savedPill} /> : null;
   // ✋ Use the page: the user works the page directly (nothing recorded). Cmd+E toggles it; not Esc (the page may need it).
   const engineLive = getEngine().liveMode === 'frames';
@@ -71,7 +72,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
           markers={marker ? [marker] : []} candidate={rec.ai.state === 'result' || rec.ai.state === 'proposal' ? rec.ai.box ?? null : null} thinking={rec.thinking} loading={loading} />
         <FileChooserDialog ask={rec.fileAsk} dir={rec.filesDir} onChoose={rec.chooseFile} />
         <FileChooserDialog ask={rec.handAsk} dir={rec.filesDir} onChoose={rec.handChooseFile} />
-        <AddStepBar rec={rec} appId={appId} allowGroups={allowGroups} onInsertGroup={insertGroup} frozen={run?.running ? 'The test is playing in this browser. Stop it, or wait for it to finish, to add steps.'
+        <AddStepBar rec={rec} appId={appId} allowGroups={allowGroups} touch={isTouch(viewport)} onInsertGroup={insertGroup} frozen={run?.running ? 'The test is playing in this browser. Stop it, or wait for it to finish, to add steps.'
           : rec.hand ? "Recording is paused while you use the page." : null}
           banner={rec.hand ? { text: "You're using the page directly. Nothing is recorded.", icon: 'back_hand', action: { label: 'Done', onClick: () => void rec.setHand(false) } } : run?.banner ?? null} />
       </div>
