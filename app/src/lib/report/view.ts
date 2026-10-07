@@ -27,6 +27,8 @@ export interface ReportTestInput {
   note?: string;
   /** Where the run's version of the test was recorded, when known: the Where of a run that records no system. */
   recordedOn?: RecordedOn;
+  /** A phone or tablet test: the device it ran as, "iPhone 15 · 393 × 659" (data/devices.ts screenName). */
+  device?: string;
 }
 
 export interface ReportInput {
@@ -211,10 +213,11 @@ function runState(run: ReportRun | null, steps: StepView[]): StepState {
   return int(run.healedCount) > 0 ? 'fixed' : 'passed';
 }
 
-function runMeta(run: ReportRun, offset: number, recordedOn?: RecordedOn): Meta[] {
+function runMeta(run: ReportRun, offset: number, recordedOn?: RecordedOn, device?: string): Meta[] {
   const meta: Meta[] = [
     { k: 'Took', v: tookText(int(run.durationMs)) }, { k: 'Run by', v: runBy(run) },
     { k: 'Where', v: whereText(run, recordedOn) },
+    { k: 'Device', v: typeof device === 'string' ? device : '' },
     { k: 'Machine', v: String(run.machine ?? '') },
     // breakpatch-ci's tier on that machine (engine systems.Tier.summary): "Simple runner: 4 GB of memory, …"
     { k: 'Runner', v: String(run.runner ?? '') }, { k: 'When', v: whenText(run.startedAt, offset) },
@@ -254,7 +257,7 @@ function testView(t: ReportTestInput, index: number, offset: number, screenshots
   const steps: StepView[] = withCode.map(({ reasonCode: _code, ...s }) => s);
   return {
     anchor: `test-${index + 1}`, name: String(t.name || run?.testName || 'Test'), appName: String(t.appName ?? ''), multi,
-    result: state, resultText: run ? RUN_TEXT[state] : "Couldn't run", meta: run ? runMeta(run, offset, t.recordedOn) : [],
+    result: state, resultText: run ? RUN_TEXT[state] : "Couldn't run", meta: run ? runMeta(run, offset, t.recordedOn, t.device) : [],
     testNote: run ? '' : String(t.note || "It couldn't run."), stepsText: plural(steps.length, 'step'), steps, junit,
     stepsOpen: state !== 'passed' && state !== 'fixed',
   };
