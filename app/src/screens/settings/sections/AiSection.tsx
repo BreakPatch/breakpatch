@@ -45,7 +45,7 @@ export function AiSection() {
           <Disc icon="auto_awesome" size={44} color="var(--accent)" />
           <div className="grow col" style={{ gap: 2 }}>
             <div style={{ fontSize: 16, fontWeight: 600 }}>AI assistant</div>
-            <div className="set-card-sub sm">{fixing ? 'Names each step you record, and fixes moved buttons during runs.' : 'Names each step you record.'}</div>
+            <div className="set-card-sub sm">{fixing ? 'Names each step you record, finds what you describe, and fixes moved buttons during runs.' : 'Names each step you record and finds what you describe.'}</div>
           </div>
           {!info ? <Skeleton w={70} h={26} r={13} /> : installed ? <StatusPill status="passed">Ready</StatusPill> : <StatusPill status="failed">Not downloaded</StatusPill>}
         </div>

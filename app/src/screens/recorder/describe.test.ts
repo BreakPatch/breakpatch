@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { askText, checkpointLabel, describeWhat, notFoundText, thinkingText } from './describe';
+import { askText, checkpointLabel, describeWhat, intentAskText, notFoundText, planNotFoundText, thinkingText } from './describe';
 import { composerInput, menuGroups, toolFor } from './actions';
 
 describe('describe flow text', () => {
@@ -13,6 +13,12 @@ describe('describe flow text', () => {
     expect(thinkingText('the Done button')).toBe('Looking for the Done button…');
     expect(askText('the Done button')).toBe('Is this the Done button?');
     expect(notFoundText('the Archive button')).toBe('Couldn\'t find "the Archive button" on this screen. Rephrase, or click it on the page.');
+    expect(planNotFoundText('the Archive button')).toBe('Couldn\'t find "the Archive button" on this screen. Click it on the page, edit the step, or skip it.');
+  });
+  it('says what Confirm types: the text, a saved secret by name, or a generated value', () => {
+    expect(intentAskText('the Name field', { action: 'write', repeat: 1, text: 'Ada' })).toBe('Is this the Name field? Confirm to type "Ada" into it.');
+    expect(intentAskText('the Password field', { action: 'write', repeat: 1, secretRef: 'TEST_PASSWORD' })).toBe('Is this the Password field? Confirm to type the saved secret TEST_PASSWORD into it.');
+    expect(intentAskText('the Name field', { action: 'write', repeat: 1, generated: 'uniqueName' })).toBe('Is this the Name field? Confirm to type a unique name into it.');
   });
   it('names checkpoints', () => {
     expect(checkpointLabel('success message')).toBe('Success message shows');
@@ -38,9 +44,10 @@ describe('action list', () => {
     expect(composerInput('write')).toBe('text');
     expect(composerInput('navigate')).toBe('url');
     expect(composerInput('waitFor')).toBe('none');
-    expect(composerInput('upload', true)).toBe('describe');
-    // The describe box is off: what acts on the page is added on the page.
-    for (const k of ['click', 'hover', 'upload', 'scroll', 'waitUntil', 'checkpoint'] as const) expect(composerInput(k)).toBe('none');
+    // The describe box is on (DESCRIBE_STEPS, back with #10): what acts on the page can be described too.
+    for (const k of ['click', 'hover', 'upload', 'scroll', 'waitUntil', 'checkpoint'] as const) expect(composerInput(k)).toBe('describe');
+    // With it off, what acts on the page is added on the page.
+    for (const k of ['click', 'hover', 'upload', 'scroll', 'waitUntil', 'checkpoint'] as const) expect(composerInput(k, false)).toBe('none');
     expect(composerInput('write')).toBe('text');
   });
 });

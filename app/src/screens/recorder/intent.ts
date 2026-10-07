@@ -6,7 +6,7 @@
 // The words are read here first. When they start with a word this can't place ("log out the
 // user"), the engine's AI assistant is asked (`record.intent`), when it's downloaded; failing
 // that, the chosen action is used with the whole sentence as what to look for, as before.
-import type { ActionKind, Direction } from '../../data/types';
+import type { ActionKind, Direction, Generated } from '../../data/types';
 import type { EngineIntent, Near } from '../../engine/engine';
 
 export interface Intent {
@@ -15,8 +15,10 @@ export interface Intent {
   target?: string;
   /** How many steps to add, one after another (1 to MAX_REPEAT). */
   repeat: number;
-  /** Write: what to type. */
+  /** Write: what to type, or a saved secret or a generated value instead (a step from a story). */
   text?: string;
+  secretRef?: string;
+  generated?: Generated;
   /** Scroll: which way and how far (px). */
   direction?: Direction;
   distance?: number;
@@ -26,8 +28,8 @@ export interface Intent {
   url?: string;
   /** A stepper's "+" or "−" next to something (record.locate `near`). */
   near?: Near;
-  /** Where the action came from: the sentence, the AI assistant, or the chosen action. */
-  from: 'words' | 'ai' | 'chosen';
+  /** Where the action came from: the sentence, the AI assistant, the chosen action, or a step of a story's plan. */
+  from: 'words' | 'ai' | 'chosen' | 'plan';
 }
 
 /**

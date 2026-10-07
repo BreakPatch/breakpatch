@@ -14,7 +14,8 @@ import { SaveButton } from './SaveButton';
 import { useLeaveGuard } from './useLeaveGuard';
 import { useRecorder } from './useRecorder';
 import { addressOf, useBrowserSession } from './browserSession';
-import { hasFeature } from '../../edition';
+import { hasFeature, useFeature } from '../../edition';
+import { StoryDialog } from './StoryDialog';
 import { filesDir } from '../../lib/testFiles';
 import { addStepHint, editorStatuses, useEditorRun, type EditorRunDone } from './editorRun';
 import { checksNothing, UNCHECKED_NOTE } from '../run/reasons';
@@ -38,6 +39,9 @@ export default function RecorderScreen() {
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // Write a test from a story (Breakpatch Team, aiTests): the steps it proposes are gone through in the recorder.
+  const aiTests = useFeature('aiTests');
+  const [storyOpen, setStoryOpen] = useState(false);
   // The browser stays on the address it opened at: a new start address (Test details) is for the
   // next run, and reopening would lose the page the steps are being recorded on.
   const [openedAt, setOpenedAt] = useState<{ id: string; url: string } | null>(null);
@@ -176,6 +180,8 @@ export default function RecorderScreen() {
   const actions = test && (
     <>
       <IconButton icon="description" label="Test details" onClick={() => setDetailsOpen(true)} disabled={editorRun.running} />
+      {aiTests && <Button icon="auto_awesome" onClick={() => setStoryOpen(true)} disabled={!loaded || !browser.ready || rec.busy || editorRun.running || rec.hand}
+        title="Write a test from a story">From a story</Button>}
       {hasFeature('collaboration') && <SharedChip published={published} />}
       {rec.dirty && <div className="rec-dirty" role="status">Unsaved changes</div>}
       {rec.dirty && !editorRun.running && <span className="rec-run-note" title="Running never saves the test">Runs your unsaved changes too</span>}
@@ -193,6 +199,7 @@ export default function RecorderScreen() {
         loading={!loaded || !browser.ready} onEditGroup={id => guard(() => navigate(`/apps/${appId}/shared/${id}/edit`))} run={runProps} />
       {dialog}
       {test && <TestDetailsDialog open={detailsOpen} test={test} onClose={() => setDetailsOpen(false)} />}
+      {aiTests && <StoryDialog open={storyOpen} onClose={() => setStoryOpen(false)} onPlan={p => { rec.cancelAi(); rec.startPlan(p); }} />}
     </AppFrame>
   );
 }

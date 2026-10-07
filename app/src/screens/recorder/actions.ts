@@ -52,10 +52,13 @@ export const INSTANT = new Set<string>(['reload', 'back', 'forward', 'switchTab'
 
 export type ComposerInput = 'describe' | 'text' | 'url' | 'none';
 // ============================== DESCRIBE SWITCH ==============================
-// The add-step bar's "Describe the next step" box. Off (owner, 2026-10-02): steps that act on
-// the page are added by clicking or drawing on it, and Write and Go to address keep their own
-// boxes. The describing code stays for the AI test agent (#10) to bring back.
-export const DESCRIBE_STEPS = false;
+// The add-step bar's "Describe the next step" box. Off from 2026-10-02 for the launch; back on
+// with #10, which goes through a story's steps with the same flow: the words are read
+// (intent.ts), what they name is found on the live page (record.locate: the page's structure
+// first, then the AI assistant; text that shows for a check) and shown for Confirm. With it off,
+// steps that act on the page are added by clicking or drawing on it only, and Write and Go to
+// address keep their own boxes.
+export const DESCRIBE_STEPS = true;
 // =============================================================================
 
 /** Actions added by pointing at the page: with describing off, the page is the only way. */
