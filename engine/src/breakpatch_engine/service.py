@@ -316,7 +316,7 @@ class Engine:
         self._not_during_run()
         self.browser.require()
         return await self.recorder.locate(p.get("description") or "", absence=p.get("absence") is True,
-                                          near=near_param(p.get("near")))
+                                          near=near_param(p.get("near")), shows=p.get("shows") is True)
 
     async def record_intent(self, p: dict):
         """What a described step means, from the AI assistant: `{action, target, repeat, text?,

@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sign up</title>
+<style>
+  body { margin: 0; background: #fff; font: 16px sans-serif; color: #222; }
+  .card { position: absolute; left: 200px; top: 60px; width: 400px; }
+  h1 { font-size: 24px; margin: 0 0 16px; }
+  label { display: block; margin: 0 0 4px; }
+  input { box-sizing: border-box; width: 400px; height: 40px; border: 1px solid #999; border-radius: 6px; margin: 0 0 14px; padding: 0 10px; font: 16px sans-serif; }
+  button { width: 400px; height: 48px; border: 0; border-radius: 8px; background: #6b3fd4; color: #fff; font: 16px sans-serif; }
+  nav { position: absolute; left: 0; top: 0; right: 0; height: 40px; background: #f3f0fa; }
+  nav a { display: inline-block; margin: 10px 0 0 20px; color: #4a2a9a; }
+  #done { display: none; position: absolute; left: 200px; top: 120px; width: 400px; padding: 24px; border-radius: 10px; background: #dff0ea; font-size: 22px; }
+</style></head>
+<body>
+  <!-- A sign-up form for "a test from a story" (plan.py): Name, Email and Password fields, then
+       "Create account" shows "Account created" in place of the form. -->
+  <nav><a href="#">Home</a><a href="#">Pricing</a><a href="#">Help</a></nav>
+  <form class="card" id="form" onsubmit="return false">
+    <h1>Create your account</h1>
+    <label for="name">Name</label><input id="name" autocomplete="off">
+    <label for="email">Email</label><input id="email" autocomplete="off">
+    <label for="password">Password</label><input id="password" type="password" autocomplete="off">
+    <button id="create" type="submit">Create account</button>
+  </form>
+  <div id="done" role="status">Account created</div>
+  <script>
+    document.getElementById('create').onclick = function () {
+      document.getElementById('form').style.display = 'none';
+      document.getElementById('done').style.display = 'block';
+    };
+  </script>
+</body></html>

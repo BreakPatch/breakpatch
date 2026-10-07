@@ -160,7 +160,7 @@ The browser methods answer `busy` during a run.
 | Method | Params | Result |
 |---|---|---|
 | `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
-| `record.locate` | `{ description, absence?, near? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below) |
+| `record.locate` | `{ description, absence?, near?, shows? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below). `shows: true`: what to find may be text on the screen, not a control (a checkpoint, a Wait until; below) |
 | `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell. An empty sentence is `bad_request`; only its first 300 characters are read |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
 | `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
@@ -310,6 +310,14 @@ action needs is `null`. Without the AI assistant it is `null` at once, never `no
 then uses the chosen action with the sentence as what to look for, as before. Nothing is done to
 the page: the app looks for the target with `record.locate` and records the step (or, for a
 repeat, that many steps one after another) through `record.point` only when the user confirms.
+
+**Text that shows (`record.locate` `shows`).** A checkpoint or a Wait until often looks for plain
+text ("Account created"), which isn't a control, so S0 is unsure about it. With `shows: true`, on a
+Fast page where S0 is unsure, the short text runs on screen are read first (`dom/shown.py`): the
+description without quotes, a leading "the" and trailing words such as "message shows"; a text
+that reads exactly that wins, else the shortest that has it as whole words and isn't much longer
+(40 characters at most beyond it), ties in reading order. The answer's `path` is `"fast"`. When no
+text reads like it, the AI assistant is asked as before. Without `shows` nothing changes.
 
 **The "+" or "−" next to something (`record.locate` `near`).** `near: { control: "increase", of:
 "People" }` finds a stepper's control from the page's structure (`dom/near.py`) instead of S0,
