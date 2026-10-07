@@ -9,6 +9,7 @@ import { countRows, findStep, TOKENS, numberOf } from '../../components/steps';
 import { Button, ChipSelect, Icon } from '../../components/ui';
 import { useLatched, usePresence } from '../../components/ui/presence';
 import { ActionMenu } from './ActionMenu';
+import { PlanCard } from './PlanCard';
 import { SharedStepsPicker } from './SharedStepsPicker';
 import { composerInput, DESCRIBE_STEPS, INSTANT, onPage, pageHint, placeholderFor, shortName, toolHint, type MenuAction } from './actions';
 import type { Recorder } from './useRecorder';
@@ -49,6 +50,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   const bannerP = usePresence(!!bannerNow), banner = useLatched(bannerNow, sameBanner);
   const askP = usePresence(asking), askAi = useLatched(asking ? rec.ai : null), askText = useLatched(asking ? rec.ask : null);
   const lostP = usePresence(rec.ai.state === 'notfound'), lostText = useLatched(rec.ai.state === 'notfound' ? rec.notFound : null);
+  // A story's step (plan.ts) gets Skip and Edit next to Confirm and Try again, and on "Couldn't find".
+  const lostPlan = useLatched(rec.ai.state === 'notfound' ? rec.ai.plan !== undefined : null);
   // Only a key pressed after the bar appeared answers it: the Enter that sent a sentence can show the
   // bar during its own keydown (typing, an address, a scroll are proposed at once), and must not
   // confirm it too. So the listener starts after that event, and a held key's repeats don't count.
@@ -232,6 +235,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
       {/* Everything that comes and goes (AI bars, the chosen action's options) floats over the bottom of the
           page, never in the layout: the add step bar keeps one height and the page view never moves. */}
       <div className="rec-float">
+      <PlanCard rec={rec} />
       {bannerP.mounted && banner && (
         <div className={'rec-ai rec-banner' + (banner.tone ? ' ' + banner.tone : '') + (bannerP.closing ? ' closing' : '')} role="status" {...leaving(bannerP.closing)}>
           <Icon name={banner.icon ?? (banner.tone === 'bad' ? 'cancel' : banner.tone === 'ok' ? 'check_circle' : 'play_arrow')} size={20} className="rec-ai-icon" />
@@ -245,6 +249,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
           <div className="grow rec-ai-text">{askText}</div>
           <Button kind="primary" onClick={rec.confirmAi} autoFocus>Confirm</Button>
           <Button onClick={rec.retryAi}>Try again</Button>
+          {askAi.state !== 'idle' && askAi.plan !== undefined && <><Button onClick={rec.skipPlanStep}>Skip</Button><Button onClick={rec.openPlanEdit}>Edit</Button></>}
           <span className="rec-ai-keys">Enter confirms · Esc cancels</span>
           <button type="button" className="rec-ai-link" onClick={rec.cancelAi}>Cancel</button>
         </div>
@@ -253,7 +258,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
         <div className={'rec-ai rec-ai-notfound' + (lostP.closing ? ' closing' : '')} role="alert" {...leaving(lostP.closing)}>
           <Icon name="search_off" size={20} className="rec-ai-icon" />
           <div className="grow">{lostText}</div>
-          <button type="button" className="rec-ai-link" onClick={() => { rec.cancelAi(); inputRef.current?.focus(); }}>OK</button>
+          {lostPlan ? <><Button onClick={rec.openPlanEdit}>Edit</Button><Button onClick={rec.skipPlanStep}>Skip</Button></>
+            : <button type="button" className="rec-ai-link" onClick={() => { rec.cancelAi(); inputRef.current?.focus(); }}>OK</button>}
         </div>
       )}
       {rec.secretAsk && rec.ai.state === 'idle' && !rec.busy && <SecretAsk rec={rec} taken={secretNames} />}

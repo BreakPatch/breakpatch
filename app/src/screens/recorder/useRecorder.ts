@@ -3,7 +3,7 @@
 // candidate box, open loop, re-record step). All engine work goes through getEngine().
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActionKind, Box, Direction, Generated, Point, SampleFile, Step, Viewport } from '../../data/types';
-import { demoEngine, getEngine, EngineError, type CheckingPhase, type FileChoice, type FileChooserEvent, type RecordParams } from '../../engine';
+import { demoEngine, getEngine, EngineError, type CheckingPhase, type FileChoice, type FileChooserEvent, type Plan, type PlanStep, type RecordParams } from '../../engine';
 import { around, gesture, inside, sampleApp } from '../../components/live';
 import { actionInfo, touchWords } from '../../engine/labels';
 import { isTouch } from '../../data/devices';
@@ -13,15 +13,18 @@ import { secrets } from '../../platform';
 import { useSession } from '../../state/session';
 import { originOf } from '../../lib/sites';
 import { ensureSecretSites } from '../../lib/secretSites';
-import { checkpointLabel, intentAskText, notFoundText, thinkingText } from './describe';
+import { checkpointLabel, intentAskText, notFoundText, planNotFoundText, thinkingText } from './describe';
 import { chosenIntent, fromEngine, readIntent, type Intent } from './intent';
+import { answered, CAREFUL_NOTE, planIntent, planNeeds, planRun, planSentence, type PlanItem, type PlanRun } from './plan';
 
+/** `plan`: the index of the story's step (plan.ts) this is about, when it is one. */
 export type AiState =
   | { state: 'idle' }
-  | { state: 'thinking'; text: string; what: string }
+  | { state: 'thinking'; text: string; what: string; plan?: number }
   /** Found what a described step names. `intent`: what Confirm does with it (and how many times). */
-  | { state: 'result'; text: string; what: string; box: Box; at: Point; target: string; frame?: number; intent: Intent }
-  | { state: 'notfound'; text: string; what: string }
+  | { state: 'result'; text: string; what: string; box: Box; at: Point; target: string; frame?: number; intent: Intent; plan?: number }
+  /** `message`: why it couldn't be looked for (the AI assistant isn't downloaded), instead of "Couldn't find". */
+  | { state: 'notfound'; text: string; what: string; plan?: number; message?: string }
   /**
    * A click, drag or scroll on the live view, or a described step with nothing to look for
    * ("scroll down", "type hello", "go to example.com"): nothing reached the page. The bar asks
@@ -29,7 +32,7 @@ export type AiState =
    * again). `box`: where on the page; none for typing into the focused field or going to an address.
    */
   /** `said`: the sentence it came from, for a described step with no spot on the page (typing, an address, a scroll). */
-  | { state: 'proposal'; params: RecordParams; frame?: number; box?: Box; label: string; target?: string; named: boolean; repeat?: number; said?: string; note?: string };
+  | { state: 'proposal'; params: RecordParams; frame?: number; box?: Box; label: string; target?: string; named: boolean; repeat?: number; said?: string; note?: string; plan?: number };
 
 export interface ActionOptions {
   writeSource: 'typed' | 'secret' | 'generated';
@@ -51,6 +54,12 @@ const CLICKS = new Set<ActionKind>(['click', 'doubleClick', 'longClick', 'rightC
 export const localId = (p = 's') => `${p}${Date.now().toString(36)}${(seq++).toString(36)}`;
 
 interface Extra { label?: string; target?: string; checkpoint?: Box; frame?: number }
+
+/** What a write step types: a saved secret, a generated value or the text. */
+const writeValue = (it: Pick<Intent, 'text' | 'secretRef' | 'generated'>): Pick<RecordParams, 'text' | 'secretRef' | 'generated'> =>
+  it.secretRef ? { secretRef: it.secretRef } : it.generated ? { generated: it.generated } : { text: it.text ?? '' };
+/** Plan steps a click on the page can stand in for: the person shows where it is. */
+const POINTED = new Set<PlanStep['action']>(['click', 'doubleClick', 'rightClick', 'hover', 'write']);
 
 /** What the step being recorded is doing now, for its row and the live view ("Clicking…"). */
 export function phaseText(phase: CheckingPhase, action: ActionKind): string {
@@ -259,16 +268,18 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
    * moves on after each. Stops at the first that fails. While re-recording, only the first
    * re-records the step; the others are new steps right after it.
    */
-  async function recordTimes(params: RecordParams, extra: Extra, n: number) {
+  async function recordTimes(params: RecordParams, extra: Extra, n: number): Promise<boolean> {
     const rr = rerecordId;
     const { frame: _f, ...later } = extra;
-    if (!await record(params, extra, rr) || n < 2) return;
+    if (!await record(params, extra, rr)) return false;
+    if (n < 2) return true;
     // Re-recording: the rest go after the re-recorded step (each moves the point on), then the
     // point goes back to where it was.
     const before = insertRef.current;
     if (rr) insertRef.current = rr;
     try {
-      for (let i = 1; i < n; i++) if (!await record(params, later, null)) return;
+      for (let i = 1; i < n; i++) if (!await record(params, later, null)) return false;
+      return true;
     } finally {
       if (rr) setInsertAfter(before && findStep(stepsRef.current, before) ? before : null);
     }
@@ -314,27 +325,36 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
       if (token !== aiToken.current) return;
       it = got ?? chosenIntent(read.target, action, options);
     }
-    if (!it.target) { act(it, token, t); return; }
+    await seek(it, t, token);
+  }
+  /**
+   * Looks for what a described step (or a story's step, `plan`) acts on, and shows it for Confirm.
+   * A checkpoint or Wait until may look for plain text on the screen (record.locate `shows`).
+   */
+  async function seek(it: Intent, said: string, token: number, plan?: number) {
+    if (!it.target) { act(it, token, said, plan); return; }
     const what = it.target;
-    setAi({ state: 'thinking', text: t, what });
-    let res = null;
-    try { res = await engine.locate(what, it.near ? { near: it.near } : undefined); } catch { res = null; }
+    setAi({ state: 'thinking', text: said, what, plan });
+    const opts = { ...(it.near ? { near: it.near } : {}), ...(it.action === 'checkpoint' || it.action === 'waitUntil' ? { shows: true } : {}) };
+    let res = null, message: string | undefined;
+    try { res = await engine.locate(what, Object.keys(opts).length ? opts : undefined); }
+    catch (e) { res = null; if (e instanceof EngineError && e.code === 'not_ready') message = e.message; }
     if (token !== aiToken.current) return;
-    if (res) setAi({ state: 'result', text: t, what, box: res.box, at: res.at, target: res.target, frame: res.frame, intent: it });
-    else { setAi({ state: 'notfound', text: t, what }); setText(t); }
+    if (res) setAi({ state: 'result', text: said, what, box: res.box, at: res.at, target: res.target, frame: res.frame, intent: it, plan });
+    else { setAi({ state: 'notfound', text: said, what, plan, ...(message ? { message } : {}) }); if (plan === undefined) setText(said); }
   }
   /**
    * A described step with nothing to look for. A scroll of the page, typing into the field that has
    * the focus and going to an address are shown for Confirm ("Write "the password" into the field
    * that has the focus?"), so a misread sentence never reaches the page. A wait is done at once.
    */
-  function act(it: Intent, token: number, said: string) {
+  function act(it: Intent, token: number, said: string, plan?: number) {
     if (token !== aiToken.current) return;
     setAi({ state: 'idle' });
     const times = it.repeat > 1 ? `, ${it.repeat} times` : '';
     const ask = (params: RecordParams, label: string, box?: Box) => {
       aiToken.current++;
-      setAi({ state: 'proposal', params, box, label: label + times, named: true, repeat: it.repeat, said });
+      setAi({ state: 'proposal', params, box, label: label + times, named: true, repeat: it.repeat, said, plan });
     };
     switch (it.action) {
       case 'scroll': case 'swipe': {
@@ -342,9 +362,13 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
         ask(params, `${defaultLabel(params)} ${params.distance} px`, around(params.from!, 24));
         return;
       }
-      case 'waitFor': void record({ action: 'waitFor', durationMs: Math.max(1, it.seconds ?? options.seconds) * 1000 }); return;
-      case 'write': if (it.text) {
-        const params: RecordParams = { action: 'write', text: it.text };
+      case 'waitFor': {
+        const done = record({ action: 'waitFor', durationMs: Math.max(1, it.seconds ?? options.seconds) * 1000 });
+        if (plan !== undefined) void done.then(ok => { if (ok) planAnswered(plan, 'done'); });
+        return;
+      }
+      case 'write': if (it.text || it.secretRef || it.generated) {
+        const params: RecordParams = { action: 'write', ...writeValue(it) };
         ask(params, `${defaultLabel(params)} into the field that has the focus`);
         // Where it will type: the focused field outlined and named, or a word that there's none.
         const asked = aiToken.current;
@@ -362,16 +386,17 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   const cancelAi = () => { aiToken.current++; setAi({ state: 'idle' }); };
 
   // ---------- Proposals: the page only gets what the user confirmed ----------
-  function propose(params: RecordParams, frame: number | undefined, box: Box, label: string, at?: Point) {
+  function propose(params: RecordParams, frame: number | undefined, box: Box, label: string, at?: Point, plan?: number) {
     const token = ++aiToken.current;
-    setAi({ state: 'proposal', params, frame, box, label: words(label), named: !at || sample });
+    setAi({ state: 'proposal', params, frame, box, label: words(label), named: !at || sample, plan });
     if (!at) return;
     // The element's box and name come a moment later; the bar asks at once with "here".
     void engine.propose(at).then(got => {
       if (token !== aiToken.current) return;
       setAi(a => a.state !== 'proposal' ? a : {
         ...a, box: got.box ?? a.box, named: true,
-        ...(got.name ? { label: words(`${actionInfo(a.params.action).verb} ${got.name}`), target: got.target } : {}),
+        // A story's typing step keeps its own words ('Type "Ada" into …'); a click is named after what it clicks.
+        ...(got.name && a.params.action !== 'write' ? { label: words(`${actionInfo(a.params.action).verb} ${got.name}`), target: got.target } : {}),
       });
     }).catch(() => { if (token === aiToken.current) setAi(a => (a.state === 'proposal' ? { ...a, named: true } : a)); });
   }
@@ -380,9 +405,11 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     const a = ai; aiToken.current++; setAi({ state: 'idle' });
     // Named by the AI assistant already: the engine needn't ask it again.
     const extra = { frame: a.frame, ...(a.target ? { label: a.label, target: a.target } : {}) };
-    void recordTimes(a.params, extra, a.repeat ?? 1);
+    afterPlanStep(a.plan, recordTimes(a.params, extra, a.repeat ?? 1));
   }
   const retryAi = () => {
+    // A story's step: look for it again (Edit changes what to look for).
+    if (ai.state !== 'idle' && ai.plan !== undefined) { const run = planRef.current; if (run) askPlan(run); return; }
     // Described, with no spot on the page: the sentence goes back in the box to change, not "click the page".
     if (ai.state === 'proposal' && ai.said !== undefined) { const t = ai.said; cancelAi(); setText(t); setRefocus(n => n + 1); return; }
     if (ai.state === 'proposal') { cancelAi(); setRetryNote(true); return; }     // pick again on the page
@@ -403,14 +430,70 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     // What the sentence asked for; the chosen action only when it named none (intent.ts).
     const it = a.intent;
     const kind = it.action;
-    if (kind === 'checkpoint') void record({ action: 'checkpoint' }, { ...x, checkpoint: a.box, label: checkpointLabel(it.from === 'words' ? it.target ?? a.text : a.text) });
-    else if (kind === 'waitUntil') void record({ action: 'waitUntil', region: a.box, timeoutMs: options.maxWait * 1000 }, x);
-    else if (kind === 'swipe' || kind === 'scroll') void recordTimes({ action: kind, from: a.at, direction: it.direction ?? options.direction, distance: it.distance ?? options.distance }, x, it.repeat);
-    else if (kind === 'write') void recordTimes({ action: 'write', at: a.at, text: it.text ?? '' }, x, it.repeat);
+    let done: Promise<boolean>;
+    if (kind === 'checkpoint') done = record({ action: 'checkpoint' }, { ...x, checkpoint: a.box, label: checkpointLabel(it.from === 'words' || it.from === 'plan' ? it.target ?? a.text : a.text) });
+    else if (kind === 'waitUntil') done = record({ action: 'waitUntil', region: a.box, timeoutMs: options.maxWait * 1000 }, x);
+    else if (kind === 'swipe' || kind === 'scroll') done = recordTimes({ action: kind, from: a.at, direction: it.direction ?? options.direction, distance: it.distance ?? options.distance }, x, it.repeat);
+    else if (kind === 'write') done = recordTimes({ action: 'write', at: a.at, ...writeValue(it) }, x, it.repeat);
     else {
       const k = POINT_KINDS.has(kind) ? kind : 'click';
-      void recordTimes({ action: k, at: a.at, ...(k === 'upload' ? { sample: options.sample } : {}) }, x, it.repeat);
+      done = recordTimes({ action: k, at: a.at, ...(k === 'upload' ? { sample: options.sample } : {}) }, x, it.repeat);
     }
+    afterPlanStep(a.plan, done);
+  }
+
+  // ---------- A test from a story (plan.ts): its steps, one at a time, through the flow above ----------
+  const [plan, setPlanState] = useState<PlanRun | null>(null);
+  const planRef = useRef<PlanRun | null>(null);
+  const setPlan = (run: PlanRun | null) => { planRef.current = run; setPlanState(run); };
+  /** The current step needs words from the person (what to type), or they asked to change it. */
+  const [planEditing, setPlanEditing] = useState(false);
+  /** Asks about the run's current step: finds it on the page, or opens Edit when it needs a value. */
+  function askPlan(run: PlanRun) {
+    const token = ++aiToken.current;
+    setRetryNote(false); setUnhandled(null);
+    const s = run.steps[run.index];
+    if (!s) { setAi({ state: 'idle' }); setPlanEditing(false); return; }
+    if (planNeeds(s)) { setAi({ state: 'idle' }); setPlanEditing(true); return; }
+    setPlanEditing(false);
+    void seek(planIntent(s), planSentence(s), token, run.index);
+  }
+  function planAnswered(i: number, state: 'done' | 'skipped') {
+    const run = planRef.current;
+    if (!run || run.steps[i]?.state !== 'todo') return;
+    const next = answered(run, i, state);
+    setPlan(next); askPlan(next);
+  }
+  /** After a story's step was confirmed: the next one once it's recorded; on a failure it's asked about again from the plan. */
+  function afterPlanStep(i: number | undefined, done: Promise<boolean>) {
+    if (i === undefined) return;
+    void done.then(ok => { if (ok) planAnswered(i, 'done'); });
+  }
+  function startPlan(p: Plan) {
+    setRerecordId(null);
+    const run = planRun(p.steps, p.note, p.dropped);
+    setPlan(run); askPlan(run);
+  }
+  /** The current step changed by the person (Edit): what to look for, what to type. Asked about again. */
+  function editPlanStep(patch: Partial<PlanStep>) {
+    const run = planRef.current;
+    if (!run || !run.steps[run.index]) return;
+    const steps = run.steps.map((s, k): PlanItem => {
+      if (k !== run.index) return s;
+      const { needs: _n, text: _t, secretRef: _s, generated: _g, ...rest } = s;
+      const value = 'text' in patch || 'secretRef' in patch || 'generated' in patch ? {} : { text: s.text, secretRef: s.secretRef, generated: s.generated };
+      const next = { ...rest, ...value, ...patch };
+      return Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined && v !== '')) as unknown as PlanItem;
+    });
+    const next = { ...run, steps };
+    setPlan(next); askPlan(next);
+  }
+  function stopPlan() { aiToken.current++; setAi({ state: 'idle' }); setPlan(null); setPlanEditing(false); }
+  /** The plan step a click on the page stands in for: the person shows where the current step is. */
+  function pointedPlanStep(): number | undefined {
+    const run = planRef.current;
+    const s = run?.steps[run.index];
+    return run && s && s.state === 'todo' && !planEditing && POINTED.has(s.action) && !planNeeds(s) ? run.index : undefined;
   }
 
   // ---------- Page ----------
@@ -424,6 +507,14 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     // The same spot again confirms.
     if (ai.state === 'proposal' && ai.params.at && ai.box && inside(p, ai.box)) { confirmProposal(); return; }
     if (ai.state !== 'idle') cancelAi();
+    // During a story: a click shows where its current step is (a click, hover or typing step).
+    const pi = pointedPlanStep();
+    if (pi !== undefined) {
+      const s = planRef.current!.steps[pi];
+      const params: RecordParams = { action: s.action as ActionKind, at: p, ...(s.action === 'write' ? writeValue(planIntent(s)) : {}) };
+      propose(params, frame, around(p, 24), s.action === 'write' ? planSentence({ ...s, target: undefined }).replace(' into the field that has the focus', ' here') : guessLabel(params, sample), p, pi);
+      return;
+    }
     const kind: ActionKind = POINT_KINDS.has(action) && action !== 'swipe' && action !== 'scroll' ? action : 'click';
     const params: RecordParams = { action: kind, at: p, ...(kind === 'upload' ? { sample: options.sample } : {}) };
     propose(params, frame, around(p, 24), guessLabel(params, sample), p);
@@ -458,6 +549,12 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     if (ai.state !== 'idle') cancelAi();
     const region = box ?? snapBox(at, viewport);
     const named = text.trim();
+    // During a story whose current step is a check: the box drawn is where it looks.
+    const run = planRef.current, s = run?.steps[run.index];
+    if (run && s?.action === 'checkpoint' && s.state === 'todo' && !planEditing) {
+      afterPlanStep(run.index, record({ action: 'checkpoint' }, { checkpoint: region, label: checkpointLabel(s.target ?? ''), frame }));
+      return;
+    }
     if (action === 'checkpoint') { setText(''); void record({ action: 'checkpoint' }, { checkpoint: region, label: named ? checkpointLabel(named) : undefined, frame }); }
     else void record({ action: 'waitUntil', region, timeoutMs: options.maxWait * 1000 }, { frame });
   }
@@ -494,6 +591,10 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     if (sample) sampleApp.replay(stepsBefore(stepsRef.current, id), viewport);
   }
 
+  const askBase = ai.state === 'result' ? intentAskText(ai.what, ai.intent) : ai.state === 'proposal' ? `${ai.label}?${ai.note ? ` ${ai.note}` : ''}` : null;
+  // A story's step that looks like it deletes, pays or sends something says so as it asks.
+  const careful = (ai.state === 'result' || ai.state === 'proposal') && ai.plan !== undefined && !!plan?.steps[ai.plan]?.careful;
+
   return {
     steps, dirty, selectedId, openLoopId, rerecordId, action, text, options, ai, busyId, checking, savedPill, sample, addedId,
     /** "Clicking…", "Waiting for the page…": what the step being recorded is doing now. */
@@ -503,6 +604,12 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     setText: (t: string) => { setText(t); setUnhandled(null); },
     unhandled, refocus,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi, pageScroll, retryNote,
+    /** A test from a story: the run through its steps, and what the person does with them. */
+    plan, planEditing, startPlan, stopPlan, editPlanStep,
+    skipPlanStep: () => { const run = planRef.current; if (run) planAnswered(run.index, 'skipped'); },
+    retryPlanStep: () => { const run = planRef.current; if (run) askPlan(run); },
+    openPlanEdit: () => { aiToken.current++; setAi({ state: 'idle' }); setPlanEditing(true); },
+    closePlanEdit: () => setPlanEditing(false),
     insertAfterId, setInsertAfter, unplayed, atStepId, played,
     hand, setHand, manual, handPlayed, handAsk,
     handChooseFile: (c: FileChoice) => { setHandAsk(null); void engine.handChooseFile(c).catch(() => undefined); },
@@ -532,8 +639,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     },
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),
     thinking: ai.state === 'thinking' ? thinkingText(ai.what) : null,
-    ask: ai.state === 'result' ? intentAskText(ai.what, ai.intent) : ai.state === 'proposal' ? `${ai.label}?${ai.note ? ` ${ai.note}` : ''}` : null,
-    notFound: ai.state === 'notfound' ? notFoundText(ai.what) : null,
+    ask: askBase && (careful ? `${askBase} ${CAREFUL_NOTE}` : askBase),
+    notFound: ai.state === 'notfound' ? ai.message ?? (ai.plan !== undefined ? planNotFoundText(ai.what) : notFoundText(ai.what)) : null,
     busy: busyId !== null,
   };
 }

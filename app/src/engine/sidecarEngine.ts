@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useSystem } from '../state/system';
 import { listen } from '@tauri-apps/api/event';
 import type { Box, Explanation, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type ReportImageReply, type ReportImageRequest, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
+import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Plan, type Proposal, type RecordParams, type ReportImageReply, type ReportImageRequest, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
 
 interface Wire { event: keyof EngineEvents; data: unknown }
 
@@ -46,7 +46,9 @@ export class SidecarEngine implements Engine {
   async pointer(kind: 'move' | 'scroll', at: Point, dx?: number, dy?: number) { await this.call('browser.pointer', { kind, at, dx, dy }); }
 
   async recordPoint(p: RecordParams) { return (await this.call<{ step: Step }>('record.point', p)).step; }
-  locate(description: string, opts: { near?: Near } = {}) { return this.call<LocateResult | null>('record.locate', { description, ...(opts.near ? { near: opts.near } : {}) }); }
+  locate(description: string, opts: { near?: Near; shows?: boolean } = {}) {
+    return this.call<LocateResult | null>('record.locate', { description, ...(opts.near ? { near: opts.near } : {}), ...(opts.shows ? { shows: true } : {}) });
+  }
   intent(sentence: string) { return this.call<EngineIntent | null>('record.intent', { sentence }); }
   async chooseFile(choice: FileChoice) { await this.call('record.chooseFile', choice); }
   async hand(on: boolean) { await this.call('browser.hand', { on }); }
@@ -54,6 +56,7 @@ export class SidecarEngine implements Engine {
   async handChooseFile(choice: FileChoice) { await this.call('browser.chooseFile', choice); }
   propose(at: Point, opts: { name?: boolean } = {}) { return this.call<Proposal>('record.propose', { at, ...(opts.name === false ? { name: false } : {}) }); }
   focused() { return this.call<{ box: Box | null; name: string | null }>('record.focused'); }
+  plan(story: string, secrets: string[]) { return this.call<Plan>('record.plan', { story, secrets }); }
   async recordCheckpoint(region: Box, frame?: number) { return (await this.call<{ step: Step }>('record.checkpoint', { region, frame })).step; }
 
   async startRun(r: RunStart) { await this.call('run.start', r); }

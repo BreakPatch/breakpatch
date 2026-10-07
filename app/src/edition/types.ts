@@ -31,11 +31,13 @@ export interface Features {
   explain: boolean;
   /** Create issue in GitHub, Linear or Jira from a failed run. */
   integrations: boolean;
+  /** "Write a test from a story": the AI assistant proposes the steps of a user story in the recorder (engine record.plan). */
+  aiTests: boolean;
 }
 
 export const NO_FEATURES: Features = {
   collaboration: false, versions: false, autoFix: false, calibration: false,
-  schedules: false, runner: false, ci: false, modelOverride: false, explain: false, integrations: false,
+  schedules: false, runner: false, ci: false, modelOverride: false, explain: false, integrations: false, aiTests: false,
 };
 
 type Screen = ComponentType | LazyExoticComponent<ComponentType>;

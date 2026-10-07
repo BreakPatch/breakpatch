@@ -54,9 +54,12 @@ export const INSTANT = new Set<string>(['reload', 'back', 'forward', 'switchTab'
 
 export type ComposerInput = 'describe' | 'text' | 'url' | 'none';
 // ============================== DESCRIBE SWITCH ==============================
-// The add-step bar's "Describe the next step" box. Off (owner, 2026-10-02): steps that act on
+// The add-step bar's "Describe the next step" box. Off (owner, 2026-10-02): it didn't work as
+// intended in his tests, and the real model hasn't been checked on a Mac since. Steps that act on
 // the page are added by clicking or drawing on it, and Write and Go to address keep their own
-// boxes. The describing code stays for the AI test agent (#10) to bring back.
+// boxes. The describing flow itself is live: a story's steps (#10, Team) go through it
+// (intent.ts, record.locate with the page's structure first and `shows` for a check). Turn this
+// on again only after a Mac check with the real model.
 export const DESCRIBE_STEPS = false;
 // =============================================================================
 

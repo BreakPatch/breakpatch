@@ -183,3 +183,28 @@
 .rec-banner .rec-ai-icon { color: var(--accent); }
 .rec-banner.ok .rec-ai-icon { color: var(--passed); }
 .rec-banner.bad .rec-ai-icon { color: var(--failed); }
+
+/* ---------- A test from a story (PlanCard): its steps, floating over the page ---------- */
+.rec-plan { flex-direction: column; align-items: stretch; gap: 8px; background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line); }
+.rec-plan .rec-ai-icon { color: var(--accent); }
+.rec-plan-head { display: flex; align-items: center; gap: 10px; }
+.rec-plan-title { display: flex; flex-direction: column; min-width: 0; }
+.rec-plan-title .faint { font-size: 12px; }
+.rec-plan-now { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-plan-note { font-size: 12px; padding-left: 30px; }
+.rec-plan-careful, .rec-plan-needs { display: flex; align-items: center; gap: 6px; font-size: 13px; padding-left: 30px; }
+.rec-plan-careful { color: var(--fixed); }
+.rec-plan-needs { color: var(--text-muted); }
+.rec-plan-list { list-style: none; margin: 0; padding: 0 0 0 30px; max-height: 38vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.rec-plan-item { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; color: var(--text-muted); }
+.rec-plan-item.done .icon { color: var(--passed); }
+.rec-plan-item.skipped { text-decoration: line-through; }
+.rec-plan-item.current { color: var(--text); font-weight: 600; }
+.rec-plan-item.current .icon { color: var(--accent); }
+.rec-plan-warn { color: var(--fixed); }
+.rec-plan-edit { display: flex; flex-direction: column; gap: 8px; padding-left: 30px; }
+.rec-plan-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.rec-plan-input { width: 100%; max-width: 420px; text-align: left; }
+.rec-plan-actions { display: flex; align-items: center; gap: 8px; padding-left: 30px; }
+.rec-plan-error { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--failed); }
+.rec-plan-edit .rec-plan-actions { padding-left: 0; }

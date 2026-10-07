@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from . import calls, config, explain, install, labels, plugins
+from . import calls, config, explain, imaging, install, labels, plan, plugins
 from .actions import parse_secrets
 from .browser import BrowserSession
 from .locator import Locator, MlxLocator, NoLocator
@@ -21,6 +21,7 @@ Emit = Callable[[str, dict], None]
 TRY_TIMEOUT = 15.0        # seconds; the UI says "No reply after 15 s"
 _TEAM_HEALER = object()   # default: whatever plugins.py found (the Team engine's healer, or none)
 _TEAM_EXPLAINER = object()   # the same for the explainer
+_TEAM_PLANNER = object()     # and for the planner
 EXPLAIN_CACHE = 64        # explanations kept in memory (per failure screenshot)
 # A run asked for while an explanation is still being worked out waits for it this long at most
 # (its model call can't be cut short: it holds the model), so the run's own AI use isn't slowed.
@@ -58,13 +59,16 @@ class Engine:
     def __init__(self, emit: Emit, timings: config.Timings | None = None,
                  locator_fn: Callable[[], Locator] | None = None, headless: bool | None = None,
                  healer: Healer | None | object = _TEAM_HEALER,
-                 explainer: "explain.Explainer | None | object" = _TEAM_EXPLAINER):
+                 explainer: "explain.Explainer | None | object" = _TEAM_EXPLAINER,
+                 planner: "plan.Planner | None | object" = _TEAM_PLANNER):
         self.emit = emit
         # Fallback healing is Team-only (plugins.py); None runs moved targets as targetNotFound.
         self.healer: Healer | None = plugins.healer() if healer is _TEAM_HEALER else healer  # type: ignore[assignment]
         # So is "Why did this fail?" (explain.py); None answers run.explain with not_ready.
         self.explainer: explain.Explainer | None = (plugins.explainer() if explainer is _TEAM_EXPLAINER
                                                     else explainer)  # type: ignore[assignment]
+        # And "Write a test from a story" (plan.py); None answers record.plan with not_ready.
+        self.planner: plan.Planner | None = plugins.planner() if planner is _TEAM_PLANNER else planner  # type: ignore[assignment]
         self._explained: dict[tuple, asyncio.Future] = {}
         # Explanations still working, including ones whose answer came too late for the report.
         self._explaining: set[asyncio.Task] = set()
@@ -102,6 +106,7 @@ class Engine:
             "record.propose": self.record_propose,
             "record.focused": self.record_focused,
             "record.intent": self.record_intent,
+            "record.plan": self.record_plan,
             "record.chooseFile": lambda p: self._sync(self.recorder.choose_file(p)),
             "run.start": self.run_start,
             "run.stop": self.run_stop,
@@ -339,7 +344,7 @@ class Engine:
         self._not_during_run()
         self.browser.require()
         return await self.recorder.locate(p.get("description") or "", absence=p.get("absence") is True,
-                                          near=near_param(p.get("near")))
+                                          near=near_param(p.get("near")), shows=p.get("shows") is True)
 
     async def record_intent(self, p: dict):
         """What a described step means, from the AI assistant: `{action, target, repeat, text?,
@@ -350,6 +355,42 @@ class Engine:
         if not isinstance(sentence, str) or not sentence.strip():
             raise EngineError("bad_request", "Describe the step.")
         return await self.recorder.intent(sentence.strip()[:300])
+
+    async def record_plan(self, p: dict):
+        """A test from a user story (plan.py, roadmap #10): `{steps, note?, dropped?}`, the steps the
+        planner proposes, checked by plan.clean. Nothing is done to the page; the app finds and
+        records each step only when the person confirms it. Breakpatch Team: Community has no
+        planner and answers not_ready."""
+        pl = self.planner
+        if pl is None:
+            raise EngineError("not_ready", "Writing a test from a story is part of Breakpatch Team.")
+        self._not_during_run()
+        text = p.get("story")
+        if not isinstance(text, str) or not text.strip():
+            raise EngineError("bad_request", "Write the story first.")
+        page = self.browser.require()
+        story = plan.Story(text=text.strip()[:plan.MAX_STORY], secrets=plan.secret_names(p.get("secrets")),
+                           url=getattr(page, "url", None), viewport=(self.browser.width, self.browser.height))
+        story.image = imaging.to_image(await self.browser.shoot())
+        try:
+            from .dom.extract import extract
+            ex = await asyncio.wait_for(extract(await self.browser.live(), story.viewport, texts=True), plan.PAGE_READ_S)
+            story.page = explain.page_record(ex.candidates, ex.texts)
+        except Exception as e:  # noqa: BLE001 - a page that can't be read is planned from the screenshot
+            log.info("couldn't read the page for a plan: %s", e)
+        work = asyncio.ensure_future(pl.plan(story, self.locator_fn))
+        # Not wait_for: cancelling the coroutine wouldn't stop the model's thread, only hide it.
+        done, _ = await asyncio.wait({work}, timeout=plan.TIMEOUT_S)
+        if not done:
+            work.add_done_callback(lambda t: t.cancelled() or t.exception())   # a late error is logged, not raised
+            raise EngineError("not_found", "The AI assistant took too long to make steps from this story. "
+                              "Try a shorter story, one action per sentence.", "timeout")
+        got = plan.clean(work.result(), story)
+        if got is None:
+            raise EngineError("not_found", "The AI assistant couldn't make steps from this story. "
+                              "Try a shorter story, one action per sentence.")
+        log.info("planned %d step(s) from a story of %d characters", len(got["steps"]), len(story.text))
+        return got
 
     # ---------------------------------------------------------------- replay
 

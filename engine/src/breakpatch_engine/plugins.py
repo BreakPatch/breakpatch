@@ -3,8 +3,8 @@
 The open engine is the Community edition. When the private Breakpatch Team engine
 (`breakpatch_team_engine`) is installed next to it, it's imported here, in this one place,
 and registers what it adds: fallback healing of moved targets (spec §11.2), the explainer that
-says why a step failed in plain words (explain.py, roadmap #7), and the licence that decides
-whether they're on. The app shell hands the engine its licence token with
+says why a step failed in plain words (explain.py, roadmap #7), the planner that turns a user
+story into proposed steps (plan.py, roadmap #10), and the licence that decides whether they're on. The app shell hands the engine its licence token with
 `licence.set` (engine/PROTOCOL.md); this engine only passes it on to what the Team engine
 registered, which checks it. Its CI command line is its own console script (`breakpatch-ci`)
 and doesn't go through here.
@@ -17,6 +17,7 @@ import logging
 from typing import Protocol
 
 from .explain import Explainer
+from .plan import Planner
 from .runner import Healer
 
 log = logging.getLogger("breakpatch.plugins")
@@ -28,6 +29,7 @@ _loaded = False
 _team_version: str | None = None     # set once the Team engine loaded and registered
 _licence: "Licence | None" = None
 _explainer: Explainer | None = None
+_planner: Planner | None = None
 
 UNAVAILABLE = {"state": "unavailable"}   # Community: no licence to check
 
@@ -57,6 +59,12 @@ def register_explainer(explainer: Explainer | None) -> None:
     _explainer = explainer
 
 
+def register_planner(planner: Planner | None) -> None:
+    """Called by the Team engine's `register(plugins)` (an older one never calls it: no planner)."""
+    global _planner
+    _planner = planner
+
+
 def load() -> None:
     """Imports the Team engine if it's installed. Safe to call many times."""
     global _loaded, _team_version
@@ -83,6 +91,7 @@ def load() -> None:
         register_healer(None)      # all or nothing: a half-registered Team engine is Community
         register_licence(None)
         register_explainer(None)
+        register_planner(None)
         return
     _team_version = str(getattr(team, "__version__", "?"))
     log.info("Breakpatch Team engine %s loaded", _team_version)
@@ -98,6 +107,12 @@ def explainer() -> Explainer | None:
     """The registered explainer, or None (Community: `run.explain` answers `not_ready`)."""
     load()
     return _explainer
+
+
+def planner() -> Planner | None:
+    """The registered planner, or None (Community: `record.plan` answers `not_ready`)."""
+    load()
+    return _planner
 
 
 def licence() -> Licence | None:

@@ -56,6 +56,9 @@ class Locator(Protocol):
     # Optional: reads a failed step's "What should happen" note against the screen after it.
     # {"happened": bool, "why": "it's still open"} or None. Only called when a check fails.
     async def judge(self, image: Image.Image, note: str) -> dict | None: ...
+    # Optional: the model's own words for a prompt about the screenshot, at most `max_tokens` long.
+    # For a Team planner (plan.py), which writes its prompt and reads the reply itself.
+    async def reply(self, image: Image.Image, prompt: str, max_tokens: int) -> str: ...
 
 
 class NoLocator:
@@ -75,6 +78,9 @@ class NoLocator:
 
     async def intent(self, image, sentence):
         return None
+
+    async def reply(self, image, prompt, max_tokens):
+        raise EngineError("not_ready", "The AI assistant isn't downloaded yet. Finish setup to use it.")
 
 
 def parse_intent(text: str) -> dict | None:
@@ -219,7 +225,7 @@ class MlxLocator:
         except Exception:  # noqa: BLE001
             self._config = getattr(self._model, "config", None)
 
-    def _generate(self, image: Image.Image, prompt: str) -> str:
+    def _generate(self, image: Image.Image, prompt: str, max_tokens: int | None = None) -> str:
         with self._lock:
             self._load()
             from mlx_vlm import generate  # type: ignore
@@ -229,7 +235,7 @@ class MlxLocator:
             with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as f:
                 image.convert("RGB").save(f.name)
                 out = generate(self._model, self._processor, formatted, [f.name],
-                               max_tokens=self.max_tokens, temperature=0.0, verbose=False)
+                               max_tokens=max_tokens or self.max_tokens, temperature=0.0, verbose=False)
             text = out if isinstance(out, str) else getattr(out, "text", str(out))
             log.info("model reply: %s", text[:300])
             return text
@@ -246,6 +252,9 @@ class MlxLocator:
     async def intent(self, image: Image.Image, sentence: str) -> dict | None:
         text = await asyncio.to_thread(self._generate, image, INTENT_PROMPT.format(sentence=sentence.replace('"', "'").strip()))
         return parse_intent(text)
+
+    async def reply(self, image: Image.Image, prompt: str, max_tokens: int) -> str:
+        return await asyncio.to_thread(self._generate, image, prompt, max(1, min(int(max_tokens), 2048)))
 
     async def describe(self, image: Image.Image, at: Sequence[float]) -> dict | None:
         x = round(at[0] * 1000 / image.width)

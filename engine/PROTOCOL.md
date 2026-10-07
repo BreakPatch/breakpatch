@@ -192,9 +192,10 @@ A device name the engine doesn't know (a test from a newer Breakpatch) fails wit
 | Method | Params | Result |
 |---|---|---|
 | `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
-| `record.locate` | `{ description, absence?, near? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below) |
+| `record.locate` | `{ description, absence?, near?, shows? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below). `shows: true`: what to find may be text on the screen, not a control (a checkpoint, a Wait until; below) |
 | `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell. An empty sentence is `bad_request`; only its first 300 characters are read |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
+| `record.plan` | `{ story, secrets? }` | `{ steps: PlanStep[], note?, dropped? }` — Breakpatch Team: the steps a user story asks for, proposed and not done (below). Community: `not_ready` |
 | `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
 | `record.focused` | `{}` | `{ box, name }` — the field that has the keyboard focus (its label, aria-label, placeholder or name; nulls when nothing that takes typing has it), for the confirm bar of a described typing step; nothing is done to the page |
 | `record.chooseFile` | `{ sample }` \| `{ file, path }` \| `{ cancel: true }` | `{}` — the answer to a `record.fileChooser` event: the file for a click that opened the page's file picker (below) |
@@ -343,6 +344,14 @@ then uses the chosen action with the sentence as what to look for, as before. No
 the page: the app looks for the target with `record.locate` and records the step (or, for a
 repeat, that many steps one after another) through `record.point` only when the user confirms.
 
+**Text that shows (`record.locate` `shows`).** A checkpoint or a Wait until often looks for plain
+text ("Account created"), which isn't a control, so S0 is unsure about it. With `shows: true`, on a
+Fast page where S0 is unsure, the short text runs on screen are read first (`dom/shown.py`): the
+description without quotes, a leading "the" and trailing words such as "message shows"; a text
+that reads exactly that wins, else the shortest that has it as whole words and isn't much longer
+(40 characters at most beyond it), ties in reading order. The answer's `path` is `"fast"`. When no
+text reads like it, the AI assistant is asked as before. Without `shows` nothing changes.
+
 **The "+" or "−" next to something (`record.locate` `near`).** `near: { control: "increase", of:
 "People" }` finds a stepper's control from the page's structure (`dom/near.py`) instead of S0,
 which folds punctuation away and can't tell "+" from "−". Controls that increase are named,
@@ -356,6 +365,39 @@ page is Visual, the AI assistant looks for `description` as usual (path `"fast-v
 `"visual"`), so the app sends a plain description too (`the "+" button next to "People"`).
 Without `near`, `record.locate` is unchanged, and the short text runs on screen aren't collected
 at all (they're read only for a locate with `near`).
+
+**A test from a story (`record.plan`, Breakpatch Team, roadmap #10).** The person pastes a short
+user story or acceptance criteria ("Sign up with a new email and my password, then I see Account
+created") and picks which saved secrets it may type. `record.plan` hands the planner the Team
+engine registered (`plugins.register_planner`, the contract in `engine/src/breakpatch_engine/plan.py`)
+the story (its first 2,000 characters), those secret names (never their values), the page as it is
+now (a screenshot, its address, and the controls and short texts on screen, read in 0.75 s at
+most) and the viewport. It answers the steps it proposes, at most 30; nothing is done to the page.
+Community has no planner: `not_ready` "Writing a test from a story is part of Breakpatch Team." The
+Team engine plans only with the licence feature `aiTests` and the AI assistant downloaded (else
+`not_ready`). An empty story is `bad_request`; the browser must be open (`not_ready`). A plan with no
+usable step, or none after 90 s, is `not_found` ("… Try a shorter story, one action per sentence.").
+
+`PlanStep`: `{ action, target?, text?, secretRef?, generated?, needs?, url?, direction?, seconds?, careful? }`
+- `action`: `click`, `doubleClick`, `rightClick`, `hover`, `write`, `navigate`, `scroll`, `waitFor`
+  or `checkpoint`. `target`: what to find on the page, in words; always there for the clicks, hover
+  and checkpoint, optional for `write` (none: the field that has the focus) and `scroll` (none: the
+  page). `navigate` has `url` (http or https only), `scroll` a `direction`, `waitFor` `seconds` (1 to 60).
+- The engine checks every step itself (`plan.clean`), whatever the planner said, and leaves out the
+  ones no step can do (`dropped` counts them). A `write` types only: a saved secret the person
+  picked (`secretRef`); a generated value (`generated`); or `text` the person wrote in the story
+  (case and spaces aside) or that is made unique per run (`{timestamp}`, `{i}`, `{time}`, `{date}`).
+  Into a field named like a password, only a picked secret. Otherwise the step comes back with no
+  value and `needs: "text"` or `needs: "secret"`: the app asks the person before it can be done.
+- `careful: true`: the step looks like it deletes, pays, buys, sends or cancels something. The app
+  always asks about it, in words that say so.
+
+The app then goes through the steps one at a time in the recorder: it finds each step's target on
+the live page with `record.locate` (the fast locator first, then the AI assistant; `shows: true`
+for a checkpoint), shows it with its box for **Confirm**, **Try again**, **Skip** or **Edit**, and on
+Confirm records it with `record.point` (or `record.checkpoint`) like a clicked step. The steps are
+ordinary steps: the saved test replays without the AI assistant. Nothing is saved until the person
+saves.
 
 ### Replay
 | Method | Params | Result |
