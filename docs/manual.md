@@ -198,7 +198,7 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
    - Logs show the address without its query string, and never a header's value.
 3. Add steps on the page:
    - **Click** anything on the page. Nothing happens to the page yet: Breakpatch highlights what you clicked and asks, for example, "Click Next button?". Press **Confirm** (or Enter, or click it again) to do the step; **Try again** to pick something else; Esc to cancel. Dragging and scrolling on the page work the same way.
-   - Or **describe** the step in the box below the page and press Enter, for example "click the Done button", "type hello into the search box", "add 2 people" or "check that Project created shows". Breakpatch finds it on the page and asks, for example, "Is this the Done button?". Press **Confirm** to do the step, or **Try again**. If it can't find it, change the words or click it on the page.
+   - Describing a step in words, instead of clicking it, is coming back in a later update.
    - For **Wait until** and **Checkpoint**, draw a box around the area on the page, or click it.
    - **Write text** has a box for what to type, and **Go to address** a box for the address.
 4. Use the action button in the bar below the page for everything else: double, long and right click, hover, swipe, scroll, drag and drop, **Write text**, **Wait until**, **Go to address**, reload, back and forward, tabs and popups, upload a sample file, check a download, **Checkpoint**, **Repeat** and **Shared steps**.
@@ -310,13 +310,13 @@ Passwords and emails that tests type in. Add them in Settings → **Saved secret
 
 ## The AI assistant
 
-A small AI model that runs only on your Mac. Your screens never leave it. It names what you click and finds what you describe, and is unloaded when it's idle.
+A small AI model that runs only on your Mac. Your screens never leave it. It names what you click, and is unloaded when it's idle.
 
-On sites with good page structure (buttons, links and fields that say what they are), Breakpatch names what you click and finds what you describe at once, from the names the page gives them, without the AI assistant. A check finds the words it looks for on the screen the same way. It uses the AI assistant when the page doesn't say, or draws everything itself, like Flutter apps and canvas pages. Either way it clicks a spot on the screen and checks the step on the screen.
+On sites with good page structure (buttons, links and fields that say what they are), Breakpatch names what you click at once, from the names the page gives them, without the AI assistant. It uses the AI assistant when the page doesn't say, or draws everything itself, like Flutter apps and canvas pages. Either way it clicks a spot on the screen and checks the step on the screen.
 
 Breakpatch comes with one AI model, the **Standard** assistant (Qwen3-VL 4B, about 3 GB), which setup downloads. It works well for almost every team. It's the only model for now: bringing your own local one, through Ollama or LM Studio, isn't available yet. Cloud AI models aren't planned: your screens stay on your Mac. (A Team [runner Mac](#the-local-runner) with 32 GB of memory or more can also download a larger one, about 5 GB, but it's rarely needed.)
 
-Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it to name what you click, and to find what you describe when the page doesn't say, so setup downloads it before your first test. Without it, a described step it can't find from the page says "The AI assistant isn't downloaded yet." Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)), explaining a failure ([Why did this fail?](#why-did-this-fail)) and suggesting a test's steps from a story ([Write a test from a story](#write-a-test-from-a-story)) come with Team.
+Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it to name what you click, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)), explaining a failure ([Why did this fail?](#why-did-this-fail)) and suggesting a test's steps from a story ([Write a test from a story](#write-a-test-from-a-story)) come with Team.
 
 It's kept in `~/Library/Application Support/Breakpatch/models/`.
 
@@ -413,7 +413,7 @@ Everything in this part comes with **Breakpatch Team** (and Business, which is T
 - **Version history.** Every save is kept. Runs show which version they tested, and you can restore any version.
 - **Fixed automatically.** When a button has moved, the AI assistant finds it during the run and carries on. You accept the new position in the report.
 - **Why did this fail?** In the report, the AI assistant says in plain words what changed, for example "The Save button now reads “Save changes”", with the likely cause and what to do.
-- **Write a test from a story.** Paste a short user story. The AI assistant suggests the steps, and you check each one on the page before it's added.
+- **Write a test from a story** (coming with Team). Paste a short user story. The AI assistant suggests the steps, and you check each one on the page before it's added.
 - **Schedules** for suites, on any days and time.
 - **The local runner**: one Mac that runs suites for the whole team.
 - **Run requests** from CI or any other tool, and **result messages** after every suite run, to Slack, Microsoft Teams or any web address.
@@ -646,6 +646,8 @@ It looks at the screenshot of the failure and what the page said was on screen t
 
 ## Write a test from a story
 
+<!-- soon --> Coming later. It comes with Team, and no licence includes it yet.
+
 Writing the first version of a test is the slow part. With **Write a test from a story**, you say what the test should do in a few sentences. The AI assistant on your Mac suggests the steps. You check each one on the page, and the result is an ordinary test.
 
 1. Open the test in the recorder, on the page where the story starts.
@@ -654,7 +656,7 @@ Writing the first version of a test is the slow part. With **Write a test from a
 4. Under **Saved secrets it may type**, tick the ones the story needs, such as a password. Only their names go to the AI assistant, never their values.
 5. Press **Make steps**. When the steps are ready, a card over the page shows the first one, for example *Type "Ada Lovelace" into the Name field*.
 
-For each step, Breakpatch finds what it acts on and highlights it, as when you [describe a step](#record-a-test):
+For each step, Breakpatch finds what it acts on and highlights it, the same way it does when you [click on the page](#record-a-test):
 
 - **Confirm** (or Enter) does the step and records it, like a step you clicked. Then the next step is shown.
 - **Try again** looks for it again.

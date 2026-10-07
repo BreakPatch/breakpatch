@@ -402,13 +402,16 @@ describe('where a described typing step will type (DES2-10)', () => {
 });
 
 describe('the describe box (DESCRIBE_STEPS)', () => {
-  it('is on: clicking and describing are both there', async () => {
+  it('is off by default; turned on, clicking and describing are both there', async () => {
     const { AddStepBar } = await import('./AddStepBar');
-    function Bar() {
+    function Bar({ describe }: { describe?: boolean }) {
       const r = useRecorder({ viewport: vp, onError: vi.fn() });
-      return <AddStepBar rec={r} appId="a" allowGroups onInsertGroup={() => undefined} />;
+      return <AddStepBar rec={r} appId="a" allowGroups onInsertGroup={() => undefined} describe={describe} />;
     }
-    render(<Bar />);
+    const { unmount } = render(<Bar />);
+    expect(screen.queryByLabelText('Describe the next step')).toBeNull();
+    unmount();
+    render(<Bar describe />);
     expect(screen.getByLabelText('Describe the next step')).toBeInTheDocument();
     expect(screen.getByText(/Click anything on the page to add a step, or describe it below/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ask the AI assistant' })).toBeInTheDocument();

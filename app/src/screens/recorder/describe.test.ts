@@ -44,10 +44,10 @@ describe('action list', () => {
     expect(composerInput('write')).toBe('text');
     expect(composerInput('navigate')).toBe('url');
     expect(composerInput('waitFor')).toBe('none');
-    // The describe box is on (DESCRIBE_STEPS, back with #10): what acts on the page can be described too.
-    for (const k of ['click', 'hover', 'upload', 'scroll', 'waitUntil', 'checkpoint'] as const) expect(composerInput(k)).toBe('describe');
-    // With it off, what acts on the page is added on the page.
-    for (const k of ['click', 'hover', 'upload', 'scroll', 'waitUntil', 'checkpoint'] as const) expect(composerInput(k, false)).toBe('none');
+    // The describe box is off (DESCRIBE_STEPS): what acts on the page is added on the page.
+    for (const k of ['click', 'hover', 'upload', 'scroll', 'waitUntil', 'checkpoint'] as const) expect(composerInput(k)).toBe('none');
+    // With it on, what acts on the page can be described too.
+    for (const k of ['click', 'hover', 'upload', 'scroll', 'waitUntil', 'checkpoint'] as const) expect(composerInput(k, true)).toBe('describe');
     expect(composerInput('write')).toBe('text');
   });
 });

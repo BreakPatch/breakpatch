@@ -84,9 +84,9 @@ describe('small layout and wording', () => {
   });
   it('DESK-08/16 words the AI assistant by edition and About in plain words', () => {
     const ai = css('screens/settings/sections/AiSection.tsx'), about = css('screens/settings/sections/AboutSection.tsx');
-    // Describing a step is on (DESCRIBE_STEPS), and Community can't download the Larger assistant.
-    expect(ai).toContain("'Names each step you record and finds what you describe.'");
-    expect(ai).not.toMatch(/you can download a larger one/);
+    expect(ai).toContain("'Names each step you record.'");
+    // Describing a step is off (DESCRIBE_STEPS), and Community can't download the Larger assistant.
+    expect(ai).not.toMatch(/what you describe|you can download a larger one/);
     expect(ai).toContain("hasFeature('autoFix')");
     expect(about).not.toMatch(/pinned|Shared library|'Connected'/);
   });

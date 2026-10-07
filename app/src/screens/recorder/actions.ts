@@ -52,13 +52,13 @@ export const INSTANT = new Set<string>(['reload', 'back', 'forward', 'switchTab'
 
 export type ComposerInput = 'describe' | 'text' | 'url' | 'none';
 // ============================== DESCRIBE SWITCH ==============================
-// The add-step bar's "Describe the next step" box. Off from 2026-10-02 for the launch; back on
-// with #10, which goes through a story's steps with the same flow: the words are read
-// (intent.ts), what they name is found on the live page (record.locate: the page's structure
-// first, then the AI assistant; text that shows for a check) and shown for Confirm. With it off,
-// steps that act on the page are added by clicking or drawing on it only, and Write and Go to
-// address keep their own boxes.
-export const DESCRIBE_STEPS = true;
+// The add-step bar's "Describe the next step" box. Off (owner, 2026-10-02): it didn't work as
+// intended in his tests, and the real model hasn't been checked on a Mac since. Steps that act on
+// the page are added by clicking or drawing on it, and Write and Go to address keep their own
+// boxes. The describing flow itself is live: a story's steps (#10, Team) go through it
+// (intent.ts, record.locate with the page's structure first and `shows` for a check). Turn this
+// on again only after a Mac check with the real model.
+export const DESCRIBE_STEPS = false;
 // =============================================================================
 
 /** Actions added by pointing at the page: with describing off, the page is the only way. */
