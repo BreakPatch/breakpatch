@@ -11,20 +11,23 @@ import { rowStatus, tally, type RunView } from './runState';
 import { numberOf, rowNotes, runStrip, stepCountText, type RunInfo, type Strip } from './strip';
 import { targetBox } from './demo';
 import { hasFeature } from '../../edition';
+import { isTouch } from '../../data/devices';
 import './run.css';
 
 const ACTING: Partial<Record<Step['action'], string>> = {
   click: 'Clicking here', doubleClick: 'Double-clicking here', longClick: 'Pressing here', rightClick: 'Right-clicking here', hover: 'Pointing here',
   write: 'Writing here', drag: 'Dragging from here', swipe: 'Swiping here', scroll: 'Scrolling here', checkpoint: 'Checking here', waitUntil: 'Waiting for this', upload: 'Uploading here',
 };
+/** A phone or tablet test is tapped, not clicked. */
+const TOUCH_ACTING: Partial<Record<Step['action'], string>> = { click: 'Tapping here', doubleClick: 'Double-tapping here' };
 
 /** Markers on the page: the current target while running; where it was expected after a failure; old and new position after a fix. */
-export function runMarkers(view: RunView, info: RunInfo, vp: Pick<Viewport, 'width' | 'height'>): LiveMarker[] {
+export function runMarkers(view: RunView, info: RunInfo, vp: Pick<Viewport, 'width' | 'height' | 'device'>): LiveMarker[] {
   if (view.phase === 'running' && view.currentId) {
     const s = info.byId.get(view.currentId);
     const box = s && ACTING[s.action] && view.states[s.id] === 'running' ? targetBox(s, vp) : null;
     const n = Number(numberOf(info, view.currentId).split('.')[0]) || undefined;
-    return box ? [{ kind: 'locked', box, n, label: ACTING[s!.action] }] : [];
+    return box ? [{ kind: 'locked', box, n, label: (isTouch(vp) && TOUCH_ACTING[s!.action]) || ACTING[s!.action] }] : [];
   }
   if (view.phase === 'ended' && view.failedId && view.reasons[view.failedId] !== 'stopped') {
     const s = info.byId.get(view.failedId);
@@ -43,7 +46,7 @@ export function StripIcon({ strip, size = 24 }: { strip: Strip; size?: number })
 }
 
 export function RunPage({ view, info, startUrl, viewport, strip, stripExtra }: {
-  view: RunView; info: RunInfo | null; startUrl?: string; viewport: Pick<Viewport, 'width' | 'height'>;
+  view: RunView; info: RunInfo | null; startUrl?: string; viewport: Pick<Viewport, 'width' | 'height' | 'device'>;
   /** Replaces the strip's words (suite view: "Test · step"). */
   strip?: Strip; stripExtra?: ReactNode;
 }) {
