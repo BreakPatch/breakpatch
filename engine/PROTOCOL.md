@@ -8,6 +8,9 @@ as the Tauri event `engine://event`.
 
 All coordinates are **viewport pixels at DPR 1**. Boxes are `[x1, y1, x2, y2]`.
 
+A **viewport** is `{ width, height, device? }`. `device` names a phone or tablet preset (below,
+"Phones and tablets"); without it, it's a desktop test, as every test made before presets.
+
 ## Messages
 
 ```jsonc
@@ -120,7 +123,7 @@ the app config, or (Breakpatch Team) the workspace's model override.
 ### Browser (live view)
 | Method | Params | Result |
 |---|---|---|
-| `browser.open` | `{ url, viewport: {width, height} }` | `{}` — starts streaming `frame` events |
+| `browser.open` | `{ url, viewport: {width, height, device?} }` | `{}` — starts streaming `frame` events; `bad_request` for a `device` this engine doesn't know |
 | `browser.close` | – | `{}` |
 | `browser.navigate` | `{ nav: "url"\|"reload"\|"back"\|"forward", url? }` | `{}` |
 | `browser.pointer` | `{ kind: "move"\|"scroll", at, dx?, dy? }` | `{}` — lets the user scroll/hover the live view without recording; `busy` while a step records |
@@ -155,6 +158,35 @@ has its text cursor hidden (`caret-color: transparent`), in recording and replay
 doesn't change the screen by itself; a repaint with the same picture sends no frame. Frames follow the active tab: when `switchTab` moves to a
 popup, or the popup closes itself, frames come from the page now in front.
 The browser methods answer `busy` during a run.
+
+### Phones and tablets
+
+A test made for a phone or tablet has `viewport.device`, one of the presets in
+`src/breakpatch_engine/devices.py` (the app lists the same ones in `app/src/data/devices.ts`):
+`iphone-15`, `iphone-se`, `pixel-8`, `galaxy-s24`, then the tablets `ipad`, `ipad-pro-11`,
+`galaxy-tab-s9`. Each is a pinned copy of Playwright's device descriptor: the page gets the
+device's viewport, user agent, `isMobile` and a touch screen. `browser.open` and `run.start` use
+the preset's size whatever `width` and `height` say. Two things differ from the descriptor:
+
+- **Scale 1.** The page is drawn at device scale factor 1, so coordinates, frames, screenshots and
+  screen checks stay viewport pixels at DPR 1, at the device's size.
+- **Chromium.** An iPhone or iPad preset gives the page an iPhone's size, user agent and touch, but
+  it's still drawn by Chromium, not Safari.
+
+On a touch screen the same steps are touch input, in recording and replay (`actions.perform`):
+`click` is a tap, `doubleClick` two taps, `longClick` a long press (a finger held down), `swipe`
+and `drag` a finger moving (`Input.dispatchTouchEvent`), and `scroll` finger strokes that move the
+page (several when it's longer than the screen, each held still before it lets go so the page
+doesn't fling). Clicks that are part of another step (focusing a field for `write`, `upload`,
+`downloadCheck`) are taps too. `rightClick` and `hover` stay mouse input; the app doesn't offer them
+for a touch test. A step label the engine makes says "Tap", "Double tap" and "Long press" ("Tap
+Sign in", "Tap the spot you tapped"); a `label` the app sends is kept as it is.
+
+With **Use the page** on, `browser.input` `down`, `move` (while down), `up` and `click` with the left
+button are a finger too; `wheel`, keys and text are as on a desktop.
+
+A device name the engine doesn't know (a test from a newer Breakpatch) fails with `bad_request`
+"…Update Breakpatch to run it.", never runs as a desktop test.
 
 ### Recording
 | Method | Params | Result |

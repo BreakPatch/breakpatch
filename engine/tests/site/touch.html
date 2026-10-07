@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Touch only</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; background: #fff; }
+  .box { position: absolute; left: 20px; width: 300px; height: 80px; display: flex; align-items: center; justify-content: center; color: #fff; }
+  #tap { top: 20px; background: #2a62d8; }
+  #press { top: 120px; background: #8a3fc4; }
+  #swipe { top: 220px; background: #1c8a5a; touch-action: pan-y; }
+  #out { position: absolute; left: 20px; top: 320px; width: 300px; height: 40px; }
+  #tall { height: 3000px; }
+</style>
+</head>
+<body>
+<!-- A page that only answers touch (issue #11): the buttons ignore the mouse, so a step that
+     clicks with the mouse instead of tapping changes nothing. -->
+<div id="tall"></div>
+<div class="box" id="tap">Tap me</div>
+<div class="box" id="press">Hold me</div>
+<div class="box" id="swipe">Swipe me</div>
+<div id="out"></div>
+<script>
+  window.log = { taps: 0, doubles: 0, presses: 0, swipes: [], pointers: [], mouseOnly: 0 };
+  const out = document.getElementById('out');
+  const say = t => { out.textContent = t; };
+  document.addEventListener('pointerdown', e => window.log.pointers.push(e.pointerType));
+  // A mouse event that no touch made (a real mouse click): counted, never acted on.
+  document.addEventListener('mousedown', e => { if (!(e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents)) window.log.mouseOnly++; });
+
+  const tap = document.getElementById('tap');
+  let lastTap = 0;
+  tap.addEventListener('touchend', () => {
+    const now = Date.now();
+    window.log.taps++;
+    if (now - lastTap < 400) { window.log.doubles++; say('Double tapped'); } else say('Tapped ' + window.log.taps);
+    lastTap = now;
+  });
+
+  const press = document.getElementById('press');
+  let timer = null;
+  press.addEventListener('touchstart', e => { e.preventDefault(); timer = setTimeout(() => { timer = null; window.log.presses++; say('Long pressed'); }, 250); });
+  press.addEventListener('touchend', () => { if (timer) { clearTimeout(timer); timer = null; say('Too short'); } });
+
+  const swipe = document.getElementById('swipe');
+  let x0 = null, x1 = null;
+  swipe.addEventListener('touchstart', e => { x0 = x1 = e.touches[0].clientX; });
+  swipe.addEventListener('touchmove', e => { x1 = e.touches[0].clientX; });
+  swipe.addEventListener('touchend', () => {
+    const dx = x1 - x0;
+    const dir = dx < -50 ? 'left' : dx > 50 ? 'right' : 'none';
+    window.log.swipes.push(dir);
+    say('Swiped ' + dir);
+  });
+</script>
+</body>
+</html>
