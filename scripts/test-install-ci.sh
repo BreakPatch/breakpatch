@@ -111,7 +111,8 @@ chmod 644 "$tls"/*
 
 # $1 folder, $2 version: the two stand-in wheels and a requirements file per platform naming
 # them, like scripts/build-ci.sh writes. Options: bad-hash (the requirements file's hash for the
-# Team wheel is wrong), url (it also names a package by address), extra (a third wheel).
+# Team wheel is wrong), url (it also names a package by address), extra (a third wheel), crlf
+# (CRLF line endings, as Python's text mode wrote it on Windows for v0.1.0-beta.1).
 make_ci_files() {
   "$py311" - "$@" <<'PY'
 import base64, hashlib, os, sys, zipfile
@@ -166,14 +167,16 @@ for platform in ("linux-x86_64", "linux-arm64", "macos-arm64", "windows-x86_64")
     lines.append(f"./{os.path.basename(team)} --hash=sha256:{'1' * 64 if 'bad-hash' in opts else sha(team)}")
     if extra:
         lines.append(f"./{os.path.basename(extra)} --hash=sha256:{sha(extra)}")
-    open(os.path.join(dl, f"breakpatch-ci-requirements-{platform}.txt"), "w").write("\n".join(lines) + "\n")
+    with open(os.path.join(dl, f"breakpatch-ci-requirements-{platform}.txt"), "w",
+              newline="\r\n" if "crlf" in opts else "\n") as f:
+        f.write("\n".join(lines) + "\n")
 PY
 }
 
 # $1 API root name, $2 version, then options: latest (also releases/latest), prerelease, draft,
 # app-only (no breakpatch-ci files), bad-sum (the Team wheel's line in SHA256SUMS is wrong),
 # no-team-wheel (the requirements name a wheel the release doesn't have), foreign (the files are
-# listed on another host), bad-hash, url, extra (see make_ci_files).
+# listed on another host), bad-hash, url, extra, crlf (see make_ci_files).
 make_release() {
   local api=$1 version=$2 tag="v$2" latest=0 pre=0 draft=0 apponly=0 badsum=0 noteam=0 dl url
   local ci_opts=()
@@ -183,7 +186,7 @@ make_release() {
     case "$o" in
       latest) latest=1 ;; prerelease) pre=1 ;; draft) draft=1 ;; app-only) apponly=1 ;; bad-sum) badsum=1 ;;
       no-team-wheel) noteam=1 ;; foreign) url="https://localhost:$port/$api/download/$tag" ;;
-      bad-hash | url | extra) ci_opts+=("$o") ;;
+      bad-hash | url | extra | crlf) ci_opts+=("$o") ;;
     esac
   done
   dl="$srv/$api/download/$tag"
@@ -229,6 +232,7 @@ make_release foreign 1.7.0 latest foreign
 make_release badhash 1.8.0 latest bad-hash
 make_release url 1.9.0 latest url
 make_release extra 2.0.0 latest extra
+make_release crlf 2.1.0 latest crlf
 mkdir -p "$srv/empty/releases"
 echo "[]" > "$srv/empty/releases/list.json"
 
@@ -511,6 +515,80 @@ expect_token_hidden() {
   if ! grep -qF -- "$token" "$c/state/curl-env"; then ok "the token isn't in curl's environment"; else bad "the token is in curl's environment"; fi
   if ! grep -rqF -- "$token" "$c/tmp" "$c/home/.breakpatch-ci" "$c/home/.local" 2>/dev/null; then ok "the token isn't in a file left behind"; else bad "the token is in a file left behind"; fi
 }
+
+# ---------------------------------------------------------------- the release's check
+
+# scripts/check-ci-requirements.sh, which release.yml's publish-ci runs on every platform's files
+# before it publishes them, and the files scripts/ci-requirements.py writes for each platform.
+if [ "${ONLY:-}" != pwsh ]; then
+  echo "the release's check: scripts/check-ci-requirements.sh"
+  current="release check"
+  check="$repo/scripts/check-ci-requirements.sh"
+  check_dir() { set +e; out=$(bash "$check" "$1" 2>&1); code=$?; set -e; }
+  check_dir "$srv/good/download/v1.1.0"
+  expect_code 0
+  for p in linux-x86_64 linux-arm64 macos-arm64 windows-x86_64; do expect_out "breakpatch-ci-requirements-$p.txt: breakpatch_engine-"; done
+  check_dir "$srv/crlf/download/v2.1.0"
+  expect_code 1
+  expect_out "has CRLF line endings"
+  check_dir "$srv/extra/download/v2.0.0"
+  expect_code 1
+  expect_out "doesn't name two wheels"
+  check_dir "$srv/url/download/v1.9.0"
+  expect_code 1
+  expect_out "names a package by address"
+  check_dir "$srv/badhash/download/v1.8.0"
+  expect_code 1
+  expect_out "names a wheel that isn't in"
+  check_dir "$srv/noteam/download/v1.6.0"
+  expect_code 1
+  expect_out "names a wheel that isn't in"
+  check_dir "$srv/apponly/download/v1.4.0"
+  expect_code 1
+  expect_out "no breakpatch-ci-requirements-*.txt in"
+
+  # scripts/ci-requirements.py itself, for each platform's Team wheel tag, with the engine's
+  # dependencies stood in for (its lock and what's installed are the build's). It writes LF on
+  # every platform: bytes, never text mode, which writes CRLF on Windows.
+  echo "the release's check: scripts/ci-requirements.py's files"
+  current="ci-requirements.py"
+  gen="$work/gen"
+  for p in linux-x86_64:manylinux_2_28_x86_64 linux-arm64:manylinux_2_28_aarch64 macos-arm64:macosx_11_0_arm64 windows-x86_64:win_amd64; do
+    platform=${p%%:*} tag=${p#*:}
+    rm -rf "$gen"; mkdir -p "$gen"
+    echo engine > "$gen/breakpatch_engine-0.1.0b1-py3-none-any.whl"
+    echo "team $tag" > "$gen/breakpatch_team_engine-0.1.0b1-cp311-cp311-$tag.whl"
+    printf 'cryptography==46.0.1 \\\r\n    --hash=sha256:%064d\r\n' 0 > "$gen/lock.txt"   # a lock checked out with CRLF
+    set +e
+    out=$("$py311" - "$repo/scripts/ci-requirements.py" "$gen" "$platform" "$tag" 2>&1 <<'PY'
+import importlib.util, sys
+script, gen, platform, tag = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("ci_requirements", script)
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+m.runtime_closure = lambda *a, **k: ["cryptography"]
+sys.argv = [script, "--lock", f"{gen}/lock.txt", "--platform", platform, "--out", f"{gen}/breakpatch-ci-requirements-{platform}.txt",
+            "--wheel", f"{gen}/breakpatch_engine-0.1.0b1-py3-none-any.whl",
+            "--wheel", f"{gen}/breakpatch_team_engine-0.1.0b1-cp311-cp311-{tag}.whl"]
+sys.exit(m.main())
+PY
+)
+    code=$?
+    set -e
+    expect_code 0
+    req="$gen/breakpatch-ci-requirements-$platform.txt"
+    if ! grep -q $'\r' "$req"; then ok "$platform: LF line endings"; else bad "$platform: the file has a CR"; fi
+    if grep -qxF "cryptography==46.0.1 \\" "$req"; then ok "$platform: the lock's pin, without its CR"; else bad "$platform: no cryptography pin: $(cat "$req")"; fi
+    check_dir "$gen"
+    expect_code 0
+    expect_out "breakpatch-ci-requirements-$platform.txt: breakpatch_engine-0.1.0b1-py3-none-any.whl breakpatch_team_engine-0.1.0b1-cp311-cp311-$tag.whl ok"
+    # The file as text mode wrote it on Windows (v0.1.0-beta.1): refused, and saying why.
+    sed -i 's/$/\r/' "$req"
+    check_dir "$gen"
+    expect_code 1
+    expect_out "breakpatch-ci-requirements-$platform.txt has CRLF line endings"
+  done
+fi
 
 # ---------------------------------------------------------------- the cases
 
@@ -954,6 +1032,15 @@ else
   expect_no_out "$token"
   ps_none
   if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
+
+  # A requirements file with CRLF line endings (as Windows' text mode writes it) reads the same:
+  # Get-Content splits lines on either, so the two wheels are found and installed.
+  ps_case windows-crlf
+  if grep -q $'\r$' "$srv/crlf/download/v2.1.0/breakpatch-ci-requirements-windows-x86_64.txt"; then ok "the file has CRLF line endings"; else bad "the crlf release's file has no CR"; fi
+  ps_run BREAKPATCH_API="$base/crlf" BREAKPATCH_DOWNLOADS="$base/crlf/download/"
+  expect_code 0
+  expect_out "Installing breakpatch-ci 2.1.0..."
+  ps_version 2.1.0
 
   ps_case windows-python-download
   ps_run BREAKPATCH_PYTHON= PATH="$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$(printf '%064d' 0)"

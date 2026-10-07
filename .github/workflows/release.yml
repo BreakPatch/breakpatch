@@ -482,6 +482,13 @@ jobs:
     permissions:
       contents: write   # adds files to the release made by publish
     steps:
+      # Only for scripts/check-ci-requirements.sh, the check below.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: breakpatch
+          persist-credentials: false
+          sparse-checkout: scripts/check-ci-requirements.sh
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: breakpatch-ci-linux-x86_64
@@ -503,7 +510,8 @@ jobs:
           path: ci
       # SHA256SUMS: the release's own (the app's lines stay as they are) merged with a line per
       # new file from every platform that was built; a name already in it fails the job. Every
-      # wheel a requirements file names must be here with the hash it gives.
+      # requirements file must name the two wheels, with LF line endings, and each must be here
+      # with the hash it gives (scripts/check-ci-requirements.sh).
       - name: Check and publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -516,11 +524,7 @@ jobs:
               echo "::warning::breakpatch-ci for ${p%:*} wasn't built (${p##*:}); it isn't in this release."
             fi
           done
-          for req in ci/breakpatch-ci-requirements-*.txt; do
-            sed -n 's#^\./\([^ ]*\.whl\) --hash=sha256:\([0-9a-f]\{64\}\)$#\2  \1#p' "$req" > expected.txt
-            [ "$(wc -l < expected.txt)" -eq 2 ] || { echo "::error::$req doesn't name two wheels"; exit 1; }
-            (cd ci && sha256sum --check --strict ../expected.txt)
-          done
+          bash breakpatch/scripts/check-ci-requirements.sh ci
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir old
           (cd ci && sha256sum -- *) > new-sums.txt
           if awk '{ print $2 }' old/SHA256SUMS new-sums.txt | sort | uniq -d | grep .; then

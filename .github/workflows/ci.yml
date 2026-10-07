@@ -341,6 +341,9 @@ jobs:
         run: |
           python breakpatch-team/engine/scripts/smoke_ci_wheel.py keys --seed-file "$RUNNER_TEMP/ci-smoke.seed" > "$RUNNER_TEMP/ci-smoke-keys.json"
           bash breakpatch/scripts/build-ci.sh --no-deps --keys-file "$RUNNER_TEMP/ci-smoke-keys.json" --out "$RUNNER_TEMP/dist"
+      - name: The release's check of the requirements file
+        if: env.HAS_TEAM == 'true'
+        run: bash breakpatch/scripts/check-ci-requirements.sh "$RUNNER_TEMP/dist"
       - name: No Team source in the wheel
         if: env.HAS_TEAM == 'true'
         run: |
