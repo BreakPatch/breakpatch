@@ -1,11 +1,11 @@
-// New test: name, description, start address, locked screen size, optional
+// New test: name, description, start address, screen size (the app's, or a phone or tablet), optional
 // set-up and clean-up calls (ui-requirements §5.5).
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Dialog, Field, Icon, IconButton, Select, Spinner, Switch, TextInput, useToast } from '../../components/ui';
-import { sizeLabel } from '../../components/common';
+import { SizePicker } from '../../components/common';
 import { useBackend } from '../../data/hooks';
-import type { App, CallHeader, HttpCall } from '../../data/types';
+import type { App, CallHeader, HttpCall, Viewport } from '../../data/types';
 import { getEngine } from '../../engine';
 import { secrets } from '../../platform';
 import { callProblem, cleanCall, describeReply, isHttpAddress, tryCall, type Reply } from './tryCall';
@@ -22,6 +22,7 @@ export function NewTestDialog({ open, app, onClose }: { open: boolean; app: App;
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [startUrl, setStartUrl] = useState(app.baseUrl);
+  const [viewport, setViewport] = useState<Viewport>(app.defaultViewport);
   const [hooksOpen, setHooksOpen] = useState(false);
   const [setUp, setSetUp] = useState<HttpCall>({ method: 'POST', url: '' });
   const [cleanUp, setCleanUp] = useState<HttpCall>({ method: 'POST', url: '' });
@@ -33,11 +34,11 @@ export function NewTestDialog({ open, app, onClose }: { open: boolean; app: App;
 
   useEffect(() => {
     if (!open) return;
-    setName(''); setDescription(''); setStartUrl(app.baseUrl); setHooksOpen(false);
+    setName(''); setDescription(''); setStartUrl(app.baseUrl); setViewport(app.defaultViewport); setHooksOpen(false);
     setSetUp({ method: 'POST', url: '' }); setCleanUp({ method: 'POST', url: '' }); setAlsoOnFailure(true); setOtherHosts(false);
     setTried(false); setBusy(false);
     void secrets.list().then(setSecretNames).catch(() => setSecretNames([]));
-  }, [open, app.baseUrl]);
+  }, [open, app.baseUrl, app.defaultViewport]);
 
   const nameErr = tried && !name.trim() ? 'Give the test a name.' : undefined;
   const urlErr = tried && !isHttpAddress(withScheme(startUrl)) ? 'Enter a full address, like https://app.example.com' : undefined;
@@ -54,7 +55,7 @@ export function NewTestDialog({ open, app, onClose }: { open: boolean; app: App;
     setBusy(true);
     try {
       const t = await backend.createTest({
-        appId: app.id, name: name.trim(), description: description.trim() || undefined, startUrl: withScheme(startUrl), viewport: app.defaultViewport,
+        appId: app.id, name: name.trim(), description: description.trim() || undefined, startUrl: withScheme(startUrl), viewport,
         setUp: setUp.url.trim() ? cleanCall(setUp, otherHosts) : undefined,
         cleanUp: cleanUp.url.trim() ? { ...cleanCall(cleanUp, otherHosts), alsoOnFailure } : undefined,
       });
@@ -77,7 +78,10 @@ export function NewTestDialog({ open, app, onClose }: { open: boolean; app: App;
         <TextInput label={<span className="app-label-split">Description<span>Optional</span></span>} value={description}
           onChange={e => setDescription(e.target.value)} placeholder="What this test checks" />
         <TextInput label="Start address" mono value={startUrl} onChange={e => setStartUrl(e.target.value)} onBlur={() => setStartUrl(withScheme(startUrl))} error={urlErr} spellCheck={false} autoCapitalize="off" />
-        <div className="app-lock" role="note"><Icon name="lock" size={18} />Screen size {sizeLabel(app.defaultViewport)}. You can't change it later.</div>
+        <Field label="Screen size">
+          <SizePicker value={viewport} onChange={setViewport} />
+        </Field>
+        <div className="app-lock" role="note"><Icon name="lock" size={18} />You can't change the screen size later.</div>
 
         <div className="app-hooks">
           <button type="button" className="app-hooks-toggle" aria-expanded={hooksOpen} onClick={() => setHooksOpen(o => !o)}>

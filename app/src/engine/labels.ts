@@ -27,6 +27,31 @@ export const ACTIONS: ActionInfo[] = [
 const BY_KIND = Object.fromEntries(ACTIONS.map(a => [a.kind, a])) as Record<ActionKind, ActionInfo>;
 export function actionInfo(kind: ActionKind): ActionInfo { return BY_KIND[kind]; }
 
+/**
+ * On a phone or tablet the page is tapped, not clicked: the same steps under touch names. Right
+ * click and Hover need a mouse, so a touch test doesn't offer them (TOUCH_HIDDEN).
+ */
+const TOUCH_NAMES: Partial<Record<ActionKind, { name: string; verb: string }>> = {
+  click: { name: 'Tap', verb: 'Tap' },
+  doubleClick: { name: 'Double tap', verb: 'Double tap' },
+  longClick: { name: 'Long press', verb: 'Long press' },
+};
+export const TOUCH_HIDDEN = new Set<ActionKind>(['rightClick', 'hover']);
+
+/** An action's name and verb, in touch words for a touch test. */
+export function actionWords(kind: ActionKind, touch: boolean): { name: string; verb: string } {
+  const a = BY_KIND[kind];
+  return (touch && TOUCH_NAMES[kind]) || { name: a.name, verb: a.verb };
+}
+
+/** A label in touch words: "Click Sign in" → "Tap Sign in" (engine labels.touch_words). */
+export function touchWords(label: string): string {
+  for (const [a, b] of [['Double click ', 'Double tap '], ['Long click ', 'Long press '], ['Click ', 'Tap ']]) {
+    if (label.startsWith(a)) { label = b + label.slice(a.length); break; }
+  }
+  return label.replace('the spot you clicked', 'the spot you tapped');
+}
+
 const SAMPLE_NAMES = { docx: 'Word document', pdf: 'PDF', jpeg: 'JPEG image', mp4: 'MP4 video', xlsx: 'Excel sheet', csv: 'CSV file' } as const;
 export const SAMPLES = SAMPLE_NAMES;
 

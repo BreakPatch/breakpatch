@@ -105,3 +105,10 @@
 .live-hand-btn:hover:not(:disabled) { background: var(--raised); color: var(--text); }
 .live-hand-btn:disabled { opacity: .4; cursor: default; }
 .live-hand-btn.on { background: var(--fixed); color: var(--on-accent); font-weight: 600; }
+
+/* A phone or tablet test: the page in a device frame (LiveView BEZEL), drawn with shadows so the
+   frame's box, and every click on it, stays exactly the page. */
+.live-frame.live-device { --bezel-color: #1d1d1f; box-shadow: 0 0 0 var(--bezel) var(--bezel-color), 0 0 0 calc(var(--bezel) + 1px) var(--line-strong); }
+.live-frame.live-phone { border-radius: 22px; }
+.live-frame.live-tablet { border-radius: 14px; }
+.live.hand .live-frame.live-device { box-shadow: 0 0 0 var(--bezel) var(--bezel-color), 0 0 0 calc(var(--bezel) + 3px) var(--fixed); }

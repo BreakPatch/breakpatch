@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { Button, Dialog, Icon, Menu, statusInfo, TextInput, type Status } from '../ui';
 import type { Viewport } from '../../data/types';
+import { DEVICES, deviceViewport } from '../../data/devices';
 import { formatDateTime, formatDay, formatUpdated, formatWhen, sizeLabel, type ResultCounts } from './format';
 import './common.css';
 
@@ -81,22 +82,41 @@ export function SearchBox({ value, onChange, placeholder, width = 280 }: { value
 }
 
 // ---------- Screen sizes ----------
+/** Computer screens: the page as a desktop browser shows it, with a mouse. */
 export const SCREEN_SIZES: { name: string; viewport: Viewport }[] = [
   { name: 'Laptop', viewport: { width: 1440, height: 900, dpr: 1 } },
   { name: 'Desktop', viewport: { width: 1920, height: 1080, dpr: 1 } },
-  { name: 'Tablet', viewport: { width: 1024, height: 768, dpr: 1 } },
+  { name: 'Small screen', viewport: { width: 1024, height: 768, dpr: 1 } },
 ];
+/**
+ * A computer screen size, or a phone or tablet (data/devices.ts): its size, its user agent and a
+ * touch screen. A device that this app doesn't know (a test from a newer app) shows no choice on.
+ */
 export function SizePicker({ value, onChange, label = 'Screen size' }: { value: Viewport; onChange: (v: Viewport) => void; label?: string }) {
   return (
-    <div className="cm-sizes" role="radiogroup" aria-label={label}>
-      {SCREEN_SIZES.map(s => {
-        const on = s.viewport.width === value.width && s.viewport.height === value.height;
-        return (
-          <button key={s.name} type="button" role="radio" aria-checked={on} className="cm-size" onClick={() => onChange(s.viewport)}>
-            <span className="cm-size-name">{s.name}</span><span className="cm-size-px">{sizeLabel(s.viewport)}</span>
-          </button>
-        );
-      })}
+    <div className="cm-sizes-wrap" role="radiogroup" aria-label={label}>
+      <div className="cm-sizes">
+        {SCREEN_SIZES.map(s => {
+          const on = !value.device && s.viewport.width === value.width && s.viewport.height === value.height;
+          return (
+            <button key={s.name} type="button" role="radio" aria-checked={on} className="cm-size" onClick={() => onChange(s.viewport)}>
+              <span className="cm-size-name">{s.name}</span><span className="cm-size-px">{sizeLabel(s.viewport)}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="cm-sizes-title" id="cm-devices">Phones and tablets, with a touch screen</div>
+      <div className="cm-sizes cm-devices" role="group" aria-labelledby="cm-devices">
+        {DEVICES.map(d => {
+          const on = value.device === d.id;
+          return (
+            <button key={d.id} type="button" role="radio" aria-checked={on} className="cm-size cm-device" onClick={() => onChange(deviceViewport(d))}>
+              <span className="cm-size-name"><Icon name="smartphone" size={16} />{d.name}</span>
+              <span className="cm-size-px">{sizeLabel(d)}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

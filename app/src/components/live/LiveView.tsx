@@ -5,8 +5,10 @@
 // Two sources (Engine.liveMode): 'frames' shows the latest `frame` JPEG from the engine;
 // 'sample' shows the built-in sample app (demo). Either way, clicks are reported in
 // viewport pixels at DPR 1, and markers are given in viewport pixels too.
+// A phone or tablet test (viewport.device) shows the page in a device frame, at the device's shape.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { Box, Point, Viewport } from '../../data/types';
+import { deviceOf, isTouch, screenName } from '../../data/devices';
 import { demoEngine, getEngine, type Frame, type HandInput } from '../../engine';
 import { Icon } from '../ui';
 import { distance, fitScale, inside, keyName, nextZoom, normBox, PAGE_PAD, toViewport } from './geometry';
@@ -34,8 +36,8 @@ export type LiveTool = 'point' | 'drag' | 'box' | 'none';
 export interface LiveViewProps {
   /** Shown in the address pill (no protocol), e.g. "app.example.com/projects". */
   address: string;
-  /** The test's locked viewport. */
-  viewport: Pick<Viewport, 'width' | 'height'>;
+  /** The test's locked viewport; with `device`, a phone or tablet's. */
+  viewport: Pick<Viewport, 'width' | 'height' | 'device'>;
   /** Defaults to the engine's live mode. */
   source?: 'frames' | 'sample';
   /** Run view and report: no pointer tools, no hover. */
@@ -92,7 +94,11 @@ export function LiveView(props: LiveViewProps) {
   const [pane, setPane] = useState({ width: 900, height: 560 });
   const [zoom, setZoom] = useState<'fit' | number>('fit');
   const pad = props.pad ?? PAGE_PAD;
-  const scale = zoom === 'fit' ? fitScale(pane, vp, pad) : zoom;
+  // A phone or tablet: the page sits in a device frame (the bezel), which needs room around it.
+  const device = isTouch(vp);
+  const kind = deviceOf(vp)?.kind ?? 'phone';
+  const bezel = device && props.pad !== 0 ? BEZEL[kind] : 0;
+  const scale = zoom === 'fit' ? fitScale(pane, vp, pad + bezel) : zoom;
 
   useLayoutEffect(() => {
     const el = paneRef.current;
@@ -132,7 +138,9 @@ export function LiveView(props: LiveViewProps) {
         <div className="live-bar">
           <div className="live-address" title={props.address}><Icon name="lock" size={16} /><span className="ellipsis">{props.address}</span></div>
           {status}
-          <div className="live-size"><Icon name="aspect_ratio" size={16} />{vp.width} × {vp.height}</div>
+          <div className="live-size" title={device ? 'A touch screen: steps are taps, presses and swipes.' : undefined}>
+            <Icon name={device ? 'smartphone' : 'aspect_ratio'} size={16} />{screenName(vp)}
+          </div>
           {!hideZoom && (
             <div className="live-zoom" role="group" aria-label="Zoom">
               <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => setZoom(nextZoom(scale, -1))} disabled={scale <= 0.25}><Icon name="remove" size={18} /></button>
@@ -144,7 +152,8 @@ export function LiveView(props: LiveViewProps) {
         </div>
       )}
       <div className="live-pane" ref={paneRef} style={props.pad !== undefined ? { padding: pad } : undefined}>
-        <div className="live-frame" ref={frameRef} style={{ width: vp.width * scale, height: vp.height * scale }}>
+        <div className={'live-frame' + (bezel ? ` live-device live-${kind}` : '')} ref={frameRef}
+          style={{ width: vp.width * scale, height: vp.height * scale, ...(bezel ? { '--bezel': `${bezel}px` } : {}) } as CSSProperties}>
           <div className="live-page" style={pageStyle}>
             {page}
             <div className="live-overlays" aria-hidden>
@@ -173,6 +182,9 @@ export function LiveView(props: LiveViewProps) {
     </div>
   );
 }
+
+/** The device frame's width around the page, in screen pixels (not scaled with the page). */
+const BEZEL = { phone: 12, tablet: 16 } as const;
 
 const boxStyle = (b: Box): CSSProperties => ({ left: b[0], top: b[1], width: b[2] - b[0], height: b[3] - b[1] });
 

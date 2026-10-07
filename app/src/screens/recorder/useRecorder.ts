@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActionKind, Box, Direction, Generated, Point, SampleFile, Step, Viewport } from '../../data/types';
 import { demoEngine, getEngine, EngineError, type CheckingPhase, type FileChoice, type FileChooserEvent, type RecordParams } from '../../engine';
 import { around, gesture, inside, sampleApp } from '../../components/live';
-import { actionInfo } from '../../engine/labels';
+import { actionInfo, touchWords } from '../../engine/labels';
+import { isTouch } from '../../data/devices';
 import { appendStep, defaultLabel, findStep, flatRows, insertAfter, numberOf, removeStep, replaceStep, stepsBefore, updateStep } from '../../components/steps';
 import { POINT_KINDS, STICKY } from './actions';
 import { secrets } from '../../platform';
@@ -79,7 +80,7 @@ export async function secretFor(ref: string | undefined, appUrl: string | undefi
 }
 
 export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
-  viewport: Pick<Viewport, 'width' | 'height'>; onError: (message: string) => void;
+  viewport: Pick<Viewport, 'width' | 'height' | 'device'>; onError: (message: string) => void;
   /** The app's base address: where a saved secret is allowed when it has no sites yet. */
   appUrl?: string;
   /** <tests folder>/files, for uploads of the user's own files. */
@@ -89,6 +90,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
 }) {
   const engine = getEngine();
   const sample = engine.liveMode === 'sample';
+  // A phone or tablet test: the bar asks "Tap Next button?", not "Click" (engine labels.touch_words).
+  const words = isTouch(viewport) ? touchWords : (l: string) => l;
   const [steps, setStepsState] = useState<Step[]>([]);
   const stepsRef = useRef<Step[]>([]);
   const [dirty, setDirty] = useState(false);
@@ -361,14 +364,14 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   // ---------- Proposals: the page only gets what the user confirmed ----------
   function propose(params: RecordParams, frame: number | undefined, box: Box, label: string, at?: Point) {
     const token = ++aiToken.current;
-    setAi({ state: 'proposal', params, frame, box, label, named: !at || sample });
+    setAi({ state: 'proposal', params, frame, box, label: words(label), named: !at || sample });
     if (!at) return;
     // The element's box and name come a moment later; the bar asks at once with "here".
     void engine.propose(at).then(got => {
       if (token !== aiToken.current) return;
       setAi(a => a.state !== 'proposal' ? a : {
         ...a, box: got.box ?? a.box, named: true,
-        ...(got.name ? { label: `${actionInfo(a.params.action).verb} ${got.name}`, target: got.target } : {}),
+        ...(got.name ? { label: words(`${actionInfo(a.params.action).verb} ${got.name}`), target: got.target } : {}),
       });
     }).catch(() => { if (token === aiToken.current) setAi(a => (a.state === 'proposal' ? { ...a, named: true } : a)); });
   }

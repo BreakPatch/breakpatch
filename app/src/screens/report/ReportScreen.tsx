@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { Run } from '../../data/types';
+import { screenName } from '../../data/devices';
 import { AppFrame } from '../../components/shell/AppFrame';
 import { Button, EmptyState, Segmented, Skeleton, StatusPill } from '../../components/ui';
 import { StepRow, flatRows, type RowStatus } from '../../components/steps';
@@ -77,6 +78,8 @@ export default function ReportScreen() {
     { k: 'Took', v: tookText(run.durationMs) },
     { k: 'Run by', v: runBy(run) },
     { k: 'Where', v: WHERE[run.source].label },
+    // A phone or tablet test: the device it ran as.
+    ...(test?.viewport?.device ? [{ k: 'Device', v: screenName(test.viewport) }] : []),
     { k: 'Machine', v: run.machine },
     { k: 'When', v: formatWhen(run.startedAt) },
     ...(hasFeature('versions') ? [{ k: 'Version', v: String(run.testVersion) }] : []),
