@@ -1,0 +1,12 @@
+file,url,story,secrets,expected
+# "Write a test from a story" cases (roadmap #10), scored by plan_test.py. One row per story.
+# file: a screenshot (1440 x 900) in screenshots/ of the page where the story starts; a page read
+#   saved next to it (<file>.page.json, the shape of the engine's explain.page_record) is used when there.
+# url: the page's address. story: what the person writes. secrets: saved secret names they tick, separated by ;
+# expected: the steps, in order, separated by ; each as "action: target" with the recorder's action
+#   (click, doubleClick, rightClick, hover, write, navigate, scroll, waitFor, checkpoint). A target
+#   counts as right when it names the same thing (words compared, case and "the … button" aside).
+# At least: a sign-up, a log-in and a create-item flow (the issue's acceptance criteria).
+plan-signup.png,https://app.example.com/signup,"Sign up as ""Ada Lovelace"" with a new email and my password. Then I see Account created.",TEST_PASSWORD,write: Name; write: Email; write: Password; click: Create account; checkpoint: Account created
+plan-login.png,https://app.example.com/login,"Log in with test@example.com and my password, then I see the Dashboard.",TEST_PASSWORD,write: Email; write: Password; click: Log in; checkpoint: Dashboard
+plan-create.png,https://app.example.com/projects,"Create a project called ""Alpha"" and check it shows in the list.",,click: New project; write: Project name; click: Create; checkpoint: Alpha
