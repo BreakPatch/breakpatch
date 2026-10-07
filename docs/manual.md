@@ -188,7 +188,7 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
 
 ## Record a test
 
-1. Open an app → **New test**. Give it a name and a start address. The screen size is fixed once you start.
+1. Open an app → **New test**. Give it a name, a start address and a **Screen size**: a computer screen, or a phone or tablet (see [Phones and tablets](#phones-and-tablets)). The screen size is fixed once you start.
 2. Optional: under **Before and after the test**, add a **set-up call** (for example, to add sample data) and a **clean-up call**. Each is a method (GET, POST, PUT, PATCH or DELETE), a web address and, if you like, headers; the run waits for the reply. **Try it** makes the call once.
    - Calls use `https://` and go to the app's own address or another host under the same domain, for example `api.example.com` for an app at `app.example.com`. Plain `http://` is only for an app on this Mac (`localhost`).
    - Private and local network addresses are refused, unless the app itself is on one. **Allow other hosts** lets this test call any host and private addresses. Cloud metadata addresses are never called.
@@ -218,6 +218,20 @@ Under that: **Play to here** starts a new browser and plays the test from the st
 
 **Checkpoint** checks that something is on screen, like "Project created": click it, or draw a box around it. **Write text** types what you put in its box (**Typed text**), a **Saved secret**, or a **Generated** value made at run time: a unique name, the time now, today's date or the repeat number. **Insert** adds one of those to typed text, like `Test project {time}`.
 
+### Phones and tablets
+
+To test your site on a phone or tablet, pick one under **Screen size** in **New test**. The phones are iPhone 15, iPhone SE, Pixel 8 and Galaxy S24. The tablets are iPad, iPad Pro 11 and Galaxy Tab S9. An app's **Default screen size** can be one too.
+
+- The page gets the device's screen size and a touch screen, and it's told which device it's on. A site with a phone layout shows that layout.
+- It's still Breakpatch's own browser, Chromium. An iPhone test shows your site at an iPhone's size, not as Safari draws it.
+- The page view shows the device's frame. The bar above it names the device.
+- You still use your mouse. A click on the page adds a **Tap**. The action button has **Tap**, **Double tap**, **Long press**, **Swipe**, **Scroll** and **Drag and drop**, and each is done with a finger on the page. **Right click** and **Hover** need a mouse, so phone and tablet tests don't have them.
+- With **Use the page** on, your clicks and drags are taps and finger moves too.
+- Screen checks work as in any test, at the device's screen size. The page is drawn at normal sharpness, not the phone's, so screenshots are the size of the page.
+- The run view and the report name the device.
+
+A test's device is fixed once you start, like any screen size. Tests made before phones and tablets stay computer tests.
+
 ## Run a test and read the report
 
 Press **Run**. The live view shows each step as it runs. Each step is checked before and after it acts, and the first failure stops the run with a plain reason, for example "Couldn't find the Done button".
@@ -243,7 +257,7 @@ In Team, a failed step also has **Why did this fail?**: the AI assistant says in
 
 **Export** on a run's report saves it for people who don't have Breakpatch. A finished suite run, and **Run all**, have **Export** too: one report with every test in it.
 
-- **Web page (HTML).** One file that opens in any browser, offline, without Breakpatch or a sign-in. Attach it to a ticket or an email, or drop it in a chat. It has the summary, every step with its result, the reason and where the time went, and the AI assistant's explanation when there is one. Steps open and close with a click, the one that failed is open, and it follows the reader's light or dark setting (**Theme** switches it). It never loads anything from the internet.
+- **Web page (HTML).** One file that opens in any browser, offline, without Breakpatch or a sign-in. Attach it to a ticket or an email, or drop it in a chat. It has the summary (with the device, for a phone or tablet test), every step with its result, the reason and where the time went, and the AI assistant's explanation when there is one. Steps open and close with a click, the one that failed is open, and it follows the reader's light or dark setting (**Theme** switches it). It never loads anything from the internet.
 - **PDF.** Opens the print dialog with the same report, every step open. Choose **PDF → Save as PDF**. A saved web page prints the same way from any browser.
 - **JUnit XML.** For CI dashboards: GitHub, GitLab and Jenkins read it. One test case per test, with the failed step and why. It has no screenshots.
 
