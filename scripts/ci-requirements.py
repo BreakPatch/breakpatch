@@ -15,6 +15,9 @@ The install command (https://breakpatch.dev/install-ci) installs from it with
   lock (security review S3), and
 - the two wheels by file name (`./name.whl`, next to the file once downloaded) with their SHA-256.
 
+It's written with LF line endings on every platform, Windows too (the release's check,
+scripts/check-ci-requirements.sh, refuses CRLF).
+
 Run it with the build venv's Python: the engine's dependencies are read from what's installed
 there, which the lock installed. A dependency missing from the lock fails the build.
 """
@@ -126,11 +129,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--lock", type=Path, required=True)
     ap.add_argument("--wheel", type=Path, action="append", required=True)
-    ap.add_argument("--platform", required=True, help="macos-arm64 or linux-x86_64")
+    ap.add_argument("--platform", required=True, help="macos-arm64, linux-x86_64, linux-arm64 or windows-x86_64")
     ap.add_argument("--extra", action="append", default=[], help="the engine's extras to include (macOS: mlx)")
     ap.add_argument("--out", type=Path, required=True)
     a = ap.parse_args()
-    a.out.write_text(build(a.lock, a.wheel, a.platform, tuple(a.extra)))
+    # Bytes, so the file has LF line endings everywhere: in text mode Windows writes CRLF, which
+    # the release's check (scripts/check-ci-requirements.sh) refuses.
+    a.out.write_bytes(build(a.lock, a.wheel, a.platform, tuple(a.extra)).encode("utf-8"))
     print(f"ci-requirements: wrote {a.out}")
     return 0
 
