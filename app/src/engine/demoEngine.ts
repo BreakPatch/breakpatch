@@ -1,7 +1,7 @@
 // Simulated engine for the browser preview and tests. Timings follow the prototype:
 // "Checking the screen…" ~1 s, run steps ~750 ms each, AI thinking ~1.5 s.
 import type { Box, Explanation, FailReason, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
+import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Plan, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
 import { edition } from '../edition';
 import { hasFeature } from '../edition/features';
 import { labelFor } from './labels';
@@ -91,7 +91,24 @@ export class DemoEngine implements Engine {
   /** The demo has no AI assistant to read a sentence: the app's own reading is all there is. */
   async intent(_sentence: string): Promise<EngineIntent | null> { return null; }
 
-  async locate(description: string, _opts: { near?: Near } = {}): Promise<LocateResult | null> {
+  /**
+   * The preview's "Write a test from a story": the sample app's own flow (a new project, named
+   * from the story's quoted words when it has some), as the Team engine would propose it.
+   */
+  async plan(story: string, _secrets: string[]): Promise<Plan> {
+    if (!hasFeature('aiTests')) throw new EngineError('not_ready', 'Writing a test from a story is part of Breakpatch Team.');
+    if (!story.trim()) throw new EngineError('bad_request', 'Write the story first.');
+    await this.sleep(1500);
+    const quoted = /["“']([^"”']{1,60})["”']/.exec(story)?.[1];
+    return { steps: [
+      { action: 'click', target: 'the New project button' },
+      { action: 'write', target: 'the Project name field', text: quoted ?? 'Test project {timestamp}' },
+      { action: 'click', target: 'the Done button' },
+      { action: 'checkpoint', target: 'the success message' },
+    ] };
+  }
+
+  async locate(description: string, _opts: { near?: Near; shows?: boolean } = {}): Promise<LocateResult | null> {
     await this.sleep(1500);
     const low = description.toLowerCase();
     const hit = this.targets.find(t => t.visible() && t.words.some(w => low.includes(w)));

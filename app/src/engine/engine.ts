@@ -1,5 +1,5 @@
 // UI-side view of the Python engine (see engine/PROTOCOL.md).
-import type { Box, Explanation, HttpCall, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
+import type { Box, Direction, Explanation, Generated, HttpCall, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
 
 export interface SystemInfo {
   memoryGb: number; chip: string; os: string; engineVersion: string;
@@ -63,6 +63,24 @@ export interface Near { control: 'increase' | 'decrease'; of: string }
 export interface EngineIntent { action: string; repeat: number; target?: string; text?: string; direction?: string; seconds?: number }
 
 export interface LocateResult { box: Box; at: Point; target: string; frame?: number; path?: LocatePath; s0Score?: number }
+
+/**
+ * One step a user story asks for (Breakpatch Team, engine `record.plan`): proposed, not done. The
+ * engine has already applied the safety rules (engine/PROTOCOL.md "A test from a story").
+ */
+export interface PlanStep {
+  action: 'click' | 'doubleClick' | 'rightClick' | 'hover' | 'write' | 'navigate' | 'scroll' | 'waitFor' | 'checkpoint';
+  /** What to find on the page, in words. None: the field that has the focus (write), the page (scroll). */
+  target?: string;
+  /** Write: typed text from the story, a picked saved secret, or a generated value. */
+  text?: string; secretRef?: string; generated?: Generated;
+  /** Write with no value the engine would type: the person says what to type, or picks a saved secret. */
+  needs?: 'text' | 'secret';
+  url?: string; direction?: Direction; seconds?: number;
+  /** It looks like it deletes, pays or sends something. */
+  careful?: boolean;
+}
+export interface Plan { steps: PlanStep[]; note?: string; dropped?: number }
 
 export interface RunSettings {
   autoFix: boolean; failOnFix: boolean;
@@ -149,14 +167,24 @@ export interface Engine {
   pointer(kind: 'move' | 'scroll', at: Point, dx?: number, dy?: number): Promise<void>;
 
   recordPoint(p: RecordParams): Promise<Step>;
-  /** `near`: the "+" or "−" next to something ("add 2 people"), found from the page's structure first. */
-  locate(description: string, opts?: { near?: Near }): Promise<LocateResult | null>;
+  /**
+   * `near`: the "+" or "−" next to something ("add 2 people"), found from the page's structure first.
+   * `shows`: what to find may be text on the screen, not a control (a checkpoint, a Wait until).
+   */
+  locate(description: string, opts?: { near?: Near; shows?: boolean }): Promise<LocateResult | null>;
   /** What a described step means, from the AI assistant; null without it or when it can't tell. */
   intent(sentence: string): Promise<EngineIntent | null>;
   /** The element at a point and its name, without acting. `name: false` skips the AI assistant. */
   propose(at: Point, opts?: { name?: boolean }): Promise<Proposal>;
   /** The field that has the keyboard focus (`record.focused`): its box and name, nulls when none. */
   focused(): Promise<{ box: Box | null; name: string | null }>;
+  /**
+   * "Write a test from a story" (Breakpatch Team, engine `record.plan`): the steps the story asks
+   * for, proposed and not done. `secrets`: the saved secret names it may type (never values).
+   * Throws EngineError `not_ready` in Community, without the licence feature or the AI assistant;
+   * `not_found` when it couldn't make steps from the story.
+   */
+  plan(story: string, secrets: string[]): Promise<Plan>;
   /** The answer to a `record.fileChooser` event. */
   chooseFile(choice: FileChoice): Promise<void>;
   /** "Use the page": the user's own input goes straight to the page; nothing is recorded. */
