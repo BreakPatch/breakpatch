@@ -9,7 +9,7 @@ node_modules. Each shot is of one edition. The Community ones (the recorder, the
 what the free app does, so they're taken with the Team module unlinked (scripts/unlink-team.sh);
 the Team ones (Fixed automatically, the local runner) with it linked (scripts/link-team.sh). A run
 takes the shots of the edition that's linked and says which it left for the other, so a full set
-is two runs, one each way. The demo's describe box follows DESCRIBE_STEPS (off), as the app does.
+is two runs, one each way. The demo's describe box follows DESCRIBE_STEPS (on again with #10), as the app does.
 
 The script starts the preview (npm run dev, on PORT, 1420 unless set) unless one is already
 running, opens http://localhost:PORT/?demo&ready&signedin, and takes each shot at 1280 x 800, at

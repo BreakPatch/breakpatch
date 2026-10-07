@@ -207,3 +207,4 @@
 .rec-plan-input { width: 100%; max-width: 420px; text-align: left; }
 .rec-plan-actions { display: flex; align-items: center; gap: 8px; padding-left: 30px; }
 .rec-plan-error { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--failed); }
+.rec-plan-edit .rec-plan-actions { padding-left: 0; }
