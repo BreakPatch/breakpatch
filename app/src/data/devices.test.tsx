@@ -12,14 +12,14 @@ import { getEngine } from '../engine';
 import { NewTestDialog } from '../screens/app/NewTestDialog';
 import RecorderScreen from '../screens/recorder/RecorderScreen';
 import { SizePicker } from '../components/common';
-import { LiveView } from '../components/live';
+import { LiveView, stepMarker } from '../components/live';
 import { actionWords, touchWords } from '../engine/labels';
 import { menuGroups, pageHint, shortName } from '../screens/recorder/actions';
 import { ActionMenu } from '../screens/recorder/ActionMenu';
 import { buildView } from '../lib/report/view';
 import { initFolder } from './local/folder';
-import { LocalBackend } from './local/localBackend';
-import { fromFileText } from './local/format';
+import { LocalBackend, NEWER_MESSAGE, parseMeta } from './local/localBackend';
+import { DEVICE_SCHEMA_VERSION, fromFileText, SCHEMA_VERSION } from './local/format';
 import { MemoryStorage } from './local/storage';
 
 Element.prototype.scrollIntoView ??= () => undefined;
@@ -76,6 +76,15 @@ describe('touch words', () => {
     expect(screen.getByRole('menuitemradio', { name: 'Tap' })).toBeInTheDocument();
     expect(screen.queryByRole('menuitemradio', { name: 'Hover' })).toBeNull();
     expect(screen.getByText(/Right click and Hover need a mouse/)).toBeInTheDocument();
+  });
+});
+
+describe('step markers', () => {
+  it('say Tap on a touch test', () => {
+    const step = { id: 's', action: 'click' as const, label: 'Tap Next', at: [100, 100] as [number, number] };
+    expect(stepMarker(step, 1)?.label).toBe('Click locked here');
+    expect(stepMarker(step, 1, undefined, true)?.label).toBe('Tap locked here');
+    expect(stepMarker({ ...step, action: 'longClick' }, 1, undefined, true)?.label).toBe('Long press locked here');
   });
 });
 
@@ -141,6 +150,51 @@ describe('test files', () => {
       const old = tests.find(t => t.id === 'old')!.viewport;
       expect(old.device).toBeUndefined();
       expect(isTouch(old)).toBe(false);
+    } finally { b.close(); }
+  });
+
+  const meta = async (st: MemoryStorage) => fromFileText<{ schemaVersion: number; name: string; format: string }>((await st.read(`${ROOT}/breakpatch.json`))!);
+  const folder = async () => {
+    const st = new MemoryStorage();
+    await st.mkdir(ROOT);
+    await initFolder(st, ROOT);
+    const b = await LocalBackend.open({ storage: st, path: ROOT, person, live: false });
+    return { st, b };
+  };
+
+  it('raise the folder format with the first phone test, so older apps refuse it rather than run it as a desktop test', async () => {
+    const { st, b } = await folder();
+    try {
+      const app = await b.addApp({ name: 'Web app', baseUrl: 'https://app.example.com', defaultViewport: LAPTOP });
+      await b.createTest({ appId: app.id, name: 'Desktop', startUrl: 'https://app.example.com', viewport: LAPTOP });
+      expect((await meta(st)).schemaVersion).toBe(SCHEMA_VERSION);             // no phone tests: as before
+      await b.createTest({ appId: app.id, name: 'Phone', startUrl: 'https://app.example.com', viewport: PHONE });
+      expect(await meta(st)).toMatchObject({ format: 'breakpatch', schemaVersion: DEVICE_SCHEMA_VERSION, name: 'tests' });
+      // An app from before phone tests reads only up to SCHEMA_VERSION: this folder is newer to it.
+      expect(DEVICE_SCHEMA_VERSION).toBeGreaterThan(SCHEMA_VERSION);
+      expect(() => parseMeta(JSON.stringify({ format: 'breakpatch', schemaVersion: DEVICE_SCHEMA_VERSION + 1 }))).toThrow(NEWER_MESSAGE);
+      // This app keeps saving to it.
+      await b.createTest({ appId: app.id, name: 'Another', startUrl: 'https://app.example.com', viewport: LAPTOP });
+      expect((await meta(st)).schemaVersion).toBe(DEVICE_SCHEMA_VERSION);
+    } finally { b.close(); }
+  });
+
+  it('raise it for an app whose default screen is a phone too', async () => {
+    const { st, b } = await folder();
+    try {
+      await b.addApp({ name: 'Mobile web', baseUrl: 'https://m.example.com', defaultViewport: deviceViewport(DEVICES[4]) });
+      expect((await meta(st)).schemaVersion).toBe(DEVICE_SCHEMA_VERSION);
+    } finally { b.close(); }
+  });
+
+  it('open a folder at the phone format and save to it', async () => {
+    const st = new MemoryStorage();
+    await st.mkdir(ROOT);
+    st.poke(`${ROOT}/breakpatch.json`, JSON.stringify({ format: 'breakpatch', schemaVersion: DEVICE_SCHEMA_VERSION, name: 'tests' }));
+    const b = await LocalBackend.open({ storage: st, path: ROOT, person, live: false });
+    try {
+      const app = await b.addApp({ name: 'Web app', baseUrl: 'https://app.example.com', defaultViewport: LAPTOP });
+      expect(app.id).toBeTruthy();
     } finally { b.close(); }
   });
 });

@@ -27,7 +27,7 @@ import type {
   App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
 } from '../types';
 import { folderConnectionId } from '../../state/connectionIds';
-import { FORMAT, SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
+import { DEVICE_SCHEMA_VERSION, FORMAT, NEWEST_READ_SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
 import { osText } from '../../lib/osWords';
 
@@ -135,6 +135,13 @@ export function recordedOnIn(v: unknown): RecordedOn | undefined {
   return out;
 }
 
+/** A test file for a phone or tablet, or an app.json whose default screen is one: the folder needs DEVICE_SCHEMA_VERSION. */
+function needsDeviceFormat(rel: string, value: unknown): boolean {
+  if (!isObj(value)) return false;
+  const vp = /^apps\/[^/]+\/tests\/[^/]+\.json$/.test(rel) ? value.viewport : /^apps\/[^/]+\/app\.json$/.test(rel) ? value.defaultViewport : null;
+  return isObj(vp) && typeof vp.device === 'string' && vp.device !== '';
+}
+
 const WEEKDAYS: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 /**
@@ -195,7 +202,7 @@ export function parseMeta(text: string | null): FolderMeta {
   try { v = fromFileText(text); } catch { throw new FolderError('unreadable', "This folder's breakpatch.json can't be read. Fix the file or choose another folder."); }
   if (!isObj(v) || v.format !== FORMAT) throw new FolderError('notBreakpatch', "This folder's breakpatch.json isn't a Breakpatch file.");
   const schemaVersion = num(v.schemaVersion, 1);
-  if (schemaVersion > SCHEMA_VERSION) throw new FolderError('newer', NEWER_MESSAGE);
+  if (schemaVersion > NEWEST_READ_SCHEMA_VERSION) throw new FolderError('newer', NEWER_MESSAGE);
   return { format: FORMAT, schemaVersion, name: str(v.name) };
 }
 
@@ -413,6 +420,7 @@ export class LocalBackend implements Backend {
 
   /** Writes a file (temp file, then rename) unless it already says exactly this. */
   private async put(rel: string, value: unknown) {
+    if (needsDeviceFormat(rel, value)) await this.raiseFormat(DEVICE_SCHEMA_VERSION);
     const text = toFileText(value);
     if (this.texts.get(rel) === text) return;
     const path = this.abs(rel);
@@ -423,6 +431,17 @@ export class LocalBackend implements Backend {
     try { await this.st.rename(tmp, path); }
     catch (e) { await this.st.remove(tmp).catch(() => {}); throw e; }
     this.texts.set(rel, text);
+  }
+  /**
+   * Raises breakpatch.json's schemaVersion to `to` when it's lower (format.ts), before the file that
+   * needs it is written, so an older app never sees that file in a folder it would save to.
+   */
+  private async raiseFormat(to: number) {
+    let v: unknown = null;
+    try { v = fromFileText(this.texts.get('breakpatch.json') ?? ''); } catch { /* rewritten below */ }
+    const meta = isObj(v) ? v : { format: FORMAT, name: this.name };
+    if (num(meta.schemaVersion, 1) >= to) return;
+    await this.put('breakpatch.json', { ...meta, format: FORMAT, schemaVersion: to });
   }
   private async drop(rel: string) {
     await this.st.remove(this.abs(rel));
