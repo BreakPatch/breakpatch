@@ -55,7 +55,7 @@ Licences issued before a feature existed get it at their next refresh (tokens la
 
 ## Data format safety (Team)
 
-Workspaces carry a `schemaVersion`: the data format the newest app that saved there uses. The app raises it automatically the first time it saves in a newer format. An older app that finds a higher number keeps reading and running tests, but saving is turned off, with the banner "Update Breakpatch to save changes. Someone on your team uses a newer version." There is no minimum app version setting and no blocking update screen. Community files are local and don't need this. The security rules can also refuse an older app's writes outright: since batch 2, a run without `expiresAt`, or a change to apps, tests, shared steps or suites that doesn't move the change marker.
+Workspaces carry a `schemaVersion`: the data format the newest app that saved there uses. The app raises it automatically the first time it saves in a newer format. An older app that finds a higher number keeps reading and running tests, but saving is turned off, with the banner "Update Breakpatch to save changes. Someone on your team uses a newer version." There is no minimum app version setting and no blocking update screen. Community tests folders have the same number in `breakpatch.json`: an older app refuses a folder with a higher one. A folder or workspace only moves to a newer format when it needs to: for example, the first phone or tablet test raises it, so an app from before phone tests can't run that test as a desktop test or save over it. The security rules can also refuse an older app's writes outright: since batch 2, a run without `expiresAt`, or a change to apps, tests, shared steps or suites that doesn't move the change marker.
 
 ## Code layout
 

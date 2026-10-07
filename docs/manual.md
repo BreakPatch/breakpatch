@@ -182,7 +182,7 @@ The same test always gives the same file: two-space indents, keys in a fixed ord
 - **Secrets never land in the folder.** Tests only store a secret's name. The value stays in this Mac's Keychain. See [Saved secrets](#saved-secrets).
 - **Pulled a change?** Switch back to Breakpatch and it reads the folder again.
 - **Merge conflict in a test file?** Fix it as you would any JSON file. Until it's valid again, Breakpatch skips that file and tells you which one.
-- **Saved by a newer Breakpatch?** If `breakpatch.json` has a higher `schemaVersion` than your app knows, update Breakpatch to open the folder. If it changes while the folder is open, saving stops until you update.
+- **Saved by a newer Breakpatch?** If `breakpatch.json` has a higher `schemaVersion` than your app knows, update Breakpatch to open the folder. If it changes while the folder is open, saving stops until you update. Your first phone or tablet test raises it, so update Breakpatch on every Mac that uses the folder.
 
 Settings → Tests folder shows the folder, how many apps and tests it has, **Show in Finder** and **Change folder**. Changing folders leaves the old one as it is, with all its tests.
 
@@ -230,7 +230,7 @@ To test your site on a phone or tablet, pick one under **Screen size** in **New 
 - Screen checks work as in any test, at the device's screen size. The page is drawn at normal sharpness, not the phone's, so screenshots are the size of the page.
 - The run view and the report name the device.
 
-A test's device is fixed once you start, like any screen size. Tests made before phones and tablets stay computer tests.
+A test's device is fixed once you start, like any screen size. Tests made before phones and tablets stay computer tests. Older versions of Breakpatch can't run phone and tablet tests. Your first one marks the tests folder as newer, so an older version won't open it. In Team, it marks the workspace, and an older version stops saving there. Either way, no older version runs the test as a computer test.
 
 ## Run a test and read the report
 
