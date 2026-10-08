@@ -682,8 +682,10 @@ For each step, Breakpatch finds what it acts on and highlights it, the same way 
 
 It types only what you allow:
 
-- Text you wrote in the story, or a value that's new on every run, like `ada+{timestamp}@example.com` or a generated unique name.
+- Text you wrote in the story, or a generated value such as a unique name. A value filled in at run time, like `{timestamp}`, can only end text from your story (`Ada Lovelace {i}`) or a short made-up name (`Test project {time}`), or be part of a made-up email address at a test domain such as `example.com` (`ada+{timestamp}@example.com`). Only `{timestamp}` is new on every run: `{time}` and `{date}` are the same all minute or all day.
 - A saved secret only if you ticked it. Into a password field, only a saved secret: it never makes one up. When a step has nothing it may type, the card asks you what to type.
+
+A step that goes to another address only goes to the site that's open, or to an address your story names. On a phone or tablet test there are no hover or right click steps.
 
 A step that looks like it deletes, pays for or sends something says so: "This step may delete, pay for or send something. Check it before you confirm."
 

@@ -370,7 +370,8 @@ class Engine:
             raise EngineError("bad_request", "Write the story first.")
         page = self.browser.require()
         story = plan.Story(text=text.strip()[:plan.MAX_STORY], secrets=plan.secret_names(p.get("secrets")),
-                           url=getattr(page, "url", None), viewport=(self.browser.width, self.browser.height))
+                           url=getattr(page, "url", None), viewport=(self.browser.width, self.browser.height),
+                           device=self.browser.device.id if self.browser.device else None, touch=self.browser.touch)
         story.image = imaging.to_image(await self.browser.shoot())
         try:
             from .dom.extract import extract

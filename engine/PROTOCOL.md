@@ -384,11 +384,19 @@ usable step, or none after 90 s, is `not_found` ("… Try a shorter story, one a
   and checkpoint, optional for `write` (none: the field that has the focus) and `scroll` (none: the
   page). `navigate` has `url` (http or https only), `scroll` a `direction`, `waitFor` `seconds` (1 to 60).
 - The engine checks every step itself (`plan.clean`), whatever the planner said, and leaves out the
-  ones no step can do (`dropped` counts them). A `write` types only: a saved secret the person
-  picked (`secretRef`); a generated value (`generated`); or `text` the person wrote in the story
-  (case and spaces aside) or that is made unique per run (`{timestamp}`, `{i}`, `{time}`, `{date}`).
-  Into a field named like a password, only a picked secret. Otherwise the step comes back with no
-  value and `needs: "text"` or `needs: "secret"`: the app asks the person before it can be done.
+  ones no step can do (`dropped` counts them). On a phone or tablet test (the open browser has a
+  `device`, so the planner's `Story` has `device` and `touch: true`) that includes `hover` and
+  `rightClick`: there's no pointer for them. A `navigate` goes only to the page's own site (scheme,
+  host and port) or to an address or host the story names; any other is left out.
+- A `write` types only: a saved secret the person picked (`secretRef`); a generated value
+  (`generated`); or `text` the person wrote in the story (case and spaces aside). Run-time values
+  (`{timestamp}` to the second, `{i}` the repeat number, `{time}` HH:MM, `{date}` YYYY-MM-DD; only
+  `{timestamp}` differs on every run) don't make other text typeable: they may only end text from
+  the story (`Ada Lovelace {i}`) or a short made-up name of one to three words (`Test project
+  {time}`), or be in the name of a made-up email address at a test domain (`example.com`, `.test`
+  and the like) or one the story names (`ada+{timestamp}@example.com`). Into a field named like a
+  password, only a picked secret. Otherwise the step comes back with no value and `needs: "text"`
+  or `needs: "secret"`: the app asks the person before it can be done.
 - `careful: true`: the step looks like it deletes, pays, buys, sends or cancels something. The app
   always asks about it, in words that say so.
 

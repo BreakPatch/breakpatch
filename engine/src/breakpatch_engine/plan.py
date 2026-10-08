@@ -11,10 +11,12 @@ that answer, which are the safety rules. The planning itself is the Team engine'
   step's target on the live page (`record.locate`, the fast locator first), shows it for Confirm,
   Try again, Skip or Edit, and records it with `record.point` like a clicked step. The result is
   an ordinary test that replays without the AI assistant.
-- `clean` checks every step here, whatever the planner said: only actions a step can do, at most
-  MAX_STEPS, typed text only when the person wrote it in the story or it's made unique per run
-  (`{timestamp}`…), a saved secret only when the person picked it, and nothing but a saved secret
-  typed into a password. A step that looks like it deletes, pays or sends something is marked
+- `clean` checks every step here, whatever the planner said: only actions a step can do (on a
+  phone or tablet, no hover or right click), at most MAX_STEPS, typed text only when the person
+  wrote it in the story (a run-time value like `{i}` may only end it, or be in a short made-up name
+  or a made-up email address at a test domain), a saved secret only when the person picked it,
+  nothing but a saved secret typed into a password, and "Go to" only to the page's own site or an
+  address the story names. A step that looks like it deletes, pays or sends something is marked
   `careful`, so the app always asks about it.
 """
 from __future__ import annotations
@@ -22,6 +24,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Protocol
+from urllib.parse import urlsplit
 
 from PIL import Image
 
@@ -30,6 +33,8 @@ from .locator import Locator
 ACTIONS = ("click", "doubleClick", "rightClick", "hover", "write", "navigate", "scroll", "waitFor", "checkpoint")
 # Actions that act on something on the page: they need what to look for.
 NEEDS_TARGET = ("click", "doubleClick", "rightClick", "hover", "checkpoint")
+# Need a mouse: never proposed for a phone or tablet test (the app's TOUCH_HIDDEN).
+MOUSE_ONLY = ("hover", "rightClick")
 GENERATED = ("uniqueName", "timeNow", "today", "repeatNumber")    # actions.resolve_text
 DIRECTIONS = ("up", "down", "left", "right")
 
@@ -44,8 +49,17 @@ TIMEOUT_S = 90.0          # a plan that takes longer is given up on (the model m
 PAGE_READ_S = 0.75        # the page read before planning never takes longer than this
 
 SECRET_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
-# Typed text with one of these is made unique per run (actions.substitute): a made-up test value.
+# Filled in at run time (actions.substitute): {timestamp} to the second, {i} the repeat number,
+# {time} HH:MM, {date} YYYY-MM-DD. Only {timestamp} differs on every run.
 TOKENS = re.compile(r"\{(?:i|time|date|timestamp)\}")
+# Text that ends in those (with separators): "Ada Lovelace {i}", "Test project {time}".
+TOKEN_SUFFIX = re.compile(r"(?P<base>.*?)(?P<tokens>(?:[\s_.:#/-]*\{(?:i|time|date|timestamp)\})+)", re.S)
+# A made-up name for a test value: one to three words of letters, nothing else.
+NAME_SHAPE = re.compile(r"[^\W\d_]{1,20}(?:[ '-][^\W\d_]{1,20}){0,2}")
+EMAIL_LOCAL = re.compile(r"[a-z0-9][a-z0-9._%+-]{0,63}", re.I)
+EMAIL_DOMAIN = re.compile(r"(?:[a-z0-9-]{1,63}\.)+[a-z]{2,24}", re.I)
+# Domains that never reach a real mailbox (RFC 2606), for a made-up email address.
+TEST_DOMAIN = re.compile(r"(?:.+\.)?(?:example\.(?:com|net|org)|[^.]+\.(?:example|test|invalid|localhost))", re.I)
 # A field that takes a password: only a saved secret is typed into it.
 PASSWORD = re.compile(r"\b(password|passcode|passphrase|pin|contraseña|clave)\b", re.I)
 # Steps that look destructive or costly: always asked about, never done without a person.
@@ -64,6 +78,8 @@ class Story:
     viewport: tuple[int, int] = (0, 0)
     image: Image.Image | None = None       # the page now
     page: dict | None = None               # explain.page_record shape: {controls: [...], texts: [...]}
+    device: str | None = None              # a phone or tablet test's preset (devices.py), None on a desktop
+    touch: bool = False                    # the page has a touch screen: no hover, no right click
 
 
 class Planner(Protocol):
@@ -82,12 +98,65 @@ def _fold(s: str) -> str:
     return " ".join(s.lower().replace("’", "'").replace("“", '"').replace("”", '"').split())
 
 
-def written_in(text: str, story: str) -> bool:
-    """The person wrote this text in the story (case and spaces aside), or it's made unique per run."""
-    if TOKENS.search(text):
-        return True
+def _in_story(text: str, story: str) -> bool:
     t = _fold(text).strip("\"'")
     return bool(t) and t in _fold(story)
+
+
+def _test_email(text: str, story: str) -> bool:
+    """A made-up email address with a run-time value in its name: `ada+{timestamp}@example.com`.
+    Its domain never reaches a real mailbox, or is one the story names."""
+    local, at, domain = text.strip().rpartition("@")
+    if not at or not TOKENS.search(local) or TOKENS.search(domain) or not EMAIL_DOMAIN.fullmatch(domain):
+        return False
+    if not EMAIL_LOCAL.fullmatch(TOKENS.sub("1", local)):
+        return False
+    return bool(TEST_DOMAIN.fullmatch(domain)) or re.search(r"(?<![\w.-])" + re.escape(domain.lower()) + r"(?![\w-])", _fold(story)) is not None
+
+
+def written_in(text: str, story: str) -> bool:
+    """The person wrote this text in the story (case and spaces aside). A run-time value
+    ({timestamp}, {i}, {time}, {date}) may only end what the story says ("Ada Lovelace {i}") or a
+    short made-up name ("Test project {time}"), or be in the name of a made-up email address
+    (`ada+{timestamp}@example.com`). Anything else that has one, like words read off the page, isn't
+    the person's."""
+    if not TOKENS.search(text):
+        return _in_story(text, story)
+    if _test_email(text, story):
+        return True
+    m = TOKEN_SUFFIX.fullmatch(text.strip())
+    if m is None:
+        return False                    # a value in the middle of the text
+    base = m.group("base").strip()
+    return not base or _in_story(base, story) or bool(NAME_SHAPE.fullmatch(base))
+
+
+def same_origin(url: str, page_url: str | None) -> bool:
+    if not page_url:
+        return False
+    try:
+        a, b = urlsplit(url), urlsplit(page_url)
+        return (a.scheme.lower(), a.hostname, a.port) == (b.scheme.lower(), b.hostname, b.port) and bool(a.hostname)
+    except ValueError:
+        return False
+
+
+def url_allowed(url: str, story: Story) -> bool:
+    """A planned "Go to" opens only an address on the page's own site, or one the story names."""
+    try:
+        u = urlsplit(url)
+        host = u.hostname
+    except ValueError:
+        return False
+    if not host or "@" in u.netloc:
+        return False                    # no user:pass@ that hides the real host
+    if same_origin(url, story.url):
+        return True
+    s = _fold(story.text)
+    bare = _fold(url.split("://", 1)[1]).rstrip("/")
+    if bare and bare in s:
+        return True
+    return re.search(r"(?<![\w.-])" + re.escape(host) + r"(?![\w-]|\.\w)", s) is not None
 
 
 def careful(step: dict) -> bool:
@@ -99,6 +168,8 @@ def clean_step(raw: Any, story: Story) -> dict | None:
     if not isinstance(raw, dict) or raw.get("action") not in ACTIONS:
         return None
     action = raw["action"]
+    if story.touch and action in MOUSE_ONLY:
+        return None                                     # a phone or tablet has no pointer to hover or right click with
     out: dict = {"action": action}
     target = _words(raw.get("target"), MAX_TARGET)
     if target:
@@ -122,6 +193,8 @@ def clean_step(raw: Any, story: Story) -> dict | None:
         url = raw.get("url")
         if not isinstance(url, str) or not re.match(r"^https?://[^\s/]+", url.strip()) or len(url) > 2000:
             return None
+        if not url_allowed(url.strip(), story):
+            return None                                 # another site the story never named
         out["url"] = url.strip()
         out.pop("target", None)
     elif action == "scroll":
