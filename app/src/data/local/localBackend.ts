@@ -30,6 +30,7 @@ import { folderConnectionId } from '../../state/connectionIds';
 import { DEVICE_SCHEMA_VERSION, FORMAT, NEWEST_READ_SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
 import { osText } from '../../lib/osWords';
+import { deviceOf } from '../devices';
 
 /** Stands for a file over 5 MB in the texts read from the folder: it's skipped, never parsed. */
 const TOO_BIG = '\u0000breakpatch: file too big\u0000';
@@ -126,6 +127,18 @@ const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) 
 const clone = <T>(v: T): T => structuredClone(v);
 /** Lists are in name order: files have no other order, and edits from outside keep it stable. */
 const byName = (a: { name: string; id: string }, b: { name: string; id: string }) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
+
+/**
+ * A viewport as a file has it. None: a desktop test, never the app's default screen (which may be a
+ * phone's, and would make an old test a touch test). A phone or tablet this app knows is at its own
+ * size, whatever the file says; one it doesn't know (a newer app's) is kept as it is.
+ */
+export function viewportIn(v: unknown): Viewport {
+  if (!isObj(v) || typeof v.width !== 'number' || typeof v.height !== 'number') return { ...DEFAULT_VIEWPORT };
+  const vp = v as unknown as Viewport;
+  const d = deviceOf(vp);
+  return d ? { ...vp, width: d.width, height: d.height } : vp;
+}
 
 /** A test file's `recordedOn` (engine/PROTOCOL.md "Where a test was recorded"): short strings only, else none. */
 export function recordedOnIn(v: unknown): RecordedOn | undefined {
@@ -381,7 +394,7 @@ export class LocalBackend implements Backend {
           if (this.texts.get(rel) === '') { bad(`apps/${appId}`, 'no app.json, skipped'); continue; }
           const v = parse(rel); if (!v) continue;
           if (typeof v.name !== 'string') { bad(rel, 'the app has no name, skipped'); continue; }
-          const vp = isObj(v.defaultViewport) ? v.defaultViewport as unknown as Viewport : DEFAULT_VIEWPORT;
+          const vp = viewportIn(v.defaultViewport);
           apps.set(appId, { app: { id: appId, name: v.name, baseUrl: str(v.baseUrl), icon: typeof v.icon === 'string' ? v.icon : undefined, defaultViewport: vp, createdBy: who(v.createdBy), createdAt: num(v.createdAt) }, tests: new Map(), groups: new Map(), runs: new Map() });
           continue;
         }
@@ -397,7 +410,7 @@ export class LocalBackend implements Backend {
         const common = { ...rest, name: v.name, currentVersion: num(version), createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) };
         const list = (steps as Step[] | undefined) ?? [];
         if (kind === 'tests') {
-          app.tests.set(id, { test: { ...common, startUrl: str(v.startUrl, app.app.baseUrl), status: v.status === 'published' ? 'published' : 'draft', viewport: isObj(v.viewport) ? v.viewport as unknown as Viewport : app.app.defaultViewport } as TestRec['test'], steps: list, recordedOn: recordedOnIn(recordedOn) });
+          app.tests.set(id, { test: { ...common, startUrl: str(v.startUrl, app.app.baseUrl), status: v.status === 'published' ? 'published' : 'draft', viewport: viewportIn(v.viewport) } as TestRec['test'], steps: list, recordedOn: recordedOnIn(recordedOn) });
         } else {
           app.groups.set(id, { group: common as GroupRec['group'], steps: list });
         }
