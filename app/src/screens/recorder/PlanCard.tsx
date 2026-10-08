@@ -8,7 +8,7 @@ import type { PlanStep } from '../../engine';
 import { GENERATED_CHOICES } from '../../engine/labels';
 import { secrets } from '../../platform';
 import { Button, ChipSelect, Icon } from '../../components/ui';
-import { CAREFUL_NOTE, planDoneText, planNeeds, planSentence, type PlanItem } from './plan';
+import { CAREFUL_NOTE, planDoneText, planNeeds, type PlanItem } from './plan';
 import type { Recorder } from './useRecorder';
 
 const STATE_ICON = { done: 'check_circle', skipped: 'block', todo: 'radio_button_unchecked' } as const;
@@ -26,7 +26,7 @@ export function PlanCard({ rec }: { rec: Recorder }) {
       <div className="rec-plan-head">
         <Icon name="auto_awesome" size={20} className="rec-ai-icon" />
         <div className="grow rec-plan-title">
-          {cur ? <><span className="faint">From your story · step {run.index + 1} of {n}</span><span className="rec-plan-now">{planSentence(cur)}</span></>
+          {cur ? <><span className="faint">From your story · step {run.index + 1} of {n}</span><span className="rec-plan-now">{rec.planText(cur)}</span></>
             : <span className="rec-plan-now">{planDoneText(run)}</span>}
         </div>
         <button type="button" className="rec-ai-link" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide steps' : 'All steps'}</button>
@@ -42,7 +42,7 @@ export function PlanCard({ rec }: { rec: Recorder }) {
           {run.steps.map((s, i) => (
             <li key={i} className={'rec-plan-item ' + s.state + (i === run.index ? ' current' : '')} aria-current={i === run.index ? 'step' : undefined}>
               <Icon name={i === run.index && s.state === 'todo' ? 'arrow_forward' : STATE_ICON[s.state]} size={16} />
-              <span className="grow">{planSentence(s)}</span>
+              <span className="grow">{rec.planText(s)}</span>
               {s.state === 'skipped' && <span className="faint">Skipped</span>}
               {s.careful && <Icon name="warning" size={16} className="rec-plan-warn" label="May delete, pay for or send something" />}
             </li>

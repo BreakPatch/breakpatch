@@ -15,11 +15,11 @@ export interface PlanRun { steps: PlanItem[]; index: number; note?: string; drop
 
 const into = (s: PlanStep) => s.target ?? 'the field that has the focus';
 
-/** The step in plain words: "Click the Sign up button", 'Type "Ada" into the Name field'. */
-export function planSentence(s: PlanStep): string {
+/** The step in plain words: "Click the Sign up button", 'Type "Ada" into the Name field'; on a phone or tablet (`touch`) "Tap …". */
+export function planSentence(s: PlanStep, { touch = false }: { touch?: boolean } = {}): string {
   switch (s.action) {
-    case 'click': return `Click ${s.target}`;
-    case 'doubleClick': return `Double-click ${s.target}`;
+    case 'click': return `${touch ? 'Tap' : 'Click'} ${s.target}`;
+    case 'doubleClick': return `${touch ? 'Double-tap' : 'Double-click'} ${s.target}`;
     case 'rightClick': return `Right-click ${s.target}`;
     case 'hover': return `Hover over ${s.target}`;
     case 'write':

@@ -180,7 +180,7 @@ export default function RecorderScreen() {
   const actions = test && (
     <>
       <IconButton icon="description" label="Test details" onClick={() => setDetailsOpen(true)} disabled={editorRun.running} />
-      {aiTests && <Button icon="auto_awesome" onClick={() => setStoryOpen(true)} disabled={!loaded || !browser.ready || rec.busy || editorRun.running || rec.hand}
+      {aiTests && <Button icon="auto_awesome" onClick={() => setStoryOpen(true)} disabled={!loaded || !browser.ready || rec.busy || editorRun.running || rec.hand || !!rec.rerecordId}
         title="Write a test from a story">From a story</Button>}
       {hasFeature('collaboration') && <SharedChip published={published} />}
       {rec.dirty && <div className="rec-dirty" role="status">Unsaved changes</div>}
