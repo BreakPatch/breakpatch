@@ -2,6 +2,7 @@
 // through them in the recorder (find, Confirm, Try again, Skip, Edit, Stop) with the describe box's
 // own flow, the floating card and the story dialog. The engine is the demo one, with spies.
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DemoEngine } from '../../engine/demoEngine';
 import { EngineError, getEngine, type Plan, type PlanStep } from '../../engine';
@@ -9,14 +10,20 @@ import { resetFeaturesForTests, setFeatures } from '../../edition/features';
 import { NO_FEATURES } from '../../edition/types';
 import { secrets } from '../../platform';
 import { AddStepBar } from './AddStepBar';
-import { CAREFUL_NOTE, answered, planDoneText, planIntent, planNeeds, planRun, planSentence } from './plan';
+import { CAREFUL_NOTE, answered, leftOutText, planDoneText, planIntent, planNeeds, planRun, planSentence } from './plan';
 import { StoryDialog } from './StoryDialog';
 import { useRecorder } from './useRecorder';
-import recorderSource from './RecorderScreen.tsx?raw';
+import RecorderScreen from './RecorderScreen';
+import { DemoBackend } from '../../data/demo/demoBackend';
+import { useSession } from '../../state/session';
+import { ToastProvider } from '../../components/ui';
+import type { Step } from '../../data/types';
 
 const vp = { width: 1440, height: 900 };
-const hook = (onError = vi.fn()) => renderHook(() => useRecorder({ viewport: vp, onError }));
+const PHONE = { width: 393, height: 659, device: 'iphone-15' };
+const hook = (onError = vi.fn(), viewport: typeof vp | typeof PHONE = vp) => renderHook(() => useRecorder({ viewport, onError }));
 Element.prototype.scrollIntoView ??= () => undefined;
+globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;   // not in jsdom
 afterEach(() => { cleanup(); vi.restoreAllMocks(); resetFeaturesForTests(); });
 
 let located: string[];
@@ -40,7 +47,7 @@ const SIGN_UP: PlanStep[] = [
 
 describe('a story’s steps in words', () => {
   it('says each step plainly', () => {
-    expect(SIGN_UP.map(planSentence)).toEqual(['Type "Ada Lovelace" into the Name field', 'Type the saved secret TEST_PASSWORD into the Password field',
+    expect(SIGN_UP.map(s => planSentence(s))).toEqual(['Type "Ada Lovelace" into the Name field', 'Type the saved secret TEST_PASSWORD into the Password field',
       'Click the Create account button', 'Check that Account created shows']);
     expect(planSentence({ action: 'write', generated: 'uniqueName' })).toBe('Type a unique name into the field that has the focus');
     expect(planSentence({ action: 'navigate', url: 'https://app.example.com' })).toBe('Go to https://app.example.com');
@@ -61,6 +68,14 @@ describe('a story’s steps in words', () => {
     expect(planIntent(SIGN_UP[1])).toEqual({ action: 'write', target: 'the Password field', secretRef: 'TEST_PASSWORD', repeat: 1, from: 'plan' });
     expect(planIntent({ action: 'scroll' })).toMatchObject({ action: 'scroll', direction: 'down', distance: 300 });
     expect(planIntent({ action: 'navigate', url: 'https://x.example' })).toMatchObject({ action: 'navigate', url: 'https://x.example' });
+  });
+
+  it('says which steps were left out, and why', () => {
+    expect(leftOutText({})).toBeNull();
+    expect(leftOutText({ dropped: 1 })).toBe("One step the AI assistant suggested can't be a step, so it's left out.");
+    expect(leftOutText({ overLimit: 4 })).toBe('4 steps past the first 30 are left out: split a long story into a few tests.');
+    expect(leftOutText({ dropped: 2, overLimit: 1 })).toBe("2 steps the AI assistant suggested can't be a step, so they're left out. One step past the first 30 is left out: split a long story into a few tests.");
+    expect(planRun(SIGN_UP, undefined, 0, 3)).toMatchObject({ overLimit: 3 });
   });
 
   it('counts what was added and skipped', () => {
@@ -180,6 +195,55 @@ describe('going through a story’s steps in the recorder', () => {
   });
 });
 
+describe('a story on a phone or tablet, and while re-recording', () => {
+  it('leaves out hover and right click steps on a touch test, and says Tap', async () => {
+    const { result } = hook(vi.fn(), PHONE);
+    act(() => { result.current.startPlan({ steps: [{ action: 'hover', target: 'the Help menu' }, { action: 'rightClick', target: 'the row' }, { action: 'click', target: 'Next' }], dropped: 1 }); });
+    expect(result.current.plan?.steps.map(s => s.action)).toEqual(['click']);
+    expect(result.current.plan?.dropped).toBe(3);
+    expect(result.current.planText(result.current.plan!.steps[0])).toBe('Tap Next');
+    await waitFor(() => expect(result.current.ai.state).toBe('result'));
+    expect(located).toEqual(['Next']);
+  });
+
+  it('keeps them on a desktop test', () => {
+    const { result } = hook();
+    act(() => { result.current.startPlan({ steps: [{ action: 'hover', target: 'the Help menu' }, { action: 'click', target: 'Next' }] }); });
+    expect(result.current.plan?.steps.map(s => s.action)).toEqual(['hover', 'click']);
+    expect(result.current.planText(result.current.plan!.steps[1])).toBe('Click Next');
+  });
+
+  it('adds a story’s steps as new steps, never over the step that was being re-recorded', async () => {
+    const point = recordPoint();
+    const kept: Step = { id: 'k1', action: 'click', label: 'Click Save', at: [10, 10] };
+    const { result } = hook();
+    act(() => { result.current.load([kept]); });
+    act(() => { result.current.startRerecord('k1'); });
+    expect(result.current.rerecordId).toBe('k1');
+    // The first step is done at once (a wait), from the same render that still has k1 being re-recorded.
+    act(() => { result.current.startPlan({ steps: [{ action: 'waitFor', seconds: 1 }, { action: 'click', target: 'Next' }] }); });
+    await waitFor(() => expect(result.current.plan?.index).toBe(1));
+    expect(result.current.steps[0]).toEqual(kept);
+    expect(result.current.steps.map(s => s.action)).toEqual(['click', 'waitFor']);
+    await waitFor(() => expect(result.current.ai.state).toBe('result'));
+    act(() => { result.current.confirmAi(); });
+    await waitFor(() => expect(result.current.plan?.index).toBe(2));
+    expect(result.current.steps[0]).toEqual(kept);
+    expect(result.current.steps).toHaveLength(3);
+    expect(point).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-recording a step ends the story’s run', async () => {
+    const { result } = hook();
+    act(() => { result.current.load([{ id: 'k1', action: 'click', label: 'Click Save', at: [10, 10] }]); });
+    act(() => { result.current.startPlan({ steps: [{ action: 'click', target: 'Next' }] }); });
+    await waitFor(() => expect(result.current.ai.state).toBe('result'));
+    act(() => { result.current.startRerecord('k1'); });
+    expect(result.current.plan).toBeNull();
+    expect(result.current.ai.state).toBe('idle');
+  });
+});
+
 describe('the describe box, end to end in the app', () => {
   it('says the AI assistant is missing instead of "Couldn’t find" when it’s needed and not downloaded', async () => {
     vi.spyOn(getEngine(), 'locate').mockRejectedValue(new EngineError('not_ready', "The AI assistant isn't downloaded yet. Finish setup to use it."));
@@ -210,9 +274,49 @@ describe('the card and the bars', () => {
     await screen.findByRole('button', { name: 'Confirm' });
     for (const name of ['Try again', 'Skip', 'Edit']) expect(screen.getByRole('button', { name })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'All steps' }));
-    expect(screen.getAllByRole('listitem').map(li => li.querySelector('.grow')?.textContent)).toEqual(SIGN_UP.map(planSentence));
+    expect(screen.getAllByRole('listitem').map(li => li.querySelector('.grow')?.textContent)).toEqual(SIGN_UP.map(s => planSentence(s)));
     fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
     expect(await screen.findByText('From your story · step 2 of 4')).toBeInTheDocument();
+  });
+
+  it('says the steps past the limit apart from the ones that can’t be a step', async () => {
+    render(<Bar plan={{ steps: SIGN_UP, dropped: 1, overLimit: 2 }} />);
+    fireEvent.click(screen.getByText('start'));
+    expect(await screen.findByText(/^One step the AI assistant suggested can't be a step, so it's left out\. 2 steps past the first 30 are left out/)).toBeInTheDocument();
+  });
+
+  it('Edit changes a Go to step’s address', async () => {
+    const point = recordPoint();
+    render(<Bar plan={{ steps: [{ action: 'navigate', url: 'https://app.example.com/signup' }, { action: 'click', target: 'Next' }] }} />);
+    fireEvent.click(screen.getByText('start'));
+    await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const address = screen.getByLabelText('Address');
+    expect(address).toHaveValue('https://app.example.com/signup');
+    fireEvent.change(address, { target: { value: 'not an address' } });
+    expect(screen.getByRole('button', { name: 'Use this' })).toBeDisabled();
+    fireEvent.change(address, { target: { value: 'app.example.com/login' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use this' }));
+    expect(await screen.findByText('Go to https://app.example.com/login', { selector: '.rec-plan-now' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(point).toHaveBeenCalledWith(expect.objectContaining({ action: 'navigate', url: 'https://app.example.com/login' })));
+    expect(await screen.findByText('From your story · step 2 of 2')).toBeInTheDocument();
+  });
+
+  it('Edit changes a wait’s seconds when it couldn’t be done', async () => {
+    const point = vi.spyOn(getEngine(), 'recordPoint').mockRejectedValueOnce(new EngineError('busy', 'The engine is still checking the last step.'))
+      .mockImplementation(async p => ({ id: 'w1', action: p.action, label: 'Wait', durationMs: p.durationMs }));
+    render(<Bar plan={{ steps: [{ action: 'waitFor', seconds: 2 }] }} />);
+    fireEvent.click(screen.getByText('start'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const secs = screen.getByLabelText('Seconds to wait');
+    expect(secs).toHaveValue(2);
+    fireEvent.change(secs, { target: { value: '90' } });
+    expect(screen.getByRole('button', { name: 'Use this' })).toBeDisabled();
+    fireEvent.change(secs, { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use this' }));
+    await waitFor(() => expect(point).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'waitFor', durationMs: 5000 })));
+    expect(await screen.findByText(/^1 step added/)).toBeInTheDocument();
   });
 
   it('Edit opens a form for the step; Stop ends the story', async () => {
@@ -231,10 +335,36 @@ describe('the card and the bars', () => {
 });
 
 describe('the story dialog', () => {
-  it('is offered in the recorder only with the aiTests feature (Breakpatch Team)', () => {
-    expect(recorderSource).toContain("const aiTests = useFeature('aiTests');");
-    expect(recorderSource).toMatch(/\{aiTests && <Button icon="auto_awesome"/);
-    expect(recorderSource).toMatch(/\{aiTests && <StoryDialog /);
+  async function recorder(path = '') {
+    const backend = new DemoBackend({ empty: true, signedIn: true, delayMs: 0 });
+    useSession.setState({ backend });
+    const app = await backend.addApp({ name: 'Web', baseUrl: 'https://app.example.com', defaultViewport: { width: 1440, height: 900, dpr: 1 } });
+    const t = await backend.createTest({ appId: app.id, name: 'Sign up', startUrl: 'https://app.example.com', viewport: { width: 1440, height: 900, dpr: 1 } });
+    await backend.saveTest(app.id, t.id, [{ id: 'k1', action: 'click', label: 'Click Save', at: [10, 10] }]);
+    render(<ToastProvider><MemoryRouter initialEntries={[`/apps/${app.id}/tests/${t.id}/record${path}`]}>
+      <Routes><Route path="/apps/:appId/tests/:testId/record" element={<RecorderScreen />} /></Routes>
+    </MemoryRouter></ToastProvider>);
+    await screen.findByRole('button', { name: 'Run' });
+  }
+
+  it('is offered in the recorder only with the aiTests feature (Breakpatch Team)', async () => {
+    await recorder();
+    expect(screen.queryByRole('button', { name: 'From a story' })).toBeNull();
+    cleanup();
+    setFeatures({ ...NO_FEATURES, aiTests: true });
+    await recorder();
+    const from = await screen.findByRole('button', { name: 'From a story' });
+    await waitFor(() => expect(from).toBeEnabled());
+    vi.spyOn(secrets, 'list').mockResolvedValue([]);
+    fireEvent.click(from);
+    expect(await screen.findByRole('dialog', { name: 'Write a test from a story' })).toBeInTheDocument();
+  });
+
+  it('is turned off while a step is being re-recorded', async () => {
+    setFeatures({ ...NO_FEATURES, aiTests: true });
+    await recorder('?rerecord=k1');
+    expect(await screen.findByText('Re-recording: do this step again on the page')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'From a story' })).toBeDisabled();
   });
 
   it('asks the engine with the story and only the picked secret names', async () => {
@@ -250,6 +380,26 @@ describe('the story dialog', () => {
     await waitFor(() => expect(onPlan).toHaveBeenCalledWith({ steps: SIGN_UP }));
     expect(planSpy).toHaveBeenCalledWith('Sign up, then I see Account created.', ['TEST_PASSWORD']);
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('can be closed while it waits, and an answer that comes after is dropped', async () => {
+    vi.spyOn(secrets, 'list').mockResolvedValue([]);
+    let answer!: (p: Plan) => void;
+    vi.spyOn(getEngine(), 'plan').mockReturnValue(new Promise<Plan>(r => { answer = r; }));
+    const onPlan = vi.fn(), onClose = vi.fn();
+    render(<StoryDialog open onClose={onClose} onPlan={onPlan} />);
+    fireEvent.change(screen.getByLabelText('Your story'), { target: { value: 'Sign up.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Make steps' }));
+    const cancel = await screen.findByRole('button', { name: 'Cancel' });
+    await screen.findByRole('button', { name: 'Making steps…' });
+    expect(cancel).toBeEnabled();
+    fireEvent.click(cancel);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await act(async () => { answer({ steps: SIGN_UP }); });
+    expect(onPlan).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // Opened again, it asks afresh.
+    expect(screen.getByRole('button', { name: 'Make steps' })).toBeEnabled();
   });
 
   it('says why when there is no plan', async () => {

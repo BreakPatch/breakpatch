@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActionKind, Box, Direction, Generated, Point, SampleFile, Step, Viewport } from '../../data/types';
 import { demoEngine, getEngine, EngineError, type CheckingPhase, type FileChoice, type FileChooserEvent, type Plan, type PlanStep, type RecordParams } from '../../engine';
 import { around, gesture, inside, sampleApp } from '../../components/live';
-import { actionInfo, touchWords } from '../../engine/labels';
+import { actionInfo, touchWords, TOUCH_HIDDEN } from '../../engine/labels';
 import { isTouch } from '../../data/devices';
 import { appendStep, defaultLabel, findStep, flatRows, insertAfter, numberOf, removeStep, replaceStep, stepsBefore, updateStep } from '../../components/steps';
 import { POINT_KINDS, STICKY } from './actions';
@@ -100,7 +100,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   const engine = getEngine();
   const sample = engine.liveMode === 'sample';
   // A phone or tablet test: the bar asks "Tap Next button?", not "Click" (engine labels.touch_words).
-  const words = isTouch(viewport) ? touchWords : (l: string) => l;
+  const touch = isTouch(viewport);
+  const words = touch ? touchWords : (l: string) => l;
   const [steps, setStepsState] = useState<Step[]>([]);
   const stepsRef = useRef<Step[]>([]);
   const [dirty, setDirty] = useState(false);
@@ -268,8 +269,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
    * moves on after each. Stops at the first that fails. While re-recording, only the first
    * re-records the step; the others are new steps right after it.
    */
-  async function recordTimes(params: RecordParams, extra: Extra, n: number): Promise<boolean> {
-    const rr = rerecordId;
+  async function recordTimes(params: RecordParams, extra: Extra, n: number, rr: string | null = rerecordId): Promise<boolean> {
     const { frame: _f, ...later } = extra;
     if (!await record(params, extra, rr)) return false;
     if (n < 2) return true;
@@ -363,7 +363,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
         return;
       }
       case 'waitFor': {
-        const done = record({ action: 'waitFor', durationMs: Math.max(1, it.seconds ?? options.seconds) * 1000 });
+        // A story's step is always a new step, never the one being re-recorded.
+        const done = record({ action: 'waitFor', durationMs: Math.max(1, it.seconds ?? options.seconds) * 1000 }, {}, plan !== undefined ? null : rerecordId);
         if (plan !== undefined) void done.then(ok => { if (ok) planAnswered(plan, 'done'); });
         return;
       }
@@ -405,7 +406,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     const a = ai; aiToken.current++; setAi({ state: 'idle' });
     // Named by the AI assistant already: the engine needn't ask it again.
     const extra = { frame: a.frame, ...(a.target ? { label: a.label, target: a.target } : {}) };
-    afterPlanStep(a.plan, recordTimes(a.params, extra, a.repeat ?? 1));
+    afterPlanStep(a.plan, recordTimes(a.params, extra, a.repeat ?? 1, a.plan !== undefined ? null : rerecordId));
   }
   const retryAi = () => {
     // A story's step: look for it again (Edit changes what to look for).
@@ -430,14 +431,16 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     // What the sentence asked for; the chosen action only when it named none (intent.ts).
     const it = a.intent;
     const kind = it.action;
+    // A story's step is always a new step, never the one being re-recorded.
+    const rr = a.plan !== undefined ? null : rerecordId;
     let done: Promise<boolean>;
-    if (kind === 'checkpoint') done = record({ action: 'checkpoint' }, { ...x, checkpoint: a.box, label: checkpointLabel(it.from === 'words' || it.from === 'plan' ? it.target ?? a.text : a.text) });
-    else if (kind === 'waitUntil') done = record({ action: 'waitUntil', region: a.box, timeoutMs: options.maxWait * 1000 }, x);
-    else if (kind === 'swipe' || kind === 'scroll') done = recordTimes({ action: kind, from: a.at, direction: it.direction ?? options.direction, distance: it.distance ?? options.distance }, x, it.repeat);
-    else if (kind === 'write') done = recordTimes({ action: 'write', at: a.at, ...writeValue(it) }, x, it.repeat);
+    if (kind === 'checkpoint') done = record({ action: 'checkpoint' }, { ...x, checkpoint: a.box, label: checkpointLabel(it.from === 'words' || it.from === 'plan' ? it.target ?? a.text : a.text) }, rr);
+    else if (kind === 'waitUntil') done = record({ action: 'waitUntil', region: a.box, timeoutMs: options.maxWait * 1000 }, x, rr);
+    else if (kind === 'swipe' || kind === 'scroll') done = recordTimes({ action: kind, from: a.at, direction: it.direction ?? options.direction, distance: it.distance ?? options.distance }, x, it.repeat, rr);
+    else if (kind === 'write') done = recordTimes({ action: 'write', at: a.at, ...writeValue(it) }, x, it.repeat, rr);
     else {
       const k = POINT_KINDS.has(kind) ? kind : 'click';
-      done = recordTimes({ action: k, at: a.at, ...(k === 'upload' ? { sample: options.sample } : {}) }, x, it.repeat);
+      done = recordTimes({ action: k, at: a.at, ...(k === 'upload' ? { sample: options.sample } : {}) }, x, it.repeat, rr);
     }
     afterPlanStep(a.plan, done);
   }
@@ -456,7 +459,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     if (!s) { setAi({ state: 'idle' }); setPlanEditing(false); return; }
     if (planNeeds(s)) { setAi({ state: 'idle' }); setPlanEditing(true); return; }
     setPlanEditing(false);
-    void seek(planIntent(s), planSentence(s), token, run.index);
+    void seek(planIntent(s), planSentence(s, { touch }), token, run.index);
   }
   function planAnswered(i: number, state: 'done' | 'skipped') {
     const run = planRef.current;
@@ -471,7 +474,9 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   }
   function startPlan(p: Plan) {
     setRerecordId(null);
-    const run = planRun(p.steps, p.note, p.dropped);
+    // A phone or tablet has no pointer to hover or right click with (the engine leaves them out too).
+    const steps = touch ? p.steps.filter(s => !TOUCH_HIDDEN.has(s.action)) : p.steps;
+    const run = planRun(steps, p.note, (p.dropped ?? 0) + p.steps.length - steps.length, p.overLimit);
     setPlan(run); askPlan(run);
   }
   /** The current step changed by the person (Edit): what to look for, what to type. Asked about again. */
@@ -552,7 +557,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     // During a story whose current step is a check: the box drawn is where it looks.
     const run = planRef.current, s = run?.steps[run.index];
     if (run && s?.action === 'checkpoint' && s.state === 'todo' && !planEditing) {
-      afterPlanStep(run.index, record({ action: 'checkpoint' }, { checkpoint: region, label: checkpointLabel(s.target ?? ''), frame }));
+      afterPlanStep(run.index, record({ action: 'checkpoint' }, { checkpoint: region, label: checkpointLabel(s.target ?? ''), frame }, null));
       return;
     }
     if (action === 'checkpoint') { setText(''); void record({ action: 'checkpoint' }, { checkpoint: region, label: named ? checkpointLabel(named) : undefined, frame }); }
@@ -585,6 +590,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     const s = findStep(stepsRef.current, id);
     if (!s) return;
     cancelAi();
+    // Re-recording ends a story's run through its steps: its clicks would be the story's.
+    if (planRef.current) { setPlan(null); setPlanEditing(false); }
     setRerecordId(id); setSelectedId(id);
     if (s.action === 'write') { setAction('write'); setText(s.text ?? ''); if (s.secretRef) setOptions({ writeSource: 'secret', secretRef: s.secretRef }); }
     else if (s.action !== 'loop' && s.action !== 'group') setAction(s.action);
@@ -606,6 +613,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi, pageScroll, retryNote,
     /** A test from a story: the run through its steps, and what the person does with them. */
     plan, planEditing, startPlan, stopPlan, editPlanStep,
+    /** A story's step in words, in touch words on a phone or tablet ("Tap the Next button"). */
+    planText: (s: PlanStep) => planSentence(s, { touch }),
     skipPlanStep: () => { const run = planRef.current; if (run) planAnswered(run.index, 'skipped'); },
     retryPlanStep: () => { const run = planRef.current; if (run) askPlan(run); },
     openPlanEdit: () => { aiToken.current++; setAi({ state: 'idle' }); setPlanEditing(true); },

@@ -32,13 +32,20 @@ export function NewTestDialog({ open, app, onClose }: { open: boolean; app: App;
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Starts afresh each time it opens, from the app as it is then. Only opening resets it: the app
+  // comes again as a new object whenever the workspace sends an update, and what was typed stays.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setName(''); setDescription(''); setStartUrl(app.baseUrl); setViewport(app.defaultViewport); setHooksOpen(false);
+      setSetUp({ method: 'POST', url: '' }); setCleanUp({ method: 'POST', url: '' }); setAlsoOnFailure(true); setOtherHosts(false);
+      setTried(false); setBusy(false);
+    }
+  }
   useEffect(() => {
-    if (!open) return;
-    setName(''); setDescription(''); setStartUrl(app.baseUrl); setViewport(app.defaultViewport); setHooksOpen(false);
-    setSetUp({ method: 'POST', url: '' }); setCleanUp({ method: 'POST', url: '' }); setAlsoOnFailure(true); setOtherHosts(false);
-    setTried(false); setBusy(false);
-    void secrets.list().then(setSecretNames).catch(() => setSecretNames([]));
-  }, [open, app.baseUrl, app.defaultViewport]);
+    if (open) void secrets.list().then(setSecretNames).catch(() => setSecretNames([]));
+  }, [open]);
 
   const nameErr = tried && !name.trim() ? 'Give the test a name.' : undefined;
   const urlErr = tried && !isHttpAddress(withScheme(startUrl)) ? 'Enter a full address, like https://app.example.com' : undefined;

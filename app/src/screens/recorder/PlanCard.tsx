@@ -8,10 +8,14 @@ import type { PlanStep } from '../../engine';
 import { GENERATED_CHOICES } from '../../engine/labels';
 import { secrets } from '../../platform';
 import { Button, ChipSelect, Icon } from '../../components/ui';
-import { CAREFUL_NOTE, planDoneText, planNeeds, planSentence, type PlanItem } from './plan';
+import { CAREFUL_NOTE, leftOutText, planDoneText, planNeeds, type PlanItem } from './plan';
 import type { Recorder } from './useRecorder';
+import { isHttpAddress } from '../app/tryCall';
+import { withScheme } from '../app/TestDetailsDialog';
 
 const STATE_ICON = { done: 'check_circle', skipped: 'block', todo: 'radio_button_unchecked' } as const;
+/** The longest wait a story's step has (engine plan.MAX_WAIT_S). */
+const MAX_WAIT_S = 60;
 
 export function PlanCard({ rec }: { rec: Recorder }) {
   const [open, setOpen] = useState(false);
@@ -26,7 +30,7 @@ export function PlanCard({ rec }: { rec: Recorder }) {
       <div className="rec-plan-head">
         <Icon name="auto_awesome" size={20} className="rec-ai-icon" />
         <div className="grow rec-plan-title">
-          {cur ? <><span className="faint">From your story · step {run.index + 1} of {n}</span><span className="rec-plan-now">{planSentence(cur)}</span></>
+          {cur ? <><span className="faint">From your story · step {run.index + 1} of {n}</span><span className="rec-plan-now">{rec.planText(cur)}</span></>
             : <span className="rec-plan-now">{planDoneText(run)}</span>}
         </div>
         <button type="button" className="rec-ai-link" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide steps' : 'All steps'}</button>
@@ -34,15 +38,15 @@ export function PlanCard({ rec }: { rec: Recorder }) {
           : <Button kind="primary" onClick={rec.stopPlan}>Done</Button>}
       </div>
       {cur?.careful && !asking && <div className="rec-plan-careful" role="note"><Icon name="warning" size={16} />{CAREFUL_NOTE}</div>}
-      {(run.note || run.dropped) && run.index === 0 && !open && (
-        <div className="rec-plan-note faint">{[run.note, run.dropped ? `${run.dropped === 1 ? 'One step' : `${run.dropped} steps`} the AI assistant suggested can't be a step, so ${run.dropped === 1 ? "it's" : "they're"} left out.` : null].filter(Boolean).join(' ')}</div>
+      {(run.note || leftOutText(run)) && run.index === 0 && !open && (
+        <div className="rec-plan-note faint">{[run.note, leftOutText(run)].filter(Boolean).join(' ')}</div>
       )}
       {open && (
         <ol className="rec-plan-list">
           {run.steps.map((s, i) => (
             <li key={i} className={'rec-plan-item ' + s.state + (i === run.index ? ' current' : '')} aria-current={i === run.index ? 'step' : undefined}>
               <Icon name={i === run.index && s.state === 'todo' ? 'arrow_forward' : STATE_ICON[s.state]} size={16} />
-              <span className="grow">{planSentence(s)}</span>
+              <span className="grow">{rec.planText(s)}</span>
               {s.state === 'skipped' && <span className="faint">Skipped</span>}
               {s.careful && <Icon name="warning" size={16} className="rec-plan-warn" label="May delete, pay for or send something" />}
             </li>
@@ -71,14 +75,19 @@ function PlanEdit({ step, rec }: { step: PlanItem; rec: Recorder }) {
   const [text, setText] = useState(step.text ?? '');
   const [secretRef, setSecretRef] = useState(step.secretRef ?? '');
   const [generated, setGenerated] = useState<Generated>(step.generated ?? 'uniqueName');
+  const [url, setUrl] = useState(step.url ?? '');
+  const [seconds, setSeconds] = useState(String(step.seconds ?? 2));
   const [names, setNames] = useState<string[]>([]);
   useEffect(() => { void secrets.list().then(n => { setNames(n); setSecretRef(r => r || n[0] || ''); }).catch(() => setNames([])); }, []);
-  const write = step.action === 'write';
-  const needsTarget = step.action !== 'write' && step.action !== 'scroll' && step.action !== 'navigate' && step.action !== 'waitFor';
-  const ok = (!needsTarget || !!target.trim()) && (!write || (source === 'typed' ? text !== '' : source === 'secret' ? !!secretRef : true));
+  const write = step.action === 'write', go = step.action === 'navigate', wait = step.action === 'waitFor';
+  const needsTarget = step.action !== 'write' && step.action !== 'scroll' && !go && !wait;
+  const address = withScheme(url.trim());
+  const secs = Number(seconds);
+  const ok = (!needsTarget || !!target.trim()) && (!write || (source === 'typed' ? text !== '' : source === 'secret' ? !!secretRef : true))
+    && (!go || isHttpAddress(address)) && (!wait || (Number.isInteger(secs) && secs >= 1 && secs <= MAX_WAIT_S));
   const save = () => {
     if (!ok) return;
-    const patch: Partial<PlanStep> = { target: target.trim() || undefined };
+    const patch: Partial<PlanStep> = go ? { url: address } : wait ? { seconds: secs } : { target: target.trim() || undefined };
     if (write) Object.assign(patch, source === 'typed' ? { text } : source === 'secret' ? { secretRef } : { generated });
     rec.editPlanStep(patch);
   };
@@ -89,6 +98,18 @@ function PlanEdit({ step, rec }: { step: PlanItem; rec: Recorder }) {
         <label className="rec-plan-field">{write ? 'Field to type into' : step.action === 'checkpoint' ? 'What should show' : 'What to find'}
           <input className="rec-num rec-plan-input" value={target} autoFocus={!needs} placeholder={write ? 'The field that has the focus' : undefined}
             onChange={e => setTarget(e.target.value)} />
+        </label>
+      )}
+      {go && (
+        <label className="rec-plan-field">Address
+          <input className="rec-num rec-plan-input" value={url} autoFocus placeholder="https://app.example.com" spellCheck={false} autoCapitalize="off"
+            onChange={e => setUrl(e.target.value)} />
+        </label>
+      )}
+      {wait && (
+        <label className="rec-plan-field">Seconds to wait
+          <input className="rec-num rec-plan-input" type="number" min={1} max={MAX_WAIT_S} step={1} value={seconds} autoFocus
+            onChange={e => setSeconds(e.target.value)} />
         </label>
       )}
       {write && (

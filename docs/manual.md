@@ -183,7 +183,7 @@ The same test always gives the same file: two-space indents, keys in a fixed ord
 - **Secrets never land in the folder.** Tests only store a secret's name. The value stays in this Mac's Keychain. See [Saved secrets](#saved-secrets).
 - **Pulled a change?** Switch back to Breakpatch and it reads the folder again.
 - **Merge conflict in a test file?** Fix it as you would any JSON file. Until it's valid again, Breakpatch skips that file and tells you which one.
-- **Saved by a newer Breakpatch?** If `breakpatch.json` has a higher `schemaVersion` than your app knows, update Breakpatch to open the folder. If it changes while the folder is open, saving stops until you update. Your first phone or tablet test raises it, so update Breakpatch on every Mac that uses the folder.
+- **Saved by a newer Breakpatch?** If `breakpatch.json` has a higher `schemaVersion` than your app knows, update Breakpatch to open the folder. If it changes while the folder is open, saving stops until you update. Your first phone or tablet test raises it, so update Breakpatch on every Mac that uses the folder, and `breakpatch-ci` if it runs the folder's tests.
 
 Settings → Tests folder shows the folder, how many apps and tests it has, **Show in Finder** and **Change folder**. Changing folders leaves the old one as it is, with all its tests.
 
@@ -232,7 +232,7 @@ To test your site on a phone or tablet, pick one under **Screen size** in **New 
 - Screen checks work as in any test, at the device's screen size. The page is drawn at normal sharpness, not the phone's, so screenshots are the size of the page.
 - The run view and the report name the device.
 
-A test's device is fixed once you start, like any screen size. Tests made before phones and tablets stay computer tests. Older versions of Breakpatch can't run phone and tablet tests. Your first one marks the tests folder as newer, so an older version won't open it. In Team, it marks the workspace, and an older version stops saving there. Either way, no older version runs the test as a computer test.
+A test's device is fixed once you start, like any screen size. Tests made before phones and tablets stay computer tests. Older versions of Breakpatch can't run phone and tablet tests, so update Breakpatch everywhere your tests run before you make the first one: every Mac, the local runner and `breakpatch-ci`. Your first one marks the tests folder as newer, so an older version of the app won't open it. In Team, it marks the workspace, and an older version stops saving there. But an older version can still run the test as a computer test: the app or local runner in Team, which still open the workspace, and `breakpatch-ci`, from a workspace or a test file. From this version on, the local runner and `breakpatch-ci` don't run any test from a workspace saved by a newer Breakpatch, and say to update.
 
 ## Run a test and read the report
 
@@ -675,21 +675,23 @@ For each step, Breakpatch finds what it acts on and highlights it, the same way 
 - **Confirm** (or Enter) does the step and records it, like a step you clicked. Then the next step is shown.
 - **Try again** looks for it again.
 - **Skip** leaves the step out.
-- **Edit** changes what to look for, and, for typing, what to type: typed text, a saved secret or a generated value.
+- **Edit** changes what to look for, and, for typing, what to type: typed text, a saved secret or a generated value. For going to an address it changes the address, and for a wait the seconds.
 - If it can't find what the step acts on, click it on the page and confirm. For a check, draw a box around it.
 
 **All steps** shows the whole list. **Stop** ends it; the steps already added stay. At the end, the card says how many steps were added and skipped. Check them, play the test, then press **Save**. Nothing is saved before you do.
 
 It types only what you allow:
 
-- Text you wrote in the story, or a value that's new on every run, like `ada+{timestamp}@example.com` or a generated unique name.
+- Text you wrote in the story, or a generated value such as a unique name. A value filled in at run time, like `{timestamp}`, can only end text from your story (`Ada Lovelace {i}`) or a short made-up name (`Test project {time}`), or be part of a made-up email address at a test domain such as `example.com` (`ada+{timestamp}@example.com`). Only `{timestamp}` is new on every run: `{time}` and `{date}` are the same all minute or all day.
 - A saved secret only if you ticked it. Into a password field, only a saved secret: it never makes one up. When a step has nothing it may type, the card asks you what to type.
+
+A step that goes to another address only goes to the site that's open, or to an address your story names. On a phone or tablet test there are no hover or right click steps.
 
 A step that looks like it deletes, pays for or sends something says so: "This step may delete, pay for or send something. Check it before you confirm."
 
 - The steps are ordinary steps. A run doesn't use the AI assistant for them.
 - It needs the AI assistant on this Mac and a licence that includes it. Your story and the page stay on your Mac.
-- It suggests at most 30 steps. A story that's long or vague gives worse steps: split it into a few tests.
+- It suggests at most 30 steps; the card says when it left some out. A story that's long or vague gives worse steps: split it into a few tests.
 
 ## Schedules
 
@@ -860,7 +862,7 @@ Shared steps are read from `apps/<app>/shared/` next to `tests/`. The run isn't 
 |---|---|
 | `0` | The test or suite passed (a suite *passed with fixes* too). |
 | `1` | A test failed: a check didn't match, or something wasn't there. The JSON says which step and why. |
-| `2` | Nothing ran, or not all of it could: the test file or its shared steps, the workspace file, the suite or test couldn't be read, the CI account couldn't sign in, a secret isn't allowed on a test's sites, or something went wrong inside `breakpatch-ci` (`code: "internal"`). The JSON has a `code` and a message. |
+| `2` | Nothing ran, or not all of it could: the test file or its shared steps, the workspace file, the suite or test couldn't be read, the CI account couldn't sign in, the workspace was saved by a newer Breakpatch (`code: "newer_workspace"`: update `breakpatch-ci`), a secret isn't allowed on a test's sites, or something went wrong inside `breakpatch-ci` (`code: "internal"`). The JSON has a `code` and a message. |
 | `3` | There's no usable licence, or it's for another workspace. The JSON and the log say why. |
 
 If a run can't be saved in the workspace (for example the security rules are out of date), the log says so and the JSON has `"saved": false`. The exit code is still the test's result.

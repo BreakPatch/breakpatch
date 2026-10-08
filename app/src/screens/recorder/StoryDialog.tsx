@@ -1,7 +1,7 @@
 // "Write a test from a story" (Breakpatch Team, roadmap #10): the person pastes a short user story
 // or acceptance criteria and picks the saved secrets it may type; the engine proposes the steps
 // (`record.plan`), and the recorder goes through them one at a time (PlanCard, useRecorder).
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, Dialog, Icon, TextArea } from '../../components/ui';
 import { getEngine, type Plan } from '../../engine';
 import { secrets } from '../../platform';
@@ -18,26 +18,32 @@ export function StoryDialog({ open, onClose, onPlan }: { open: boolean; onClose:
   useEffect(() => {
     if (open) void secrets.list().then(setNames).catch(() => setNames([]));
   }, [open]);
-  const close = () => { if (busy) return; setError(null); onClose(); };
+  // Each request's number: closing the dialog moves it on, so an answer that comes after is dropped
+  // (the engine still finishes it; nothing is done to the page either way).
+  const asked = useRef(0);
+  const close = () => { asked.current++; setBusy(false); setError(null); onClose(); };
 
   const make = async () => {
     if (!story.trim() || busy) return;
+    const mine = ++asked.current;
     setBusy(true); setError(null);
     try {
       const plan = await getEngine().plan(story.trim(), picked.filter(n => names.includes(n)));
+      if (mine !== asked.current) return;
       onPlan(plan);
       setStory(''); setPicked([]);
       onClose();
     } catch (e) {
+      if (mine !== asked.current) return;
       setError(e instanceof Error ? e.message : "Couldn't make steps from this story. Try again.");
-    } finally { setBusy(false); }
+    } finally { if (mine === asked.current) setBusy(false); }
   };
 
   return (
     <Dialog open={open} onClose={close} title="Write a test from a story" icon="auto_awesome" width={560}
       sub="The AI assistant suggests the steps. You check each one on the page before it's added."
       actions={<>
-        <Button onClick={close} disabled={busy}>Cancel</Button>
+        <Button onClick={close}>Cancel</Button>
         <Button kind="primary" icon="auto_awesome" busy={busy} disabled={!story.trim()} onClick={() => void make()}>{busy ? 'Making steps…' : 'Make steps'}</Button>
       </>}>
       <form className="col" style={{ gap: 14 }} onSubmit={e => { e.preventDefault(); void make(); }}>

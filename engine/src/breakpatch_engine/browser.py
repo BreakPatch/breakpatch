@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import io
 import logging
 import os
@@ -572,18 +573,29 @@ class BrowserSession:
                     return
                 raise
 
-    async def long_press(self, at: Sequence[float], hold: float) -> None:
-        await self.touch_event("start", at)
-        await asyncio.sleep(max(hold, 0.0))
+    async def _lifting(self, gesture) -> None:
+        """Runs the rest of a gesture whose finger is down, then lets go. Stopped part way (the run
+        stopped, the page went away), it still lets go, so the next touch doesn't start held."""
+        try:
+            await gesture
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await self.touch_event("end")
+            raise
         await self.touch_event("end")
 
+    async def long_press(self, at: Sequence[float], hold: float) -> None:
+        await self.touch_event("start", at)
+        await self._lifting(asyncio.sleep(max(hold, 0.0)))
+
     async def touch_drag(self, frm: Sequence[float], to: Sequence[float], steps: int = 12) -> None:
+        async def moves():
+            n = max(1, int(steps))
+            for i in range(1, n + 1):
+                await asyncio.sleep(0.016)
+                await self.touch_event("move", (frm[0] + (to[0] - frm[0]) * i / n, frm[1] + (to[1] - frm[1]) * i / n))
         await self.touch_event("start", frm)
-        n = max(1, int(steps))
-        for i in range(1, n + 1):
-            await asyncio.sleep(0.016)
-            await self.touch_event("move", (frm[0] + (to[0] - frm[0]) * i / n, frm[1] + (to[1] - frm[1]) * i / n))
-        await self.touch_event("end")
+        await self._lifting(moves())
 
     async def touch_scroll(self, at: Sequence[float] | None, dx: float, dy: float) -> None:
         """A finger moving the page by (dx, dy), the opposite way: strokes that stay on the screen

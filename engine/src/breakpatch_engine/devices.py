@@ -79,3 +79,12 @@ def device_for(viewport) -> Device | None:
         raise EngineError("bad_request", "This test is for a phone or tablet this version of Breakpatch doesn't know. "
                                          "Update Breakpatch to run it.", str(name)[:60])
     return dev
+
+
+def display_name(viewport) -> str | None:
+    """A phone or tablet test's device as the app and the report name it, "iPhone 15 · 393 × 659"
+    (the app's screenName, at the preset's size). None for a desktop test, and for a device this
+    engine doesn't know: no made-up name (running it says why it can't)."""
+    name = viewport.get("device") if isinstance(viewport, dict) else None
+    d = DEVICES.get(name) if isinstance(name, str) else None
+    return f"{d.name} · {d.width} × {d.height}" if d else None

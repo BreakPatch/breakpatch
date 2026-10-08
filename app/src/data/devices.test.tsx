@@ -18,7 +18,7 @@ import { menuGroups, pageHint, shortName } from '../screens/recorder/actions';
 import { ActionMenu } from '../screens/recorder/ActionMenu';
 import { buildView } from '../lib/report/view';
 import { initFolder } from './local/folder';
-import { LocalBackend, NEWER_MESSAGE, parseMeta } from './local/localBackend';
+import { LocalBackend, NEWER_MESSAGE, parseMeta, viewportIn } from './local/localBackend';
 import { DEVICE_SCHEMA_VERSION, fromFileText, SCHEMA_VERSION } from './local/format';
 import { MemoryStorage } from './local/storage';
 
@@ -27,7 +27,8 @@ globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {
 afterEach(cleanup);
 
 const LAPTOP: Viewport = { width: 1440, height: 900, dpr: 1 };
-const PHONE = deviceViewport(DEVICES[0]);
+const preset = (id: string) => { const d = DEVICES.find(x => x.id === id); if (!d) throw new Error(`no preset ${id}`); return d; };
+const PHONE = deviceViewport(preset('iphone-15'));
 
 describe('presets', () => {
   it('lists phones first, then tablets, each stored by id with its size', () => {
@@ -150,6 +151,28 @@ describe('test files', () => {
       const old = tests.find(t => t.id === 'old')!.viewport;
       expect(old.device).toBeUndefined();
       expect(isTouch(old)).toBe(false);
+      expect(viewportIn({ width: 1440, height: 900, dpr: 1 })).toEqual({ width: 1440, height: 900, dpr: 1 });
+    } finally { b.close(); }
+  });
+
+  it('read a test file with no screen size as a desktop test, even in an app made for a phone', async () => {
+    const st = new MemoryStorage();
+    await st.mkdir(ROOT);
+    await initFolder(st, ROOT);
+    const b = await LocalBackend.open({ storage: st, path: ROOT, person, live: false });
+    try {
+      const app = await b.addApp({ name: 'Mobile web', baseUrl: 'https://m.example.com', defaultViewport: PHONE });
+      st.poke(`${ROOT}/apps/${app.id}/tests/bare.json`, JSON.stringify({ name: 'Bare', version: 0, startUrl: 'https://m.example.com', steps: [] }));
+      // Edited by hand: a known phone at another size is at the phone's own size.
+      st.poke(`${ROOT}/apps/${app.id}/tests/odd.json`, JSON.stringify({ name: 'Odd', version: 0, startUrl: 'https://m.example.com', steps: [], viewport: { width: 1000, height: 50, dpr: 1, device: 'pixel-8' } }));
+      st.poke(`${ROOT}/apps/${app.id}/tests/later.json`, JSON.stringify({ name: 'Later', version: 0, startUrl: 'https://m.example.com', steps: [], viewport: { width: 400, height: 800, dpr: 1, device: 'phone-2030' } }));
+      await b.reload();
+      const tests = await new Promise<{ id: string; viewport: Viewport }[]>(res => { const off = b.tests(app.id, v => { queueMicrotask(() => off()); res(v); }); });
+      const vp = (id: string) => tests.find(t => t.id === id)!.viewport;
+      expect(vp('bare')).toEqual(LAPTOP);
+      expect(isTouch(vp('bare'))).toBe(false);
+      expect(vp('odd')).toEqual({ width: 412, height: 839, dpr: 1, device: 'pixel-8' });
+      expect(vp('later')).toEqual({ width: 400, height: 800, dpr: 1, device: 'phone-2030' });   // a newer app's: as it is
     } finally { b.close(); }
   });
 
@@ -182,7 +205,7 @@ describe('test files', () => {
   it('raise it for an app whose default screen is a phone too', async () => {
     const { st, b } = await folder();
     try {
-      await b.addApp({ name: 'Mobile web', baseUrl: 'https://m.example.com', defaultViewport: deviceViewport(DEVICES[4]) });
+      await b.addApp({ name: 'Mobile web', baseUrl: 'https://m.example.com', defaultViewport: deviceViewport(preset('ipad')) });
       expect((await meta(st)).schemaVersion).toBe(DEVICE_SCHEMA_VERSION);
     } finally { b.close(); }
   });
@@ -218,6 +241,28 @@ describe('making and recording a phone test', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start recording' }));
     await waitFor(() => expect(made).toHaveBeenCalled());
     expect(made.mock.calls[0][0].viewport).toEqual(PHONE);
+  });
+
+  it('New test keeps what was typed when the app is updated while it is open', async () => {
+    const ui = (a: App) => <ToastProvider><MemoryRouter><NewTestDialog open app={a} onClose={() => undefined} /></MemoryRouter></ToastProvider>;
+    const { rerender } = render(ui(app));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Log in on a phone' } });
+    fireEvent.click(screen.getByRole('radio', { name: /iPhone 15/ }));
+    // The workspace sends the app again (another field changed): a new object, the same screen size.
+    rerender(ui({ ...app, name: 'Web app', defaultViewport: { ...app.defaultViewport } }));
+    expect(screen.getByLabelText('Name')).toHaveValue('Log in on a phone');
+    expect(screen.getByRole('radio', { name: /iPhone 15/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('New test starts afresh each time it opens, at the app\'s size then', async () => {
+    const ui = (a: App, open: boolean) => <ToastProvider><MemoryRouter><NewTestDialog open={open} app={a} onClose={() => undefined} /></MemoryRouter></ToastProvider>;
+    const { rerender } = render(ui(app, true));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Old' } });
+    rerender(ui(app, false));
+    const tablet = { ...app, defaultViewport: deviceViewport(DEVICES.find(d => d.id === 'ipad')!) };
+    rerender(ui(tablet, true));
+    expect(screen.getByLabelText('Name')).toHaveValue('');
+    expect(screen.getByRole('radio', { name: /^iPad\d/ })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('the recorder opens the browser as the phone and offers touch actions', async () => {

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from breakpatch_engine.devices import DEVICES, device_for
+from breakpatch_engine.devices import DEVICES, device_for, display_name
 from breakpatch_engine.protocol import EngineError
 
 APP_DEVICES = Path(__file__).resolve().parents[2] / "app" / "src" / "data" / "devices.ts"
@@ -54,3 +54,11 @@ def test_a_viewport_picks_its_device():
         with pytest.raises(EngineError) as e:
             device_for({"device": bad})
         assert e.value.code == "bad_request"
+
+
+def test_a_device_s_display_name_is_the_app_s():
+    assert display_name({"width": 393, "height": 659, "device": "iphone-15"}) == "iPhone 15 · 393 × 659"
+    assert display_name({"width": 1, "height": 1, "device": "ipad"}) == "iPad · 810 × 1080"     # the preset's size
+    for desktop in ({"width": 1440, "height": 900}, {"device": ""}, {"device": None}, None, "iphone-15"):
+        assert display_name(desktop) is None
+    assert display_name({"device": "phone-2030"}) is None

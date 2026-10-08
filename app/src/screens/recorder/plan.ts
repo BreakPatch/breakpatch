@@ -8,18 +8,20 @@ import { GENERATED } from '../../engine/labels';
 import { SCROLL_PX, type Intent } from './intent';
 
 export type PlanItemState = 'todo' | 'done' | 'skipped';
+/** The most steps a plan has (engine plan.MAX_STEPS). */
+export const MAX_PLAN_STEPS = 30;
 export interface PlanItem extends PlanStep { state: PlanItemState }
 
 /** The steps of a story being gone through. `index`: the step being asked about (steps.length when all are answered). */
-export interface PlanRun { steps: PlanItem[]; index: number; note?: string; dropped?: number }
+export interface PlanRun { steps: PlanItem[]; index: number; note?: string; dropped?: number; overLimit?: number }
 
 const into = (s: PlanStep) => s.target ?? 'the field that has the focus';
 
-/** The step in plain words: "Click the Sign up button", 'Type "Ada" into the Name field'. */
-export function planSentence(s: PlanStep): string {
+/** The step in plain words: "Click the Sign up button", 'Type "Ada" into the Name field'; on a phone or tablet (`touch`) "Tap …". */
+export function planSentence(s: PlanStep, { touch = false }: { touch?: boolean } = {}): string {
   switch (s.action) {
-    case 'click': return `Click ${s.target}`;
-    case 'doubleClick': return `Double-click ${s.target}`;
+    case 'click': return `${touch ? 'Tap' : 'Click'} ${s.target}`;
+    case 'doubleClick': return `${touch ? 'Double-tap' : 'Double-click'} ${s.target}`;
     case 'rightClick': return `Right-click ${s.target}`;
     case 'hover': return `Hover over ${s.target}`;
     case 'write':
@@ -57,8 +59,18 @@ export function planIntent(s: PlanStep): Intent {
 }
 
 /** A new run through a plan's steps, from the first. */
-export function planRun(steps: PlanStep[], note?: string, dropped?: number): PlanRun {
-  return { steps: steps.map(s => ({ ...s, state: 'todo' as const })), index: 0, ...(note ? { note } : {}), ...(dropped ? { dropped } : {}) };
+export function planRun(steps: PlanStep[], note?: string, dropped?: number, overLimit?: number): PlanRun {
+  return { steps: steps.map(s => ({ ...s, state: 'todo' as const })), index: 0, ...(note ? { note } : {}), ...(dropped ? { dropped } : {}), ...(overLimit ? { overLimit } : {}) };
+}
+
+/** Said under the first step when steps were left out: ones that can't be a step, and ones past the limit. */
+export function leftOutText(run: Pick<PlanRun, 'dropped' | 'overLimit'>): string | null {
+  const n = (k: number) => (k === 1 ? 'One step' : `${k} steps`);
+  const out = [
+    run.dropped ? `${n(run.dropped)} the AI assistant suggested can't be a step, so ${run.dropped === 1 ? "it's" : "they're"} left out.` : null,
+    run.overLimit ? `${n(run.overLimit)} past the first ${MAX_PLAN_STEPS} ${run.overLimit === 1 ? 'is' : 'are'} left out: split a long story into a few tests.` : null,
+  ].filter(Boolean);
+  return out.length ? out.join(' ') : null;
 }
 
 /** The step at `i` answered (done or skipped), and the next one asked about. */

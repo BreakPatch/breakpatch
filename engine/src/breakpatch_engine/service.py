@@ -187,6 +187,12 @@ class Engine:
                 self._hand_page.remove_listener("filechooser", self._hand_chooser)
             except Exception:  # noqa: BLE001
                 pass
+            if self._hand_finger:
+                # Done with a finger still down: the page isn't left holding a touch.
+                try:
+                    await self.browser.touch_event("cancel")
+                except Exception as e:  # noqa: BLE001 - the page may be gone already
+                    log.debug("couldn't lift the finger: %s", e)
             self._hand_page = None
             self._hand_finger = False
             self._pending_chooser = None
@@ -370,7 +376,8 @@ class Engine:
             raise EngineError("bad_request", "Write the story first.")
         page = self.browser.require()
         story = plan.Story(text=text.strip()[:plan.MAX_STORY], secrets=plan.secret_names(p.get("secrets")),
-                           url=getattr(page, "url", None), viewport=(self.browser.width, self.browser.height))
+                           url=getattr(page, "url", None), viewport=(self.browser.width, self.browser.height),
+                           device=self.browser.device.id if self.browser.device else None, touch=self.browser.touch)
         story.image = imaging.to_image(await self.browser.shoot())
         try:
             from .dom.extract import extract
