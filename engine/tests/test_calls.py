@@ -110,6 +110,14 @@ def test_headers_can_use_a_saved_secret_on_its_own_site():
     assert calls.call_secret_refs(call) == ["TOKEN"]
 
 
+def test_a_secret_the_shell_refused_is_never_sent():
+    """A secret on this Mac kept for other workspaces reaches the engine as its reason only."""
+    call = {"method": "POST", "url": "https://api.acme.com/seed", "headers": [{"name": "Authorization", "secretRef": "TOKEN"}]}
+    why = "TOKEN is kept for other workspaces on this Mac."
+    e = refused(call, secrets={"TOKEN": Secret("", (), False, why)})
+    assert e.kind == "secret" and e.message == why
+
+
 def test_logs_leave_out_queries_user_info_and_secrets():
     assert redact("https://user:pw@api.acme.com:8443/seed/abc123?token=xyz#f", ["abc123"]) == "https://api.acme.com:8443/seed/•••?…"
     assert redact("https://api.acme.com/seed") == "https://api.acme.com/seed"

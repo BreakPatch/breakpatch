@@ -618,6 +618,8 @@ def secret_problem(name: str, secret: Secret | None, as_runner: bool) -> str | N
     """Why a secret can't be used in this run at all, checked before any call or action."""
     if secret is None:
         return f"The saved secret {name} isn't on this Mac."
+    if secret.refused:
+        return secret.refused
     if not secret.origins:
         return f"{name} isn't allowed on any site yet. Add the sites it's for in Settings, Saved secrets."
     if as_runner and not secret.runner_can_use:
