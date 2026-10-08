@@ -23,11 +23,12 @@
 <div class="box" id="swipe">Swipe me</div>
 <div id="out"></div>
 <script>
-  window.log = { taps: 0, doubles: 0, presses: 0, swipes: [], pointers: [], mouseOnly: 0, cancels: 0 };
+  window.log = { taps: 0, doubles: 0, presses: 0, swipes: [], pointers: [], mouseOnly: 0, cancels: 0, ends: 0 };
   const out = document.getElementById('out');
   const say = t => { out.textContent = t; };
   document.addEventListener('pointerdown', e => window.log.pointers.push(e.pointerType));
   document.addEventListener('touchcancel', () => { window.log.cancels++; });
+  document.addEventListener('touchend', () => { window.log.ends++; });
   // A mouse event that no touch made (a real mouse click): counted, never acted on.
   document.addEventListener('mousedown', e => { if (!(e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents)) window.log.mouseOnly++; });
 

@@ -166,21 +166,20 @@ async def test_a_gesture_stopped_part_way_lifts_its_finger(site):
     hx = Harness()
     b = await _open(hx, site)
     try:
-        press = asyncio.ensure_future(b.long_press(PRESS, 2.0))
+        press = asyncio.ensure_future(b.long_press(PRESS, 30.0))
         await asyncio.sleep(0.1)
         press.cancel()
         with pytest.raises(asyncio.CancelledError):
             await press
-        await asyncio.sleep(0.4)
-        assert (await _log(hx))["presses"] == 0
-        assert await b.page.evaluate("document.getElementById('out').textContent") == "Too short"
+        assert (await _log(hx))["ends"] == 1                 # the finger came up
 
-        drag = asyncio.ensure_future(b.touch_drag(SWIPE, [SWIPE[0] - 200, SWIPE[1]], steps=60))
+        drag = asyncio.ensure_future(b.touch_drag(SWIPE, [SWIPE[0] - 200, SWIPE[1]], steps=2000))
         await asyncio.sleep(0.3)
         drag.cancel()
         with pytest.raises(asyncio.CancelledError):
             await drag
-        assert len((await _log(hx))["swipes"]) == 1          # it let go where it was
+        log = await _log(hx)
+        assert log["ends"] == 2 and len(log["swipes"]) == 1  # it let go where it was
     finally:
         await hx.call("browser.close")
 
