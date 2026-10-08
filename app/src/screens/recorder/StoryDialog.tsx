@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button, Checkbox, Dialog, Icon, TextArea } from '../../components/ui';
 import { getEngine, type Plan } from '../../engine';
-import { secrets } from '../../platform';
+import { secretNamesHere } from '../../lib/secretScope';
 import { osText } from '../../lib/osWords';
 
 export const STORY_PLACEHOLDER = 'For example: Sign up with a new email and my password. Then I see "Account created".';
@@ -16,7 +16,7 @@ export function StoryDialog({ open, onClose, onPlan }: { open: boolean; onClose:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (open) void secrets.list().then(setNames).catch(() => setNames([]));
+    if (open) void secretNamesHere().then(setNames).catch(() => setNames([]));
   }, [open]);
   // Each request's number: closing the dialog moves it on, so an answer that comes after is dropped
   // (the engine still finishes it; nothing is done to the page either way).

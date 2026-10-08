@@ -134,7 +134,7 @@ export function Segmented<T extends string>({ items, value, onChange, label }: {
   return (
     <div className="segmented" role="tablist" aria-label={label}>
       {items.map(i => (
-        <button key={i.value} role="tab" aria-selected={i.value === value} onClick={() => onChange(i.value)}>
+        <button key={i.value} type="button" role="tab" aria-selected={i.value === value} onClick={() => onChange(i.value)}>
           {i.label}{i.dot && <span className="nav-dot" style={{ background: i.dot }} aria-hidden />}
         </button>
       ))}

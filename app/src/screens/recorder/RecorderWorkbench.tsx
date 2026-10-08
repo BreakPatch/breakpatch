@@ -7,7 +7,7 @@ import { CheckingPill, LiveView, SavedPill, stepMarker, useSampleState } from '.
 import { findStep, numberOf, StepsPanel, toTokens, type RowStatus } from '../../components/steps';
 import { Skeleton } from '../../components/ui';
 import { AddStepBar } from './AddStepBar';
-import { secrets } from '../../platform';
+import { secretNamesHere } from '../../lib/secretScope';
 import { getEngine } from '../../engine';
 import { Icon } from '../../components/ui';
 import { FileChooserDialog } from './FileChooserDialog';
@@ -33,7 +33,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
 }) {
   useSampleState();                                      // markers follow what the sample page shows
   const [secretNames, setSecretNames] = useState<string[]>([]);
-  useEffect(() => { void secrets.list().then(setSecretNames).catch(() => setSecretNames([])); }, []);
+  useEffect(() => { void secretNamesHere().then(setSecretNames).catch(() => setSecretNames([])); }, []);
   const groupSteps = useGroupSteps(appId, rec.steps);
   const sel = rec.selectedId ? findStep(rec.steps, rec.selectedId) : undefined;
   const marker = sel && rec.ai.state === 'idle' && !run?.running ? stepMarker(sel, numberOf(rec.steps, sel.id), sel.id === rec.busyId ? rec.phaseText ?? undefined : undefined, isTouch(viewport)) : null;

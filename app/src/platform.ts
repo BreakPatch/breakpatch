@@ -79,30 +79,32 @@ const memPolicies = new Map<string, Omit<SecretPolicy, 'name'>>([
   ['ACME_TEST_PASSWORD', { origins: ['https://app.example.com'], runnerCanUse: false }],
 ]);
 
-export interface SetSecretOptions { origins?: string[]; runnerCanUse?: boolean }
+export interface SetSecretOptions { origins?: string[]; runnerCanUse?: boolean; workspaces?: string[] }
 
 export const secrets = {
   async list(): Promise<string[]> {
     if (isTauri()) return tauriInvoke<string[]>('secrets_list');
     return [...memSecrets.keys()];
   },
-  /** Names with their sites and "Runner can use" flag. The Team runner reads the flag here. */
+  /** Names with their sites, "Runner can use" flag and workspaces. The Team runner reads the flag here. */
   async info(): Promise<SecretPolicy[]> {
     if (isTauri()) return tauriInvoke<SecretPolicy[]>('secrets_info');
     return [...memSecrets.keys()].sort().map(name => ({ name, origins: [], runnerCanUse: false, ...memPolicies.get(name) }));
   },
-  /** Saves a value. `origins` / `runnerCanUse` set where it may be used; left out, they stay as they were. */
+  /** Saves a value. `origins` / `runnerCanUse` / `workspaces` set where it may be used; left out, they stay as they were. */
   async set(name: string, value: string, opts: SetSecretOptions = {}): Promise<void> {
-    if (isTauri()) return tauriInvoke('secrets_set', { name, value, origins: opts.origins ?? null, runnerCanUse: opts.runnerCanUse ?? null });
+    if (isTauri()) return tauriInvoke('secrets_set', { name, value, origins: opts.origins ?? null, runnerCanUse: opts.runnerCanUse ?? null, workspaces: opts.workspaces ?? null });
     memSecrets.set(name, value);
     const before = memPolicies.get(name) ?? { origins: [], runnerCanUse: false };
-    memPolicies.set(name, { origins: opts.origins ?? before.origins, runnerCanUse: opts.runnerCanUse ?? before.runnerCanUse });
+    const workspaces = opts.workspaces ?? before.workspaces ?? [];
+    memPolicies.set(name, { origins: opts.origins ?? before.origins, runnerCanUse: opts.runnerCanUse ?? before.runnerCanUse, ...(workspaces.length ? { workspaces } : {}) });
   },
-  /** Changes where a saved secret may be used, without its value. */
-  async setPolicy(name: string, origins: string[], runnerCanUse: boolean): Promise<void> {
-    if (isTauri()) return tauriInvoke('secrets_set_policy', { name, origins, runnerCanUse });
+  /** Changes where a saved secret may be used, without its value. `workspaces` left out: as it was. */
+  async setPolicy(name: string, origins: string[], runnerCanUse: boolean, workspaces?: string[]): Promise<void> {
+    if (isTauri()) return tauriInvoke('secrets_set_policy', { name, origins, runnerCanUse, workspaces: workspaces ?? null });
     if (!memSecrets.has(name)) throw new Error(`There's no saved secret ${name} on this Mac.`);
-    memPolicies.set(name, { origins: [...new Set(origins)], runnerCanUse });
+    const kept = workspaces ? [...new Set(workspaces)] : memPolicies.get(name)?.workspaces ?? [];
+    memPolicies.set(name, { origins: [...new Set(origins)], runnerCanUse, ...(kept.length ? { workspaces: kept } : {}) });
   },
   async remove(name: string): Promise<void> {
     if (isTauri()) return tauriInvoke('secrets_delete', { name });

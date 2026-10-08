@@ -1,8 +1,8 @@
 //! Breakpatch desktop shell: window, engine sidecar, Keychain secrets, tests folder, file association,
 //! deep links, updater, runner-mode helpers, the Team licence check (licence.rs), the usage counts
 //! (usage.rs), the last step of Upgrade to Team (migration.rs), result messages (runner.rs),
-//! the issue trackers for Create issue (trackers.rs) and the workspace keys that seal test content
-//! (workspace_keys.rs). The UI calls these through
+//! the issue trackers for Create issue (trackers.rs), the workspace keys that seal test content
+//! (workspace_keys.rs) and the workspace secrets sealed with them (workspace_secrets.rs). The UI calls these through
 //! `platform.ts`, `lib/usage.ts`, `engine/sidecarEngine.ts` and `lib/updates.ts`.
 
 mod engine;
@@ -18,6 +18,7 @@ mod trackers;
 mod usage;
 mod workspace;
 mod workspace_keys;
+mod workspace_secrets;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -44,11 +45,15 @@ type ResultsState = Arc<results::ResultAddresses<KeyringStore>>;
 
 /// Resolves with the engine's `result`, or rejects with the JSON string `{code, message, details}`.
 /// Saved secrets in `run.start`, `record.point` and `call.try` get their sites and runner flag
-/// from the Keychain index here (secrets.rs `attach_policies`), whatever the UI sent.
+/// from the Keychain index here (secrets.rs `attach_policies`), whatever the UI sent; one kept for
+/// other workspaces than the request's `workspace` is refused (#33). The workspace's own secrets
+/// the request names (`workspaceSecrets`, sealed) are opened here, for names this Mac's secrets
+/// don't cover (workspace_secrets.rs). The engine never gets `workspace` or `workspaceSecrets`.
 #[tauri::command]
 async fn engine_request(
     host: State<'_, Arc<EngineHost>>,
     secrets: State<'_, SecretsState>,
+    keys: State<'_, workspace_keys::commands::KeysState>,
     method: String,
     params: Option<Value>,
 ) -> Result<Value, String> {
@@ -57,10 +62,19 @@ async fn engine_request(
             .to_json_string());
     }
     let mut params = params.unwrap_or(Value::Null);
-    if secrets::carries_secrets(&method) && params.get("secrets").is_some() {
-        let s = Arc::clone(&secrets);
-        let policies = blocking(move || Ok(s.policies())).await?;
-        secrets::attach_policies(&mut params, &policies);
+    let scope = workspace_secrets::take_scope(&mut params);
+    if secrets::carries_secrets(&method) {
+        if params.get("secrets").is_some() {
+            let s = Arc::clone(&secrets);
+            let policies = blocking(move || Ok(s.policies())).await?;
+            secrets::attach_policies(&mut params, &policies, scope.workspace.as_deref());
+        }
+        if let (Some(ws), false) = (scope.workspace, scope.refs.is_empty()) {
+            let k = Arc::clone(&keys);
+            let refs = scope.refs;
+            let opened = blocking(move || Ok(workspace_secrets::open_for_engine(&k, &ws, &refs))).await?;
+            workspace_secrets::merge(&mut params, opened);
+        }
     }
     host.request(&method, params).await.map_err(|e| e.to_json_string())
 }
@@ -84,7 +98,7 @@ async fn secrets_info(s: State<'_, SecretsState>) -> Result<Vec<secrets::SecretI
     blocking(move || Ok(s.info())).await
 }
 
-/// Saves a value. `origins` and `runnerCanUse` set where it may be used; left out, they stay.
+/// Saves a value. `origins`, `runnerCanUse` and `workspaces` set where it may be used; left out, they stay.
 #[tauri::command]
 async fn secrets_set(
     s: State<'_, SecretsState>,
@@ -92,21 +106,23 @@ async fn secrets_set(
     value: String,
     origins: Option<Vec<String>>,
     runner_can_use: Option<bool>,
+    workspaces: Option<Vec<String>>,
 ) -> Result<(), String> {
     let s = Arc::clone(&s);
-    blocking(move || s.set(&name, &value, origins, runner_can_use)).await
+    blocking(move || s.set(&name, &value, origins, runner_can_use, workspaces)).await
 }
 
-/// Changes where a saved secret may be used, without its value.
+/// Changes where a saved secret may be used, without its value. `workspaces` left out: as it was.
 #[tauri::command]
 async fn secrets_set_policy(
     s: State<'_, SecretsState>,
     name: String,
     origins: Vec<String>,
     runner_can_use: bool,
+    workspaces: Option<Vec<String>>,
 ) -> Result<(), String> {
     let s = Arc::clone(&s);
-    blocking(move || s.set_policy(&name, origins, runner_can_use)).await
+    blocking(move || s.set_policy(&name, origins, runner_can_use, workspaces)).await
 }
 
 #[tauri::command]
@@ -636,6 +652,8 @@ pub fn run() {
             screenshots_folder,
             git_repo_of,
             migration_report_save,
+            workspace_secrets::commands::workspace_secret_seal,
+            workspace_secrets::commands::workspace_secret_reseal,
             workspace_keys::commands::workspace_keys_status,
             workspace_keys::commands::workspace_keys_create,
             workspace_keys::commands::workspace_keys_rotate,

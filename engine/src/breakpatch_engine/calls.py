@@ -259,6 +259,8 @@ def _headers(call: dict, origin: str | None, secrets: dict[str, Secret]) -> dict
             s = secrets.get(ref)
             if s is None:
                 raise CallRefused(f"The saved secret {ref} isn't on this Mac.", "secret")
+            if s.refused:
+                raise CallRefused(s.refused, "secret")
             if not s.allows(origin):
                 raise CallRefused(f"{ref} isn't allowed on {site_name(origin)}.", "secret")
             value = s.value

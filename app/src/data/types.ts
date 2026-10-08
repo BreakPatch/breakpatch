@@ -360,7 +360,17 @@ export interface SuiteRun {
 // ---------- Local-only ----------
 
 /** A saved secret in Settings: never its value. `origins` are the sites it may be typed on. */
-export interface SecretInfo { name: string; usedBy: number; present: boolean; origins: string[]; runnerCanUse: boolean }
+export interface SecretInfo {
+  name: string; usedBy: number; present: boolean; origins: string[]; runnerCanUse: boolean;
+  /** The workspaces and tests folders it's kept for, by connection id; empty or missing: every one (#33). */
+  workspaces?: string[];
+  /** Not on this Mac (or kept for other workspaces), and the open workspace has one of that name (#45). */
+  fromWorkspace?: boolean;
+}
 
 /** What the shell keeps next to each saved secret's name (app/src-tauri/src/secrets.rs). */
-export interface SecretPolicy { name: string; origins: string[]; runnerCanUse: boolean }
+export interface SecretPolicy {
+  name: string; origins: string[]; runnerCanUse: boolean;
+  /** The connection ids it may be used in; empty or missing: every workspace and tests folder (#33). */
+  workspaces?: string[];
+}

@@ -47,15 +47,19 @@ class Secret:
     value: str
     origins: tuple[str, ...]
     runner_can_use: bool = False
+    # Why the shell refused it for this request, in plain words (it then carries no value): a secret
+    # on this Mac kept for other workspaces (engine/PROTOCOL.md "Saved secrets").
+    refused: str | None = None
 
     def allows(self, origin: str | None) -> bool:
-        return origin is not None and origin in self.origins
+        return self.refused is None and origin is not None and origin in self.origins
 
 
 def parse_secrets(raw, default_origin: str | None = None) -> dict[str, Secret]:
     """`{NAME: {value, origins, runnerCanUse?}}`, or a bare `{NAME: value}` from an older client,
-    which counts as allowed on `default_origin` only (the test's start page). Unreadable entries and
-    null values are left out (the step then fails as a missing secret)."""
+    which counts as allowed on `default_origin` only (the test's start page). `{NAME: {refused}}`:
+    the shell refused it for this request and says why; using it fails with that reason. Unreadable
+    entries and null values are left out (the step then fails as a missing secret)."""
     out: dict[str, Secret] = {}
     if not isinstance(raw, Mapping):
         return out
@@ -63,6 +67,9 @@ def parse_secrets(raw, default_origin: str | None = None) -> dict[str, Secret]:
         if isinstance(v, Secret):
             out[str(name)] = v
         elif isinstance(v, Mapping):
+            if isinstance(v.get("refused"), str) and v["refused"].strip():
+                out[str(name)] = Secret("", (), False, v["refused"].strip()[:300])
+                continue
             if v.get("value") is None:
                 continue
             origins = tuple(o for o in (origin_of(x) for x in (v.get("origins") or []) if isinstance(x, str)) if o)
@@ -80,6 +87,8 @@ def secret_for(name: str, ctx: "Context") -> Secret:
     s = ctx.secrets.get(name)
     if not isinstance(s, Secret):
         raise SecretMissing(name)
+    if s.refused:
+        raise SecretMissing(name, s.refused)
     return s
 
 

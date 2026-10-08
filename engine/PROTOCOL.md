@@ -601,10 +601,29 @@ page's own scripts can't fake it. On a mismatch the step fails with `secretMissi
 ("NAME isn't allowed on any site yet…"): the app asks once to allow the app's site for secrets saved
 before sites existed.
 
+A secret the shell refused for this request travels as `{ refused }` alone: a plain sentence saying
+why, and no value. Using it fails like a missing secret, with that sentence: a run stops before it
+starts (`secretMissing`), `record.point` fails with `not_found`, and `call.try` with `error: "secret"`.
+
 **The local runner** (Breakpatch Team) sends `runner: true` in `run.start`. Then a secret without
 `runnerCanUse` fails its step before anything runs ("NAME can't be used by the runner…"). The UI
 reads the flag with `secrets.info()` (app/src/platform.ts; shell command `secrets_info`), so the
 runner can also refuse a request before it starts it.
+
+**Which workspaces** (issue #33). A secret on this Mac may be kept for chosen workspaces and tests
+folders (`workspaces` in the Keychain index: connection ids such as `team:<project>/<database>`,
+`hosted:<id>`, `local:<hash>`; none means every one). The UI adds `workspace`, the open one's
+connection id (app/src/lib/secretScope.ts), to `run.start`, `record.point` and `call.try`. The
+shell takes it out and sends a secret kept for other workspaces as `{ refused }` ("NAME is kept for
+other workspaces on this Mac…"); without `workspace`, only secrets kept for every workspace go.
+
+**Workspace secrets** (Breakpatch Team, issue #45). The UI may also add `workspaceSecrets`:
+`[{ name, id, enc, kid }]`, the sealed `value` of `secrets/<id>` in the open workspace, for names
+this Mac's secrets don't cover there. The shell takes it out, opens each with the workspace's key
+(app/src-tauri/src/workspace_secrets.rs), checks the sealed name is the one asked for, and adds
+`{ value, origins, runnerCanUse }` with the sites and runner flag sealed with it. A secret on this
+Mac allowed in the workspace wins; one that doesn't open goes as `{ refused }`. The engine sees
+neither `workspace` nor `workspaceSecrets`, and the UI never gets a workspace secret's value.
 
 ### Set-up and clean-up calls
 

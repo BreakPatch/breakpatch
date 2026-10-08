@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import type { Generated } from '../../data/types';
 import type { PlanStep } from '../../engine';
 import { GENERATED_CHOICES } from '../../engine/labels';
-import { secrets } from '../../platform';
+import { secretNamesHere } from '../../lib/secretScope';
 import { Button, ChipSelect, Icon } from '../../components/ui';
 import { CAREFUL_NOTE, leftOutText, planDoneText, planNeeds, type PlanItem } from './plan';
 import type { Recorder } from './useRecorder';
@@ -78,7 +78,7 @@ function PlanEdit({ step, rec }: { step: PlanItem; rec: Recorder }) {
   const [url, setUrl] = useState(step.url ?? '');
   const [seconds, setSeconds] = useState(String(step.seconds ?? 2));
   const [names, setNames] = useState<string[]>([]);
-  useEffect(() => { void secrets.list().then(n => { setNames(n); setSecretRef(r => r || n[0] || ''); }).catch(() => setNames([])); }, []);
+  useEffect(() => { void secretNamesHere().then(n => { setNames(n); setSecretRef(r => r || n[0] || ''); }).catch(() => setNames([])); }, []);
   const write = step.action === 'write', go = step.action === 'navigate', wait = step.action === 'waitFor';
   const needsTarget = step.action !== 'write' && step.action !== 'scroll' && !go && !wait;
   const address = withScheme(url.trim());

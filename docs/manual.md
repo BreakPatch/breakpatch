@@ -49,6 +49,7 @@ Breakpatch is **Community** for now: free and open source, for one person on one
 35. [Licences and seats](#licences-and-seats)
 36. [The back office](#the-back-office)
 37. [Encryption and the recovery code](#encryption-and-the-recovery-code)
+38. [Workspace secrets](#workspace-secrets)
 
 ---
 
@@ -250,6 +251,7 @@ Common reasons:
 - **Nothing happened after this step.** The step was done, but nothing changed on the page the way it did when it was recorded.
 - **Waited too long for the page.** If the app was slow this time, run again.
 - **Saved secret is missing on this Mac.** Add it in Settings → Saved secrets, then run again.
+- **STAGING_PASSWORD is kept for other workspaces on this Mac.** The secret is set to be used only in some workspaces or tests folders, and this isn't one of them, so nothing was typed. If it's right to use it here, tick this one under **Where it may be used** in Settings → Saved secrets.
 - **STAGING_PASSWORD isn't allowed on login.example.com.** The page wasn't one of the secret's sites, so nothing was typed. If that site is right, add it to the secret in Settings → Saved secrets.
 
 Every error has **Copy**, with two choices: **Plain text**, to paste into a message or send to a developer, and **Markdown, for an issue**: a ready-made bug report with a title, the steps up to the failure, what was expected and what was seen, the reason, and where and when it ran. Paste it into GitHub, Jira, Linear or any tracker that takes Markdown. In Team, **Create issue** makes the issue for you: see [Create an issue](#create-an-issue).
@@ -317,11 +319,12 @@ Passwords and emails that tests type in. Add them in Settings → **Saved secret
 
 - Values stay in this Mac's Keychain and are never uploaded. Tests only store the name, so they're safe to commit.
 - Names use capital letters, numbers and `_` only, starting with a letter, for example `STAGING_PASSWORD`.
-- Saved secrets stay on each Mac. If a test needs one this Mac doesn't have, the run stops at that step and tells you which one to add.
+- Saved secrets stay on each Mac. If a test needs one this Mac doesn't have, the run stops at that step and tells you which one to add. In a Team workspace, an admin can also save one once for everyone: see [Workspace secrets](#workspace-secrets).
 - **Each secret is only typed on the sites you allow**, for example `https://app.example.com`. Add sites when you add the secret, or change them later with the edit button. Leave them empty and Breakpatch asks, the first time a test uses the secret, whether to allow the site of the test's app.
 - The site is checked just before typing and again before every key: after a redirect, in a popup or in a frame from another site, the test stops before typing and says which site it was, for example "STAGING_PASSWORD isn't allowed on evil.example."
 - Secrets saved before sites existed have none yet. Breakpatch asks once to allow the test app's site. If you press **Not now**, tests stop before typing them until you add a site.
 - **Runner can use** (Breakpatch Team) lets the [local runner](#the-local-runner) type the secret in the runs it does on its own. It's off unless you turn it on, on the runner Mac.
+- **Where it may be used.** When this Mac has more than one tests folder or workspace, a secret can be kept for some of them: press the edit button, choose **Only these** under **Where it may be used**, and tick them. Tests anywhere else stop before typing it and say so: *STAGING_PASSWORD is kept for other workspaces on this Mac, so it isn't used here.* Secrets you saved before, and new ones, are used everywhere until you choose. The list says where each one is kept, for example *only in Acme QA · not used here*.
 
 ## The AI assistant
 
@@ -433,6 +436,7 @@ Everything in this part comes with **Breakpatch Team** (and Business, which is T
 - **The local runner**: one Mac that runs suites for the whole team.
 - **Run requests** from CI or any other tool, and **result messages** after every suite run, to Slack, Microsoft Teams or any web address.
 - **Create issue** in GitHub, Linear or Jira from a failed step, with the steps, the screenshot and a link to the report.
+- **Workspace secrets**: an admin saves a password or token once, encrypted, and everyone's tests can type it.
 - **`breakpatch-ci`**: run the workspace's suites on your CI machines, with the results in the run history.
 
 Prices, seats and support for Team and Business are set when they go on sale, on the [pricing page](https://breakpatch.dev/pricing/).
@@ -486,7 +490,7 @@ Good to know:
 - **A report of the move** is kept in Breakpatch's data folder on this Mac: what was copied, what went to the Trash, and anything left out.
 - **Each test starts at version 1** in the workspace, because the folder keeps only the latest version.
 - **Runs over 90 days old aren't copied**, because the workspace keeps runs for 90 days (see [Run history is kept 90 days](#run-history-is-kept-90-days)). Breakpatch says so before it copies, and the report lists them. They go to the Trash with the folder.
-- **Saved secrets** travel as names in the steps. Their values stay in this Mac's Keychain; teammates add their own in **Settings → Saved secrets**.
+- **Saved secrets** travel as names in the steps. Their values stay in this Mac's Keychain; teammates add their own in **Settings → Saved secrets**, or an admin saves them once for everyone ([Workspace secrets](#workspace-secrets)).
 - **Files that can't be read** stop the move until you fix them in the folder, so nothing unread goes to the Trash.
 - **Already in the workspace?** Anything that's already there is left out. If a test there differs from the folder's (a teammate copied an older version, say), Breakpatch names it, and you can keep the workspace's version.
 - A folder saved by a newer Breakpatch can't be moved until you update.
@@ -913,7 +917,7 @@ breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --junit result
 
 `breakpatch-ci licence status` shows the licence (and takes a machine licence if needed). `breakpatch-ci licence release` gives the machine licence back, for example before you stop using a pipeline. An admin can also free it in the [back office](#the-back-office).
 
-**Saved secrets.** A test that writes a saved secret, for example `STAGING_PASSWORD`, takes it from the environment variable `BP_SECRET_STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), and from no other variable. Store the value as a CI secret. `--secret STAGING_PASSWORD` (you can give it more than once) limits which secrets a run may use. They're never the licence key or the CI account's password.
+**Saved secrets.** A test that writes a saved secret, for example `STAGING_PASSWORD`, takes it from the environment variable `BP_SECRET_STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), and from no other variable. Store the value as a CI secret. `--secret STAGING_PASSWORD` (you can give it more than once) limits which secrets a run may use. They're never the licence key or the CI account's password. A secret an admin saved in the workspace with **breakpatch-ci can use** works too, without a variable: see [Workspace secrets](#workspace-secrets).
 
 **Where secrets may be used.** The pipeline decides, not the test:
 
@@ -1004,7 +1008,7 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 - **"command not found: breakpatch-ci"**: add `~/.local/bin` to `PATH`, or run `~/.local/bin/breakpatch-ci`.
 - **Exit code 3 with "no machine licences left"**: each pipeline that runs at the same time needs its own machine licence. Set a fixed `BREAKPATCH_MACHINE_ID` so jobs reuse one, free old ones in the back office, or ask your admin to add one.
 - **Exit code 3 after the clock changed or a long time offline**: the machine checks its licence online at least once a week. Make sure it can reach `https://account.breakpatch.dev`.
-- **"The saved secret STAGING_PASSWORD isn't on this Mac"**: set `BP_SECRET_STAGING_PASSWORD` in the job, and add the name to `--secret` if you use it.
+- **"The saved secret STAGING_PASSWORD isn't on this Mac"**: set `BP_SECRET_STAGING_PASSWORD` in the job, and add the name to `--secret` if you use it. Or, in a workspace, an admin turns on **breakpatch-ci can use** for the workspace's secret of that name.
 - **"The browser isn't installed yet"**: run the install command again. If `BP_BROWSERS_PATH` or `PLAYWRIGHT_BROWSERS_PATH` is set in the job, `breakpatch-ci` looks there instead: unset it.
 - **Linux: the browser doesn't start**: install the libraries it needs with `sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium`.
 - **Exit code 2 with "wrong email or password"**: check `BREAKPATCH_CI_EMAIL` and `BREAKPATCH_CI_PASSWORD` in the job's secrets.
@@ -1286,9 +1290,10 @@ Create issue comes with a Breakpatch Team licence that includes it; licences get
 - Runs and suite runs must carry `expiresAt`, 90 days after they're saved, which the TTL policy deletes them by. It can't be changed. Runs from Breakpatch or `breakpatch-ci` from before this are refused, so update them first.
 - Only admins set where a suite's result goes. Its address is kept apart from the suite, and only admins and the runner can read it.
 - Anyone in the team can note the issue made from a run, and change nothing else about it. Only admins set where issues go. Tokens for GitHub, Linear and Jira are never in the workspace.
+- [Workspace secrets](#workspace-secrets) are always stored encrypted. Only admins save, change or delete them. People in the team read them (encrypted); the runner reads only those it may use, and accounts with the `ci` role only those `breakpatch-ci` may use.
 - In an encrypted workspace, names, steps, addresses and results are stored encrypted, and the rules check only their size. Only admins can encrypt what's there again (turning encryption on, a new key), and nothing else about it. The copies of the key for the recovery code and the machine key are for admins (the machine key's for the runner and CI too), and each Mac's request to be let in is its owner's.
 
-**After an update.** The rules carry a date (search what you copy for *These rules are dated*), and each Breakpatch version needs its own date's rules or newer: this version's are dated 2026-10-06. In a workspace in your own Firebase, an admin copies them again after updating (Settings → Workspace → **Copy security rules**) and publishes them in the Firebase console → Firestore → your database → Rules. Until then, **Check the connection** says the rules for this version aren't published, and each Mac reads the whole workspace every time it opens it. The 2026-10-06 rules also make sure a removed admin can't change which Mac's signature was withdrawn (see [Encryption and the recovery code](#encryption-and-the-recovery-code)). Hosted by Breakpatch, the rules are always up to date.
+**After an update.** The rules carry a date (search what you copy for *These rules are dated*), and each Breakpatch version needs its own date's rules or newer: this version's are dated 2026-10-08. In a workspace in your own Firebase, an admin copies them again after updating (Settings → Workspace → **Copy security rules**) and publishes them in the Firebase console → Firestore → your database → Rules. Until then, **Check the connection** says the rules for this version aren't published, and each Mac reads the whole workspace every time it opens it. The 2026-10-06 rules also make sure a removed admin can't change which Mac's signature was withdrawn (see [Encryption and the recovery code](#encryption-and-the-recovery-code)), and the 2026-10-08 rules add [workspace secrets](#workspace-secrets). Hosted by Breakpatch, the rules are always up to date.
 
 To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the workspace's database. Disable the user in Firebase Authentication to cut it off.
 
@@ -1309,7 +1314,7 @@ A Team licence has **seats** for people and **machine licences** for the local r
 - A seat is tied to the Macs it's used on: one person can use it on a few of their own Macs, and a copy of the Keychain on another Mac doesn't work. On too many Macs you see "Your seat is already used on too many Macs. Ask your admin to free one, then sign in again."
 - A seat nobody has used for 30 days is freed automatically. An admin can also free one in the [back office](#the-back-office).
 - Breakpatch checks the licence when it opens and every day, and keeps working for up to 30 days without a connection. If this Mac's clock is set back by more than a day, the licence stops working until Breakpatch can check it online again: "This Mac's clock is behind. Set the right date and time, then reconnect to check your licence."
-- **Saved secrets in CI.** `breakpatch-ci` takes a saved secret's value only from an environment variable named `BP_SECRET_<NAME>`, for example `BP_SECRET_STAGING_PASSWORD` for `STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), never from other variables. `--secret NAME` (you can give it more than once) limits which secrets a run may use. It types them only on the test's start site, or, for tests from the workspace, only on the sites the pipeline gives each one (`--secret NAME=https://site`, see [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)).
+- **Saved secrets in CI.** `breakpatch-ci` takes a saved secret's value only from an environment variable named `BP_SECRET_<NAME>`, for example `BP_SECRET_STAGING_PASSWORD` for `STAGING_PASSWORD` (a `-` or `.` in the name is written `_`), never from other variables. `--secret NAME` (you can give it more than once) limits which secrets a run may use. It types them only on the test's start site, or, for tests from the workspace, only on the sites the pipeline gives each one (`--secret NAME=https://site`, see [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)). A [workspace secret](#workspace-secrets) an admin lets it use goes only on the sites the admin gave it.
 - **Usage counts go with the licence check.** Each check sends how many tests were created and how many runs there were (by hand, from schedules, on the local runner and in CI), passed and failed, and on how many days Breakpatch was used, since the last check. Only numbers: never test names, addresses, steps or screenshots. The licence check already knows the licence and seat, so your admin sees the numbers per person and machine in the [back office](#the-back-office). They're part of how the licence works, so there's no switch for them in Team. `breakpatch-ci` counts its runs the same way in its licence file and sends them with its next check; on CI machines that don't keep that file between jobs they aren't sent.
 
 Without a licence, Breakpatch keeps working as Community (tests, recording and running on this Mac) and Team features are off. A quiet banner under the title bar says why: "Breakpatch Team needs a licence. Your admin enters the key once in Settings → Licence, then everyone gets a seat when they sign in.", "Your team is out of seats. Ask your admin to add one.", "Reconnect to check your licence." (after 30 days offline) or "Your licence has expired." A runner with no machine licence left gets "Your team has no machine licences left. Ask your admin to add one."
@@ -1361,8 +1366,34 @@ Until then, that Mac shows names as *Locked* and can't save. After a new key, a 
 
 **The local runner and CI** use the **machine key** (`bpmk1_…`): **Make one** under **Machine key**, then enter it on the runner Mac (Settings → Workspace → Encryption) and save it as `BREAKPATCH_MACHINE_KEY` in CI ([From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)). A new machine key stops the old one working.
 
-**A new key.** After someone leaves the team, Breakpatch offers **Make a new key** (it's also in Settings → Workspace → Encryption). Every Mac still in the team gets it, the recovery code and machine key keep working, and what's in the workspace is encrypted again with it in the background. Once that's done, each Mac deletes the older keys from its Keychain, so a copy of an old key opens nothing new. Anyone who had access may have kept copies of what they could read.
+**A new key.** After someone leaves the team, Breakpatch offers **Make a new key** (it's also in Settings → Workspace → Encryption). Every Mac still in the team gets it, the recovery code and machine key keep working, and what's in the workspace is encrypted again with it in the background. Once that's done, each Mac deletes the older keys from its Keychain, so a copy of an old key opens nothing new. Anyone who had access may have kept copies of what they could read. That includes [workspace secrets](#workspace-secrets): change those passwords and tokens where they're used, then save the new values.
 
 **When an admin leaves.** When an admin is removed, or made a member, another admin's Breakpatch withdraws their Mac's signature: from then on, the team's Macs don't take a key from it or trust a Mac it let in later, even if that Mac is kept or stolen. Keys taken from them before stay, and Breakpatch signs again what only they had signed. Admins then see *Ana left the team with the workspace's key*, with **Make a new key**. In your own Firebase, do it, since they could keep a copy of the key; hosted by Breakpatch, their access has already ended, so it's extra care. **Not now** hides the note on that Mac until someone else leaves; Settings → Workspace → Encryption still says a new key is due. In a workspace in your own Firebase, **Make a new key** also asks you to check they can't still open your Firebase project (Google Cloud console → IAM) and to remove them there if they can: Breakpatch can't see who has access to your project. If Breakpatch couldn't withdraw the signature, admins see *The team's Macs still trust an admin who left.* Hosted by Breakpatch, it tries again when the workspace changes; in your own Firebase, press **Copy security rules** on the note, publish them in the Firebase console and open the workspace again. A recovery code or machine key they made stops working, because they saw it. Admins see *Make a new recovery code* or *Make a new machine key*; a new key made after they left comes with a new recovery code to save. After a new machine key, enter it on the runner Mac and update `BREAKPATCH_MACHINE_KEY` in CI. If an admin's Mac was the only one a teammate's Mac trusted, that Mac asks its person to check another admin's words the next time it's let in. Someone made admin again gets new keys on their Mac, and another admin's Mac vouches for them.
 
 **Turning it on**, or a new key, encrypts what's already there in the background. The admin's Mac doing it shows how far it got in a thin line under the title bar, for example *Encrypting your tests… 34 of 120*, or *Encrypting your tests with the new key…* (tests count with their versions; runs, shared steps and suites count too). Keep working, and *Your tests are encrypted.* says when it's done. If you close the app, it carries on the next time an admin opens the workspace, from where it was. If it stops, a note says why, for example *Encrypting your tests stopped at 40 of 120. Breakpatch couldn't reach the workspace.*, and **Try again** carries on; what's encrypted so far stays encrypted. Breakpatch versions from before encryption can't save to an encrypted workspace, so update everyone first.
+
+## Workspace secrets
+
+An admin can save a password or token once for the whole workspace, so nobody types it on each Mac. Everyone's runs and recordings use it, and the [local runner](#the-local-runner) when it's allowed.
+
+**Add one.** In Settings → **Saved secrets**, under **In this workspace**, press **Add to workspace** (admins only). Give it a name, its value and the sites it may be typed on (at least one), then press **Save for everyone**. If this Mac already has a saved secret of that name, tick **Use the value of NAME saved on this Mac** instead of typing it again.
+
+- **Runner can use** lets the local runner type it in the runs it does on its own. **breakpatch-ci can use** lets `breakpatch-ci` type it (see below). Both are off unless an admin turns them on.
+- The edit button changes its sites or switches, and keeps the value unless you type a new one. The bin deletes it for everyone.
+- Everyone in the workspace sees the names and sites, never a value. They pick them like their own when a test writes a saved secret, and their tests use them.
+
+**A secret on this Mac wins.** When a Mac has its own saved secret of the same name, and it may be used in this workspace, tests on that Mac type that one, on its own sites. So nothing changes for people who already have one. To use the workspace's, delete yours, or keep it for other workspaces under **Where it may be used**.
+
+**Encrypted before it's saved.** The workspace has to be [encrypted](#encryption-and-the-recovery-code) first. A workspace secret is encrypted on the admin's Mac with the workspace's key, like your tests, so the workspace's database keeps only unreadable text, its name and sites included, and Breakpatch never has the key. A Mac decrypts a value only to hand it to the test browser for the step that types it. It's never shown in the app, and never goes into logs, reports, the run history or result messages. Its sites are encrypted with it, so nobody without the key can add a site to it.
+
+**What it doesn't protect against.** Every Mac in the team holds the workspace's key, so the people in your team can use these secrets, and someone determined could get a value out of their own Mac. Only save secrets for test accounts everyone in the team may use. When someone leaves, **Make a new key** encrypts the secrets again, but they may have kept a copy: change those passwords and tokens where they're used, then save the new values here.
+
+**Who may do what.** Only admins add, change and delete workspace secrets. The local runner reads only those with **Runner can use**, and `breakpatch-ci` only those with **breakpatch-ci can use**. A workspace keeps up to 200.
+
+**In CI.** With `BREAKPATCH_MACHINE_KEY` set, `breakpatch-ci` uses a workspace secret that has **breakpatch-ci can use** for a test that needs it, when the job doesn't set `BP_SECRET_<NAME>`, on the sites its admin gave it: no `--secret NAME=…` needed. A `BP_SECRET_<NAME>` set in the job wins. If you give `--secret`, only the names it lists are used. As for the others, nothing runs when a test's start page, app address or a call that sends the secret isn't on its sites. The log names the workspace's secrets it may use, never their values.
+
+**Good to know.**
+
+- In a workspace in your own Firebase, publish this version's security rules first (Settings → Workspace → **Copy security rules**): older rules don't know workspace secrets, and Settings says so.
+- Breakpatch from before workspace secrets doesn't use them: a test that needs one stops there with *isn't on this Mac*. Update every Mac, the local runner too, and `breakpatch-ci`.
+- An [export](#hosted-by-breakpatch) of the workspace, or a move to another one, doesn't take them: their encryption belongs to this workspace. Save them again where your tests go.

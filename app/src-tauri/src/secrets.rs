@@ -1,8 +1,9 @@
 //! Saved secrets (spec §13): values in the OS credential store, service `dev.breakpatch.secrets`,
 //! one entry per name: the Keychain on macOS, the Secret Service (GNOME Keyring, KWallet) on Linux
 //! and Credential Manager on Windows. None can list entries for us, so the names live in a small
-//! JSON index in the app data dir, each with its policy: the sites it may be typed on and whether
-//! the local runner may use it (security review A1). The index never holds a value.
+//! JSON index in the app data dir, each with its policy: the sites it may be typed on, whether
+//! the local runner may use it (security review A1) and the workspaces it's kept for (issue #33:
+//! none listed means every workspace). The index never holds a value.
 //!
 //! The shell hands the engine each secret with its policy (`attach_policies`, called by
 //! `engine_request`), so the sites come from here, never from the UI or a test file.
@@ -340,6 +341,11 @@ pub struct Policy {
     /// Whether Breakpatch Team's local runner may use it. Off unless someone turns it on.
     #[serde(default)]
     pub runner_can_use: bool,
+    /// The workspaces and tests folders it may be used in, by connection id (`team:<project>/<db>`,
+    /// `hosted:<id>`, `local:<hash>`, `demo`: the app's connectionIds.ts). Empty: every one, as
+    /// for every secret saved before the list existed. Left out of the file when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub workspaces: Vec<String>,
 }
 
 /// One saved secret as the UI sees it: the name and its policy, never the value.
@@ -349,9 +355,12 @@ pub struct SecretInfo {
     pub name: String,
     pub origins: Vec<String>,
     pub runner_can_use: bool,
+    /// Empty: every workspace.
+    pub workspaces: Vec<String>,
 }
 
-/// The index file: `{"version": 2, "secrets": {"NAME": {"origins": [...], "runnerCanUse": false}}}`.
+/// The index file: `{"version": 2, "secrets": {"NAME": {"origins": [...], "runnerCanUse": false,
+/// "workspaces": [...]}}}` (`workspaces` only when the secret is kept for some workspaces).
 /// Version 1 was a sorted JSON array of names; it's read as names with no sites.
 #[derive(Serialize, Deserialize)]
 struct IndexFile {
@@ -480,6 +489,51 @@ pub fn normalize_origins(list: &[String]) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// Most workspaces one secret can be kept for.
+pub const MAX_WORKSPACES: usize = 50;
+
+/// A connection id as the app makes them (connectionIds.ts): checked for shape only, since a
+/// workspace that isn't on this Mac any more may still be on the list.
+pub fn validate_workspace(id: &str) -> Result<&str, String> {
+    let id = id.trim();
+    if id.is_empty() || id.len() > 200 || id.contains('|') || id.chars().any(char::is_control) {
+        return Err("That isn't a workspace.".into());
+    }
+    Ok(id)
+}
+
+/// Checked, de-duplicated workspace ids, in the order given.
+pub fn normalize_workspaces(list: &[String]) -> Result<Vec<String>, String> {
+    let mut out: Vec<String> = Vec::new();
+    for w in list {
+        let w = validate_workspace(w)?;
+        if !out.iter().any(|x| x == w) {
+            out.push(w.to_string());
+        }
+    }
+    if out.len() > MAX_WORKSPACES {
+        return Err(format!("A secret can be kept for up to {MAX_WORKSPACES} workspaces."));
+    }
+    Ok(out)
+}
+
+impl Policy {
+    /// Whether it may be used in `workspace` (the request's; None: unknown, so only a secret kept
+    /// for every workspace).
+    pub fn allowed_in(&self, workspace: Option<&str>) -> bool {
+        self.workspaces.is_empty() || workspace.is_some_and(|w| self.workspaces.iter().any(|x| x == w))
+    }
+}
+
+/// What the engine gets for a saved secret kept for other workspaces: the reason, never the value
+/// (engine/PROTOCOL.md "Saved secrets").
+pub fn refused_elsewhere(name: &str) -> Value {
+    json!({ "refused": os_format!(
+        "{name} is kept for other workspaces on this Mac, so it isn't used here. To use it here, add this workspace to it in Settings, Saved secrets.",
+        name = name
+    ) })
+}
+
 /// Engine methods whose params carry saved secrets (engine/PROTOCOL.md "Saved secrets").
 pub fn carries_secrets(method: &str) -> bool {
     matches!(method, "run.start" | "record.point" | "call.try")
@@ -488,8 +542,9 @@ pub fn carries_secrets(method: &str) -> bool {
 /// Gives every secret in `params.secrets` the sites and runner flag from the index, replacing
 /// whatever the caller sent: `{NAME: value}` or `{NAME: {value, ...}}` becomes
 /// `{NAME: {value, origins, runnerCanUse}}`. A name the index doesn't know gets no sites, so the
-/// engine types it nowhere. Entries without a value are dropped.
-pub fn attach_policies(params: &mut Value, index: &BTreeMap<String, Policy>) {
+/// engine types it nowhere. Entries without a value are dropped. A secret kept for other
+/// workspaces than `workspace` (the open one, as the request says) becomes `{refused}` (#33).
+pub fn attach_policies(params: &mut Value, index: &BTreeMap<String, Policy>, workspace: Option<&str>) {
     let Some(secrets) = params.get_mut("secrets").and_then(Value::as_object_mut) else { return };
     let taken = std::mem::take(secrets);
     for (name, v) in taken {
@@ -502,6 +557,11 @@ pub fn attach_policies(params: &mut Value, index: &BTreeMap<String, Policy>) {
             _ => continue,
         };
         let policy = index.get(&name).cloned().unwrap_or_default();
+        if !policy.allowed_in(workspace) {
+            let refused = refused_elsewhere(&name);
+            secrets.insert(name, refused);
+            continue;
+        }
         secrets
             .insert(name, json!({ "value": value, "origins": policy.origins, "runnerCanUse": policy.runner_can_use }));
     }
@@ -529,7 +589,7 @@ impl<S: SecretStore> Secrets<S> {
         self.index
             .load()
             .into_iter()
-            .map(|(name, p)| SecretInfo { name, origins: p.origins, runner_can_use: p.runner_can_use })
+            .map(|(name, p)| SecretInfo { name, origins: p.origins, runner_can_use: p.runner_can_use, workspaces: p.workspaces })
             .collect()
     }
 
@@ -539,36 +599,41 @@ impl<S: SecretStore> Secrets<S> {
         self.index.load()
     }
 
-    /// Saves the value. `origins` / `runner_can_use` set the policy; left out, it stays as it was
-    /// (a new secret: no sites, runner off).
+    /// Saves the value. `origins` / `runner_can_use` / `workspaces` set the policy; left out, each
+    /// stays as it was (a new secret: no sites, runner off, every workspace).
     pub fn set(
         &self,
         name: &str,
         value: &str,
         origins: Option<Vec<String>>,
         runner_can_use: Option<bool>,
+        workspaces: Option<Vec<String>>,
     ) -> Result<(), String> {
         let name = validate_name(name)?;
         let origins = origins.map(|o| normalize_origins(&o)).transpose()?;
+        let workspaces = workspaces.map(|w| normalize_workspaces(&w)).transpose()?;
         let _g = self.lock.lock().unwrap();
         let before = self.index.load().get(name).cloned().unwrap_or_default();
         let policy = Policy {
             origins: origins.unwrap_or(before.origins),
             runner_can_use: runner_can_use.unwrap_or(before.runner_can_use),
+            workspaces: workspaces.unwrap_or(before.workspaces),
         };
         self.store.set(name, value)?;
         self.index.put(name, Some(policy))
     }
 
     /// Changes where a saved secret may be used, without touching its value (no Keychain access).
-    pub fn set_policy(&self, name: &str, origins: Vec<String>, runner_can_use: bool) -> Result<(), String> {
+    /// `workspaces` left out keeps the list as it is (an older UI that doesn't know it).
+    pub fn set_policy(&self, name: &str, origins: Vec<String>, runner_can_use: bool, workspaces: Option<Vec<String>>) -> Result<(), String> {
         let name = validate_name(name)?;
         let origins = normalize_origins(&origins)?;
+        let workspaces = workspaces.map(|w| normalize_workspaces(&w)).transpose()?;
         let _g = self.lock.lock().unwrap();
-        if !self.index.load().contains_key(name) {
+        let Some(before) = self.index.load().get(name).cloned() else {
             return Err(os_format!("There's no saved secret {name} on this Mac.", name = name));
-        }
-        self.index.put(name, Some(Policy { origins, runner_can_use }))
+        };
+        self.index.put(name, Some(Policy { origins, runner_can_use, workspaces: workspaces.unwrap_or(before.workspaces) }))
     }
 
     pub fn delete(&self, name: &str) -> Result<(), String> {
@@ -623,7 +688,7 @@ mod tests {
     }
 
     fn set(s: &Secrets<MemStore>, n: &str, v: &str) {
-        s.set(n, v, None, None).unwrap();
+        s.set(n, v, None, None, None).unwrap();
     }
 
     #[test]
@@ -642,7 +707,7 @@ mod tests {
     #[test]
     fn index_file_holds_names_and_sites_only() {
         let (_d, s) = fixture();
-        s.set("TOKEN", "super-secret-value", Some(vec!["https://App.Example.com/login".into()]), Some(true)).unwrap();
+        s.set("TOKEN", "super-secret-value", Some(vec!["https://App.Example.com/login".into()]), Some(true), None).unwrap();
         let text = fs::read_to_string(s.index.path()).unwrap();
         assert!(text.contains("TOKEN") && text.contains("https://app.example.com") && text.contains("runnerCanUse"));
         assert!(!text.contains("super-secret-value"));
@@ -676,7 +741,7 @@ mod tests {
         assert!(validate_name("has space").is_err());
         assert!(validate_name(&"A".repeat(129)).is_err());
         let (_d, s) = fixture();
-        assert!(s.set("bad name", "v", None, None).is_err());
+        assert!(s.set("bad name", "v", None, None, None).is_err());
         assert!(s.list().is_empty());
     }
 
@@ -689,9 +754,9 @@ mod tests {
         fs::write(&path, r#"["ACME_TEST_EMAIL", "PROD_DB_PASSWORD"]"#).unwrap();
         let s = Secrets::new(MemStore::default(), SecretsIndex::new(path.clone()));
         assert_eq!(s.list(), vec!["ACME_TEST_EMAIL", "PROD_DB_PASSWORD"]);
-        assert_eq!(s.info()[1], SecretInfo { name: "PROD_DB_PASSWORD".into(), origins: vec![], runner_can_use: false });
+        assert_eq!(s.info()[1], SecretInfo { name: "PROD_DB_PASSWORD".into(), origins: vec![], runner_can_use: false, workspaces: vec![] });
         // Allowing a site writes the new format; the names are all kept.
-        s.set_policy("PROD_DB_PASSWORD", vec!["https://db.acme.com".into()], false).unwrap();
+        s.set_policy("PROD_DB_PASSWORD", vec!["https://db.acme.com".into()], false, None).unwrap();
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains("\"version\": 2") && text.contains("ACME_TEST_EMAIL"));
         assert_eq!(s.info()[1].origins, vec!["https://db.acme.com"]);
@@ -700,24 +765,24 @@ mod tests {
     #[test]
     fn changing_the_value_keeps_the_sites_and_the_policy_can_change_alone() {
         let (_d, s) = fixture();
-        s.set("PW", "one", Some(vec!["https://app.acme.com".into()]), None).unwrap();
+        s.set("PW", "one", Some(vec!["https://app.acme.com".into()]), None, None).unwrap();
         set(&s, "PW", "two");
         assert_eq!(s.info()[0].origins, vec!["https://app.acme.com"]);
         assert!(!s.info()[0].runner_can_use, "the runner flag is off by default");
-        s.set_policy("PW", vec!["https://a.acme.com".into(), "https://a.acme.com/x".into()], true).unwrap();
+        s.set_policy("PW", vec!["https://a.acme.com".into(), "https://a.acme.com/x".into()], true, None).unwrap();
         assert_eq!(
             s.info()[0],
-            SecretInfo { name: "PW".into(), origins: vec!["https://a.acme.com".into()], runner_can_use: true }
+            SecretInfo { name: "PW".into(), origins: vec!["https://a.acme.com".into()], runner_can_use: true, workspaces: vec![] }
         );
         assert_eq!(s.resolve(&["PW".into()]).unwrap()["PW"], "two");
-        assert!(s.set_policy("NOT_THERE", vec![], false).is_err());
-        assert!(s.set_policy("PW", vec!["file:///etc".into()], false).is_err());
+        assert!(s.set_policy("NOT_THERE", vec![], false, None).is_err());
+        assert!(s.set_policy("PW", vec!["file:///etc".into()], false, None).is_err());
     }
 
     #[test]
     fn a_secret_s_name_is_never_reworded_for_the_computer() {
         let (_d, s) = fixture();
-        let err = s.set_policy("Mac.tests", vec![], false).unwrap_err();
+        let err = s.set_policy("Mac.tests", vec![], false, None).unwrap_err();
         let this = crate::os_words::os_text("this Mac");
         assert_eq!(err, format!("There's no saved secret Mac.tests on {this}."));
     }
@@ -740,7 +805,7 @@ mod tests {
     #[test]
     fn the_engine_gets_each_secret_with_the_sites_from_the_index() {
         let index = BTreeMap::from([
-            ("PW".to_string(), Policy { origins: vec!["https://app.acme.com".into()], runner_can_use: true }),
+            ("PW".to_string(), Policy { origins: vec!["https://app.acme.com".into()], runner_can_use: true, workspaces: vec![] }),
             ("OLD".to_string(), Policy::default()),
         ]);
         let mut p = json!({ "runId": "r", "secrets": {
@@ -749,7 +814,7 @@ mod tests {
             "UNKNOWN": "y",
             "BROKEN": 7,
         }});
-        attach_policies(&mut p, &index);
+        attach_policies(&mut p, &index, Some("team:acme/breakpatch"));
         assert_eq!(
             p["secrets"],
             json!({
@@ -759,10 +824,70 @@ mod tests {
             })
         );
         let mut none = json!({ "runId": "r" });
-        attach_policies(&mut none, &index);
+        attach_policies(&mut none, &index, None);
         assert_eq!(none, json!({ "runId": "r" }));
         assert!(carries_secrets("run.start") && carries_secrets("record.point") && carries_secrets("call.try"));
         assert!(!carries_secrets("browser.open"));
+    }
+
+    // ---- Kept for chosen workspaces (issue #33) ----
+
+    const ACME: &str = "team:acme-tests/breakpatch";
+    const MINE: &str = "local:0123456789abcdef";
+
+    #[test]
+    fn a_secret_kept_for_some_workspaces_is_refused_in_the_others() {
+        let index = BTreeMap::from([
+            ("PW".to_string(), Policy { origins: vec!["https://app.acme.com".into()], runner_can_use: false, workspaces: vec![ACME.into()] }),
+            ("ANY".to_string(), Policy { origins: vec!["https://app.acme.com".into()], runner_can_use: false, workspaces: vec![] }),
+        ]);
+        let sent = json!({ "secrets": { "PW": "hunter2", "ANY": "x" } });
+
+        let mut here = sent.clone();
+        attach_policies(&mut here, &index, Some(ACME));
+        assert_eq!(here["secrets"]["PW"]["value"], "hunter2");
+
+        let mut elsewhere = sent.clone();
+        attach_policies(&mut elsewhere, &index, Some(MINE));
+        assert_eq!(elsewhere["secrets"]["ANY"]["value"], "x", "a secret kept for every workspace works everywhere");
+        let refused = &elsewhere["secrets"]["PW"];
+        assert!(refused.get("value").is_none() && !elsewhere.to_string().contains("hunter2"), "the value never goes: {elsewhere}");
+        assert!(refused["refused"].as_str().unwrap().starts_with("PW is kept for other workspaces"));
+
+        // A request that doesn't say where it is gets only the secrets kept for every workspace.
+        let mut unknown = sent;
+        attach_policies(&mut unknown, &index, None);
+        assert!(unknown["secrets"]["PW"].get("refused").is_some() && unknown["secrets"]["ANY"]["value"] == "x");
+    }
+
+    #[test]
+    fn the_workspace_list_is_saved_changed_and_kept_when_left_out() {
+        let (_d, s) = fixture();
+        s.set("PW", "one", Some(vec!["https://app.acme.com".into()]), None, Some(vec![ACME.into(), format!(" {ACME} "), MINE.into()])).unwrap();
+        assert_eq!(s.info()[0].workspaces, vec![ACME, MINE], "trimmed and de-duplicated");
+        // A new value, or sites alone from an older UI, keep the list.
+        set(&s, "PW", "two");
+        s.set_policy("PW", vec!["https://app.acme.com".into()], true, None).unwrap();
+        assert_eq!(s.info()[0].workspaces, vec![ACME, MINE]);
+        // Every workspace again.
+        s.set_policy("PW", vec!["https://app.acme.com".into()], true, Some(vec![])).unwrap();
+        assert!(s.info()[0].workspaces.is_empty());
+        let text = fs::read_to_string(s.index.path()).unwrap();
+        assert!(!text.contains("workspaces"), "an empty list isn't written, so the file reads as before: {text}");
+        assert!(s.set_policy("PW", vec![], false, Some(vec!["bad|id".into()])).is_err());
+        assert!(s.set_policy("PW", vec![], false, Some(vec![" ".into()])).is_err());
+        let many: Vec<String> = (0..=MAX_WORKSPACES).map(|i| format!("local:{i:016x}")).collect();
+        assert!(s.set_policy("PW", vec![], false, Some(many)).is_err());
+    }
+
+    #[test]
+    fn an_index_from_before_workspace_lists_keeps_every_secret_everywhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("secrets-index.json");
+        fs::write(&path, r#"{"version": 2, "secrets": {"PW": {"origins": ["https://app.acme.com"], "runnerCanUse": true}}}"#).unwrap();
+        let s = Secrets::new(MemStore::default(), SecretsIndex::new(path));
+        let p = &s.policies()["PW"];
+        assert!(p.workspaces.is_empty() && p.allowed_in(Some(ACME)) && p.allowed_in(None));
     }
 }
 
