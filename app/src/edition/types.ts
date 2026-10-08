@@ -144,10 +144,18 @@ export interface Slots {
    */
   useSwitchLock?: () => string | null;
   /**
-   * The workspace switcher: extra entries at the end, e.g. "Connect a workspace". Called while
-   * rendering, with what the switcher shows (so it re-renders with it) and its router's navigate.
+   * The workspace switcher: extra entries at the end, e.g. "Add a workspace". Called while
+   * rendering, with what the switcher shows (so it re-renders with it), its router's navigate, and
+   * whether switching is locked now (useSwitchLock).
    */
-  switcherActions?: (o: { close(): void; navigate(path: string): void; workspace: Workspace | null; connections: readonly Connection[] }) => MenuItemEntry[];
+  switcherActions?: (o: { close(): void; navigate(path: string): void; workspace: Workspace | null; connections: readonly Connection[]; locked: boolean }) => MenuItemEntry[];
+  /**
+   * The workspace switcher: rendered beside its menu (in the title bar, inside the router), for what
+   * its actions open, e.g. a sheet or a folder picker's question.
+   */
+  switcherExtra?: ComponentType;
+  /** The workspace switcher: ⌘1 to ⌘9 open its first nine entries, and its menu shows them (Team). */
+  switcherShortcuts?: boolean;
 }
 
 /** An entry the edition adds to a menu: the ui Menu's own item. */

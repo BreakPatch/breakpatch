@@ -31,23 +31,24 @@ Breakpatch is **Community** for now: free and open source, for one person on one
 17. [What Team adds](#what-team-adds)
 18. [Solo](#solo)
 19. [Upgrading to Team](#upgrading-to-team)
-20. [Hosted by Breakpatch](#hosted-by-breakpatch)
-21. [Host it yourself](#host-it-yourself)
-22. [Members and roles](#members-and-roles)
-23. [Version history](#version-history)
-24. [Fixed automatically](#fixed-automatically)
-25. [Why did this fail?](#why-did-this-fail)
-26. [Write a test from a story](#write-a-test-from-a-story)
-27. [Schedules](#schedules)
-28. [The local runner](#the-local-runner)
-29. [Run requests](#run-requests)
-30. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
-31. [Result messages](#result-messages)
-32. [Create an issue](#create-an-issue)
-33. [Security rules](#security-rules)
-34. [Licences and seats](#licences-and-seats)
-35. [The back office](#the-back-office)
-36. [Encryption and the recovery code](#encryption-and-the-recovery-code)
+20. [Workspaces on this Mac](#workspaces-on-this-mac)
+21. [Hosted by Breakpatch](#hosted-by-breakpatch)
+22. [Host it yourself](#host-it-yourself)
+23. [Members and roles](#members-and-roles)
+24. [Version history](#version-history)
+25. [Fixed automatically](#fixed-automatically)
+26. [Why did this fail?](#why-did-this-fail)
+27. [Write a test from a story](#write-a-test-from-a-story)
+28. [Schedules](#schedules)
+29. [The local runner](#the-local-runner)
+30. [Run requests](#run-requests)
+31. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
+32. [Result messages](#result-messages)
+33. [Create an issue](#create-an-issue)
+34. [Security rules](#security-rules)
+35. [Licences and seats](#licences-and-seats)
+36. [The back office](#the-back-office)
+37. [Encryption and the recovery code](#encryption-and-the-recovery-code)
 
 ---
 
@@ -490,6 +491,36 @@ Good to know:
 - **Already in the workspace?** Anything that's already there is left out. If a test there differs from the folder's (a teammate copied an older version, say), Breakpatch names it, and you can keep the workspace's version.
 - A folder saved by a newer Breakpatch can't be moved until you update.
 
+## Workspaces on this Mac
+
+Like Slack, one Breakpatch holds your tests folder and any number of Team workspaces. The switcher next to the Breakpatch name, at the top of Apps, Suites and Local runner, shows which one is open. *Personal* is a tests folder on this Mac.
+
+- **Switch.** Click the switcher and choose another, or press **⌘1** to **⌘9** for the first nine, in the menu's order (the menu shows each one's keys). Breakpatch goes to Home, closes the test browser and opens the other one. You stay signed in to the one you left, so coming back is quick. The switcher shows only on those top screens, so never while a test runs or records.
+- **Add a workspace…** opens the usual connect screen: [Hosted by Breakpatch](#hosted-by-breakpatch), or your own with an invite link (click it, or paste it under **Host it yourself**), a `.bpworkspace` file (**Open a workspace file**, or double-click it) or [Create a workspace](#create-a-workspace). Before a workspace from a link or file opens, Breakpatch asks, and says which Firebase project it's in. What you had open stays on the list. Then sign in to the new one.
+- **Open a tests folder…** opens another tests folder, as **Change folder** in Settings → Tests folder does. Each folder you open is its own *Personal* entry.
+- **Manage workspaces…** lists everything on this Mac, each with **Remove…**.
+
+**Each workspace keeps its own.** Its sign-in, [licence and seat](#licences-and-seats), usage counts, [encryption key](#encryption-and-the-recovery-code), local runner and what Breakpatch keeps of it on this Mac belong to it alone, and nothing of one shows in another. When you switch, Team features come only from the new workspace's own licence: nothing is unlocked in between. If two workspaces have the same name, the menu says where each one is.
+
+**On the local runner's Mac** the switcher stays in the runner's workspace: switching, **Add a workspace…** and **Open a tests folder…** are off, and the menu says why. To switch, turn off **Use this Mac as the local runner** in Settings → Local runner. If another workspace opens anyway, say from an invite link, the runner stops there and starts again when its own workspace is open.
+
+### Remove from this Mac
+
+**Manage workspaces…** → **Remove…**, or **Settings → Workspace → Remove from this Mac** for the one that's open. Breakpatch asks first, and says what happens:
+
+- Its runs stop. If this Mac is its [local runner](#the-local-runner), it stops being it.
+- You're signed out of it on this Mac, and your seat goes back to the team.
+- What Breakpatch keeps of it on this Mac is deleted.
+- If it was open, the workspace or tests folder you used before it opens.
+
+Nothing changes in the workspace: its tests, runs and shared steps stay there for everyone. To come back, open the invite link again (hosted: choose **Hosted by Breakpatch** and sign in). The workspace's [encryption key](#encryption-and-the-recovery-code) stays in this Mac's Keychain, since this Mac may be the only one that has it, so adding the workspace again reads the tests at once.
+
+If you're offline, Breakpatch says so before you confirm: changes this Mac hasn't sent to the workspace yet are lost, and the seat frees itself within 30 days.
+
+Removing a tests folder only takes it off the list (and off **Open a recent folder**): the folder and its tests stay where they are, and you can open it again at any time. If it holds a [Solo](#solo) licence, its seat goes back.
+
+While tests are moving from a tests folder into a workspace ([Upgrading to Team](#upgrading-to-team)), neither can be removed: finish or stop the move in Settings → Upgrade to Team first.
+
 ## Hosted by Breakpatch
 
 <!-- soon --> Coming later. Until then, keep your team's tests in your own Firebase project: see [Host it yourself](#host-it-yourself).
@@ -532,7 +563,7 @@ A runner Mac and CI sign in with a token instead of an email. An admin makes one
 
 Settings → **Workspace** shows the plan and seats, where the workspace is kept, how long runs are kept, and how many tests and how much storage it uses against its allowance (counted once a day). From 80 % the storage bar says **Nearly full**; when it's full, runs keep working and are saved, but new tests, new versions and screenshots wait until there's room. To add storage, write to [support@breakpatch.dev](mailto:support@breakpatch.dev), or delete tests and apps you no longer need. The emails and the account page say the same.
 
-**Download export** (admins) makes a zip of the workspace's tests, versions, runs and suites and opens the download in your browser; the link works for 7 days. The account page has the same **Download export**. When the licence ends, the workspace becomes read-only for 30 days, so you can still open and export your tests, and then it's deleted: Settings → Workspace shows the date first. Renewing makes it active again. **Remove from this Mac** signs you out here; the workspace and its tests stay.
+**Download export** (admins) makes a zip of the workspace's tests, versions, runs and suites and opens the download in your browser; the link works for 7 days. The account page has the same **Download export**. When the licence ends, the workspace becomes read-only for 30 days, so you can still open and export your tests, and then it's deleted: Settings → Workspace shows the date first. Renewing makes it active again. **Remove from this Mac** signs you out here, gives your seat back and deletes what this Mac keeps of the workspace; the workspace and its tests stay (see [Remove from this Mac](#remove-from-this-mac)).
 
 ## Host it yourself
 
@@ -594,7 +625,7 @@ Clicking it opens a page with **Open in Breakpatch** and **Install Breakpatch**.
 
 **Save as file** gives the same thing as a `.bpworkspace` file, handy for a shared drive, CI or the local runner. Double-click it to connect.
 
-Teammates can also paste the link on the connect screen: **Host it yourself** → *Got a link or a .bpworkspace file?* → **Or paste the link here**.
+Teammates can also paste the link on the connect screen: **Host it yourself** → *Got a link or a .bpworkspace file?* → **Or paste the link here**. With a tests folder or another workspace open, the connect screen is under **Add a workspace…** in the [switcher](#workspaces-on-this-mac).
 
 In an encrypted workspace, **Copy link with the key** gives the same link with the key that opens the tests in its `#` part, so a teammate's Mac reads them at once; it's the one to send, and **Copy link without the key** gives the plain one. Send it only to teammates. The teammate's Mac takes the key only once they choose to join the workspace. Without the key, an admin lets each new Mac in: see [Encryption and the recovery code](#encryption-and-the-recovery-code).
 
@@ -703,7 +734,7 @@ With [Solo](#solo) on a tests folder there's no runner: the time is this Mac's c
 
 ## The local runner
 
-One Mac per workspace that stays on and runs scheduled suites and run requests for everyone.
+One Mac per workspace that stays on and runs scheduled suites and run requests for everyone. The runner belongs to the workspace it was turned on in: on a Mac with [several workspaces](#workspaces-on-this-mac), it runs only while that one is open.
 
 1. Install Breakpatch on that Mac and connect it to the workspace.
 2. Sign in with a **separate account** (for example `runner@yourcompany.com`) so runs don't show under a person's name. Give it the *Local runner* role.
@@ -1273,7 +1304,8 @@ A Team licence has **seats** for people and **machine licences** for the local r
 - **Out of seats:** the member sees "Your team is out of seats. Your admin can see you're waiting and can add a seat or free one." Admins see who is waiting in **Settings → Licence**.
 - **A new key:** if the admin replaces the key, members' seats follow once an admin opens Breakpatch.
 - **The local runner and CI machines use a machine licence.** Machines count separately from people. CI machines take theirs with the key: see [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci).
-- Each person takes a seat when they sign in. A seat someone already holds keeps refreshing. Signing out gives the seat back; so does **Release this Mac** (admins).
+- Each person takes a seat when they sign in. A seat someone already holds keeps refreshing. Signing out gives the seat back; so does **Release this Mac** (admins), and [Remove from this Mac](#remove-from-this-mac).
+- **Several workspaces on one Mac** each have their own seat. Switching keeps every seat. **Release this Mac** gives back the seat of the workspace it's pressed in, and this Mac doesn't take that one again by itself; the others stay as they are.
 - A seat is tied to the Macs it's used on: one person can use it on a few of their own Macs, and a copy of the Keychain on another Mac doesn't work. On too many Macs you see "Your seat is already used on too many Macs. Ask your admin to free one, then sign in again."
 - A seat nobody has used for 30 days is freed automatically. An admin can also free one in the [back office](#the-back-office).
 - Breakpatch checks the licence when it opens and every day, and keeps working for up to 30 days without a connection. If this Mac's clock is set back by more than a day, the licence stops working until Breakpatch can check it online again: "This Mac's clock is behind. Set the right date and time, then reconnect to check your licence."

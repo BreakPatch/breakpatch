@@ -13,7 +13,7 @@ import { openLocalFolder } from '../data/local/folder';
 import { countUsage } from '../data/countUsage';
 import { addRecentFolder } from '../lib/recentFolders';
 import { useSystem } from './system';
-import { connections, folderConnection, useConnections, workspaceConnection, type Connection } from './connections';
+import { canOpenKind, connections, folderConnection, useConnections, workspaceConnection, type Connection } from './connections';
 import { osText } from '../lib/osWords';
 
 export type Theme = 'dark' | 'light' | 'system';
@@ -58,11 +58,12 @@ interface SessionState {
   disconnect(): void;
   /**
    * Switch workspace on the sign-in screen: leaves the open workspace without forgetting it, and
-   * opens this Mac's tests folder when the list has one (as switchTo, without signing out).
-   * `folder`: it opened; `none`: nothing is open (the app shows Welcome), the person is signed out,
-   * and the folder's problem is in `localError` if it couldn't open.
+   * opens the one used before it (previousConnection: another workspace, or this Mac's tests
+   * folder), as switchTo, without signing out.
+   * `opened`: it opened; `none`: nothing is open (the app shows Welcome), the person is signed out,
+   * and a folder's problem is in `localError` if it couldn't open.
    */
-  leaveWorkspace(): Promise<'folder' | 'none'>;
+  leaveWorkspace(): Promise<'opened' | 'none'>;
   /**
    * Opens another connection from the list. The one open closes without signing out, so
    * switching back finds the person still signed in. The caller stops runs and goes home first.
@@ -111,6 +112,21 @@ export async function makeBackend(ws: Workspace): Promise<Backend> {
 export function canOpen(ws: Workspace) {
   if (edition.openWorkspace) return true;
   return isDemoWorkspace(ws) && new URLSearchParams(location.search).has('demo');
+}
+
+/** Whether this edition opens it: a tests folder, or a workspace it can open (Community: the demo with `?demo` only). */
+export function canOpenHere(c: Connection): boolean {
+  return canOpenKind(c) && (c.kind === 'local' || canOpen(c.team!.workspace));
+}
+
+/**
+ * What to open when `except` closes for good or is left (Switch workspace on sign-in, Remove from
+ * this Mac): the one opened most recently before it that this edition can open, or null.
+ */
+export function previousConnection(except: string | null): Connection | null {
+  return useConnections.getState().list
+    .filter(c => c.id !== except && canOpenHere(c))
+    .reduce<Connection | null>((best, c) => (!best || c.lastOpenedAt >= best.lastOpenedAt ? c : best), null);
 }
 
 let readOnlyOff: (() => void) | undefined;
@@ -191,10 +207,10 @@ export const useSession = create<SessionState>((set, get) => ({
     persist();
   },
   async leaveWorkspace() {
-    const folder = useConnections.getState().list.find(c => c.kind === 'local' && c.local);
-    if (folder) {
-      try { await get().switchTo(folder); return 'folder'; }
-      catch (e) { set({ localError: `${folder.local!.path}: ${e instanceof Error ? e.message : String(e)}` }); }
+    const before = previousConnection(useConnections.getState().activeId);
+    if (before) {
+      try { await get().switchTo(before); return 'opened'; }
+      catch (e) { if (before.local) set({ localError: `${before.local.path}: ${e instanceof Error ? e.message : String(e)}` }); }
     }
     closeBackend(get().backend, { signOut: true });
     connections.deactivate();

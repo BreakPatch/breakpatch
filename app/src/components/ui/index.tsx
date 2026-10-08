@@ -206,7 +206,8 @@ export function Dialog({ open, onClose, title, sub, children, actions, width = 5
 // ---------- Menu ----------
 /** `checked` makes it one of a set of choices (menuitemradio), ticked when true. */
 /** `detail`: a second, smaller line, such as why it's disabled. */
-export interface MenuItem { label: string; icon?: string; onSelect: () => void; danger?: boolean; disabled?: boolean; checked?: boolean; detail?: string }
+/** `shortcut`: the keys that choose it from anywhere, shown at the end as people type them (⌘1), with `keyshortcuts` for assistive tech (Meta+1). */
+export interface MenuItem { label: string; icon?: string; onSelect: () => void; danger?: boolean; disabled?: boolean; checked?: boolean; detail?: string; shortcut?: string; keyshortcuts?: string }
 export type MenuEntry = MenuItem | { group: string } | 'sep';
 /** Pop-up menu with keyboard navigation. Place inside a `position: relative` wrapper. */
 export function Menu({ open, onClose, items, style, width = 240, label }: { open: boolean; onClose: () => void; items: MenuEntry[]; style?: CSSProperties; width?: number; label: string }) {
@@ -252,12 +253,13 @@ export function Menu({ open, onClose, items, style, width = 240, label }: { open
         // An unavailable item is aria-disabled, not disabled: it stays focusable with the arrows, its detail
         // (why it's unavailable) is its description, and choosing it does nothing.
         : <button key={k} type="button" role={it.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={it.checked} className={cx('menu-item', it.danger && 'danger')}
-            aria-disabled={it.disabled || undefined} aria-labelledby={it.detail ? `${uid}-${k}-l` : undefined} aria-describedby={it.detail ? `${uid}-${k}` : undefined}
+            aria-disabled={it.disabled || undefined} aria-labelledby={it.detail ? `${uid}-${k}-l` : undefined} aria-describedby={it.detail ? `${uid}-${k}` : undefined} aria-keyshortcuts={it.keyshortcuts}
             onClick={() => { if (!open || it.disabled) return; onClose(); it.onSelect(); }}>
             {it.icon && <Icon name={it.icon} />}
             {it.detail ? <span className="menu-text"><span id={`${uid}-${k}-l`}>{it.label}</span><span className="menu-detail" id={`${uid}-${k}`}>{it.detail}</span></span>
               : it.checked === undefined ? it.label : <span className="grow">{it.label}</span>}
             {it.checked && <Icon name="check" className="menu-check" />}
+            {it.shortcut && <span className="menu-shortcut" aria-hidden>{it.shortcut}</span>}
           </button>)}
     </div>
   );
