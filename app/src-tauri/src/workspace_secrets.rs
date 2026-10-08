@@ -41,6 +41,9 @@ pub const INFO_FIELD: &str = "info";
 pub const MAX_VALUE_BYTES: usize = 4096;
 /// The most workspace secrets one request (or one reseal) handles.
 pub const MAX_SECRETS: usize = 200;
+/// The most a sealed value's JSON may be (UTF-8 bytes), so the stored field stays under the
+/// rules' size cap (20,000 characters of base64) whatever the value and sites hold.
+pub const MAX_SEALED_BYTES: usize = 14_000;
 
 /// Whether a field is a workspace secret's value: workspace_keys.rs `seal` and `open` refuse it.
 pub fn is_secret_value(path: &str, field: &str) -> bool {
@@ -171,6 +174,9 @@ pub fn seal<S: SecretStore, L: SecretStore>(keys: &WorkspaceKeys<S>, mac: Option
     }
     let payload = Payload { v: 1, name: name.clone(), value: value.to_string(), origins: origins.clone(), runner_can_use: save.runner_can_use, ci_can_use: save.ci_can_use };
     let json = Zeroizing::new(serde_json::to_vec(&payload).map_err(|e| e.to_string())?);
+    if json.len() > MAX_SEALED_BYTES {
+        return Err("That's too long for a workspace secret, with its sites. Use a shorter value or fewer sites.".into());
+    }
     let value = keys.seal_reserved(ws, kid, &path, VALUE_FIELD, &json)?;
     let info = Info { name, origins, runner_can_use: save.runner_can_use, ci_can_use: save.ci_can_use };
     let info = keys.seal_reserved(ws, Some(value.kid), &path, INFO_FIELD, &serde_json::to_vec(&info).map_err(|e| e.to_string())?)?;

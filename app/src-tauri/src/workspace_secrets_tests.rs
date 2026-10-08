@@ -145,6 +145,11 @@ fn what_an_admin_saves_is_checked() {
     assert!(bad(save("PW", Some(""), &["https://a.acme.com"])).contains("Type the secret's value"));
     assert!(bad(save("PW", None, &["https://a.acme.com"])).contains("Type the secret's value"));
     assert!(bad(save("PW", Some(&"x".repeat(MAX_VALUE_BYTES + 1)), &["https://a.acme.com"])).contains("too long"));
+    // Within the value's limit, but characters JSON escapes six times over: still under the rules' cap, or refused.
+    let escaped: String = "\u{1}".repeat(MAX_VALUE_BYTES);
+    assert!(bad(save("PW", Some(&escaped), &["https://a.acme.com"])).contains("too long"));
+    let fits = seal(&k, no_mac(), WS, None, &save("PW", Some(&"x".repeat(MAX_VALUE_BYTES)), &["https://a.acme.com"])).unwrap();
+    assert!(fits.value.enc.len() < 20_000 && fits.info.enc.len() < 20_000);
     let mut wrong_id = save("PW", Some("x"), &["https://a.acme.com"]);
     wrong_id.id = "../apps/x".into();
     assert!(bad(wrong_id).contains("isn't a workspace secret"));
