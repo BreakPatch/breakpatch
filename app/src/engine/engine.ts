@@ -31,7 +31,21 @@ export type HandInput =
   | { kind: 'text'; text: string };
 export type FileChoice = { sample: SampleFile } | { file: string; path: string } | { cancel: true };
 
-export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' | 'post' | 'ignore'>> & {
+/**
+ * A workspace secret (Breakpatch Team, issue #45) as a request carries it: its name and its
+ * document's sealed `value`. Only the shell opens it, for the engine (app/src-tauri/src/workspace_secrets.rs).
+ */
+export interface SealedSecret { name: string; id: string; enc: string; kid: number }
+
+/**
+ * Where a run, a recorded step or a tried call happens, for its saved secrets (engine/PROTOCOL.md
+ * "Saved secrets"): the open workspace's or tests folder's connection id, so the shell refuses a
+ * secret on this Mac kept for other workspaces (#33), and the workspace's own secrets the request
+ * may use (#45). The shell takes both out before the engine sees the request.
+ */
+export interface SecretScope { workspace?: string; workspaceSecrets?: SealedSecret[] }
+
+export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' | 'post' | 'ignore'>> & SecretScope & {
   action: Step['action']; at?: Point;
   /** A "Write saved secret" step's value, by name. Typed, never stored in the step; the shell adds its sites. */
   secrets?: Record<string, string>;
@@ -87,7 +101,7 @@ export interface RunSettings {
   /** "Allow for small differences between systems": the engine treats a missing value as on. */
   allowSystemDifferences?: boolean;
 }
-export interface RunStart {
+export interface RunStart extends SecretScope {
   runId: string; startUrl: string; viewport: Viewport; steps: Step[];
   /** The app's base address: set-up and clean-up calls may only go to its hosts. Defaults to `startUrl`. */
   appUrl?: string;
@@ -198,7 +212,7 @@ export interface Engine {
   stopRun(runId: string): Promise<void>;
 
   /** "Try it": one request under the same rules as a run's set-up and clean-up calls. */
-  tryCall(call: HttpCall, appUrl: string, secrets?: Record<string, string>): Promise<CallReply>;
+  tryCall(call: HttpCall, appUrl: string, secrets?: Record<string, string>, scope?: SecretScope): Promise<CallReply>;
 
   /**
    * "Why did this fail?" for one failed step of a finished run (Team; engine `run.explain`).

@@ -238,7 +238,8 @@ describe('the story dialog', () => {
   });
 
   it('asks the engine with the story and only the picked secret names', async () => {
-    vi.spyOn(secrets, 'list').mockResolvedValue(['TEST_PASSWORD', 'ADMIN_TOKEN']);
+    // The names usable here (lib/secretScope.ts secretNamesHere), from the shell's index.
+    vi.spyOn(secrets, 'info').mockResolvedValue(['TEST_PASSWORD', 'ADMIN_TOKEN'].map(name => ({ name, origins: [], runnerCanUse: false })));
     const planSpy = vi.spyOn(getEngine(), 'plan').mockResolvedValue({ steps: SIGN_UP });
     const onPlan = vi.fn(), onClose = vi.fn();
     render(<StoryDialog open onClose={onClose} onPlan={onPlan} />);
@@ -253,7 +254,7 @@ describe('the story dialog', () => {
   });
 
   it('says why when there is no plan', async () => {
-    vi.spyOn(secrets, 'list').mockResolvedValue([]);
+    vi.spyOn(secrets, 'info').mockResolvedValue([]);
     vi.spyOn(getEngine(), 'plan').mockRejectedValue(new EngineError('not_found', "The AI assistant couldn't make steps from this story. Try a shorter story, one action per sentence."));
     const onPlan = vi.fn();
     render(<StoryDialog open onClose={vi.fn()} onPlan={onPlan} />);

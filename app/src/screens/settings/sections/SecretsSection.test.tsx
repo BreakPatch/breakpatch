@@ -7,6 +7,8 @@ import { resetFeaturesForTests, setFeatures } from '../../../edition/features';
 import { setOsForTests } from '../../../lib/osWords';
 import { secrets } from '../../../platform';
 import { useSession } from '../../../state/session';
+import { folderConnection, useConnections } from '../../../state/connections';
+import { edition } from '../../../edition';
 import { SecretsSection } from './SecretsSection';
 
 const info = async (name: string) => (await secrets.info()).find(s => s.name === name);
@@ -61,6 +63,55 @@ describe('Settings, Saved secrets', () => {
     expect(screen.queryByRole('switch', { name: 'Runner can use' })).toBeNull();   // Community: no runner
     fireEvent.click(screen.getByRole('button', { name: 'Save secret' }));
     await waitFor(async () => expect(await info('NEW_ONE')).toEqual({ name: 'NEW_ONE', origins: ['https://login.example.com'], runnerCanUse: false }));
+  });
+
+  it('keeps a secret for chosen workspaces, and says where (#33)', async () => {
+    const mine = folderConnection('/Users/ana/Tests', 'My tests');
+    const acme = { id: 'team:acme-tests/breakpatch', kind: 'team' as const, name: 'Acme QA', lastOpenedAt: 1, team: { workspace: { name: 'Acme QA', config: { apiKey: 'k', authDomain: 'a', projectId: 'acme-tests', appId: 'x' }, database: 'breakpatch', domain: 'acme.example' } } };
+    useConnections.setState({ list: [mine, acme], activeId: mine.id });
+    useSession.setState({ local: { path: '/Users/ana/Tests' }, workspace: null });
+    try {
+      show();
+      fireEvent.click(await screen.findByRole('button', { name: 'Change STAGING_TOKEN' }));
+      fireEvent.click(screen.getByRole('tab', { name: 'Only these' }));
+      expect(screen.getByRole('button', { name: 'Save secret' }).hasAttribute('disabled')).toBe(true);   // none ticked yet
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Acme QA' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save secret' }));
+      await waitFor(async () => expect((await info('STAGING_TOKEN'))?.workspaces).toEqual([acme.id]));
+      expect((await secrets.resolve(['STAGING_TOKEN'])).STAGING_TOKEN).toBe('tok');
+      const row = (await screen.findByText('STAGING_TOKEN')).closest('[role="listitem"]') as HTMLElement;
+      await waitFor(() => expect(within(row).getByText(/only in Acme QA · not used here/)).toBeTruthy());
+      // Back to every workspace.
+      fireEvent.click(screen.getByRole('button', { name: 'Change STAGING_TOKEN' }));
+      fireEvent.click(screen.getByRole('tab', { name: 'Every workspace' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save secret' }));
+      await waitFor(async () => expect((await info('STAGING_TOKEN'))?.workspaces).toBeUndefined());
+    } finally {
+      useConnections.setState({ list: [], activeId: null });
+    }
+  });
+
+  it("doesn't ask where with one place to use it", async () => {
+    useConnections.setState({ list: [], activeId: null });
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: 'Change STAGING_TOKEN' }));
+    expect(screen.queryByRole('tab', { name: 'Only these' })).toBeNull();
+  });
+
+  it("doesn't call a name the workspace has missing, and shows the edition's panel", async () => {
+    const before = { ws: edition.workspaceSecrets, panel: edition.slots.secretsPanel };
+    edition.workspaceSecrets = { names: async () => [{ name: 'SHARED_PW', runnerCanUse: false }], sealed: async () => [] };
+    edition.slots.secretsPanel = () => <p>The workspace's secrets</p>;
+    const b = new DemoBackend({ signedIn: true, delayMs: 0 });
+    useSession.setState({ backend: b });
+    try {
+      show();
+      expect(await screen.findByText("The workspace's secrets")).toBeTruthy();
+      await screen.findByText('STAGING_TOKEN');
+      expect(screen.queryByText('SHARED_PW')).toBeNull();
+    } finally {
+      edition.workspaceSecrets = before.ws; edition.slots.secretsPanel = before.panel;
+    }
   });
 
   it('offers "Runner can use" where the runner is, off by default', async () => {

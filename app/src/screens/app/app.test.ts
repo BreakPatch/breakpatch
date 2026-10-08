@@ -57,10 +57,10 @@ describe('tryCall', () => {
   it('goes through the engine (not the webview fetch) with the app address and secrets', async () => {
     const seen: unknown[] = [];
     const r = await tryCall({ method: 'POST', url: ' https://api.example.com/seed ', headers: [{ name: 'Authorization', secretRef: 'TOKEN' }] },
-      { engine: engine({ ok: true, status: 200, ms: 800 }, seen), appUrl, secrets: { TOKEN: 't' } });
+      { engine: engine({ ok: true, status: 200, ms: 800 }, seen), appUrl, secrets: { TOKEN: 't' }, scope: { workspace: 'local:0123456789abcdef' } });
     expect(r).toEqual({ ok: true, status: 200, ms: 800 });
     expect(describeReply(r)).toBe('Replied 200 in 0.8 s');
-    expect(seen).toEqual([[{ method: 'POST', url: 'https://api.example.com/seed', headers: [{ name: 'Authorization', secretRef: 'TOKEN' }] }, appUrl, { TOKEN: 't' }]]);
+    expect(seen).toEqual([[{ method: 'POST', url: 'https://api.example.com/seed', headers: [{ name: 'Authorization', secretRef: 'TOKEN' }] }, appUrl, { TOKEN: 't' }, { workspace: 'local:0123456789abcdef' }]]);
   });
   it('reports an error status, a refusal and a network failure', async () => {
     expect(describeReply(await tryCall({ method: 'GET', url: 'https://x.dev' }, { engine: engine({ ok: false, status: 500, ms: 300, error: 'status', message: 'It replied 500.' }), appUrl }))).toBe('Replied 500 in 0.3 s');

@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import type { Generated } from '../../data/types';
 import type { PlanStep } from '../../engine';
 import { GENERATED_CHOICES } from '../../engine/labels';
-import { secrets } from '../../platform';
+import { secretNamesHere } from '../../lib/secretScope';
 import { Button, ChipSelect, Icon } from '../../components/ui';
 import { CAREFUL_NOTE, planDoneText, planNeeds, planSentence, type PlanItem } from './plan';
 import type { Recorder } from './useRecorder';
@@ -72,7 +72,7 @@ function PlanEdit({ step, rec }: { step: PlanItem; rec: Recorder }) {
   const [secretRef, setSecretRef] = useState(step.secretRef ?? '');
   const [generated, setGenerated] = useState<Generated>(step.generated ?? 'uniqueName');
   const [names, setNames] = useState<string[]>([]);
-  useEffect(() => { void secrets.list().then(n => { setNames(n); setSecretRef(r => r || n[0] || ''); }).catch(() => setNames([])); }, []);
+  useEffect(() => { void secretNamesHere().then(n => { setNames(n); setSecretRef(r => r || n[0] || ''); }).catch(() => setNames([])); }, []);
   const write = step.action === 'write';
   const needsTarget = step.action !== 'write' && step.action !== 'scroll' && step.action !== 'navigate' && step.action !== 'waitFor';
   const ok = (!needsTarget || !!target.trim()) && (!write || (source === 'typed' ? text !== '' : source === 'secret' ? !!secretRef : true));

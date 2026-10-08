@@ -6,7 +6,7 @@ import type { Person, RecordedOn, Run, Step, Test } from '../../data/types';
 import { useBackend } from '../../data/hooks';
 import { demoEngine, getEngine, type RunEnded, type RunStepEvent } from '../../engine';
 import { sampleApp } from '../../components/live';
-import { secrets } from '../../platform';
+import { secretsForRequest } from '../../lib/secretScope';
 import { useSession } from '../../state/session';
 import { hasFeature } from '../../edition';
 import { ensureSecretSites } from '../../lib/secretSites';
@@ -64,7 +64,8 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
   const names = [...new Set([...secretNames(steps), ...callSecretNames(t.setUp, t.cleanUp)])];
   const appUrl = await appUrlOf(backend, t);
   await ensureSecretSites(names, appUrl);
-  const values = await secrets.resolve(names);
+  // This Mac's values, where the run is, and the workspace's sealed secrets (lib/secretScope.ts).
+  const forRun = await secretsForRequest(names);
   if (opts.abandoned?.()) return null;
   const startedAt = Date.now();
   opts.onStart?.(startedAt);
@@ -79,7 +80,7 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
     engine.startRun({
       runId, startUrl: opts.startUrl ?? t.startUrl, appUrl, viewport: t.viewport, steps, setUp: t.setUp, cleanUp: t.cleanUp,
       settings: { autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix, allowSystemDifferences: prefs.allowSystemDifferences },
-      secrets: values, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}),
+      ...forRun, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}),
       ...(filesDir(backend.local?.path) ? { filesDir: filesDir(backend.local?.path) } : {}),
       ...(opts.keepOpen ? { keepOpen: true } : {}), ...(opts.upToStepId ? { upToStepId: opts.upToStepId } : {}),
       ...(opts.fromStepId ? { fromStepId: opts.fromStepId } : {}),

@@ -7,7 +7,7 @@ import { SizePicker } from '../../components/common';
 import { useBackend } from '../../data/hooks';
 import type { App, CallHeader, HttpCall, Viewport } from '../../data/types';
 import { getEngine } from '../../engine';
-import { secrets } from '../../platform';
+import { secretNamesHere, secretsForRequest } from '../../lib/secretScope';
 import { callProblem, cleanCall, describeReply, isHttpAddress, tryCall, type Reply } from './tryCall';
 import { withScheme } from './TestDetailsDialog';
 import { osText } from '../../lib/osWords';
@@ -37,7 +37,7 @@ export function NewTestDialog({ open, app, onClose }: { open: boolean; app: App;
     setName(''); setDescription(''); setStartUrl(app.baseUrl); setViewport(app.defaultViewport); setHooksOpen(false);
     setSetUp({ method: 'POST', url: '' }); setCleanUp({ method: 'POST', url: '' }); setAlsoOnFailure(true); setOtherHosts(false);
     setTried(false); setBusy(false);
-    void secrets.list().then(setSecretNames).catch(() => setSecretNames([]));
+    void secretNamesHere().then(setSecretNames).catch(() => setSecretNames([]));
   }, [open, app.baseUrl, app.defaultViewport]);
 
   const nameErr = tried && !name.trim() ? 'Give the test a name.' : undefined;
@@ -131,8 +131,8 @@ function CallCard({ icon, title, sub, call, onChange, error, app, otherHosts, se
     setTrying(true);
     const c = cleanCall(call, otherHosts);
     const names = (c.headers ?? []).map(h => h.secretRef).filter((n): n is string => !!n);
-    const values = names.length ? await secrets.resolve(names).catch(() => ({})) : {};
-    setReply(await tryCall(c, { engine: getEngine(), appUrl: app.baseUrl, secrets: values }));
+    const { secrets: values, ...scope } = await secretsForRequest(names).catch(() => ({ secrets: {} }));
+    setReply(await tryCall(c, { engine: getEngine(), appUrl: app.baseUrl, secrets: values, scope }));
     setTrying(false);
   };
   const setHeader = (i: number, h: CallHeader) => onChange({ ...call, headers: headers.map((x, j) => (j === i ? h : x)) });

@@ -2,7 +2,7 @@
 // (`call.try`), never the webview's fetch: the release CSP blocks that, and the engine applies the
 // same rules as a run (https, the app's own hosts, no private addresses, no redirects).
 import type { HttpCall } from '../../data/types';
-import type { CallReply, Engine } from '../../engine/engine';
+import type { CallReply, Engine, SecretScope } from '../../engine/engine';
 import { originOf, siteName } from '../../lib/sites';
 import { osText } from '../../lib/osWords';
 
@@ -61,10 +61,11 @@ export function cleanCall(c: HttpCall, allowOtherHosts: boolean): HttpCall {
   return { method: c.method, url: c.url.trim(), ...(headers.length ? { headers } : {}), ...(allowOtherHosts ? { allowOtherHosts: true } : {}) };
 }
 
-export async function tryCall(call: HttpCall, opts: { engine: Engine; appUrl: string; secrets?: Record<string, string> }): Promise<Reply> {
+/** `scope`: where the call is tried, and the workspace's secrets it may send (lib/secretScope.ts). */
+export async function tryCall(call: HttpCall, opts: { engine: Engine; appUrl: string; secrets?: Record<string, string>; scope?: SecretScope }): Promise<Reply> {
   if (!isHttpAddress(call.url)) return { ok: false, error: 'invalid' };
   let r: CallReply;
-  try { r = await opts.engine.tryCall({ ...call, url: call.url.trim() }, opts.appUrl, opts.secrets ?? {}); }
+  try { r = await opts.engine.tryCall({ ...call, url: call.url.trim() }, opts.appUrl, opts.secrets ?? {}, opts.scope ?? {}); }
   catch { return { ok: false, error: 'unreachable' }; }
   if (r.ok && r.status !== undefined) return { ok: true, status: r.status, ms: r.ms ?? 0 };
   return { ok: false, status: r.status, ms: r.ms, error: r.error ?? 'unreachable', message: r.message };

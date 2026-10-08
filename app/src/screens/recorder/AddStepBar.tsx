@@ -3,7 +3,7 @@
 // Clicking the page and describing are always both available: no mode switch.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ActionKind, Direction, Generated, SampleFile, StepGroup } from '../../data/types';
-import { secrets } from '../../platform';
+import { secretNamesHere } from '../../lib/secretScope';
 import { actionInfo, GENERATED_CHOICES, SAMPLES, TOUCH_HIDDEN } from '../../engine/labels';
 import { countRows, findStep, TOKENS, numberOf } from '../../components/steps';
 import { Button, ChipSelect, Icon } from '../../components/ui';
@@ -68,7 +68,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
     return () => { clearTimeout(start); window.removeEventListener('keydown', onKey); };
   }, [asking, rec]);
 
-  useEffect(() => { void secrets.list().then(setSecretNames).catch(() => setSecretNames([])); }, []);
+  useEffect(() => { void secretNamesHere().then(setSecretNames).catch(() => setSecretNames([])); }, []);
   // Right click and Hover need a mouse: a touch test is never left on one.
   useEffect(() => { if (touch && TOUCH_HIDDEN.has(action)) rec.setAction('click'); }, [touch, action, rec]);
   // Try again on a described step: its sentence is back in the box, ready to change.

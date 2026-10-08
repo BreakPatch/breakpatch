@@ -8,6 +8,7 @@ import type { Backend } from '../data/backend';
 import type { NotifyInput, Person, Run, Step, StepRun, Suite, Test, Workspace } from '../data/types';
 import type { MenuItem } from '../components/ui';
 import type { Connection } from '../state/connections';
+import type { SealedSecret } from '../engine/engine';
 
 /**
  * What the edition allows. Community has all of these off. They can change while the app runs
@@ -138,6 +139,8 @@ export interface Slots {
   reportFailActions?: ComponentType<ReportFailProps>;
   /** Under the title bar, after the system banners, e.g. "Breakpatch Team needs a licence." */
   banner?: ComponentType;
+  /** Settings → Saved secrets, under this Mac's own: e.g. the workspace's secrets (Team, issue #45). */
+  secretsPanel?: ComponentType;
   /**
    * The workspace switcher (title bar): a hook giving why switching is off right now, in plain
    * words, or null (Team: on the local runner's Mac, which serves one workspace).
@@ -148,6 +151,22 @@ export interface Slots {
    * rendering, with what the switcher shows (so it re-renders with it) and its router's navigate.
    */
   switcherActions?: (o: { close(): void; navigate(path: string): void; workspace: Workspace | null; connections: readonly Connection[] }) => MenuItemEntry[];
+}
+
+/** A workspace secret as the screens may know it: its name and who may use it, never its value. */
+export interface WorkspaceSecretName { name: string; runnerCanUse: boolean }
+
+/**
+ * Saved secrets an admin keeps in the open workspace for everyone (Breakpatch Team, issue #45).
+ * Sealed in the workspace with its key, and opened only by the shell, for the engine
+ * (app/src-tauri/src/workspace_secrets.rs): the screens get names, and requests carry the sealed
+ * values (lib/secretScope.ts). A secret on this Mac of the same name wins.
+ */
+export interface WorkspaceSecrets {
+  /** The open workspace's secrets this person (or the runner) may use. [] when there are none, or none can be read. */
+  names(backend: Backend): Promise<WorkspaceSecretName[]>;
+  /** The sealed values of those of `names` the workspace has, for one request. */
+  sealed(backend: Backend, names: string[]): Promise<SealedSecret[]>;
 }
 
 /** An entry the edition adds to a menu: the ui Menu's own item. */
@@ -177,6 +196,8 @@ export interface Edition {
    * edition's Solo plan: the Keychain). Community has none, so its folder backend keeps none.
    */
   resultAddresses?: import('../data/local/localBackend').AddressStore;
+  /** The open workspace's own saved secrets (Team). Community has none: secrets are this Mac's only. */
+  workspaceSecrets?: WorkspaceSecrets;
   /** Opens a connected workspace. Community has none: it opens the demo and local tests folders. */
   openWorkspace?(ws: Workspace): Promise<Backend>;
   /** Wraps the app, e.g. for licence checks and workspace links. */

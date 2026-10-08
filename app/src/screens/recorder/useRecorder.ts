@@ -3,7 +3,7 @@
 // candidate box, open loop, re-record step). All engine work goes through getEngine().
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ActionKind, Box, Direction, Generated, Point, SampleFile, Step, Viewport } from '../../data/types';
-import { demoEngine, getEngine, EngineError, type CheckingPhase, type FileChoice, type FileChooserEvent, type Plan, type PlanStep, type RecordParams } from '../../engine';
+import { demoEngine, getEngine, EngineError, type CheckingPhase, type FileChoice, type FileChooserEvent, type Plan, type PlanStep, type RecordParams, type SecretScope } from '../../engine';
 import { around, gesture, inside, sampleApp } from '../../components/live';
 import { actionInfo, touchWords } from '../../engine/labels';
 import { isTouch } from '../../data/devices';
@@ -13,6 +13,7 @@ import { secrets } from '../../platform';
 import { useSession } from '../../state/session';
 import { originOf } from '../../lib/sites';
 import { ensureSecretSites } from '../../lib/secretSites';
+import { secretsForRequest } from '../../lib/secretScope';
 import { checkpointLabel, intentAskText, notFoundText, planNotFoundText, thinkingText } from './describe';
 import { chosenIntent, fromEngine, readIntent, type Intent } from './intent';
 import { answered, CAREFUL_NOTE, planIntent, planNeeds, planRun, planSentence, type PlanItem, type PlanRun } from './plan';
@@ -78,14 +79,14 @@ const ACTING: Partial<Record<ActionKind, string>> = {
 };
 
 /**
- * The value for a "Write saved secret" step, read from the Keychain just for this call (the engine
- * types it and never stores it). A secret saved before sites existed is offered the app's site once.
+ * What a "Write saved secret" step's call carries: the value from the Keychain just for this call
+ * (the engine types it and never stores it), or the workspace's sealed one, which only the shell
+ * opens (lib/secretScope.ts). A secret saved before sites existed is offered the app's site once.
  */
-export async function secretFor(ref: string | undefined, appUrl: string | undefined): Promise<Record<string, string> | undefined> {
+export async function secretFor(ref: string | undefined, appUrl: string | undefined): Promise<SecretScope & { secrets: Record<string, string> } | undefined> {
   if (!ref) return undefined;
   await ensureSecretSites([ref], appUrl);
-  const values = await secrets.resolve([ref]);
-  return ref in values ? { [ref]: values[ref] } : {};
+  return secretsForRequest([ref]);
 }
 
 export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
@@ -233,8 +234,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     setChecking(true); setSavedPill(null); setPhase('watching'); setBusyAction(params.action); setAddedId(null);
     try {
       // The secret's value goes to the engine with this call only, never into the step.
-      const secretValues = extra.checkpoint ? undefined : await secretFor(params.secretRef, appUrl);
-      const sent: RecordParams = { ...params, ...(filesDir ? { filesDir } : {}), ...(secretValues ? { secrets: secretValues } : {}), ...(extra.frame !== undefined ? { frame: extra.frame } : {}),
+      const forStep = extra.checkpoint ? undefined : await secretFor(params.secretRef, appUrl);
+      const sent: RecordParams = { ...params, ...(filesDir ? { filesDir } : {}), ...(forStep ?? {}), ...(extra.frame !== undefined ? { frame: extra.frame } : {}),
         // Found with the AI assistant: the user's words are what to look for (the engine still names it).
         ...(extra.target && !extra.checkpoint ? { target: extra.target } : {}),
         ...(extra.label && !extra.checkpoint && params.action !== 'checkpoint' ? { label: extra.label } : {}) };
