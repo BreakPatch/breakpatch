@@ -187,6 +187,12 @@ class Engine:
                 self._hand_page.remove_listener("filechooser", self._hand_chooser)
             except Exception:  # noqa: BLE001
                 pass
+            if self._hand_finger:
+                # Done with a finger still down: the page isn't left holding a touch.
+                try:
+                    await self.browser.touch_event("cancel")
+                except Exception as e:  # noqa: BLE001 - the page may be gone already
+                    log.debug("couldn't lift the finger: %s", e)
             self._hand_page = None
             self._hand_finger = False
             self._pending_chooser = None

@@ -23,10 +23,11 @@
 <div class="box" id="swipe">Swipe me</div>
 <div id="out"></div>
 <script>
-  window.log = { taps: 0, doubles: 0, presses: 0, swipes: [], pointers: [], mouseOnly: 0 };
+  window.log = { taps: 0, doubles: 0, presses: 0, swipes: [], pointers: [], mouseOnly: 0, cancels: 0 };
   const out = document.getElementById('out');
   const say = t => { out.textContent = t; };
   document.addEventListener('pointerdown', e => window.log.pointers.push(e.pointerType));
+  document.addEventListener('touchcancel', () => { window.log.cancels++; });
   // A mouse event that no touch made (a real mouse click): counted, never acted on.
   document.addEventListener('mousedown', e => { if (!(e.sourceCapabilities && e.sourceCapabilities.firesTouchEvents)) window.log.mouseOnly++; });
 
@@ -42,7 +43,9 @@
   const press = document.getElementById('press');
   let timer = null;
   press.addEventListener('touchstart', e => { e.preventDefault(); timer = setTimeout(() => { timer = null; window.log.presses++; say('Long pressed'); }, 250); });
-  press.addEventListener('touchend', () => { if (timer) { clearTimeout(timer); timer = null; say('Too short'); } });
+  const lift = () => { if (timer) { clearTimeout(timer); timer = null; say('Too short'); } };
+  press.addEventListener('touchend', lift);
+  press.addEventListener('touchcancel', lift);
 
   const swipe = document.getElementById('swipe');
   let x0 = null, x1 = null;

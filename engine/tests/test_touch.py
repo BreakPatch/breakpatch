@@ -141,6 +141,50 @@ async def test_using_a_phone_page_by_hand_is_touch(site):
         await hx.call("browser.close")
 
 
+async def test_done_with_a_finger_still_down_lifts_it(site):
+    """"Done" (Use the page off) while the person still holds the mouse button: the page gets a
+    touchcancel, so it isn't left with a finger down (a long press that fires, a drag that sticks)."""
+    hx = Harness()
+    b = await _open(hx, site)
+    try:
+        await hx.call("browser.hand", {"on": True})
+        await hx.call("browser.input", {"kind": "down", "at": PRESS})
+        await hx.call("browser.hand", {"on": False})
+        await asyncio.sleep(0.4)                       # longer than the page's long press
+        log = await _log(hx)
+        assert log["cancels"] == 1 and log["presses"] == 0
+        assert await b.page.evaluate("document.getElementById('out').textContent") == "Too short"
+        await b.tap(TAP)                               # the next touch starts clean
+        assert (await _log(hx))["taps"] == 1
+    finally:
+        await hx.call("browser.close")
+
+
+async def test_a_gesture_stopped_part_way_lifts_its_finger(site):
+    """A long press or a drag that's stopped (the step's run stopped, the page went away) still
+    lets go, so the next step doesn't start with a finger down."""
+    hx = Harness()
+    b = await _open(hx, site)
+    try:
+        press = asyncio.ensure_future(b.long_press(PRESS, 2.0))
+        await asyncio.sleep(0.1)
+        press.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await press
+        await asyncio.sleep(0.4)
+        assert (await _log(hx))["presses"] == 0
+        assert await b.page.evaluate("document.getElementById('out').textContent") == "Too short"
+
+        drag = asyncio.ensure_future(b.touch_drag(SWIPE, [SWIPE[0] - 200, SWIPE[1]], steps=60))
+        await asyncio.sleep(0.3)
+        drag.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await drag
+        assert len((await _log(hx))["swipes"]) == 1          # it let go where it was
+    finally:
+        await hx.call("browser.close")
+
+
 def test_a_finger_stroke_stays_on_the_screen():
     from breakpatch_engine.browser import _stroke_share
     assert _stroke_share([200, 500], [0, 400], (393, 659)) == 1          # moves up from 500 to 100
