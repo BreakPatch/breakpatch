@@ -81,9 +81,11 @@ describe('Settings, Saved secrets', () => {
       expect((await secrets.resolve(['STAGING_TOKEN'])).STAGING_TOKEN).toBe('tok');
       const row = (await screen.findByText('STAGING_TOKEN')).closest('[role="listitem"]') as HTMLElement;
       await waitFor(() => expect(within(row).getByText(/only in Acme QA · not used here/)).toBeTruthy());
-      // Back to every workspace.
+      // Back to every workspace. Choosing doesn't save by itself: Save does.
       fireEvent.click(screen.getByRole('button', { name: 'Change STAGING_TOKEN' }));
       fireEvent.click(screen.getByRole('tab', { name: 'Every workspace' }));
+      expect(screen.getByRole('dialog')).toBeTruthy();
+      expect((await info('STAGING_TOKEN'))?.workspaces).toEqual([acme.id]);
       fireEvent.click(screen.getByRole('button', { name: 'Save secret' }));
       await waitFor(async () => expect((await info('STAGING_TOKEN'))?.workspaces).toBeUndefined());
     } finally {
