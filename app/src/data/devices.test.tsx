@@ -220,6 +220,28 @@ describe('making and recording a phone test', () => {
     expect(made.mock.calls[0][0].viewport).toEqual(PHONE);
   });
 
+  it('New test keeps what was typed when the app is updated while it is open', async () => {
+    const ui = (a: App) => <ToastProvider><MemoryRouter><NewTestDialog open app={a} onClose={() => undefined} /></MemoryRouter></ToastProvider>;
+    const { rerender } = render(ui(app));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Log in on a phone' } });
+    fireEvent.click(screen.getByRole('radio', { name: /iPhone 15/ }));
+    // The workspace sends the app again (another field changed): a new object, the same screen size.
+    rerender(ui({ ...app, name: 'Web app', defaultViewport: { ...app.defaultViewport } }));
+    expect(screen.getByLabelText('Name')).toHaveValue('Log in on a phone');
+    expect(screen.getByRole('radio', { name: /iPhone 15/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('New test starts afresh each time it opens, at the app\'s size then', async () => {
+    const ui = (a: App, open: boolean) => <ToastProvider><MemoryRouter><NewTestDialog open={open} app={a} onClose={() => undefined} /></MemoryRouter></ToastProvider>;
+    const { rerender } = render(ui(app, true));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Old' } });
+    rerender(ui(app, false));
+    const tablet = { ...app, defaultViewport: deviceViewport(DEVICES.find(d => d.id === 'ipad')!) };
+    rerender(ui(tablet, true));
+    expect(screen.getByLabelText('Name')).toHaveValue('');
+    expect(screen.getByRole('radio', { name: /^iPad\d/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
   it('the recorder opens the browser as the phone and offers touch actions', async () => {
     const t = await backend.createTest({ appId: app.id, name: 'Phone', startUrl: 'https://app.example.com', viewport: PHONE });
     const opened = vi.spyOn(getEngine(), 'openBrowser');
