@@ -382,6 +382,26 @@ describe('the story dialog', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('can be closed while it waits, and an answer that comes after is dropped', async () => {
+    vi.spyOn(secrets, 'list').mockResolvedValue([]);
+    let answer!: (p: Plan) => void;
+    vi.spyOn(getEngine(), 'plan').mockReturnValue(new Promise<Plan>(r => { answer = r; }));
+    const onPlan = vi.fn(), onClose = vi.fn();
+    render(<StoryDialog open onClose={onClose} onPlan={onPlan} />);
+    fireEvent.change(screen.getByLabelText('Your story'), { target: { value: 'Sign up.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Make steps' }));
+    const cancel = await screen.findByRole('button', { name: 'Cancel' });
+    await screen.findByRole('button', { name: 'Making steps…' });
+    expect(cancel).toBeEnabled();
+    fireEvent.click(cancel);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    await act(async () => { answer({ steps: SIGN_UP }); });
+    expect(onPlan).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // Opened again, it asks afresh.
+    expect(screen.getByRole('button', { name: 'Make steps' })).toBeEnabled();
+  });
+
   it('says why when there is no plan', async () => {
     vi.spyOn(secrets, 'list').mockResolvedValue([]);
     vi.spyOn(getEngine(), 'plan').mockRejectedValue(new EngineError('not_found', "The AI assistant couldn't make steps from this story. Try a shorter story, one action per sentence."));
