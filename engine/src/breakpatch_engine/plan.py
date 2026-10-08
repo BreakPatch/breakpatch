@@ -211,11 +211,12 @@ def clean_step(raw: Any, story: Story) -> dict | None:
 
 
 def clean(value: Any, story: Story) -> dict | None:
-    """A planner's answer as `record.plan` returns it: `{steps, note?, dropped?}`, or None when it
-    holds no step at all. `dropped` counts what the planner proposed that no step can do."""
+    """A planner's answer as `record.plan` returns it: `{steps, note?, dropped?, overLimit?}`, or
+    None when it holds no step at all. `dropped` counts what the planner proposed that no step can
+    do; `overLimit` the steps it could have been, left out past MAX_STEPS."""
     if not isinstance(value, dict) or not isinstance(value.get("steps"), list):
         return None
-    steps, dropped = [], 0
+    steps, dropped, over = [], 0, 0
     for raw in value["steps"]:
         s = clean_step(raw, story)
         if s is None:
@@ -223,7 +224,7 @@ def clean(value: Any, story: Story) -> dict | None:
         elif len(steps) < MAX_STEPS:
             steps.append(s)
         else:
-            dropped += 1
+            over += 1
     if not steps:
         return None
     out: dict = {"steps": steps}
@@ -232,6 +233,8 @@ def clean(value: Any, story: Story) -> dict | None:
         out["note"] = note
     if dropped:
         out["dropped"] = dropped
+    if over:
+        out["overLimit"] = over
     return out
 
 

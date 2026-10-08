@@ -476,7 +476,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     setRerecordId(null);
     // A phone or tablet has no pointer to hover or right click with (the engine leaves them out too).
     const steps = touch ? p.steps.filter(s => !TOUCH_HIDDEN.has(s.action)) : p.steps;
-    const run = planRun(steps, p.note, (p.dropped ?? 0) + p.steps.length - steps.length);
+    const run = planRun(steps, p.note, (p.dropped ?? 0) + p.steps.length - steps.length, p.overLimit);
     setPlan(run); askPlan(run);
   }
   /** The current step changed by the person (Edit): what to look for, what to type. Asked about again. */

@@ -54,8 +54,9 @@ def test_clean_has_nothing_when_no_step_is_left():
 
 
 def test_a_plan_never_has_more_than_max_steps():
-    got = plan.clean({"steps": [{"action": "click", "target": f"Item {i}"} for i in range(plan.MAX_STEPS + 5)]}, story())
-    assert len(got["steps"]) == plan.MAX_STEPS and got["dropped"] == 5
+    got = plan.clean({"steps": [{"action": "click", "target": f"Item {i}"} for i in range(plan.MAX_STEPS + 5)] + [{"action": "fly"}]}, story())
+    assert len(got["steps"]) == plan.MAX_STEPS
+    assert got["overLimit"] == 5 and got["dropped"] == 1           # past the limit, and not a step at all
 
 
 def test_it_types_only_what_the_person_wrote_or_values_made_per_run():

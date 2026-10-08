@@ -675,7 +675,7 @@ For each step, Breakpatch finds what it acts on and highlights it, the same way 
 - **Confirm** (or Enter) does the step and records it, like a step you clicked. Then the next step is shown.
 - **Try again** looks for it again.
 - **Skip** leaves the step out.
-- **Edit** changes what to look for, and, for typing, what to type: typed text, a saved secret or a generated value.
+- **Edit** changes what to look for, and, for typing, what to type: typed text, a saved secret or a generated value. For going to an address it changes the address, and for a wait the seconds.
 - If it can't find what the step acts on, click it on the page and confirm. For a check, draw a box around it.
 
 **All steps** shows the whole list. **Stop** ends it; the steps already added stay. At the end, the card says how many steps were added and skipped. Check them, play the test, then press **Save**. Nothing is saved before you do.
@@ -691,7 +691,7 @@ A step that looks like it deletes, pays for or sends something says so: "This st
 
 - The steps are ordinary steps. A run doesn't use the AI assistant for them.
 - It needs the AI assistant on this Mac and a licence that includes it. Your story and the page stay on your Mac.
-- It suggests at most 30 steps. A story that's long or vague gives worse steps: split it into a few tests.
+- It suggests at most 30 steps; the card says when it left some out. A story that's long or vague gives worse steps: split it into a few tests.
 
 ## Schedules
 

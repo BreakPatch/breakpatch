@@ -195,7 +195,7 @@ A device name the engine doesn't know (a test from a newer Breakpatch) fails wit
 | `record.locate` | `{ description, absence?, near?, shows? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below). `shows: true`: what to find may be text on the screen, not a control (a checkpoint, a Wait until; below) |
 | `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell. An empty sentence is `bad_request`; only its first 300 characters are read |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
-| `record.plan` | `{ story, secrets? }` | `{ steps: PlanStep[], note?, dropped? }` — Breakpatch Team: the steps a user story asks for, proposed and not done (below). Community: `not_ready` |
+| `record.plan` | `{ story, secrets? }` | `{ steps: PlanStep[], note?, dropped?, overLimit? }` — Breakpatch Team: the steps a user story asks for, proposed and not done (below). Community: `not_ready` |
 | `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
 | `record.focused` | `{}` | `{ box, name }` — the field that has the keyboard focus (its label, aria-label, placeholder or name; nulls when nothing that takes typing has it), for the confirm bar of a described typing step; nothing is done to the page |
 | `record.chooseFile` | `{ sample }` \| `{ file, path }` \| `{ cancel: true }` | `{}` — the answer to a `record.fileChooser` event: the file for a click that opened the page's file picker (below) |
@@ -384,10 +384,11 @@ usable step, or none after 90 s, is `not_found` ("… Try a shorter story, one a
   and checkpoint, optional for `write` (none: the field that has the focus) and `scroll` (none: the
   page). `navigate` has `url` (http or https only), `scroll` a `direction`, `waitFor` `seconds` (1 to 60).
 - The engine checks every step itself (`plan.clean`), whatever the planner said, and leaves out the
-  ones no step can do (`dropped` counts them). On a phone or tablet test (the open browser has a
-  `device`, so the planner's `Story` has `device` and `touch: true`) that includes `hover` and
-  `rightClick`: there's no pointer for them. A `navigate` goes only to the page's own site (scheme,
-  host and port) or to an address or host the story names; any other is left out.
+  ones no step can do (`dropped` counts them) and any past the 30th (`overLimit` counts those). On
+  a phone or tablet test (the open browser has a `device`, so the planner's `Story` has `device`
+  and `touch: true`) no step can be a `hover` or `rightClick`: there's no pointer for them. A
+  `navigate` goes only to the page's own site (scheme, host and port) or to an address or host the
+  story names; any other is left out.
 - A `write` types only: a saved secret the person picked (`secretRef`); a generated value
   (`generated`); or `text` the person wrote in the story (case and spaces aside). Run-time values
   (`{timestamp}` to the second, `{i}` the repeat number, `{time}` HH:MM, `{date}` YYYY-MM-DD; only

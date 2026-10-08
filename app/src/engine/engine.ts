@@ -80,7 +80,8 @@ export interface PlanStep {
   /** It looks like it deletes, pays or sends something. */
   careful?: boolean;
 }
-export interface Plan { steps: PlanStep[]; note?: string; dropped?: number }
+/** `dropped`: proposed steps no step can do; `overLimit`: steps left out past the most a plan has (30). */
+export interface Plan { steps: PlanStep[]; note?: string; dropped?: number; overLimit?: number }
 
 export interface RunSettings {
   autoFix: boolean; failOnFix: boolean;

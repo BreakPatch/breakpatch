@@ -10,7 +10,7 @@ import { resetFeaturesForTests, setFeatures } from '../../edition/features';
 import { NO_FEATURES } from '../../edition/types';
 import { secrets } from '../../platform';
 import { AddStepBar } from './AddStepBar';
-import { CAREFUL_NOTE, answered, planDoneText, planIntent, planNeeds, planRun, planSentence } from './plan';
+import { CAREFUL_NOTE, answered, leftOutText, planDoneText, planIntent, planNeeds, planRun, planSentence } from './plan';
 import { StoryDialog } from './StoryDialog';
 import { useRecorder } from './useRecorder';
 import RecorderScreen from './RecorderScreen';
@@ -47,7 +47,7 @@ const SIGN_UP: PlanStep[] = [
 
 describe('a story’s steps in words', () => {
   it('says each step plainly', () => {
-    expect(SIGN_UP.map(planSentence)).toEqual(['Type "Ada Lovelace" into the Name field', 'Type the saved secret TEST_PASSWORD into the Password field',
+    expect(SIGN_UP.map(s => planSentence(s))).toEqual(['Type "Ada Lovelace" into the Name field', 'Type the saved secret TEST_PASSWORD into the Password field',
       'Click the Create account button', 'Check that Account created shows']);
     expect(planSentence({ action: 'write', generated: 'uniqueName' })).toBe('Type a unique name into the field that has the focus');
     expect(planSentence({ action: 'navigate', url: 'https://app.example.com' })).toBe('Go to https://app.example.com');
@@ -68,6 +68,14 @@ describe('a story’s steps in words', () => {
     expect(planIntent(SIGN_UP[1])).toEqual({ action: 'write', target: 'the Password field', secretRef: 'TEST_PASSWORD', repeat: 1, from: 'plan' });
     expect(planIntent({ action: 'scroll' })).toMatchObject({ action: 'scroll', direction: 'down', distance: 300 });
     expect(planIntent({ action: 'navigate', url: 'https://x.example' })).toMatchObject({ action: 'navigate', url: 'https://x.example' });
+  });
+
+  it('says which steps were left out, and why', () => {
+    expect(leftOutText({})).toBeNull();
+    expect(leftOutText({ dropped: 1 })).toBe("One step the AI assistant suggested can't be a step, so it's left out.");
+    expect(leftOutText({ overLimit: 4 })).toBe('4 steps past the first 30 are left out: split a long story into a few tests.');
+    expect(leftOutText({ dropped: 2, overLimit: 1 })).toBe("2 steps the AI assistant suggested can't be a step, so they're left out. One step past the first 30 is left out: split a long story into a few tests.");
+    expect(planRun(SIGN_UP, undefined, 0, 3)).toMatchObject({ overLimit: 3 });
   });
 
   it('counts what was added and skipped', () => {
@@ -266,9 +274,49 @@ describe('the card and the bars', () => {
     await screen.findByRole('button', { name: 'Confirm' });
     for (const name of ['Try again', 'Skip', 'Edit']) expect(screen.getByRole('button', { name })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'All steps' }));
-    expect(screen.getAllByRole('listitem').map(li => li.querySelector('.grow')?.textContent)).toEqual(SIGN_UP.map(planSentence));
+    expect(screen.getAllByRole('listitem').map(li => li.querySelector('.grow')?.textContent)).toEqual(SIGN_UP.map(s => planSentence(s)));
     fireEvent.click(screen.getByRole('button', { name: 'Skip' }));
     expect(await screen.findByText('From your story · step 2 of 4')).toBeInTheDocument();
+  });
+
+  it('says the steps past the limit apart from the ones that can’t be a step', async () => {
+    render(<Bar plan={{ steps: SIGN_UP, dropped: 1, overLimit: 2 }} />);
+    fireEvent.click(screen.getByText('start'));
+    expect(await screen.findByText(/^One step the AI assistant suggested can't be a step, so it's left out\. 2 steps past the first 30 are left out/)).toBeInTheDocument();
+  });
+
+  it('Edit changes a Go to step’s address', async () => {
+    const point = recordPoint();
+    render(<Bar plan={{ steps: [{ action: 'navigate', url: 'https://app.example.com/signup' }, { action: 'click', target: 'Next' }] }} />);
+    fireEvent.click(screen.getByText('start'));
+    await screen.findByRole('button', { name: 'Confirm' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const address = screen.getByLabelText('Address');
+    expect(address).toHaveValue('https://app.example.com/signup');
+    fireEvent.change(address, { target: { value: 'not an address' } });
+    expect(screen.getByRole('button', { name: 'Use this' })).toBeDisabled();
+    fireEvent.change(address, { target: { value: 'app.example.com/login' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use this' }));
+    expect(await screen.findByText('Go to https://app.example.com/login', { selector: '.rec-plan-now' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(point).toHaveBeenCalledWith(expect.objectContaining({ action: 'navigate', url: 'https://app.example.com/login' })));
+    expect(await screen.findByText('From your story · step 2 of 2')).toBeInTheDocument();
+  });
+
+  it('Edit changes a wait’s seconds when it couldn’t be done', async () => {
+    const point = vi.spyOn(getEngine(), 'recordPoint').mockRejectedValueOnce(new EngineError('busy', 'The engine is still checking the last step.'))
+      .mockImplementation(async p => ({ id: 'w1', action: p.action, label: 'Wait', durationMs: p.durationMs }));
+    render(<Bar plan={{ steps: [{ action: 'waitFor', seconds: 2 }] }} />);
+    fireEvent.click(screen.getByText('start'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const secs = screen.getByLabelText('Seconds to wait');
+    expect(secs).toHaveValue(2);
+    fireEvent.change(secs, { target: { value: '90' } });
+    expect(screen.getByRole('button', { name: 'Use this' })).toBeDisabled();
+    fireEvent.change(secs, { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use this' }));
+    await waitFor(() => expect(point).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'waitFor', durationMs: 5000 })));
+    expect(await screen.findByText(/^1 step added/)).toBeInTheDocument();
   });
 
   it('Edit opens a form for the step; Stop ends the story', async () => {
