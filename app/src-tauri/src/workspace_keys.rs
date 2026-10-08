@@ -72,6 +72,10 @@
 //! - `ws` is the workspace's connection id (`team:<project>/<database>` or `hosted:<id>`), and a
 //!   document path is relative to the workspace (`apps/<id>/tests/<id>`), the same for own Firebase
 //!   and Breakpatch Cloud.
+//!
+//! **Workspace secrets** (issue #45, workspace_secrets.rs) are content fields too, with one rule
+//! more: a secret's value (`secrets/<id>`, field `value`) is sealed and opened only by
+//! workspace_secrets.rs, for the engine. `seal` and `open` below refuse it, so the UI never gets it.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
@@ -1115,10 +1119,14 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         Ok((kid, key.clone()))
     }
 
-    /// Seals fields with key `kid` (None: the newest this Mac holds).
+    /// Seals fields with key `kid` (None: the newest this Mac holds). Never a workspace secret's
+    /// value: workspace_secrets.rs seals that one, from what it checked.
     pub fn seal(&self, ws: &str, kid: Option<u32>, items: &[SealItem]) -> Result<Vec<Blob>, String> {
         if items.len() > MAX_ITEMS {
             return Err("Too many fields at once.".into());
+        }
+        if items.iter().any(|i| crate::workspace_secrets::is_secret_value(&i.path, &i.field)) {
+            return Err("A workspace secret's value is saved with its own command.".into());
         }
         let (kid, key) = self.key(ws, kid)?;
         items
@@ -1128,6 +1136,7 @@ impl<S: SecretStore> WorkspaceKeys<S> {
     }
 
     /// Opens fields: each one's JSON, or None when this Mac can't (no such key, or not this place's).
+    /// A workspace secret's value is always None here: it opens for the engine only.
     pub fn open(&self, ws: &str, items: &[OpenItem]) -> Result<Vec<Option<String>>, String> {
         if items.len() > MAX_ITEMS {
             return Err("Too many fields at once.".into());
@@ -1137,11 +1146,29 @@ impl<S: SecretStore> WorkspaceKeys<S> {
         Ok(items
             .iter()
             .map(|i| {
+                if crate::workspace_secrets::is_secret_value(&i.path, &i.field) {
+                    return None;
+                }
                 let key = ring.keys.get(&i.kid)?;
                 let json = open_field(key, ws, &i.path, &i.field, i.kid, &i.enc).ok()?;
                 String::from_utf8(json).ok()
             })
             .collect())
+    }
+
+    /// Seals one field with key `kid` (None: the newest) without the check `seal` makes: for
+    /// workspace_secrets.rs, which seals a secret's value itself.
+    pub(crate) fn seal_reserved(&self, ws: &str, kid: Option<u32>, path: &str, field: &str, json: &[u8]) -> Result<Blob, String> {
+        let (kid, key) = self.key(ws, kid)?;
+        Ok(Blob { enc: seal_field(&key, ws, path, field, kid, json)?, kid })
+    }
+
+    /// Opens one field without the check `open` makes (workspace_secrets.rs): its JSON, or why not.
+    pub(crate) fn open_reserved(&self, ws: &str, path: &str, field: &str, kid: u32, enc: &str) -> Result<Zeroizing<Vec<u8>>, String> {
+        let r = self.ring(ws)?;
+        let ring = r.lock().unwrap();
+        let key = ring.keys.get(&kid).ok_or_else(|| os_format!("This Mac doesn't hold key {kid} of this workspace.", kid = kid))?;
+        open_field(key, ws, path, field, kid, enc).map(Zeroizing::new)
     }
 
     /// This Mac's device and signing secrets for `ws`, made the first time. The map stays locked
