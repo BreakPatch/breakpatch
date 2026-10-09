@@ -15,7 +15,7 @@ Hosted workspaces (Breakpatch Cloud, no Firebase set-up) are built for Team and 
 | Area | Included |
 |---|---|
 | Recording | Record by clicking or drawing on the page, each step confirmed before it's done (the "Describe the next step" box is off until the real model is checked on a Mac again: `DESCRIBE_STEPS` in `app/src/screens/recorder/actions.ts`); every action (click, double, long and right click, hover, swipe, scroll, drag and drop, write text, wait, go to address, tabs and popups, upload a sample file, check a download); checkpoints; loops; shared steps; set-up and clean-up calls; automatic screen checks; re-record a step |
-| Running | Run a test or a suite by hand on this Mac; **Run all** for an app's tests; live run view; report with expected vs seen and the reason; **Copy details** and **Copy as Markdown** (a ready-made bug report) on every failed step |
+| Running | Run a test or a suite by hand on this Mac; **Run all** for an app's tests; a suite's **Retries** (a test that fails because the page was slow runs again; the engine's `retry.py`); live run view; report with expected vs seen and the reason; the **Flaky** marker from a test's last run (it passed only on a retry); **Copy details** and **Copy as Markdown** (a ready-made bug report) on every failed step |
 | Storage | Tests saved as JSON files in a folder you pick (for example inside your project's Git repo). Only the latest version is kept: saving overwrites. The last run of each test is kept. Deleted apps, tests, shared steps and suites stay in Recently deleted (the folder's `deleted/`) for 30 days. |
 | This Mac | Saved secrets in the macOS Keychain; the Standard AI assistant, the one built-in model (the Larger one only from Team's runner settings, on 32 GB+); auto-updates; dark and light; works offline; anonymous usage counts you can turn off (Settings → Privacy) |
 
@@ -24,7 +24,7 @@ Hosted workspaces (Breakpatch Cloud, no Firebase set-up) are built for Team and 
 | Area | Included |
 |---|---|
 | Collaboration | Workspace on your own Firebase (its `(default)` database or a separate one); invite link and `.bpworkspace` file; several workspaces on one Mac; members and roles; shared apps, tests and runs; Only you / In team suite; Check the connection and Edit connection |
-| History | Version history with restore; runs show the version they tested; the team's run history, kept 90 days (runs and suite runs carry a required `expiresAt`); lists that grow page 20 at a time |
+| History | Version history with restore; runs show the version they tested; the team's run history, kept 90 days (runs and suite runs carry a required `expiresAt`); lists that grow page 20 at a time; the **Flaky** marker from a test's last 20 runs of its version (`app/src/lib/flaky.ts`, no feature of its own: it uses whatever runs the backend keeps) |
 | Fixing | Fixed automatically (the AI assistant finds moved buttons during a run); Accept new position; Fail the test if anything needed fixing; calibration runs |
 | Writing tests | **Write a test from a story** (coming with Team: no tier lists `aiTests` yet): the AI assistant suggests a user story's steps (engine `record.plan`), and the person confirms, skips or edits each one in the recorder |
 | Failures | **Why did this fail?**: the AI assistant says in plain words what changed, the likely cause and what to do; **Create issue** in GitHub, Linear or Jira Cloud, with each person's own token |

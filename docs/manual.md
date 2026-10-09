@@ -240,7 +240,7 @@ A test's device is fixed once you start, like any screen size. Tests made before
 
 Press **Run**. The live view shows each step as it runs. Each step is checked before and after it acts, and the first failure stops the run with a plain reason, for example "Couldn't find the Done button".
 
-**Run all** on an app's page runs each of its tests in turn, like a suite, and saves each test's run. Tests with no steps yet are left out, so they don't fail it.
+**Run all** on an app's page runs each of its tests in turn, like a suite, and saves each test's run. Tests with no steps yet are left out, so they don't fail it. Like a suite, it tries a test again once when it fails because the page was slow (see [Retries](#retries)).
 
 The report shows what was expected next to what was on screen, why it stopped and what to try. Press **Re-record this step** to fix it straight away.
 
@@ -264,7 +264,7 @@ In Team, a failed step also has **Why did this fail?**: the AI assistant says in
 
 - **Web page (HTML).** One file that opens in any browser, offline, without Breakpatch or a sign-in. Attach it to a ticket or an email, or drop it in a chat. It has the summary (with the device, for a phone or tablet test), every step with its result, the reason and where the time went, and the AI assistant's explanation when there is one. Steps open and close with a click, the one that failed is open, and it follows the reader's light or dark setting (**Theme** switches it). It never loads anything from the internet.
 - **PDF.** Opens the print dialog with the same report, every step open. Choose **PDF → Save as PDF**. A saved web page prints the same way from any browser.
-- **JUnit XML.** For CI dashboards: GitHub, GitLab and Jenkins read it. One test case per test, with the failed step and why. It has no screenshots.
+- **JUnit XML.** For CI dashboards: GitHub, GitLab and Jenkins read it. One test case per test, with the failed step and why. A test that passed on a [retry](#retries) passes, with a `flakyFailure` for each earlier try, as Maven Surefire writes it (Jenkins and others show it as flaky); one that failed every try has a `rerunFailure` for each earlier try. It has no screenshots.
 
 A suite's report starts with the tests that didn't pass, each a link to it; tests that passed start closed (**Open all steps** opens everything).
 
@@ -289,6 +289,40 @@ A named set of tests, which can mix apps: *Smoke*, *Before release*. Pick the te
 Press **Run** on a suite to run it on this Mac, one test after another, in the order you picked. You can watch each test as it runs, stop the suite, and open each test's report when it's done.
 
 In Community you run suites by hand. A suite's result is kept until you close Breakpatch, and each test keeps its last run. Schedules, a runner Mac and starting suites from CI come with [Team](#what-team-adds).
+
+### Retries
+
+A test sometimes fails only because the page was slow this time. **When a test fails because the page was slow**, in the suite, says what a suite run does then: **Don't retry**, **Retry once** (the default) or **Retry twice**.
+
+- Only failures that look like timing are retried: the page didn't settle or didn't load in time, a popup or download didn't come, nothing happened after a click (often a page that wasn't ready yet), or the screen almost matched the recording. A button that isn't there, a page that looks different, a missing saved secret or a set-up call that didn't work fail at once, as before.
+- A retry runs the whole test again from the start, in a new browser, with its set-up and clean-up calls. A single step is never done twice on its own.
+- No retry starts once the test has taken 5 minutes.
+- Every retry shows. The run view says which try is running and why the last one failed. A test that passed on a retry says **Passed on retry 1** in the suite run, the report, the Runs tab and Run history, and its report says which step failed on the earlier try and why. It counts as passed, so the suite still passes, and the suite's result says how many tests passed only on a retry.
+
+**Run all** retries the same way, once. A test you run on its own, with **Run**, isn't retried: you're watching it.
+
+## Flaky tests
+
+A flaky test fails now and then with nothing changed: a test like that teaches people to ignore a red run. Breakpatch marks one **Flaky**, in the Tests tab next to its last run and at the top of its report. Point at the marker to see why, for example "It failed twice and passed 6 times in its last 8 runs of version 3, back and forth, with no change to the test."
+
+A test is flaky when, on the version of it you have now:
+
+- it passed only on a [retry](#retries), or
+- it failed between passes (or passed between failures). A test that passed for weeks and now fails isn't flaky: it found something, until it passes again by itself.
+
+A failure that says nothing about the test, like a missing saved secret, a set-up call that didn't work or a run you stopped, doesn't count. Saving a new version of the test starts again.
+
+In a tests folder only the last run of each test is kept, so the marker comes from that run: a test whose last run passed on a retry. In [Team](#what-team-adds), Breakpatch looks at the test's last 20 runs of its version, from every Mac, the local runner and CI.
+
+**Answer the marker** from the test's **⋯** menu in the Tests tab, or **Is it flaky?** in its report:
+
+- **Mark as known flaky**: the marker stays, quieter, as **Known flaky**, so everyone knows it's being looked at.
+- **It's not flaky**: its runs so far no longer count. A new failure between passes shows the marker again.
+- **Not known flaky any more** takes back *Mark as known flaky*.
+
+In a tests folder the answer is saved in the test's file, so it goes to Git with the test. A new version of the test starts again. A known flaky test still fails a suite when it fails: Breakpatch never hides a failure.
+
+**Close to failing.** In a report, a step that passed with its screen check almost at the limit of what it allows says *Passed, but only just*. If a test fails now and then, a step like that is often why.
 
 ## Get a deleted app or test back
 
@@ -429,6 +463,7 @@ Everything in this part comes with **Breakpatch Team** (and Business, which is T
 - **A shared workspace**, [hosted by Breakpatch](#hosted-by-breakpatch) with nothing to set up, or in your company's own Google Firebase project ([Host it yourself](#host-it-yourself)): your team's apps, tests, suites and runs in one place. A test is *Only you* until you add it to the team suite. Then it's *In team suite*.
 - **Members and roles**: member, admin, a runner account and a CI account.
 - **Version history.** Every save is kept. Runs show which version they tested, and you can restore any version.
+- **Flaky tests from the run history.** Breakpatch looks at each test's last 20 runs of its version, from every Mac, the local runner and CI, and marks the ones that pass and fail back and forth (see [Flaky tests](#flaky-tests)).
 - **Fixed automatically.** When a button has moved, the AI assistant finds it during the run and carries on. You accept the new position in the report.
 - **Why did this fail?** In the report, the AI assistant says in plain words what changed, for example "The Save button now reads “Save changes”", with the likely cause and what to do.
 - **Write a test from a story** (coming with Team). Paste a short user story. The AI assistant suggests the steps, and you check each one on the page before it's added.
@@ -752,6 +787,8 @@ It uses the Standard AI assistant, like every Mac. With 32 GB of memory or more 
 
 **HTML reports.** Settings → Local runner → **Save an HTML report of every suite run** saves each suite run as the same web page as [Export](#export-a-report), in a folder you choose on the runner Mac (named after the suite, the day and the time). Turn off **Include screenshots** there if others can open the folder who shouldn't see them. If the folder is also on a web server, or a shared drive with web links, enter its **web address** (`https://` is added if you leave it out; it's saved when you leave the field): the Slack and Teams [result messages](#result-messages) then have an **Open the HTML report** button, and the JSON has `htmlReportUrl`. Without one, the report is only saved: a file on the runner Mac isn't something others can open from a message. If a report can't be saved, the runner's status says so.
 
+The runner tries a test again when it fails because the page was slow, as the suite says (**Retry once** unless it says otherwise, see [Retries](#retries)). Runner mode says which tests passed on a retry, and so do the result messages.
+
 Anyone can press **Run on runner** on a suite. If the runner is offline, the request waits until it's back. The runner tells the workspace it's there every 90 seconds, and whenever what it's doing changes; after 5 minutes without that, the other Macs show it as offline.
 
 **Queue rules**
@@ -895,14 +932,14 @@ Shared steps are read from `apps/<app>/shared/` next to `tests/`. The run isn't 
 
 | Exit code | What it means |
 |---|---|
-| `0` | The test or suite passed (a suite *passed with fixes* too). |
+| `0` | The test or suite passed (a suite *passed with fixes* too, and, with `--retries`, a test that passed on a retry). |
 | `1` | A test failed: a check didn't match, or something wasn't there. The JSON says which step and why. |
 | `2` | Nothing ran, or not all of it could: the test file or its shared steps, the workspace file, the suite or test couldn't be read, the CI account couldn't sign in, the workspace was saved by a newer Breakpatch (`code: "newer_workspace"`: update `breakpatch-ci`), a secret isn't allowed on a test's sites, or something went wrong inside `breakpatch-ci` (`code: "internal"`). The JSON has a `code` and a message. |
 | `3` | There's no usable licence, or it's for another workspace. The JSON and the log say why. |
 
 If a run can't be saved in the workspace (for example the security rules are out of date), the log says so and the JSON has `"saved": false`. The exit code is still the test's result.
 
-**Reports for your CI.** Add `--junit results.xml` to write the result as JUnit XML, which GitHub, GitLab and Jenkins show as test results, and `--html report.html` for the same report as the app's [Export](#export-a-report), screenshots included, to keep as a build artifact. `--html-no-screenshots` leaves the screenshots out (they can show personal data). Both work for a suite, a workspace test and a test file. The folder must exist; a file that can't be written is said in the log and doesn't change the exit code.
+**Reports for your CI.** Add `--junit results.xml` to write the result as JUnit XML, which GitHub, GitLab and Jenkins show as test results (a test that passed on a retry has a `flakyFailure` for each earlier try, see [Export a report](#export-a-report)), and `--html report.html` for the same report as the app's [Export](#export-a-report), screenshots included, to keep as a build artifact. `--html-no-screenshots` leaves the screenshots out (they can show personal data). Both work for a suite, a workspace test and a test file. The folder must exist; a file that can't be written is said in the log and doesn't change the exit code.
 
 ```sh
 breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --junit results.xml --html report.html
@@ -932,6 +969,7 @@ Keep the sites to your own test environments. A workspace member who can edit te
 - `--auto-fix` lets the AI assistant find a button that moved, as [Fixed automatically](#fixed-automatically) does in the app. It only works on a self-hosted Mac where Breakpatch is installed and its AI assistant is downloaded (Settings → AI assistant), with a licence that includes Fixed automatically. Anywhere else the run carries on without fixing and says so. A [simple runner](#runner-tiers) never fixes.
 - `--fail-on-fix` fails the run when a step needed fixing.
 - `--strict-systems` turns off **Allow for small differences between systems** for this run (see below).
+- `--retries 1` (or `2`) tries a failed test again, from the start, when its failure looks like timing: the page was slow or not ready, or the start page didn't load (see [Retries](#retries)). Other failures fail at once. A test that passes on a retry passes, so the exit code is `0`. The log says so, the JSON has `attempts` (how many tries) and each earlier try's failure on its step (`retried`), a suite's counts have `flaky` (how many passed only on a retry), the `--junit` file marks it as flaky, and the run history shows **Passed on retry 1**. Without `--retries` nothing is retried, whatever the suite says in the app: a pipeline's results don't change unless you ask.
 - `--notify-url URL` sends the result to Slack, Microsoft Teams or any web address when the run ends, as the local runner does (see [Result messages](#result-messages)). Anyone with the address can post to your channel, so keep it in a CI secret and set it as `BREAKPATCH_NOTIFY_URL` instead: then it never shows in the log. `--notify-kind slack|teams|webhook` says which format to send (Breakpatch picks it from the address), and `--notify-when failures` sends only failed runs (the default is `every`). The JSON gets `"notified"`, with what Slack or Teams said if it didn't work; the exit code is still the test's result. *When it starts failing, and when it passes again* isn't available in CI, since the CI account can't read the suite's last result.
 
 **Record and run on the same kind of machine.** Screen checks compare the page with how it looked when the step was recorded, and another system can draw text a little differently. Tests recorded on a Mac pass most reliably on a Mac with the same Breakpatch version. When a test was recorded on another system, `breakpatch-ci` says so in one line when the run starts, allows for small differences as the app's **Allow for small differences between systems** does (`--strict-systems` turns that off), and adds `systemMismatch` to the JSON, with the explanation when a check fails. See [Recorded on another system](#recorded-on-another-system).
@@ -1162,7 +1200,7 @@ To try the other tier, set `BREAKPATCH_TIER=simple` or `BREAKPATCH_TIER=full`, o
 
 A Pi 4 with 8 GB suits nightly Flutter runs, a Pi 5 is better, and an x64 mini PC is best.
 
-**Slow machines.** On a slow processor `breakpatch-ci` waits longer for a page to settle, for a step's first check to match, for pages to load and for the start page: 2× on a Pi 4, on either tier. It doesn't stretch the watch for moving parts before each step, so a page that's ready on time costs nothing extra. To choose yourself, set `BP_TIMINGS_SCALE` to a number from 1 to 10: it wins over the tier's. Use 2 for a Pi 5 and 3 for a Pi 4 with Flutter. If steps fail with "didn't settle" or "not there yet", raise it. For a runner set up as below, put the line `BP_TIMINGS_SCALE=3` in `/etc/breakpatch/breakpatch.env`.
+**Slow machines.** On a slow processor `breakpatch-ci` waits longer for a page to settle, for a step's first check to match, for pages to load and for the start page: 2× on a Pi 4, on either tier. It doesn't stretch the watch for moving parts before each step, so a page that's ready on time costs nothing extra. The 5 minutes after which no [retry](#retries) starts grow the same way. To choose yourself, set `BP_TIMINGS_SCALE` to a number from 1 to 10: it wins over the tier's. Use 2 for a Pi 5 and 3 for a Pi 4 with Flutter. If steps fail with "didn't settle" or "not there yet", raise it. For a runner set up as below, put the line `BP_TIMINGS_SCALE=3` in `/etc/breakpatch/breakpatch.env`.
 
 **Set it up**
 
@@ -1184,7 +1222,7 @@ A Pi 4 with 8 GB suits nightly Flutter runs, a Pi 5 is better, and an x64 mini P
 
    It asks for the licence key, the CI account's password, the machine key (only for an encrypted workspace) and each saved secret you name with `--secret`. What you type isn't shown, and it never goes on the command line. It keeps each one in a file of its own in `/etc/breakpatch` that only root can read. Then it starts the timer.
 
-   `--suite` takes the suite's ID (on the suite, under *Start it from anywhere*). `--schedule` takes systemd's `OnCalendar=` form: `Mon..Fri 06:00` (the default), `*-*-* 02:30` for every night, or `hourly`. For more suites, run it again with another `--suite`. The workspace, the licence key and the password are kept from the first time.
+   `--suite` takes the suite's ID (on the suite, under *Start it from anywhere*). `--retries 1` passes [retries](#retries) on to each run. `--schedule` takes systemd's `OnCalendar=` form: `Mon..Fri 06:00` (the default), `*-*-* 02:30` for every night, or `hourly`. For more suites, run it again with another `--suite`. The workspace, the licence key and the password are kept from the first time.
 
 3. Start a first run now, and read its log:
 
@@ -1214,7 +1252,7 @@ After each run, the local runner can send the suite's result where your team tal
 
 **When.** *After every run*, *Only when it fails*, or *When it starts failing, and when it passes again*: the first failed run after a pass, then the first pass after that. A run that was replaced by a newer request is only sent with *After every run*.
 
-**Slack.** Make an [incoming webhook](https://api.slack.com/messaging/webhooks) for the channel (a Slack app with *Incoming Webhooks* turned on) and paste its address, `https://hooks.slack.com/services/…`. The message has the result and the counts with an **Open the report** button beside them, then one line per failed test with the step and why (the AI assistant's sentence, when there is one, is marked as the AI assistant's), and the screenshot, if you include it, right after the failure it shows. The notification says how many tests failed and which.
+**Slack.** Make an [incoming webhook](https://api.slack.com/messaging/webhooks) for the channel (a Slack app with *Incoming Webhooks* turned on) and paste its address, `https://hooks.slack.com/services/…`. The message has the result and the counts with an **Open the report** button beside them, then one line per failed test with the step and why (the AI assistant's sentence, when there is one, is marked as the AI assistant's), and the screenshot, if you include it, right after the failure it shows. Tests that passed only on a [retry](#retries) come last, under *Passed on a retry, so may be flaky*, each with the step that failed first and why. The notification says how many tests failed and which.
 
 **Microsoft Teams.** In the channel, add the Workflows template **Send webhook alerts to a channel** (or a workflow that starts with *When a Teams webhook request is received*), and paste its address. It ends in `environment.api.powerplatform.com`. The message is an Adaptive Card with the same things, and the same line as its notification preview. Microsoft turned off the old Office 365 connector addresses (`….webhook.office.com`) in Teams, so Breakpatch doesn't take them. If Teams says it wants a sign-in, set *Who can trigger the flow* to *Anyone* in the workflow's first step. Older Workflows addresses on `logic.azure.com` are being replaced by Microsoft: if the test message fails, copy the workflow's address again.
 
@@ -1235,9 +1273,12 @@ If the address doesn't answer, the runner tries 3 times over 5 minutes. If Slack
   "suite": "Smoke",
   "suiteId": "smoke-7f3a",
   "result": "failed",
-  "counts": { "total": 6, "passed": 4, "fixed": 0, "failed": 1, "notRun": 1 },
+  "counts": { "total": 6, "passed": 4, "fixed": 0, "failed": 1, "notRun": 1, "flaky": 1 },
   "failures": [
     { "test": "Create a project", "step": "Step 5: Click Done", "reason": "couldn't find the Done button" }
+  ],
+  "flaky": [
+    { "test": "Sign in", "step": "Step 3: Click Sign in", "reason": "it waited too long" }
   ],
   "requestedBy": "CI · build 412",
   "note": "",
@@ -1245,11 +1286,11 @@ If the address doesn't answer, the runner tries 3 times over 5 minutes. If Slack
   "durationSeconds": 292,
   "reportLink": "breakpatch://report/web-app/run_8f21c",
   "reportUrl": "https://breakpatch.dev/report#r=web-app/run_8f21c",
-  "text": "Smoke failed: 1 of 6 tests failed, 1 not run · Create a project · 4 min 52 s · started by CI · build 412"
+  "text": "Smoke failed: 1 of 6 tests failed, 1 not run, 1 passed on a retry · Create a project · 4 min 52 s · started by CI · build 412"
 }
 ```
 
-`result` is one of `passed`, `passed_with_fixes`, `failed` or `replaced`. `reportLink` opens the report in Breakpatch on a Mac, and `reportUrl` does the same from anywhere (both are empty when there's no run to open). A failure can also have `explanation`, the AI assistant's sentence on why, and the message `imageUrl`, the screenshot, when the suite includes one, and `htmlReportUrl`, the runner's saved [HTML report](#the-local-runner), when its folder has a web address. Use `text` as it is, or build your own message. Any relay works: n8n, Zapier, an email service. Discord and Google Chat take it through such a relay.
+`result` is one of `passed`, `passed_with_fixes`, `failed` or `replaced`. A test that passed only on a [retry](#retries) counts as passed, so it doesn't change `result`: `counts.flaky` says how many did (it's left out when none did), and `flaky` names them, with the step that failed first and why (also left out when none did). `reportLink` opens the report in Breakpatch on a Mac, and `reportUrl` does the same from anywhere (both are empty when there's no run to open). A failure can also have `explanation`, the AI assistant's sentence on why, and the message `imageUrl`, the screenshot, when the suite includes one, and `htmlReportUrl`, the runner's saved [HTML report](#the-local-runner), when its folder has a web address. Use `text` as it is, or build your own message. Any relay works: n8n, Zapier, an email service. Discord and Google Chat take it through such a relay.
 
 [breakpatch-ci](#from-ci-with-breakpatch-ci) sends the same messages with `--notify-url`.
 
@@ -1289,11 +1330,12 @@ Create issue comes with a Breakpatch Team licence that includes it; licences get
 - Every change to apps, tests, shared steps or suites also updates `workspace/changes`, a small document that tells the other Macs what changed, so they don't read everything again. Apps from before this can't save until they're updated.
 - Runs and suite runs must carry `expiresAt`, 90 days after they're saved, which the TTL policy deletes them by. It can't be changed. Runs from Breakpatch or `breakpatch-ci` from before this are refused, so update them first.
 - Only admins set where a suite's result goes. Its address is kept apart from the suite, and only admins and the runner can read it.
+- Anyone in the team can mark a test as known flaky or not flaky (see [Flaky tests](#flaky-tests)), for a saved version of it.
 - Anyone in the team can note the issue made from a run, and change nothing else about it. Only admins set where issues go. Tokens for GitHub, Linear and Jira are never in the workspace.
 - [Workspace secrets](#workspace-secrets) are always stored encrypted. Only admins save, change or delete them. People in the team read them (encrypted); the runner reads only those it may use, and accounts with the `ci` role only those `breakpatch-ci` may use.
 - In an encrypted workspace, names, steps, addresses and results are stored encrypted, and the rules check only their size. Only admins can encrypt what's there again (turning encryption on, a new key), and nothing else about it. The copies of the key for the recovery code and the machine key are for admins (the machine key's for the runner and CI too), and each Mac's request to be let in is its owner's.
 
-**After an update.** The rules carry a date (search what you copy for *These rules are dated*), and each Breakpatch version needs its own date's rules or newer: this version's are dated 2026-10-08. In a workspace in your own Firebase, an admin copies them again after updating (Settings → Workspace → **Copy security rules**) and publishes them in the Firebase console → Firestore → your database → Rules. Until then, **Check the connection** says the rules for this version aren't published, and each Mac reads the whole workspace every time it opens it. The 2026-10-06 rules also make sure a removed admin can't change which Mac's signature was withdrawn (see [Encryption and the recovery code](#encryption-and-the-recovery-code)), and the 2026-10-08 rules add [workspace secrets](#workspace-secrets). Hosted by Breakpatch, the rules are always up to date.
+**After an update.** The rules carry a date (search what you copy for *These rules are dated*), and each Breakpatch version needs its own date's rules or newer: this version's are dated 2026-10-09. In a workspace in your own Firebase, an admin copies them again after updating (Settings → Workspace → **Copy security rules**) and publishes them in the Firebase console → Firestore → your database → Rules. Until then, **Check the connection** says the rules for this version aren't published, and each Mac reads the whole workspace every time it opens it. The 2026-10-06 rules also make sure a removed admin can't change which Mac's signature was withdrawn (see [Encryption and the recovery code](#encryption-and-the-recovery-code)), and the 2026-10-08 rules add [workspace secrets](#workspace-secrets). Hosted by Breakpatch, the rules are always up to date.
 
 To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the workspace's database. Disable the user in Firebase Authentication to cut it off.
 

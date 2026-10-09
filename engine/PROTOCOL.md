@@ -717,10 +717,16 @@ the pipeline names their sites (`--secret NAME=https://site[,…]`), each goes a
 listed, or whose sites don't include the test's start page, `appUrl` or a call that sends it. Each run is written to
 `apps/<appId>/runs` as the app writes one, with `source: "ci"` and the local `screenshotPath` left
 out; a suite also writes `suiteRuns`. A suite prints `{ result, suite, suiteId, version, counts,
-tests: [{ name, appId, testId, version, result, failedStep?, note?, runId? }], suiteRunId?, saved }`
+tests: [{ name, appId, testId, version, result, failedStep?, note?, runId?, attempts? }], suiteRunId?, saved }`
 and exits 0 when it passed (with fixes too) and 1 when a test failed; 2 also covers a workspace,
 suite or test that can't be read and a sign-in that fails. The Team repo's
 `engine/src/breakpatch_team_engine/workspace.py` has the details.
+
+**Retries.** `--retries N` (0 to 2, default 0) sends `settings.retries` (see Retries): a test that
+passes on a retry passes (exit 0), its JSON has `attempts` and each step's `retried`, a suite row has
+`attempts` and the suite's `counts.flaky` (only when some did) counts the tests that passed only on a
+retry, and runs written to the workspace carry `attempts` (the rules allow 2 or 3). Without it,
+nothing changes. A suite's own `retries` (the app's setting) isn't used by breakpatch-ci.
 
 **Another system.** A test file's `recordedOn` is compared with the CI machine as in Where a
 test was recorded. On a mismatch `breakpatch-ci` prints one line on stderr before the run
