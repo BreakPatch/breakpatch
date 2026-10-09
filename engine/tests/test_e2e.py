@@ -29,6 +29,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    blips: dict = {}
+
+    def do_GET(self):
+        # /blip/<page>: the first request for it doesn't answer for 4 s (a network blip), later ones do.
+        if self.path.startswith("/blip/"):
+            key = self.path
+            first = key not in Handler.blips
+            Handler.blips[key] = Handler.blips.get(key, 0) + 1
+            self.path = self.path[len("/blip"):]
+            if first:
+                import time
+                time.sleep(4)
+        super().do_GET()
+
     def do_POST(self):
         Handler.calls.append(("POST", self.path))
         self.send_response(500 if self.path.startswith("/api/fail") else 200)
@@ -88,7 +102,8 @@ class Harness:
     async def run(self, steps, url, **kw):
         self.ended.clear()
         params = {"runId": kw.pop("runId", "r1"), "startUrl": url, "viewport": VIEWPORT, "steps": steps,
-                  "settings": {"autoFix": kw.pop("autoFix", False), "failOnFix": kw.pop("failOnFix", False)},
+                  "settings": {"autoFix": kw.pop("autoFix", False), "failOnFix": kw.pop("failOnFix", False),
+                               **kw.pop("settings", {})},
                   "secrets": kw.pop("secrets", {}), **kw}
         await self.call("run.start", params)
         await asyncio.wait_for(self.ended.wait(), 60)
@@ -183,6 +198,34 @@ async def test_moved_target_without_a_healer_fails_target_not_found(site, record
     assert step["preDistance"] > 6 and "newAt" not in step
     assert loc.calls == []                                           # the model was never asked
     assert "looking" not in [d["state"] for d in hx.of("run.step")]
+
+
+async def test_a_start_page_that_didn_t_load_the_first_time_passes_on_a_retry(site, recorded):
+    """Roadmap #14: a network blip on the first try; the retry starts again in a new browser."""
+    hx = Harness()
+    ended = await hx.run(recorded["steps"], site + "/blip/index.html?retry=1", settings={"retries": 1})
+    assert ended["result"] == "pass", ended
+    assert ended["attempts"] == 2
+    first = ended["steps"][0]
+    assert first["result"] == "passed" and first["retried"][0]["reason"] == "timeout"
+    assert "didn't load" in first["retried"][0]["message"]
+    retry = hx.of("run.retry")
+    assert len(retry) == 1 and retry[0]["attempt"] == 2 and retry[0]["of"] == 2
+    # The steps ran again from the start: each was running twice or once after the retry.
+    assert [d["stepId"] for d in hx.of("run.step") if d["state"] == "passed"] == [s["id"] for s in recorded["steps"]]
+
+
+async def test_without_retries_the_same_blip_fails_the_run(site, recorded):
+    hx = Harness()
+    ended = await hx.run(recorded["steps"], site + "/blip/index.html?retry=0")
+    assert ended["result"] == "fail" and "attempts" not in ended and not hx.of("run.retry")
+
+
+async def test_a_moved_button_is_not_retried(site, recorded):
+    hx = Harness()
+    ended = await hx.run(recorded["steps"], site + "/index.html?moved=1", settings={"retries": 2})
+    assert ended["result"] == "fail" and "attempts" not in ended and not hx.of("run.retry")
+    assert ended["steps"][0]["reason"] == "targetNotFound"
 
 
 async def test_run_reports_where_it_ran_and_no_mismatch_on_the_same_system(site, recorded):

@@ -17,7 +17,7 @@ from typing import Awaitable, Callable, Iterator, Protocol
 
 import numpy as np
 
-from . import calls, checks, config, explain, imaging, systems
+from . import calls, checks, config, explain, imaging, retry, systems
 from .actions import ActionFailed, Context, Secret, parse_secrets, perform, secret_refs
 from .sites import origin_of
 from .browser import BrowserSession
@@ -103,11 +103,67 @@ class Runner:
         self.mismatch: dict | None = None
 
     async def run(self, req: dict, stop: asyncio.Event) -> dict:
+        """The whole run: one try, and with `settings.retries` up to that many more when a try
+        fails in a way that may be timing (retry.py). Each try starts again from the start, in a
+        new browser, with the set-up and clean-up calls. run.ended is the last try's, with
+        `attempts` and each earlier try's failure on its step (`retried`)."""
+        settings = req.get("settings") or {}
+        fail_on_fix = bool(settings.get("failOnFix"))
+        # The recorder's Run, Play to here and Play this step leave the page for recording: never retried.
+        retries = 0 if (req.get("keepOpen") or req.get("fromStepId")) else retry.retries_setting(settings.get("retries"))
+        t0 = time.monotonic()
+        earlier: list[dict] = []
+        clean_up_failed = False
+        self.attempt = 1
+        while True:
+            started = time.monotonic()
+            ok = await self._attempt(req, stop)
+            clean_up_failed = clean_up_failed or self.clean_up_failed
+            if ok or self.attempt > retries or stop.is_set():
+                break
+            failed = self._failed_step()
+            why = retry.why_retry(failed[1], failed[0], self.relaxed) if failed else None
+            if failed is None or why is None:
+                break
+            if time.monotonic() - t0 >= self.t.retry_budget:
+                log.info("not retried: the run has taken %.0f s already (at most %.0f s)", time.monotonic() - t0,
+                         self.t.retry_budget)
+                break
+            step, rec = failed
+            entry = {"attempt": self.attempt, "reason": rec.get("reason"), "message": self.message,
+                     "durationMs": int((time.monotonic() - started) * 1000)}
+            entry.update({k: rec[k] for k in ("preDistance", "postDistance", "screenshotPath") if rec.get(k) is not None})
+            earlier.append({"stepId": step.get("id"), **entry})
+            log.info("try %d of %d failed at %s (%s): %s, so it runs again", self.attempt, retries + 1, step.get("id"),
+                     rec.get("reason"), why)
+            self.emit("run.retry", {"runId": self.run_id, "attempt": self.attempt + 1, "of": retries + 1,
+                                    "stepId": step.get("id"), "reason": rec.get("reason"), "why": why,
+                                    "message": self.message})
+            try:
+                await asyncio.wait_for(stop.wait(), self.t.retry_pause)
+            except asyncio.TimeoutError:
+                pass
+            if stop.is_set():
+                break
+            self.attempt += 1
+        self.clean_up_failed = clean_up_failed
+        return self._ended(t0, ok, fail_on_fix, earlier)
+
+    def _failed_step(self) -> tuple[dict, dict] | None:
+        """The step that failed this try (not the loop or shared-steps card around it, unless the
+        failure is its own: a start page that didn't load fails the first step, whatever it is),
+        and its StepRun."""
+        failed = [(s, self.results[self.index[id(s)]]) for s in walk(self._steps)]
+        failed = [(s, r) for s, r in failed if r.get("result") == "failed"]
+        leaves = [(s, r) for s, r in failed if not (s.get("action") in ("loop", "group") and s.get("steps"))]
+        return (leaves or failed or [None])[-1]
+
+    async def _attempt(self, req: dict, stop: asyncio.Event) -> bool:
+        """One try: secrets, set-up call, a new browser at the start page, the steps, the clean-up call."""
         run_id = str(req.get("runId") or "run")
         steps = req.get("steps") or []
         settings = req.get("settings") or {}
         auto_fix = bool(settings.get("autoFix"))
-        fail_on_fix = bool(settings.get("failOnFix"))
         # "Allow for small differences between systems": on unless the client turns it off.
         self.allow_differences = settings.get("allowSystemDifferences") is not False
         self.relaxed, self.ran_on, self.mismatch = False, None, None
@@ -135,7 +191,6 @@ class Runner:
         self.details: str | None = None
         self.clean_up_failed = False
         self.reached_set_up = False   # clean-up never runs for a run that stopped before set-up
-        t0 = time.monotonic()
         ok = False
         try:
             try:
@@ -154,7 +209,7 @@ class Runner:
                     await self.b.close()
                 except Exception:  # noqa: BLE001
                     pass
-        return self._ended(t0, ok, fail_on_fix)
+        return ok
 
     async def _execute(self, req: dict, steps: list[dict], order: list[dict], secrets: dict[str, Secret],
                        stop: asyncio.Event) -> bool:
@@ -217,11 +272,22 @@ class Runner:
 
     # ------------------------------------------------------------------
 
-    def _ended(self, t0: float, ok: bool, fail_on_fix: bool) -> dict:
+    def _ended(self, t0: float, ok: bool, fail_on_fix: bool, earlier: list[dict] | None = None) -> dict:
         healed = any(r["result"] == "healed" for r in self.results)
         result = "pass" if ok and not (healed and fail_on_fix) else "fail"
+        steps = self.results
+        if earlier:
+            # Each earlier try's failure stays on the step it failed at, whatever the last try did there.
+            where = {str(r.get("stepId")): i for i, r in enumerate(steps)}
+            steps = [dict(r) for r in steps]
+            for e in earlier:
+                i = where.get(str(e["stepId"]))
+                if i is not None:
+                    steps[i].setdefault("retried", []).append({k: v for k, v in e.items() if k != "stepId" and v is not None})
         out = {"runId": self.run_id, "result": result, "durationMs": int((time.monotonic() - t0) * 1000),
-               "steps": self.results}
+               "steps": steps}
+        if earlier:
+            out["attempts"] = len(earlier) + 1
         if self.clean_up_failed:
             out["cleanUpFailed"] = True
         if self.ran_on:
@@ -368,7 +434,8 @@ class Runner:
         try:
             folder = Path(self.screenshots) / safe_name(self.run_id, "run")
             folder.mkdir(parents=True, exist_ok=True)
-            path = folder / f"{self.index[id(step)] + 1:03d}-{safe_name(step.get('id'), 'step')}.png"
+            again = f"-try{self.attempt}" if getattr(self, "attempt", 1) > 1 else ""     # an earlier try's stays
+            path = folder / f"{self.index[id(step)] + 1:03d}-{safe_name(step.get('id'), 'step')}{again}.png"
             await (await self.b.live()).screenshot(path=str(path), type="png")
             return str(path)
         except Exception as e:  # noqa: BLE001

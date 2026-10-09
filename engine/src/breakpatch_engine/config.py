@@ -80,8 +80,9 @@ def apply_browser_env() -> None:
 # these waits are multiplied by it. They're the ones a slow machine runs out of: a page that takes
 # longer to settle, a pre-check that needs more tries, a slower start page. The noise watch and
 # the frame spacing aren't: they're sample counts and intervals, and stretching them only makes
-# every step slower without making a check more likely to pass.
-SCALED_TIMINGS = ("settle_timeout", "pre_wait", "navigate_timeout", "start_timeout")
+# every step slower without making a check more likely to pass. The time a run may take before no
+# retry starts (retry.py) is stretched too: each try takes longer there.
+SCALED_TIMINGS = ("settle_timeout", "pre_wait", "navigate_timeout", "start_timeout", "retry_budget")
 MAX_TIMINGS_SCALE = 10.0
 
 
@@ -122,6 +123,8 @@ class Timings:
     http_timeout: float = 30.0
     reload_diff: bool = True          # §10.3.5 background reload while recording
     frame_min_gap: float = 0.1        # at most ~10 frames per second
+    retry_budget: float = 300.0       # retry.py: no retry starts once a run has taken this long
+    retry_pause: float = 1.0          # retry.py: the pause before a retry (a network blip passes)
 
     @classmethod
     def from_env(cls) -> "Timings":
@@ -138,7 +141,8 @@ class Timings:
     def fast(cls) -> "Timings":
         return cls(noise_watch=0.5, noise_interval=0.1, settle_interval=0.08, settle_timeout=3.0,
                    late_change=0.6, pre_wait=0.6, pre_interval=0.1, long_click=0.3, popup_timeout=3.0, chooser_timeout=2.0,
-                   download_timeout=3.0, navigate_timeout=10.0, start_timeout=3.0, chooser_window=1.5, http_timeout=5.0)
+                   download_timeout=3.0, navigate_timeout=10.0, start_timeout=3.0, chooser_window=1.5, http_timeout=5.0,
+                   retry_budget=60.0, retry_pause=0.2)
 
     def with_(self, **kw) -> "Timings":
         names = {f.name for f in fields(self)}
