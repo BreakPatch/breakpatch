@@ -345,8 +345,8 @@ In Community you run suites by hand. A suite's result is kept until you close Br
 
 A test sometimes fails only because the page was slow this time. **When a test fails because the page was slow**, in the suite, says what a suite run does then: **Don't retry**, **Retry once** (the default) or **Retry twice**.
 
-- Only failures that look like timing are retried: the page didn't settle or didn't load in time, a popup or download didn't come, nothing happened after a click (often a page that wasn't ready yet), or the screen almost matched the recording. A button that isn't there, a page that looks different, a missing saved secret or a set-up call that didn't work fail at once, as before.
-- A retry runs the whole test again from the start, in a new browser, with its set-up and clean-up calls. A single step is never done twice on its own.
+- Only failures that look like timing are retried: the page didn't settle or didn't load in time, a popup or download didn't come, nothing happened after a click (often a page that wasn't ready yet), or the screen almost matched the recording. A button that isn't there, a page that looks different, a missing saved secret, a set-up call that didn't work or a [Call step](#call-your-api) whose call didn't pass fail at once, as before.
+- A retry runs the whole test again from the start, in a new browser, with its set-up and clean-up calls. A single step is never done twice on its own. Its Call steps make their calls again, so a value one keeps is the one this try's call replied.
 - No retry starts once the test has taken 5 minutes.
 - Every retry shows. The run view says which try is running and why the last one failed. A test that passed on a retry says **Passed on retry 1** in the suite run, the report, the Runs tab and Run history, and its report says which step failed on the earlier try and why. It counts as passed, so the suite still passes, and the suite's result says how many tests passed only on a retry.
 

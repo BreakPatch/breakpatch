@@ -418,3 +418,81 @@ async def test_a_call_step_inside_a_loop_uses_the_repeat_number(api):
     ended = await hx.run([loop], api + "/index.html")
     assert ended["result"] == "pass", ended
     assert [s[1] for s in Api.seen] == ["/ok/1", "/ok/2"]
+
+
+# ---------------------------------------------------------------- with retries (roadmap #14)
+
+class Counted(SiteAndApi):
+    """/api/next replies with a new code on every call: 1001, then 1002..."""
+    n = 0
+
+    def _reply(self):
+        if self.path.startswith("/api/next"):
+            n = int(self.headers.get("Content-Length") or 0)
+            if n:
+                self.rfile.read(n)
+            Counted.n += 1
+            Api.seen.append((self.command, "/next", None, None, b""))
+            out = json.dumps({"code": str(1000 + Counted.n)}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+            return
+        return super()._reply()
+
+    def do_POST(self):
+        return self._reply()
+
+
+@needs_browser
+async def test_a_retried_run_makes_its_call_again_and_keeps_only_that_try_s_value(monkeypatch):
+    """A try that fails like timing after a Call step runs again from the start: the call is made
+    again, the values kept start empty, and the Write step types the new try's value. A Call step's
+    own failure (`callFailed`) is never retried."""
+    from breakpatch_engine import runner as runner_mod
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Counted)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    api = f"http://127.0.0.1:{srv.server_address[1]}"
+    seen: list = []
+    real = runner_mod.Runner._run_step
+
+    async def run_step(self, step, ctx, iteration):
+        seen.append((self.attempt, step["id"], dict((k, v[0]) for k, v in ctx.values.items())))
+        if step["id"] == "slow":
+            seen.append((self.attempt, "typed", await self.b.page.input_value("#name")))
+            if self.attempt == 1:
+                raise runner_mod.StepFailed("timeout", "The screen didn't settle in time.")
+        return await real(self, step, ctx, iteration)
+    monkeypatch.setattr(runner_mod.Runner, "_run_step", run_step)
+    try:
+        Counted.n = 0
+        Api.seen.clear()
+        hx = Harness()
+        keep = call_step(api, "/next", keep={"path": "$.code", "name": "CODE"})
+        write = {"id": "w1", "action": "write", "label": "Write the value CODE", "at": FIELD_AT, "valueRef": "CODE"}
+        slow = {"id": "slow", "action": "waitFor", "label": "Wait", "durationMs": 10}
+        hx.ended.clear()
+        await hx.h["run.start"]({"runId": "r1", "startUrl": api + "/index.html", "viewport": VIEWPORT,
+                                 "steps": [keep, write, slow], "settings": {"retries": 1}, "secrets": {}})
+        await asyncio.wait_for(hx.ended.wait(), 60)
+        ended = hx.of("run.ended")[-1]
+        assert ended["result"] == "pass" and ended["attempts"] == 2, ended
+        assert [s[1] for s in Api.seen] == ["/next", "/next"]                 # the call, once per try
+        assert seen == [(1, "c1", {}), (1, "w1", {"CODE": "1001"}), (1, "slow", {"CODE": "1001"}), (1, "typed", "1001"),
+                        (2, "c1", {}), (2, "w1", {"CODE": "1002"}), (2, "slow", {"CODE": "1002"}), (2, "typed", "1002")]
+        by = {s["stepId"]: s for s in ended["steps"]}
+        assert by["c1"]["result"] == "passed" and by["c1"]["reply"]["status"] == 200 and "retried" not in by["c1"]
+        assert by["slow"]["retried"][0]["reason"] == "timeout"
+        assert [d["attempt"] for d in hx.of("run.retry")] == [2]
+        assert "1001" not in json.dumps(hx.events) and "1002" not in json.dumps(hx.events)
+
+        # A Call step that doesn't pass isn't retried: the run fails on its first try.
+        Api.seen.clear()
+        hx2 = Harness()
+        ended = await hx2.run([call_step(api, "/fail"), slow], api + "/index.html", settings={"retries": 2})
+        assert ended["result"] == "fail" and ended["steps"][0]["reason"] == "callFailed" and "attempts" not in ended
+        assert [s[1] for s in Api.seen] == ["/fail"] and not hx2.of("run.retry")
+    finally:
+        srv.shutdown()

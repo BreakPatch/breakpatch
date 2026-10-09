@@ -490,10 +490,12 @@ like timing:
   their 2 bits as usual). Further off, the page really is different, and isn't retried.
 
 Never: `secretMissing`, `setUpFailed`, `stopped`, `healingUnavailable`, `healFailed`,
-`fileMissing`, a failure with no distance (something went wrong inside the engine), `failOnFix`,
+`fileMissing`, `callFailed` (a Call step's call didn't pass: the API answered), a failure with no distance (something went wrong inside the engine), `failOnFix`,
 or a run the client stopped. No retry starts once the run has taken 5 minutes (`retry_budget`,
 stretched by `BP_TIMINGS_SCALE` and breakpatch-ci's tier like the other long waits); the next try
 starts 1 s after the last. The recorder's own runs (`keepOpen`, `fromStepId`) are never retried.
+A retried try makes its Call steps' calls again and starts with no kept values: a Write step of a
+kept value types what this try's call replied.
 
 Before each retry the engine sends `run.retry` `{ runId, attempt, of, stepId, reason, why, message }`
 (`attempt`: the try starting now, 2 or 3; `of`: the most there can be; `why`: a short phrase for

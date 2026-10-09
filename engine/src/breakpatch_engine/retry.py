@@ -15,9 +15,11 @@ which try passed, and every earlier try's failure stays on its step (`retried`, 
   bits past the check's tolerance. Far off means the page really is different, which another try
   won't change.
 
-Never retried: a missing or refused saved secret, a set-up call that didn't succeed, a run that was
-stopped, the AI assistant missing or finding the wrong thing, a file that isn't in the tests folder,
-and anything that went wrong inside the engine.
+Never retried: a missing or refused saved secret, a set-up call that didn't succeed, a Call step's
+call that didn't pass (or a Write of a value it should have kept), a run that was stopped, the AI
+assistant missing or finding the wrong thing, a file that isn't in the tests folder, and anything
+that went wrong inside the engine. A try that is retried for another reason makes its Call steps'
+calls again, and starts with no kept values (runner.py `_execute`).
 
 Bounded twice: at most MAX_RETRIES retries (the run's `settings.retries`, 0 to 2), and no retry
 starts once the run has taken `Timings.retry_budget` seconds (5 minutes, longer on a slow machine:
@@ -34,7 +36,10 @@ MAX_RETRIES = 2
 NEAR = 4
 
 # Failures another try can't fix, whatever their numbers.
-NEVER = frozenset({"secretMissing", "setUpFailed", "stopped", "healingUnavailable", "healFailed", "fileMissing"})
+# A Call step's call that didn't pass (`callFailed`, a Write of a kept value too) is the API's answer,
+# not the page being slow; the call may also have changed something that another call would repeat.
+NEVER = frozenset({"secretMissing", "setUpFailed", "stopped", "healingUnavailable", "healFailed", "fileMissing",
+                   "callFailed"})
 # Failures that may be timing, some only when their check was close (why_retry).
 RETRIED = frozenset({"timeout", "noChange", "targetNotFound", "unexpectedScreen"})
 
