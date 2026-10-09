@@ -62,7 +62,7 @@ const WHY = {
   scroll: "Scrolling to something isn't imported. If it's below the bottom of the screen, scroll the page when that step is learned.",
   mouse: 'This uses a position on the screen in pixels. Click the spot on the page instead when the test is learned.',
   modifiers: "A click with keys held down isn't a step in Breakpatch yet.",
-  network: 'This works with the network or files in code, which a Breakpatch test doesn\'t do. A set-up or clean-up call can prepare data instead.',
+  network: 'This works with the network or files in code, which isn\'t imported. To call your API in the middle of the test, add a Call step by hand (Call your API); a set-up or clean-up call can prepare data instead.',
   frame: 'Breakpatch finds things inside frames by itself.',
   reads: "This reads from the page in code. Breakpatch checks the screen after every step instead.",
   either: 'This looks for either of two things, which a step can\'t do.',

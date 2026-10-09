@@ -280,7 +280,7 @@ What's imported:
 - Your own functions and custom commands, like `login(page)` or `cy.login()`: Breakpatch can't see what they do. Record those steps once as [shared steps](#shared-steps) and insert them.
 - Conditions and loops (`if`, `for`), and steps inside `.within()`, `.then()` or `.each()`.
 - Checks of the address or the page title, of a field's value, a class or an attribute, and checks that something isn't there.
-- Keys other than Enter, uploads, drag and drop, clicks at a position in pixels, and network calls like `page.route` or `cy.intercept`. For data a test needs, use a set-up call (see [Record a test](#record-a-test)).
+- Keys other than Enter, uploads, drag and drop, clicks at a position in pixels, and network calls like `page.route`, `request.post` or `cy.request`. To call your API in the middle of the test, add a [Call step](#call-your-api) by hand; for data a test needs before it starts, use a set-up call (see [Record a test](#record-a-test)).
 
 Waiting for the page to load and taking screenshots are listed as not needed: Breakpatch waits for the page to settle after every step, and checks the screen by itself.
 

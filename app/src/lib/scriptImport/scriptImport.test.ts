@@ -319,6 +319,18 @@ test('a', async ({ page }) => {
     const t = one("test('a', async ({ page }) => { await page.waitForTimeout(250); await page.waitForTimeout(90000) })");
     expect(said(t)).toEqual(['1: Wait 1 seconds', '1: Wait 60 seconds']);
   });
+  it('never makes a Call step: calls to an API are listed, with Call your API to add one by hand', () => {
+    const pw = one(`test('a', async ({ page, request }) => {
+      await page.goto('/a');
+      await request.post('https://api.acme.com/orders/42/pay', { data: { paid: true } });
+      await page.getByText('Paid').click();
+    })`);
+    const cy = one(`it('a', () => { cy.visit('/a'); cy.request('POST', '/api/orders/42/pay'); cy.contains('Paid').click() })`, 'a.cy.ts');
+    for (const t of [pw, cy]) {
+      expect(t.steps.map(s => s.action)).toEqual(['click']);
+      expect(t.skipped.map(s => s.why)).toEqual([expect.stringMatching(/add a Call step by hand \(Call your API\)/)]);
+    }
+  });
   it('lists a test with nothing to import as empty, never invents steps', () => {
     const t = one("test('a', async ({ page }) => { await doEverything(page) })");
     expect(t.steps).toEqual([]);
