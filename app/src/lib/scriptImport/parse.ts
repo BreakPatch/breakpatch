@@ -35,6 +35,8 @@ export type Stmt =
   | { kind: 'block'; keyword: string; line: number; endLine: number; src: string }
   | { kind: 'other'; line: number; endLine: number; src: string };
 
+/** Deeper than this, nesting isn't read (a test is never nested this deep; it keeps the stack safe). */
+const MAX_DEPTH = 200;
 const BLOCK_WORDS = new Set(['if', 'for', 'while', 'do', 'switch', 'try', 'with']);
 const DECL_WORDS = new Set(['const', 'let', 'var']);
 /** Tokens that close a value in a list or a statement. */
@@ -45,7 +47,19 @@ const CARRIES = new Set(['.', '?.', '(', '[', '{', ',', '=', '=>', '+', '-', '*'
 export class Parser {
   readonly t: Token[];
   readonly src: string;
-  constructor(src: string) { this.src = src; this.t = tokenize(src); }
+  /** For each opening bracket, the index of the one that closes it (worked out once). */
+  private readonly match: Int32Array;
+  constructor(src: string) {
+    this.src = src;
+    this.t = tokenize(src);
+    this.match = new Int32Array(this.t.length).fill(-1);
+    const open: number[] = [];
+    this.t.forEach((k, i) => {
+      if (k.kind !== 'punct') return;
+      if (k.value === '(' || k.value === '[' || k.value === '{') open.push(i);
+      else if (k.value === ')' || k.value === ']' || k.value === '}') { const o = open.pop(); if (o !== undefined) this.match[o] = i; }
+    });
+  }
 
   /** The source text from token `a` to token `b` (inclusive), on one line. */
   text(a: number, b: number): string {
@@ -57,14 +71,8 @@ export class Parser {
 
   /** The index of the bracket that closes the one at `i` (`(`, `[` or `{`), or the last token. */
   close(i: number): number {
-    let depth = 0;
-    for (let k = i; k < this.t.length; k++) {
-      const v = this.t[k];
-      if (v.kind !== 'punct') continue;
-      if (v.value === '(' || v.value === '[' || v.value === '{') depth++;
-      else if (v.value === ')' || v.value === ']' || v.value === '}') { depth--; if (depth === 0) return k; }
-    }
-    return this.t.length - 1;
+    const m = this.match[i] ?? -1;
+    return m >= 0 ? m : this.t.length - 1;
   }
 
   /** The statements from token `from` up to (not including) `to`. */
@@ -87,6 +95,11 @@ export class Parser {
 
   /** One statement starting at `i`: it and the index after it. */
   statement(i: number, to: number): [Stmt | null, number] {
+    if (this.depth >= MAX_DEPTH) return [this.other(i, to - 1), to];
+    this.depth++;
+    try { return this.statementAt(i, to); } finally { this.depth--; }
+  }
+  private statementAt(i: number, to: number): [Stmt | null, number] {
     const k = this.t[i];
     if (k.kind === 'punct' && k.value === '{') { const c = this.close(i); return [{ kind: 'block', keyword: '{', line: k.line, endLine: this.t[c].line, src: this.text(i, c) }, c + 1]; }
     if (k.kind === 'id' && BLOCK_WORDS.has(k.value)) {
@@ -206,7 +219,17 @@ export class Parser {
     return q > 0;
   }
 
+  /** How deep values and statements are nested now: past MAX_DEPTH the rest is skipped, not read. */
+  private depth = 0;
   private primary(i: number, to: number): [Value, number] {
+    if (this.depth >= MAX_DEPTH) {
+      const k = this.t[i];
+      return [{ kind: 'other', text: '' }, k?.kind === 'punct' && '([{'.includes(k.value) ? this.close(i) + 1 : i + 1];
+    }
+    this.depth++;
+    try { return this.primaryAt(i, to); } finally { this.depth--; }
+  }
+  private primaryAt(i: number, to: number): [Value, number] {
     const k = this.t[i];
     if (!k || i >= to) return [{ kind: 'other', text: '' }, i];
     if (k.kind === 'str') return [{ kind: 'str', v: k.value }, i + 1];

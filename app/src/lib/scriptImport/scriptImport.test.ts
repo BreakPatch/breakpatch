@@ -40,6 +40,20 @@ describe('tokenize', () => {
     expect(t.map(k => [k.value.replace(/\n/g, '|'), k.line])).toEqual([['a', 1], ['b', 4], ['x|y', 4], ['c', 5]]);
     expect(t[1].nl).toBe(true);
   });
+  it('reads a big file quickly', () => {
+    const one = "test('t', async ({ page }) => {\n  await page.goto('/a');\n  await page.getByRole('button', { name: 'Save' }).click();\n  await expect(page.getByText('Saved')).toBeVisible();\n});\n";
+    const t0 = performance.now();
+    const r = importScript(one.repeat(3000), 'big.spec.ts');
+    expect(r.tests).toHaveLength(3000);
+    expect(performance.now() - t0).toBeLessThan(3000);
+  });
+  it('stops reading nesting that goes too deep, without failing', () => {
+    for (const src of ['test("a", async ({ page }) => { const x = ' + '['.repeat(50000) + ' })', '('.repeat(50000), 'if (a) '.repeat(20000) + 'b()', '{'.repeat(50000)]) {
+      expect(() => importScript(src, 'a.spec.ts')).not.toThrow();
+    }
+    const deepThenStep = "test('a', async ({ page }) => { const x = " + '['.repeat(500) + ']'.repeat(500) + "; await page.getByText('Go').click() })";
+    expect(importScript(deepThenStep, 'a.spec.ts').tests[0].steps).toEqual([expect.objectContaining({ action: 'click', target: '"Go"' })]);
+  });
   it("never throws on text that isn't JavaScript", () => {
     for (const junk of ['', '"unterminated', '/* open', '`${', '\u0000\u0001￿', '{{{{((((', ')))]]]}}}', '\\u']) {
       expect(() => tokenize(junk)).not.toThrow();

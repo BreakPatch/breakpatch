@@ -59,7 +59,9 @@ export function ImportDialog({ open, app, onClose }: { open: boolean; app: App; 
   }
 
   const take = (file: string, text: string) => {
-    const result = importScript(text, file);
+    let result: ScriptImport;
+    try { result = importScript(text, file); }
+    catch { setError("Couldn't read this script. Check it's a JavaScript or TypeScript file."); return; }
     if (!result.tests.length) { setError(NOTHING_FOUND); return; }
     setError(null); setRead({ file, result }); setWhich(0); setTried(false); setSeq(n => n + 1);
   };
