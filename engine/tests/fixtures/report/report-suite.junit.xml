@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <testsuites name="Smoke" tests="4" failures="2" errors="0" skipped="0" time="292.000">
   <testsuite name="Smoke" tests="4" failures="2" errors="0" skipped="0" time="292.000" timestamp="2026-09-24T14:00:00">
-    <testcase name="Sign in" classname="Web app" time="21.400"/>
+    <testcase name="Sign in" classname="Web app" time="21.400">
+      <flakyFailure message="Try 1, step 3: Click Sign in: Waited too long for the page" type="timeout">Try 1 failed at step 3, Click Sign in: Waited too long for the page.</flakyFailure>
+    </testcase>
     <testcase name="Invite a teammate" classname="Web app" time="64.000"/>
     <testcase name="Pay an invoice" classname="Billing" time="45.000">
       <failure message="Step 2: Wait for the receipt: Waited too long for the page" type="timeout">Step 2: Wait for the receipt
 Waited too long for the page
 What this step waits for never appeared. The run stopped here.
 What to try: If the app was slow this time, run again. If it always takes longer now, re-record this step.</failure>
+      <rerunFailure message="Try 1, step 2: Wait for the receipt: Waited too long for the page" type="timeout">Try 1 failed at step 2, Wait for the receipt: Waited too long for the page.</rerunFailure>
     </testcase>
     <testcase name="Refund" classname="Billing" time="0.000">
       <failure message="Couldn&apos;t run: it was deleted" type="notRun">Couldn&apos;t run: it was deleted</failure>

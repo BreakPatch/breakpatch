@@ -139,6 +139,27 @@ def test_the_junit_xml_is_well_formed_and_counts_right():
     assert report.junit.esc("a\x00b\x1fc") == "abc"
 
 
+def test_earlier_tries_are_in_the_report_and_the_junit_xml():
+    """Roadmap #14: a test that passed on a retry says so, and JUnit marks it as Maven Surefire does."""
+    view = report.build(INPUT["suite"])
+    sign_in, _, pay, _ = view["tests"]
+    assert sign_in["retryNote"].startswith("Passed on retry 1: the first try failed.")
+    assert sign_in["steps"][2]["stepNote"] == "Failed on try 1: Waited too long for the page. It passed on the next try."
+    assert pay["retryNote"] == "Failed on both tries."
+    assert pay["steps"][1]["stepNote"] == "Also failed on try 1: Waited too long for the page."
+    assert view["countsText"] == "2 of 4 tests passed, 1 on a retry, 2 failed"
+    root = ET.fromstring(report.junit_xml(view))
+    cases = root.findall("./testsuite/testcase")
+    flaky = cases[0].find("flakyFailure")
+    assert flaky is not None and flaky.get("type") == "timeout" and cases[0].find("failure") is None
+    assert cases[2].find("failure") is not None and cases[2].find("rerunFailure").get("message").startswith("Try 1, step 2")
+    assert root.get("failures") == "2"                       # a flaky test still counts as passed
+    one = report.build(INPUT["run"])
+    assert one["tests"][0]["retryNote"] == "" and one["tests"][0]["junit"]["retries"] == []
+    assert report.view.tries_text([1, 2]) == "tries 1 and 2" and report.view.counts_text({"total": 2, "passed": 2, "flaky": 1}) \
+        == "2 of 2 tests passed, 1 on a retry"
+
+
 def test_every_step_opens_for_printing():
     view = report.all_open(report.build(INPUT["run"]))
     assert all(s["open"] == s["hasDetail"] for s in view["tests"][0]["steps"])

@@ -88,9 +88,18 @@ export interface Test {
   cleanUp?: HttpCall & { alsoOnFailure?: boolean };
   stepCount: number;
   lastRun?: RunSummary;
+  /** What someone said about the Flaky marker (lib/flaky.ts): known to be flaky, or not flaky. */
+  flakyMark?: FlakyMark;
   createdBy: Person; createdAt: Millis;
   updatedBy: Person; updatedAt: Millis;
 }
+
+/**
+ * Someone's answer to a test's Flaky marker (lib/flaky.ts), for the version it was given on: a new
+ * version starts again. `known`: yes, it's flaky, we know (the marker stays, quieter). `not`: it
+ * isn't flaky (the runs before `at` no longer count; a new flip after it shows the marker again).
+ */
+export interface FlakyMark { state: 'known' | 'not'; version: number; by: string; at: Millis }
 
 export type Box = [number, number, number, number];   // x1, y1, x2, y2 in viewport px at DPR 1
 export type Point = [number, number];
@@ -204,6 +213,22 @@ export interface StepRun {
   unchecked?: string[];
   /** A failed step: the AI assistant's "Why did this fail?" (Team, engine run.explain), once asked. */
   explanation?: Explanation;
+  /**
+   * This step failed on earlier tries of a run that was retried (engine/PROTOCOL.md "Retries"),
+   * oldest first, whatever it did on the last try.
+   */
+  retried?: RetriedTry[];
+}
+
+/** One earlier try's failure, kept on the step it failed at (engine run.ended `steps[].retried`). */
+export interface RetriedTry {
+  /** Which try: 1 is the first. */
+  attempt: number;
+  reason?: FailReason;
+  message?: string;
+  durationMs?: number;
+  preDistance?: number; postDistance?: number;
+  screenshotPath?: string;       // local only
 }
 
 /**
@@ -250,6 +275,12 @@ export interface Run {
   /** The issue made from this run with Create issue (Team), so the report offers Open issue next time. */
   issue?: RunIssue;
   /**
+   * How many tries the run took, when it was retried (engine run.ended `attempts`: 2 or 3); absent
+   * after one. A run that passed with this set passed on a retry: the test may be flaky. Each
+   * earlier try's failure is on its step (StepRun.retried).
+   */
+  attempts?: number;
+  /**
    * A plain note about how the run came about, shown in the report and the run history: a missed
    * schedule run late (Solo on a tests folder), "This 8:00 run was missed, so it ran when Breakpatch
    * opened at 9:14."
@@ -276,6 +307,11 @@ export interface Suite {
   resultUrl?: string;
   /** Where the runner sends the result (Team). The address itself is kept apart (see SuiteNotify). */
   notify?: SuiteNotify;
+  /**
+   * How many times a test that fails is tried again when its failure looks like timing (engine
+   * "Retries"): 0, 1 or 2. Unset: DEFAULT_RETRIES (lib/retries.ts).
+   */
+  retries?: number;
   lastRun?: { result: SuiteResult; at: Millis; by: string };
   createdBy: Person; createdAt: Millis;
   updatedBy: Person; updatedAt: Millis;
@@ -349,7 +385,8 @@ export interface SuiteRun {
   suiteId: string;
   suiteName: string;
   result: SuiteResult;
-  counts: { total: number; passed: number; fixed: number; failed: number; notRun: number };
+  /** `flaky`: of the tests that passed (or were fixed), how many passed only on a retry. Absent: none (or an older app). */
+  counts: { total: number; passed: number; fixed: number; failed: number; notRun: number; flaky?: number };
   testRunIds: string[];
   requestedBy: string;
   replacedBy?: string;

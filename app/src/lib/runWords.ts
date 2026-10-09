@@ -3,7 +3,7 @@
 // breakpatch_engine/report/view.py) repeats them, so the two are changed together; the golden
 // files in engine/tests/fixtures/report/ check they agree. Plain data and functions only: lib/
 // imports nothing from screens/ or components/.
-import type { FailReason, Run, RunSource, Step, StepRun } from '../data/types';
+import type { FailReason, RetriedTry, Run, RunSource, Step, StepRun } from '../data/types';
 import { isMac, osText, ThisComputer } from './osWords';
 
 export const WHERE: Record<RunSource, { label: string; icon: string }> = {
@@ -119,4 +119,49 @@ export function tookText(ms: number): string {
   if (total < 60) return `${total} s`;
   const m = Math.floor(total / 60), s = total % 60;
   return s ? `${m} min ${s} s` : `${m} min`;
+}
+
+// ---------- retries (engine/PROTOCOL.md "Retries") ----------
+
+/** "try 1", "tries 1 and 2". */
+export function triesText(attempts: number[]): string {
+  if (attempts.length === 1) return `try ${attempts[0]}`;
+  return `tries ${attempts.slice(0, -1).join(', ')} and ${attempts[attempts.length - 1]}`;
+}
+
+/** A step's failures on earlier tries, oldest first. */
+export function retriedOf(r: Pick<StepRun, 'retried'> | undefined): RetriedTry[] {
+  return (r?.retried ?? []).filter(e => e && typeof e.attempt === 'number').slice().sort((a, b) => a.attempt - b.attempt);
+}
+
+/**
+ * "Failed on try 1: Waited too long for the page. It passed on the next try." on a step that
+ * failed on an earlier try of the run; '' when it didn't. `state`: what the step did on the last try.
+ */
+export function retriedNote(r: Pick<StepRun, 'retried'> | undefined, step: Pick<Step, 'target' | 'label' | 'action'>, state: 'passed' | 'fixed' | 'failed' | 'stopped' | 'notRun'): string {
+  const tries = retriedOf(r);
+  if (!tries.length) return '';
+  const titles = [...new Set(tries.map(e => reasonTitle(e.reason, step)))];
+  const said = `Failed on ${triesText(tries.map(e => e.attempt))}: ${titles.join('; ')}.`;
+  if (state === 'passed' || state === 'fixed') return `${said} It passed on the next try.`;
+  if (state === 'failed') return `Also f${said.slice(1)}`;
+  return `${said} The last try stopped before this step.`;
+}
+
+/** How many tries a run took (1 unless it was retried). */
+export const attemptsOf = (run: Pick<Run, 'attempts'> | null | undefined): number =>
+  typeof run?.attempts === 'number' && run.attempts > 1 ? Math.floor(run.attempts) : 1;
+
+/** "Passed on retry 1" for a run that passed on a retry; '' otherwise. */
+export function passedOnRetry(run: Pick<Run, 'attempts' | 'result'> | null | undefined): string {
+  const n = attemptsOf(run);
+  return n > 1 && run?.result === 'pass' ? `Passed on retry ${n - 1}` : '';
+}
+
+/** The report's line for a run that took more than one try; '' for one try. */
+export function retryNote(run: Pick<Run, 'attempts' | 'result'> | null | undefined): string {
+  const n = attemptsOf(run);
+  if (n <= 1) return '';
+  if (run?.result === 'fail') return n === 2 ? 'Failed on both tries.' : `Failed on all ${n} tries.`;
+  return `${passedOnRetry(run)}: ${n === 2 ? 'the first try' : `the first ${n - 1} tries`} failed. A test that passes only on a retry may be flaky.`;
 }

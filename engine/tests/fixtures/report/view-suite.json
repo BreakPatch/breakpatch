@@ -5,7 +5,7 @@
   "heading": "Smoke",
   "result": "failed",
   "resultText": "Failed",
-  "countsText": "2 of 4 tests passed, 2 failed",
+  "countsText": "2 of 4 tests passed, 1 on a retry, 2 failed",
   "summary": [
     {
       "k": "Tests",
@@ -85,6 +85,7 @@
         }
       ],
       "testNote": "",
+      "retryNote": "Passed on retry 1: the first try failed. A test that passes only on a retry may be flaky.",
       "stepsText": "3 steps",
       "steps": [
         {
@@ -131,7 +132,7 @@
           "resultText": "Passed",
           "headline": "",
           "body": "",
-          "stepNote": "",
+          "stepNote": "Failed on try 1: Waited too long for the page. It passed on the next try.",
           "system": "",
           "explanation": null,
           "advice": "",
@@ -148,7 +149,14 @@
         "status": "passed",
         "type": "",
         "message": "",
-        "text": ""
+        "text": "",
+        "retries": [
+          {
+            "type": "timeout",
+            "message": "Try 1, step 3: Click Sign in: Waited too long for the page",
+            "text": "Try 1 failed at step 3, Click Sign in: Waited too long for the page."
+          }
+        ]
       },
       "stepsOpen": false
     },
@@ -194,6 +202,7 @@
         }
       ],
       "testNote": "",
+      "retryNote": "",
       "stepsText": "2 steps",
       "steps": [
         {
@@ -239,7 +248,8 @@
         "status": "passed",
         "type": "",
         "message": "",
-        "text": ""
+        "text": "",
+        "retries": []
       },
       "stepsOpen": false
     },
@@ -281,6 +291,7 @@
         }
       ],
       "testNote": "",
+      "retryNote": "Failed on both tries.",
       "stepsText": "2 steps",
       "steps": [
         {
@@ -309,7 +320,7 @@
           "resultText": "Failed",
           "headline": "Waited too long for the page",
           "body": "What this step waits for never appeared. The run stopped here.",
-          "stepNote": "",
+          "stepNote": "Also failed on try 1: Waited too long for the page.",
           "system": "",
           "explanation": null,
           "advice": "If the app was slow this time, run again. If it always takes longer now, re-record this step.",
@@ -326,7 +337,14 @@
         "status": "failed",
         "type": "timeout",
         "message": "Step 2: Wait for the receipt: Waited too long for the page",
-        "text": "Step 2: Wait for the receipt\nWaited too long for the page\nWhat this step waits for never appeared. The run stopped here.\nWhat to try: If the app was slow this time, run again. If it always takes longer now, re-record this step."
+        "text": "Step 2: Wait for the receipt\nWaited too long for the page\nWhat this step waits for never appeared. The run stopped here.\nWhat to try: If the app was slow this time, run again. If it always takes longer now, re-record this step.",
+        "retries": [
+          {
+            "type": "timeout",
+            "message": "Try 1, step 2: Wait for the receipt: Waited too long for the page",
+            "text": "Try 1 failed at step 2, Wait for the receipt: Waited too long for the page."
+          }
+        ]
       },
       "stepsOpen": true
     },
@@ -339,6 +357,7 @@
       "resultText": "Couldn't run",
       "meta": [],
       "testNote": "Couldn't run: it was deleted",
+      "retryNote": "",
       "stepsText": "0 steps",
       "steps": [],
       "junit": {
@@ -347,7 +366,8 @@
         "status": "failed",
         "type": "notRun",
         "message": "Couldn't run: it was deleted",
-        "text": "Couldn't run: it was deleted"
+        "text": "Couldn't run: it was deleted",
+        "retries": []
       },
       "stepsOpen": true
     }

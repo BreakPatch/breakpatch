@@ -4,7 +4,7 @@
 // engine/tests/fixtures/report/view-*.json, built from input.json. The words are the report's own
 // (lib/runWords.ts, lib/explain.ts), so view.py repeats them: change them together.
 import type { Explanation, RecordedOn, Run, Step, StepRun } from '../../data/types';
-import { UNCHECKED_NOTE, passNote, reasonAdvice, reasonText, reasonTitle, runBy, targetName, tookText, whereText } from '../runWords';
+import { UNCHECKED_NOTE, attemptsOf, passNote, reasonAdvice, reasonText, reasonTitle, retriedNote, retriedOf, retryNote, runBy, targetName, tookText, whereText } from '../runWords';
 import { CAUSE_TEXT, SUGGESTION_TEXT } from '../explain';
 
 /** A screenshot, as a WebP data: URI (the engine's `report.images`). */
@@ -40,7 +40,7 @@ export interface ReportInput {
   tzOffsetMinutes: number;
   /** false: the screenshots were left out. */
   screenshots: boolean;
-  suite?: { result: string; counts: { total: number; passed: number; fixed: number; failed: number; notRun: number }; requestedBy: string; startedAt: number; finishedAt: number; note?: string };
+  suite?: { result: string; counts: { total: number; passed: number; fixed: number; failed: number; notRun: number; flaky?: number }; requestedBy: string; startedAt: number; finishedAt: number; note?: string };
   tests: ReportTestInput[];
 }
 
@@ -54,10 +54,14 @@ export interface StepView {
   image: (ReportImage & { size: 'full' | 'small'; alt: string; caption: string }) | null;
   open: boolean; hasDetail: boolean;
 }
-export interface JunitCase { seconds: string; timestamp: string; status: 'passed' | 'failed' | 'skipped'; type: string; message: string; text: string }
+export interface JunitCase {
+  seconds: string; timestamp: string; status: 'passed' | 'failed' | 'skipped'; type: string; message: string; text: string;
+  /** Each earlier try's failure (engine "Retries"): JUnit's <flakyFailure> or <rerunFailure>. */
+  retries: { type: string; message: string; text: string }[];
+}
 export interface TestView {
   anchor: string; name: string; appName: string; multi: boolean; result: StepState; resultText: string;
-  meta: Meta[]; testNote: string; stepsText: string; steps: StepView[]; junit: JunitCase;
+  meta: Meta[]; testNote: string; retryNote: string; stepsText: string; steps: StepView[]; junit: JunitCase;
   /** In a suite, a test that passed starts closed: what didn't pass is what's read first. */
   stepsOpen: boolean;
 }
@@ -184,7 +188,8 @@ function stepView(step: Step, number: string, depth: number, r: ReportStepRun | 
       body = 'It was used in the new position and the screen afterwards looked right.';
     }
   }
-  const stepNote = r && state === 'passed' ? (r.unchecked?.length ? UNCHECKED_NOTE : passNote(r) ?? '') : '';
+  const again = retriedNote(r, step, state);
+  const stepNote = [r && state === 'passed' ? (r.unchecked?.length ? UNCHECKED_NOTE : passNote(r) ?? '') : '', again].filter(Boolean).join(' ');
   const [took, where] = phases(r?.timings);
   const img = screenshots && !container ? r?.image : undefined;
   const image: StepView['image'] = img && typeof img.src === 'string' && img.src.startsWith('data:image/') && !(state === 'failed' && NO_SCREENS.includes(reason ?? ''))
@@ -227,7 +232,22 @@ function runMeta(run: ReportRun, offset: number, recordedOn?: RecordedOn, device
   return meta.filter(m => m.v);
 }
 
-function junitCase(state: StepState, steps: StepViewX[], t: ReportTestInput, run: ReportRun | null): JunitCase {
+function junitRetries(steps: Step[], run: ReportRun | null): JunitCase['retries'] {
+  if (attemptsOf(run) <= 1) return [];
+  const byId = new Map<string, StepRun>((run?.steps ?? []).map(r => [String(r.stepId), r]));
+  const out: (JunitCase['retries'][number] & { attempt: number })[] = [];
+  for (const { step, number } of reportRows(steps)) {
+    for (const e of retriedOf(byId.get(String(step.id)))) {
+      const title = reasonTitle(e.reason, step);
+      out.push({ attempt: e.attempt, type: String(e.reason || 'failed'), message: `Try ${e.attempt}, step ${number}: ${step.label ?? ''}: ${title}`,
+        text: `Try ${e.attempt} failed at step ${number}, ${step.label ?? ''}: ${title}.` });
+    }
+  }
+  // A stable sort by try, as view.py's sorted().
+  return out.map((e, i) => ({ e, i })).sort((a, b) => a.e.attempt - b.e.attempt || a.i - b.i).map(({ e: { attempt: _a, ...rest } }) => rest);
+}
+
+function junitCase(state: StepState, steps: StepViewX[], t: ReportTestInput, run: ReportRun | null): Omit<JunitCase, 'retries'> {
   const base = { seconds: seconds(run?.durationMs), timestamp: run ? isoText(run.startedAt) : '' };
   if (state === 'passed' || state === 'fixed') return { ...base, status: 'passed', type: '', message: '', text: '' };
   if (state === 'stopped') return { ...base, status: 'skipped', type: 'stopped', message: 'You stopped the run', text: '' };
@@ -253,21 +273,21 @@ function testView(t: ReportTestInput, index: number, offset: number, screenshots
   const byId = new Map<string, StepRun>((run?.steps ?? []).map(r => [String(r.stepId), r]));
   const withCode = run ? reportRows(t.steps ?? []).map(({ step, number, depth }) => stepView(step, number, depth, byId.get(String(step.id)), run, byId, screenshots)) : [];
   const state = runState(run, withCode);
-  const junit = junitCase(state, withCode, t, run);
+  const junit: JunitCase = { ...junitCase(state, withCode, t, run), retries: junitRetries(t.steps ?? [], run) };
   const steps: StepView[] = withCode.map(({ reasonCode: _code, ...s }) => s);
   return {
     anchor: `test-${index + 1}`, name: String(t.name || run?.testName || 'Test'), appName: String(t.appName ?? ''), multi,
     result: state, resultText: run ? RUN_TEXT[state] : "Couldn't run", meta: run ? runMeta(run, offset, t.recordedOn, t.device) : [],
-    testNote: run ? '' : String(t.note || "It couldn't run."), stepsText: plural(steps.length, 'step'), steps, junit,
+    testNote: run ? '' : String(t.note || "It couldn't run."), retryNote: retryNote(run), stepsText: plural(steps.length, 'step'), steps, junit,
     stepsOpen: state !== 'passed' && state !== 'fixed',
   };
 }
 
 // ---------- the whole report ----------
 
-export function countsText(c: Partial<Record<'total' | 'passed' | 'fixed' | 'failed' | 'notRun', number>>): string {
-  const [total, passed, fixed, failed, notRun] = (['total', 'passed', 'fixed', 'failed', 'notRun'] as const).map(k => int(c[k]));
-  let out = `${passed + fixed} of ${plural(total, 'test')} passed`;
+export function countsText(c: Partial<Record<'total' | 'passed' | 'fixed' | 'failed' | 'notRun' | 'flaky', number>>): string {
+  const [total, passed, fixed, failed, notRun, flaky] = (['total', 'passed', 'fixed', 'failed', 'notRun', 'flaky'] as const).map(k => int(c[k]));
+  let out = `${passed + fixed} of ${plural(total, 'test')} passed${flaky ? `, ${flaky} on a retry` : ''}`;
   if (!failed && !notRun) return out + (fixed ? `, ${fixed} fixed automatically` : '');
   if (failed) out += `, ${failed} failed`;
   if (notRun) out += `, ${notRun} not run`;
