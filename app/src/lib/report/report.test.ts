@@ -67,10 +67,26 @@ describe('the report', () => {
   it('shows a failed step with its reason, the AI assistant and its screenshot, open', () => {
     const steps = buildView(INPUT.run).tests[0].steps;
     const done = steps.find(s => s.label === 'Click Done')!;
-    expect(done).toMatchObject({ number: '7', open: true, result: 'failed', headline: "Couldn't find the Done button", image: { size: 'full' } });
+    expect(done).toMatchObject({ number: '8', open: true, result: 'failed', headline: "Couldn't find the Done button", image: { size: 'full' } });
     expect(done.explanation).toEqual({ summary: 'The Done button moved into a menu after the redesign.', cause: 'It moved', suggestion: 'Re-record this step.' });
-    expect(steps.find(s => s.number === '2.2')!.image?.size).toBe('small');
-    expect(steps.map(s => s.number)).toEqual(['1', '2', '2.1', '2.2', '3', '4', '5', '6', '7', '8']);
+    expect(steps.find(s => s.number === '3.2')!.image?.size).toBe('small');
+    expect(steps.map(s => s.number)).toEqual(['1', '2', '3', '3.1', '3.2', '4', '5', '6', '7', '8', '9']);
+  });
+
+  it("shows a Call step's status and time, never its call or its reply (issue #44)", () => {
+    const steps = buildView(INPUT.run).tests[0].steps;
+    expect(steps[1]).toMatchObject({ number: '2', label: 'Call POST api.example.com/test/orders/paid', stepNote: 'Replied 200 in 1.2 s', took: '1.2 s', image: null });
+    const html = reportHtml(buildView(INPUT.run));
+    for (const hidden of ['token=abc', 'API_TOKEN', '&quot;paid', '"paid"', '$.code']) expect(html).not.toContain(hidden);
+    const inp = structuredClone(INPUT.run) as typeof INPUT.run;
+    const t = inp.tests[0] as unknown as { run: { steps: Record<string, unknown>[] } };
+    t.run.steps = [t.run.steps[0], { stepId: 'c1', result: 'failed', reason: 'callFailed', reply: { status: 500, ms: 87 } }];
+    expect(buildView(inp).tests[0].steps[1]).toMatchObject({
+      headline: "The call to your API didn't work", body: "Replied 500 in 87 ms, which this step doesn't count as a pass. The run stopped here.",
+      image: null, open: true,
+    });
+    t.run.steps[1] = { stepId: 'c1', result: 'failed', reason: 'callFailed' };
+    expect(buildView(inp).tests[0].steps[1].body).toBe("It didn't get a reply this step counts as a pass. The run stopped here.");
   });
 
   it('leads a suite with what didn’t pass, and starts the tests that passed closed', () => {

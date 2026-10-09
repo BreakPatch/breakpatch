@@ -83,7 +83,7 @@
         }
       ],
       "testNote": "",
-      "stepsText": "10 steps",
+      "stepsText": "11 steps",
       "steps": [
         {
           "number": "1",
@@ -106,6 +106,24 @@
         {
           "number": "2",
           "depth": 0,
+          "label": "Call POST api.example.com/test/orders/paid",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "Replied 200 in 1.2 s",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "1.2 s",
+          "phases": "doing the step 1.2 s",
+          "image": null,
+          "open": false,
+          "hasDetail": true
+        },
+        {
+          "number": "3",
+          "depth": 0,
           "label": "Log in",
           "result": "passed",
           "resultText": "Passed",
@@ -122,7 +140,7 @@
           "hasDetail": false
         },
         {
-          "number": "2.1",
+          "number": "3.1",
           "depth": 1,
           "label": "Write email",
           "result": "passed",
@@ -140,7 +158,7 @@
           "hasDetail": true
         },
         {
-          "number": "2.2",
+          "number": "3.2",
           "depth": 1,
           "label": "Click Next",
           "result": "fixed",
@@ -158,14 +176,14 @@
             "width": 480,
             "height": 300,
             "size": "small",
-            "alt": "Screenshot: step 2.2, Click Next",
+            "alt": "Screenshot: step 3.2, Click Next",
             "caption": "Where the AI assistant found it"
           },
           "open": false,
           "hasDetail": true
         },
         {
-          "number": "3",
+          "number": "4",
           "depth": 0,
           "label": "Repeat 2 times",
           "result": "passed",
@@ -183,7 +201,7 @@
           "hasDetail": false
         },
         {
-          "number": "4",
+          "number": "5",
           "depth": 1,
           "label": "Click Add row",
           "result": "passed",
@@ -201,7 +219,7 @@
           "hasDetail": true
         },
         {
-          "number": "5",
+          "number": "6",
           "depth": 0,
           "label": "Click \"New project\"",
           "result": "passed",
@@ -219,7 +237,7 @@
           "hasDetail": true
         },
         {
-          "number": "6",
+          "number": "7",
           "depth": 0,
           "label": "Write <Q4> & friends",
           "result": "passed",
@@ -237,7 +255,7 @@
           "hasDetail": false
         },
         {
-          "number": "7",
+          "number": "8",
           "depth": 0,
           "label": "Click Done",
           "result": "failed",
@@ -259,14 +277,14 @@
             "width": 1440,
             "height": 900,
             "size": "full",
-            "alt": "Screenshot: step 7, Click Done",
+            "alt": "Screenshot: step 8, Click Done",
             "caption": "What was on screen when the step failed"
           },
           "open": true,
           "hasDetail": true
         },
         {
-          "number": "8",
+          "number": "9",
           "depth": 0,
           "label": "Check the project list",
           "result": "notRun",
@@ -289,8 +307,8 @@
         "timestamp": "2026-09-24T14:00:00",
         "status": "failed",
         "type": "targetNotFound",
-        "message": "Step 7: Click Done: Couldn't find the Done button",
-        "text": "Step 7: Click Done\nCouldn't find the Done button\nIt wasn't where it was when this step was recorded, so there was nothing to click. The run stopped here.\nAI assistant: The Done button moved into a menu after the redesign.\nLikely cause: It moved.\nSuggested: Re-record this step.\nThis test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks.\nWhat to try: If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer."
+        "message": "Step 8: Click Done: Couldn't find the Done button",
+        "text": "Step 8: Click Done\nCouldn't find the Done button\nIt wasn't where it was when this step was recorded, so there was nothing to click. The run stopped here.\nAI assistant: The Done button moved into a menu after the redesign.\nLikely cause: It moved.\nSuggested: Re-record this step.\nThis test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks.\nWhat to try: If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer."
       },
       "stepsOpen": true
     }

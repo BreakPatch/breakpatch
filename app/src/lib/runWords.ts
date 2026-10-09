@@ -49,11 +49,25 @@ export function targetName(step: Pick<Step, 'target' | 'label' | 'action'>): str
   return 'what to click';
 }
 
-/** A pass that wasn't a plain match with the recording, in words for the report. */
-export function passNote(r: Pick<StepRun, 'passedBy' | 'why'> | undefined): string | undefined {
+/** A pass that wasn't a plain match with the recording, in words for the report; a Call step's reply. */
+export function passNote(r: Pick<StepRun, 'passedBy' | 'why'> & Partial<Pick<StepRun, 'reply'>> | undefined): string | undefined {
   if (r?.passedBy === 'gone') return 'Passed: the dialog closed. The page behind it looked different from when it was recorded.';
   if (r?.passedBy === 'note') return r.why ?? 'Passed: the step did what its note says.';
-  return undefined;
+  return replyNote(r?.reply);
+}
+
+/** A Call step's reply: "Replied 200 in 0.4 s" (its status and time, never its body). */
+export function replyNote(reply: StepRun['reply'] | undefined): string | undefined {
+  if (!reply || typeof reply.status !== 'number') return undefined;
+  return typeof reply.ms === 'number' ? `Replied ${reply.status} in ${replyTime(reply.ms)}` : `Replied ${reply.status}`;
+}
+
+/** "38 ms", else "1.2 s" rounded half up from whole milliseconds (report/view.ts shortTime, view.py short_time). */
+function replyTime(ms: number): string {
+  const n = Math.max(0, Math.floor(ms));
+  if (n < 1000) return `${n} ms`;
+  const t = Math.floor((n + 50) / 100);
+  return `${Math.floor(t / 10)}.${t % 10} s`;
 }
 
 /** The headline: "Couldn't find the Done button". */
@@ -68,6 +82,7 @@ export function reasonTitle(reason: FailReason | undefined, step: Pick<Step, 'ta
     case 'setUpFailed': return "The set-up call didn't work";
     case 'stopped': return 'You stopped the run';
     case 'fileMissing': return "The file to upload isn't in the tests folder";
+    case 'callFailed': return step.action === 'write' ? "The value from the call couldn't be typed" : "The call to your API didn't work";
     default: return 'This step failed';
   }
 }
@@ -78,8 +93,8 @@ const VERB: Partial<Record<Step['action'], string>> = {
   write: 'write in', drag: 'drag', swipe: 'swipe', scroll: 'scroll', upload: 'upload to',
 };
 
-/** One plain sentence (or two) under the headline. */
-export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'target' | 'label' | 'action' | 'secretRef'> & Partial<Pick<Step, 'file'>>): string {
+/** One plain sentence (or two) under the headline. `r`: the step's result (a Call step's reply). */
+export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'target' | 'label' | 'action' | 'secretRef'> & Partial<Pick<Step, 'file'>>, r?: Pick<StepRun, 'reply'>): string {
   const verb = VERB[step.action] ?? 'use';
   switch (reason) {
     case 'targetNotFound': return `It wasn't where it was when this step was recorded, so there was nothing to ${verb}. The run stopped here.`;
@@ -97,6 +112,10 @@ export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'tar
     case 'setUpFailed': return "The call before the test didn't answer with success, so no steps ran.";
     case 'stopped': return "The steps from here on didn't run.";
     case 'fileMissing': return `${step.file ?? 'The file'} isn't in the tests folder. Put it back in the files folder, or re-record the step.`;
+    case 'callFailed':
+      if (step.action === 'write') return "No Call step before it kept this value, or the page wasn't one of the app's own. The run stopped here.";
+      if (typeof r?.reply?.status === 'number') return `${replyNote(r.reply)}, which this step doesn't count as a pass. The run stopped here.`;
+      return "It didn't get a reply this step counts as a pass. The run stopped here.";
     default: return 'The run stopped here.';
   }
 }
@@ -107,6 +126,7 @@ export function reasonAdvice(reason: FailReason | undefined): string {
     case 'secretMissing': return osText('Saved secrets stay on each Mac. Add it here once and every test that uses it can run.');
     case 'healingUnavailable': return 'Without the AI assistant, a moved button fails the run. Re-record the step, or download the assistant.';
     case 'setUpFailed': return 'Check that the set-up address works and that the app is running, then run again.';
+    case 'callFailed': return "Check that the address works and that the app is running: the step's Try it shows what it replies now. Then run again.";
     case 'timeout': return 'If the app was slow this time, run again. If it always takes longer now, re-record this step.';
     case 'stopped': return 'Run again to go through every step.';
     default: return 'If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer.';

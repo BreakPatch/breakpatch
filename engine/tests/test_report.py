@@ -91,15 +91,42 @@ def test_the_report_passes_the_test_s_recorded_system_on_to_where(monkeypatch):
 def test_a_failed_step_has_its_reason_the_ai_assistant_and_its_screenshot():
     view = report.build(INPUT["run"])
     done = next(s for s in view["tests"][0]["steps"] if s["label"] == "Click Done")
-    assert done["number"] == "7" and done["open"] and done["result"] == "failed"
+    assert done["number"] == "8" and done["open"] and done["result"] == "failed"
     assert done["headline"] == "Couldn't find the Done button"
     assert done["explanation"] == {"summary": "The Done button moved into a menu after the redesign.", "cause": "It moved",
                                    "suggestion": "Re-record this step."}
     assert done["image"]["size"] == "full" and done["system"].startswith("This test was recorded on macOS 15")
-    fixed = next(s for s in view["tests"][0]["steps"] if s["number"] == "2.2")
+    fixed = next(s for s in view["tests"][0]["steps"] if s["number"] == "3.2")
     assert fixed["image"]["size"] == "small" and fixed["headline"] == "The Next button had moved. The AI assistant found it."
-    assert [s["number"] for s in view["tests"][0]["steps"]] == ["1", "2", "2.1", "2.2", "3", "4", "5", "6", "7", "8"]
+    assert [s["number"] for s in view["tests"][0]["steps"]] == ["1", "2", "3", "3.1", "3.2", "4", "5", "6", "7", "8", "9"]
     assert view["tests"][0]["steps"][-1]["resultText"] == "Not run"
+
+
+def test_a_call_step_shows_its_status_and_time_and_never_the_call_or_reply():
+    """Issue #44: the report says what the API replied and how long it took, nothing more."""
+    view = report.build(INPUT["run"])
+    call = next(s for s in view["tests"][0]["steps"] if s["number"] == "2")
+    assert call["label"] == "Call POST api.example.com/test/orders/paid"
+    assert call["stepNote"] == "Replied 200 in 1.2 s" and call["took"] == "1.2 s" and call["image"] is None
+    html = report.html(view)
+    assert "Replied 200 in 1.2 s" in html
+    for hidden in ("token=abc", "API_TOKEN", "&quot;paid", "\"paid\"", "$.code"):
+        assert hidden not in html
+    inp = copy.deepcopy(INPUT["run"])
+    t = inp["tests"][0]
+    t["run"]["steps"][1] = {"stepId": "c1", "result": "failed", "reason": "callFailed", "reply": {"status": 500, "ms": 87},
+                            "image": t["run"]["steps"][-1].get("image")}
+    t["run"]["steps"] = t["run"]["steps"][:2]
+    failed = next(s for s in report.build(inp)["tests"][0]["steps"] if s["number"] == "2")
+    assert failed["headline"] == "The call to your API didn't work"
+    assert failed["body"] == "Replied 500 in 87 ms, which this step doesn't count as a pass. The run stopped here."
+    assert failed["advice"].startswith("Check that the address works") and failed["image"] is None
+    t["run"]["steps"][1] = {"stepId": "c1", "result": "failed", "reason": "callFailed"}
+    failed = next(s for s in report.build(inp)["tests"][0]["steps"] if s["number"] == "2")
+    assert failed["body"] == "It didn't get a reply this step counts as a pass. The run stopped here."
+    assert report_view.reason_title("callFailed", {"action": "write"}) == "The value from the call couldn't be typed"
+    assert report_view.reply_note({"status": 204, "ms": 999}) == "Replied 204 in 999 ms"
+    assert report_view.reply_note({"status": 204}) == "Replied 204" and report_view.reply_note(None) == ""
 
 
 def test_screenshots_can_be_left_out():
