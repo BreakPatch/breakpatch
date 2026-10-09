@@ -86,7 +86,7 @@ export function RecorderWorkbench({ rec, appId, address, viewport, allowGroups, 
           onChange={rec.change} onRerecord={rec.startRerecord} rerecordingId={rec.rerecordId} checkingId={rec.busyId} statuses={statuses} statusTexts={statusTexts}
           openLoopId={rec.openLoopId} onCloseLoop={() => rec.setOpenLoopId(null)} groupSteps={groupSteps} onEditGroup={onEditGroup}
           makeId={() => localId('s')} notes={run?.notes} insertAfterId={rec.insertAfterId} unplayedIds={rec.unplayed}
-          onPlayTo={run?.onPlayTo} onAddAfter={run?.onAddAfter} onPlayStep={run?.onPlayStep} onEdited={rec.edited} secretNames={secretNames} locked={run?.running} footer={run?.footer} />
+          onPlayTo={run?.onPlayTo} onAddAfter={run?.onAddAfter} onPlayStep={run?.onPlayStep} onEdited={rec.edited} secretNames={secretNames} appUrl={rec.appUrl} locked={run?.running} footer={run?.footer} />
       )}
     </div>
   );

@@ -14,6 +14,7 @@ import { useSession } from '../../state/session';
 import { originOf } from '../../lib/sites';
 import { ensureSecretSites } from '../../lib/secretSites';
 import { secretsForRequest } from '../../lib/secretScope';
+import { callSecretRefs } from '../../lib/calls';
 import { checkpointLabel, intentAskText, notFoundText, planNotFoundText, thinkingText } from './describe';
 import { chosenIntent, fromEngine, readIntent, type Intent } from './intent';
 import { answered, CAREFUL_NOTE, planIntent, planNeeds, planRun, planSentence, type PlanItem, type PlanRun } from './plan';
@@ -36,8 +37,10 @@ export type AiState =
   | { state: 'proposal'; params: RecordParams; frame?: number; box?: Box; label: string; target?: string; named: boolean; repeat?: number; said?: string; note?: string; plan?: number };
 
 export interface ActionOptions {
-  writeSource: 'typed' | 'secret' | 'generated';
+  writeSource: 'typed' | 'secret' | 'generated' | 'value';
   secretRef: string;
+  /** Write: the name of a value a Call step before it keeps. */
+  valueRef: string;
   generated: Generated;
   seconds: number;          // Wait for a set time
   maxWait: number;          // Wait until: maximum wait, seconds
@@ -47,7 +50,7 @@ export interface ActionOptions {
   distance: number;
 }
 
-const DEFAULT_OPTIONS: ActionOptions = { writeSource: 'typed', secretRef: '', generated: 'uniqueName', seconds: 2, maxWait: 10, sample: 'pdf', fileType: '', direction: 'down', distance: 300 };
+const DEFAULT_OPTIONS: ActionOptions = { writeSource: 'typed', secretRef: '', valueRef: '', generated: 'uniqueName', seconds: 2, maxWait: 10, sample: 'pdf', fileType: '', direction: 'down', distance: 300 };
 
 let seq = 0;
 /** The engine names these after what was clicked ("Click Done"); other labels come from defaultLabel. */
@@ -75,7 +78,7 @@ export function phaseText(phase: CheckingPhase, action: ActionKind): string {
 const ACTING: Partial<Record<ActionKind, string>> = {
   click: 'Clicking…', doubleClick: 'Clicking…', longClick: 'Clicking…', rightClick: 'Clicking…', hover: 'Moving the pointer…',
   write: 'Typing…', navigate: 'Opening the page…', waitFor: 'Waiting…', swipe: 'Swiping…', scroll: 'Scrolling…', drag: 'Dragging…',
-  upload: 'Uploading…', switchTab: 'Switching tabs…', downloadCheck: 'Checking the download…',
+  upload: 'Uploading…', switchTab: 'Switching tabs…', downloadCheck: 'Checking the download…', call: 'Calling your API…',
 };
 
 /**
@@ -234,9 +237,11 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     setSelectedId(rr ?? tempId);
     setChecking(true); setSavedPill(null); setPhase('watching'); setBusyAction(params.action); setAddedId(null);
     try {
-      // The secret's value goes to the engine with this call only, never into the step.
-      const forStep = extra.checkpoint ? undefined : await secretFor(params.secretRef, appUrl);
-      const sent: RecordParams = { ...params, ...(filesDir ? { filesDir } : {}), ...(forStep ?? {}), ...(extra.frame !== undefined ? { frame: extra.frame } : {}),
+      // The secret's value goes to the engine with this call only, never into the step. A Call
+      // step's headers may name saved secrets too; it and a Write of a kept value need the app's address.
+      const forStep = extra.checkpoint ? undefined : params.action === 'call' ? await secretsForRequest(callSecretRefs(params.call)) : await secretFor(params.secretRef, appUrl);
+      const needsApp = params.action === 'call' || (params.action === 'write' && !!params.valueRef);
+      const sent: RecordParams = { ...params, ...(filesDir ? { filesDir } : {}), ...(forStep ?? {}), ...(needsApp && appUrl ? { appUrl } : {}), ...(extra.frame !== undefined ? { frame: extra.frame } : {}),
         // Found with the AI assistant: the user's words are what to look for (the engine still names it).
         ...(extra.target && !extra.checkpoint ? { target: extra.target } : {}),
         ...(extra.label && !extra.checkpoint && params.action !== 'checkpoint' ? { label: extra.label } : {}) };
@@ -572,6 +577,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     switch (action) {
       case 'write': {
         if (options.writeSource === 'secret') { if (!options.secretRef) return; void record({ action: 'write', secretRef: options.secretRef }); }
+        else if (options.writeSource === 'value') { if (!options.valueRef) return; void record({ action: 'write', valueRef: options.valueRef }); }
         else if (options.writeSource === 'generated') void record({ action: 'write', generated: options.generated });
         // Typed exactly as written: leading and trailing spaces are part of what's typed.
         else { if (!text) return; void record({ action: 'write', text }); }
@@ -582,7 +588,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
       case 'downloadCheck': void record({ action: 'downloadCheck', fileType: options.fileType || undefined }); return;
       case 'switchTab': void record({ action: 'switchTab' }); return;
       case 'loop': addLoop(); return;
-      case 'drag': case 'group': return;
+      case 'drag': case 'group': case 'call': return;
       default: if (!t) return; setText(''); void describe(t);
     }
   }
@@ -594,7 +600,11 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     // Re-recording ends a story's run through its steps: its clicks would be the story's.
     if (planRef.current) { setPlan(null); setPlanEditing(false); }
     setRerecordId(id); setSelectedId(id);
-    if (s.action === 'write') { setAction('write'); setText(s.text ?? ''); if (s.secretRef) setOptions({ writeSource: 'secret', secretRef: s.secretRef }); }
+    if (s.action === 'write') {
+      setAction('write'); setText(s.text ?? '');
+      if (s.secretRef) setOptions({ writeSource: 'secret', secretRef: s.secretRef });
+      else if (s.valueRef) setOptions({ writeSource: 'value', valueRef: s.valueRef });
+    }
     else if (s.action !== 'loop' && s.action !== 'group') setAction(s.action);
     if (sample) sampleApp.replay(stepsBefore(stepsRef.current, id), viewport);
   }
@@ -612,6 +622,11 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     setText: (t: string) => { setText(t); setUnhandled(null); },
     unhandled, refocus,
     load, change, record, addLocal, addLoop, send, describe, confirmAi, retryAi, cancelAi, pageScroll, retryNote,
+    /** Adds a Call step: the engine makes the call now (it isn't added when that doesn't work). */
+    recordCall: (patch: Pick<Step, 'call' | 'passStatus' | 'timeoutMs' | 'keep' | 'label'>) =>
+      record({ action: 'call', call: patch.call, ...(patch.passStatus ? { passStatus: patch.passStatus } : {}), ...(patch.timeoutMs ? { timeoutMs: patch.timeoutMs } : {}),
+        ...(patch.keep ? { keep: patch.keep } : {}) }, { label: patch.label }),
+    appUrl,
     /** A test from a story: the run through its steps, and what the person does with them. */
     plan, planEditing, startPlan, stopPlan, editPlanStep,
     /** A story's step in words, in touch words on a phone or tablet ("Tap the Next button"). */

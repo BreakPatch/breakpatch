@@ -1,7 +1,7 @@
 // Plain-language names and icons for each action (ui-requirements §5.6 action list).
-import type { ActionKind, Step } from '../data/types';
+import type { ActionKind, HttpCall, Step } from '../data/types';
 
-export interface ActionInfo { kind: ActionKind; name: string; verb: string; icon: string; group: 'Gestures' | 'Input' | 'Waiting' | 'Browser' | 'Structure' | 'Check' }
+export interface ActionInfo { kind: ActionKind; name: string; verb: string; icon: string; group: 'Gestures' | 'Input' | 'Waiting' | 'Browser' | 'Structure' | 'Check' | 'API' }
 
 export const ACTIONS: ActionInfo[] = [
   { kind: 'click', name: 'Click', verb: 'Click', icon: 'touch_app', group: 'Gestures' },
@@ -20,6 +20,7 @@ export const ACTIONS: ActionInfo[] = [
   { kind: 'upload', name: 'Upload file', verb: 'Upload', icon: 'upload_file', group: 'Browser' },
   { kind: 'downloadCheck', name: 'Check a download', verb: 'Check download', icon: 'download_done', group: 'Browser' },
   { kind: 'checkpoint', name: 'Also check something is visible', verb: 'Check', icon: 'fact_check', group: 'Check' },
+  { kind: 'call', name: 'Call your API', verb: 'Call', icon: 'api', group: 'API' },
   { kind: 'loop', name: 'Repeat steps', verb: 'Repeat', icon: 'repeat', group: 'Structure' },
   { kind: 'group', name: 'Insert shared steps', verb: 'Shared steps', icon: 'account_tree', group: 'Structure' },
 ];
@@ -60,15 +61,31 @@ export function labelFor(kind: ActionKind, p: Partial<Step> = {}): { verb: strin
   const a = BY_KIND[kind];
   switch (kind) {
     case 'write':
-      return { verb: a.verb, label: p.secretRef ? `Write saved secret ${p.secretRef}` : p.generated ? `Write ${GENERATED[p.generated]}` : `Write "${p.text ?? ''}"` };
+      return { verb: a.verb, label: p.secretRef ? `Write saved secret ${p.secretRef}` : p.valueRef ? `Write the value ${p.valueRef}` : p.generated ? `Write ${GENERATED[p.generated]}` : `Write "${p.text ?? ''}"` };
     case 'waitFor': return { verb: a.verb, label: `Wait ${Math.round((p.durationMs ?? 1000) / 1000)} seconds` };
     case 'navigate':
       return { verb: a.verb, label: p.nav === 'reload' ? 'Reload the page' : p.nav === 'back' ? 'Go back' : p.nav === 'forward' ? 'Go forward' : `Go to ${p.url ?? 'address'}` };
     case 'upload': return { verb: a.verb, label: `Upload ${p.sample ? SAMPLE_NAMES[p.sample] : 'a file'}` };
     case 'loop': return { verb: a.verb, label: `Repeat ${p.count ?? 2} times` };
+    case 'call': return { verb: a.verb, label: callLabel(p.call) };
     case 'scroll': case 'swipe': return { verb: a.verb, label: `${a.verb} ${p.direction ?? 'down'}` };
     default: return { verb: a.verb, label: a.verb + ' here' };
   }
+}
+
+/**
+ * "Call POST api.acme.com/test/orders/paid": the method and where, never the query string (it may
+ * hold a secret). The engine's labels.call_label says the same.
+ */
+export function callLabel(call: Partial<HttpCall> | undefined): string {
+  const method = (call?.method ?? 'GET').toUpperCase();
+  let where = '';
+  try {
+    const u = new URL((call?.url ?? '').trim());
+    if (u.protocol === 'https:' || u.protocol === 'http:') where = u.host + (u.pathname === '/' ? '' : u.pathname);
+  } catch { where = ''; }
+  if (where.length > 60) where = where.slice(0, 59) + '…';
+  return where ? `Call ${method} ${where}` : 'Call your API';
 }
 
 export const GENERATED = { uniqueName: 'a unique name', timeNow: 'the time now', today: "today's date", repeatNumber: 'the repeat number' } as const;

@@ -14,6 +14,8 @@ import { defaultLabel, stepIcon, stepNote, UNCHECKED_NOTE } from './stepText';
 import { countRows, duplicateStep, flatRows, moveAfter, moveBefore, moveBy, removeStep, updateStep, type RowInfo } from './stepTree';
 import './steps.css';
 import { osText } from '../../lib/osWords';
+import { keptNames } from '../../lib/calls';
+import { CallStepDialog } from '../calls/CallStepDialog';
 
 export interface StepsPanelProps {
   steps: Step[];
@@ -52,6 +54,8 @@ export interface StepsPanelProps {
   onEdited?: (id: string, affectsPage: boolean) => void;
   /** Saved secret names, for editing a Write step. */
   secretNames?: string[];
+  /** The app's base address, which a Call step's call may reach (editing one, and its Try it). */
+  appUrl?: string;
   /** A run is going: the list is read-only until it ends. */
   locked?: boolean;
   /** Steps of a shared-steps card (resolved from its version), shown read-only when expanded. */
@@ -192,10 +196,10 @@ export function StepsPanel(p: StepsPanelProps) {
       <>
         {groupOpen && <GroupChildren number={r.number} steps={children} onEdit={p.onEditGroup && s.groupId ? () => p.onEditGroup!(s.groupId!) : undefined} />}
         {edit && (selected || leaving) && editable && (
-          <StepEditor step={s} number={r.number} secretNames={p.secretNames ?? []} closing={leaving}
+          <StepEditor step={s} number={r.number} secretNames={p.secretNames ?? []} closing={leaving} appUrl={p.appUrl ?? ''} kept={keptNames(steps)}
             onChange={patch => change(updateStep(steps, s.id, patch))}
             onEdit={(patch, affectsPage) => { change(updateStep(steps, s.id, patch)); p.onEdited?.(s.id, affectsPage); }}
-            onRerecord={s.action !== 'loop' && s.action !== 'group' && s.action !== 'waitFor' && p.onRerecord ? () => p.onRerecord!(s.id) : undefined}
+            onRerecord={s.action !== 'loop' && s.action !== 'group' && s.action !== 'waitFor' && s.action !== 'call' && p.onRerecord ? () => p.onRerecord!(s.id) : undefined}
             onPlayTo={p.onPlayTo ? () => p.onPlayTo!(s.id) : undefined}
             onPlayStep={p.onPlayStep && s.action !== 'loop' && s.action !== 'group' ? () => p.onPlayStep!(s.id) : undefined}
             onAddAfter={p.onAddAfter ? () => p.onAddAfter!(s.id) : undefined}
@@ -269,8 +273,10 @@ const EXPECT_CHOICES: { value: Expect | ''; label: string }[] = [
   { value: 'noChange', label: 'Nothing visible changes' },
 ];
 
-function StepEditor({ step, number, secretNames, closing, onChange, onEdit, onRerecord, onPlayTo, onPlayStep, onAddAfter, onDuplicate, onDelete }: {
+function StepEditor({ step, number, secretNames, closing, appUrl, kept, onChange, onEdit, onRerecord, onPlayTo, onPlayStep, onAddAfter, onDuplicate, onDelete }: {
   step: Step; number: number | string; secretNames: string[];
+  /** The app's base address (a Call step's editor), and the values Call steps in this list keep. */
+  appUrl: string; kept: string[];
   /** Folding shut after another step was picked (DES-01). */
   closing?: boolean;
   onChange: (patch: Partial<Step>) => void; onEdit: (patch: Partial<Step>, affectsPage: boolean) => void;
@@ -325,7 +331,11 @@ function StepEditor({ step, number, secretNames, closing, onChange, onEdit, onRe
             help="Optional. Used only if this step's check fails." more="Read by the AI assistant only if this step's check fails, to judge it." />}
         </div>
       )}
-      <StepEditPanel open={editing && !closing} step={step} secretNames={secretNames} canRerecord={!!onRerecord} onRerecord={onRerecord ? () => { setEditing(false); onRerecord(); } : undefined} onCancel={() => setEditing(false)} onSave={(patch, affects) => { setEditing(false); onEdit(patch, affects); }} />
+      {step.action === 'call'
+        // A call has more to it than fits over the list: its own dialog, as when it was added.
+        ? <CallStepDialog open={editing && !closing} step={step} appUrl={appUrl} takenNames={kept} onClose={() => setEditing(false)}
+            onSave={patch => onEdit(patch, JSON.stringify([step.call, step.passStatus, step.keep]) !== JSON.stringify([patch.call, patch.passStatus, patch.keep]))} />
+        : <StepEditPanel open={editing && !closing} step={step} secretNames={secretNames} kept={kept} canRerecord={!!onRerecord} onRerecord={onRerecord ? () => { setEditing(false); onRerecord(); } : undefined} onCancel={() => setEditing(false)} onSave={(patch, affects) => { setEditing(false); onEdit(patch, affects); }} />}
       {confirmDelete ? (
         <div className="step-actions step-confirm" role="alert">
           <span className="grow">Delete step {number}?</span>
@@ -358,13 +368,16 @@ function StepEditPanel({ open, ...rest }: { open: boolean } & EditPanelProps) {
   return mounted ? <StepEditPanelBody {...rest} closing={closing} /> : null;
 }
 interface EditPanelProps {
-  step: Step; secretNames: string[]; canRerecord: boolean; onSave: (patch: Partial<Step>, affectsPage: boolean) => void; onCancel: () => void;
+  step: Step; secretNames: string[]; canRerecord: boolean;
+  /** Values Call steps in this list keep: a Write step may type one ("From a call"). */
+  kept: string[]; onSave: (patch: Partial<Step>, affectsPage: boolean) => void; onCancel: () => void;
   /** Closes the panel and starts Re-record (the step's own menu has it too). */
   onRerecord?: () => void;
 }
-function StepEditPanelBody({ step, secretNames, canRerecord, onRerecord, closing, onSave, onCancel }: EditPanelProps & { closing: boolean }) {
+function StepEditPanelBody({ step, secretNames, kept, canRerecord, onRerecord, closing, onSave, onCancel }: EditPanelProps & { closing: boolean }) {
   const [label, setLabel] = useState(step.label);
-  const [source, setSource] = useState<'typed' | 'secret' | 'generated'>(step.secretRef ? 'secret' : step.generated ? 'generated' : 'typed');
+  const [source, setSource] = useState<'typed' | 'secret' | 'generated' | 'value'>(step.secretRef ? 'secret' : step.valueRef ? 'value' : step.generated ? 'generated' : 'typed');
+  const [valueRef, setValueRef] = useState(step.valueRef ?? kept[0] ?? '');
   const [text, setText] = useState(step.text ?? '');
   const [secretRef, setSecretRef] = useState(step.secretRef ?? secretNames[0] ?? '');
   const [generated, setGenerated] = useState<Generated>(step.generated ?? 'uniqueName');
@@ -380,12 +393,14 @@ function StepEditPanelBody({ step, secretNames, canRerecord, onRerecord, closing
     const patch: Partial<Step> = {};
     let affects = false;
     if (a === 'write') {
-      const was = { text: step.text, secretRef: step.secretRef, generated: step.generated };
-      const now = source === 'typed' ? { text, secretRef: undefined, generated: undefined }
-        : source === 'secret' ? { text: undefined, secretRef: secretRef || undefined, generated: undefined }
-        : { text: undefined, secretRef: undefined, generated };
+      const was = { text: step.text, secretRef: step.secretRef, generated: step.generated, valueRef: step.valueRef };
+      const none = { text: undefined, secretRef: undefined, generated: undefined, valueRef: undefined };
+      const now = source === 'typed' ? { ...none, text }
+        : source === 'secret' ? { ...none, secretRef: secretRef || undefined }
+        : source === 'value' ? { ...none, valueRef: valueRef || undefined }
+        : { ...none, generated };
       Object.assign(patch, now);                                   // `masked` stays as recorded
-      affects = was.text !== now.text || was.secretRef !== now.secretRef || was.generated !== now.generated;
+      affects = was.text !== now.text || was.secretRef !== now.secretRef || was.generated !== now.generated || was.valueRef !== now.valueRef;
     } else if (a === 'waitFor') {
       patch.durationMs = Math.max(1, seconds) * 1000; affects = patch.durationMs !== step.durationMs;
       patch.label = defaultLabel({ ...step, ...patch } as Step);
@@ -413,7 +428,7 @@ function StepEditPanelBody({ step, secretNames, canRerecord, onRerecord, closing
       {a !== 'waitFor' && <label className="ep-row">Name<input className="input" value={label} autoFocus onChange={e => setLabel(e.target.value)} /></label>}
       {a === 'write' && <>
         <div className="ep-chips" role="radiogroup" aria-label="What to write">
-          {([['typed', 'Typed text'], ['secret', 'Saved secret'], ['generated', 'Generated']] as const).map(([v, l]) => (
+          {([['typed', 'Typed text'], ['secret', 'Saved secret'], ['generated', 'Generated'], ...(kept.length || step.valueRef ? [['value', 'From a call']] as const : [])] as const).map(([v, l]) => (
             <button key={v} type="button" role="radio" aria-checked={source === v} className={'rec-chip' + (source === v ? ' on' : '')} onClick={() => setSource(v)}>{l}</button>
           ))}
         </div>
@@ -421,6 +436,9 @@ function StepEditPanelBody({ step, secretNames, canRerecord, onRerecord, closing
         {source === 'secret' && <div className="ep-row"><label htmlFor={'ep-secret-' + step.id}>Saved secret</label>
           <ChipSelect field id={'ep-secret-' + step.id} value={secretRef} onChange={setSecretRef}
             options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: osText('No saved secrets on this Mac') }]} /></div>}
+        {source === 'value' && <div className="ep-row"><label htmlFor={'ep-value-' + step.id}>Value from a call</label>
+          <ChipSelect field id={'ep-value-' + step.id} value={valueRef} onChange={setValueRef}
+            options={[...new Set([...kept, ...(step.valueRef ? [step.valueRef] : [])])].map(n => ({ value: n, label: n }))} /></div>}
         {source === 'generated' && <div className="ep-row"><label htmlFor={'ep-gen-' + step.id}>Value</label>
           <ChipSelect<Generated> field id={'ep-gen-' + step.id} value={generated} onChange={setGenerated} options={GENERATED_CHOICES} /></div>}
       </>}

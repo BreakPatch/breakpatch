@@ -19,8 +19,8 @@ export interface RunView {
   failedId?: string;
   fixes: Record<string, { oldAt?: Point; newAt?: Point }>;
   screenshots: Record<string, string>;
-  /** Steps that passed another way than matching the recording, and how (StepRun.passedBy). */
-  passes: Record<string, Pick<StepRun, 'passedBy' | 'why'>>;
+  /** Steps that passed another way than matching the recording, and how (StepRun.passedBy); a Call step's reply. */
+  passes: Record<string, Pick<StepRun, 'passedBy' | 'why' | 'reply'>>;
   /** Where each step's time went. */
   timings: Record<string, NonNullable<StepRun['timings']>>;
   /** Steps whose checks covered nothing. */
@@ -59,7 +59,7 @@ export function runReducer(s: RunView, a: RunAction): RunView {
       if (ev.screenshot) next.screenshots = { ...s.screenshots, [ev.stepId]: ev.screenshot };
       if (ev.timings) next.timings = { ...s.timings, [ev.stepId]: ev.timings };
       if (ev.unchecked?.length) next.unchecked = { ...s.unchecked, [ev.stepId]: ev.unchecked };
-      if (ev.passedBy) next.passes = { ...s.passes, [ev.stepId]: { passedBy: ev.passedBy, why: ev.why } };
+      if (ev.passedBy || ev.reply) next.passes = { ...s.passes, [ev.stepId]: { passedBy: ev.passedBy, why: ev.why, reply: ev.reply } };
       if (state === 'failed') {
         if (ev.reason) next.reasons = { ...s.reasons, [ev.stepId]: ev.reason };
         // A loop or card fails after its child: the child is the one to show.
@@ -76,7 +76,7 @@ export function runReducer(s: RunView, a: RunAction): RunView {
       const passes = { ...s.passes };
       for (const r of ev.steps) {
         states[r.stepId] = FROM_RESULT[r.result];
-        if (r.passedBy) passes[r.stepId] = { passedBy: r.passedBy, why: r.why };
+        if (r.passedBy || r.reply) passes[r.stepId] = { passedBy: r.passedBy, why: r.why, reply: r.reply };
         if (r.reason) reasons[r.stepId] = r.reason;
       }
       for (const id of s.ids) {

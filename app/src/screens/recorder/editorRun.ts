@@ -63,7 +63,7 @@ export function editorStatuses(view: RunView, steps: Step[], mode: EditorRunMode
     if (text && byId.has(id) && !notes[id]) notes[id] = text;
   }
   if (view.failedId && byId.has(view.failedId) && view.reasons[view.failedId] !== 'stopped') {
-    notes[view.failedId] = reasonText(view.reasons[view.failedId] as FailReason, byId.get(view.failedId)!);
+    notes[view.failedId] = reasonText(view.reasons[view.failedId] as FailReason, byId.get(view.failedId)!, view.passes?.[view.failedId]);
   }
   return { statuses, notes };
 }

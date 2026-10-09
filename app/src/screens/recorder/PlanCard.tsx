@@ -10,7 +10,7 @@ import { secretNamesHere } from '../../lib/secretScope';
 import { Button, ChipSelect, Icon } from '../../components/ui';
 import { CAREFUL_NOTE, leftOutText, planDoneText, planNeeds, type PlanItem } from './plan';
 import type { Recorder } from './useRecorder';
-import { isHttpAddress } from '../app/tryCall';
+import { isHttpAddress } from '../../lib/calls';
 import { withScheme } from '../app/TestDetailsDialog';
 
 const STATE_ICON = { done: 'check_circle', skipped: 'block', todo: 'radio_button_unchecked' } as const;

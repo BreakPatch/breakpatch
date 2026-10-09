@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Person, Run, Test } from '../../data/types';
 import { distinct, filterRuns, filterTests } from './filters';
-import { callProblem, cleanCall, describeReply, isHttpAddress, tryCall } from './tryCall';
+import { callProblem, cleanCall, describeReply, isHttpAddress, tryCall } from '../../lib/calls';
 import type { CallReply, Engine } from '../../engine/engine';
 
 const p = (uid: string): Person => ({ uid, name: uid.toUpperCase(), email: uid + '@x.com' });

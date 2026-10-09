@@ -89,15 +89,16 @@ export function rowNotes(view: RunView, info: RunInfo): Record<string, string> {
     const rowId = info.refs.get(id)?.rowId;
     if (rowId && !notes[rowId]) notes[rowId] = UNCHECKED_NOTE;
   }
+  // A Call step says what it replied, before how long it took.
+  for (const [id, p] of Object.entries(view.passes ?? {})) {
+    const rowId = info.refs.get(id)?.rowId;
+    const text = passNote(p);
+    if (rowId && text && !notes[rowId]) notes[rowId] = text;
+  }
   for (const [id, t] of Object.entries(view.timings ?? {})) {
     const rowId = info.refs.get(id)?.rowId;
     const n = numberOf(info, id);
     const text = slowNote(t, typeof n === 'number' && n > 1 ? n - 1 : undefined);
-    if (rowId && text && !notes[rowId]) notes[rowId] = text;
-  }
-  for (const [id, p] of Object.entries(view.passes ?? {})) {
-    const rowId = info.refs.get(id)?.rowId;
-    const text = passNote(p);
     if (rowId && text && !notes[rowId]) notes[rowId] = text;
   }
   if (view.failedId) {

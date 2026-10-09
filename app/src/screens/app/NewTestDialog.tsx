@@ -2,17 +2,14 @@
 // set-up and clean-up calls (ui-requirements §5.5).
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Dialog, Field, Icon, IconButton, Select, Spinner, Switch, TextInput, useToast } from '../../components/ui';
+import { Button, Dialog, Field, Icon, Switch, TextInput, useToast } from '../../components/ui';
+import { CallFields } from '../../components/calls/CallFields';
 import { SizePicker } from '../../components/common';
 import { useBackend } from '../../data/hooks';
-import type { App, CallHeader, HttpCall, Viewport } from '../../data/types';
-import { getEngine } from '../../engine';
-import { secretNamesHere, secretsForRequest } from '../../lib/secretScope';
-import { callProblem, cleanCall, describeReply, isHttpAddress, tryCall, type Reply } from './tryCall';
+import type { App, HttpCall, Viewport } from '../../data/types';
+import { secretNamesHere } from '../../lib/secretScope';
+import { callProblem, cleanCall, isHttpAddress } from '../../lib/calls';
 import { withScheme } from './TestDetailsDialog';
-import { osText } from '../../lib/osWords';
-
-const METHODS: HttpCall['method'][] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
 
 export function NewTestDialog({ open, app, onClose }: { open: boolean; app: App; onClose: () => void }) {
@@ -130,61 +127,13 @@ function CallCard({ icon, title, sub, call, onChange, error, app, otherHosts, se
   icon: string; title: string; sub: string; call: HttpCall; onChange: (c: HttpCall) => void; error?: string;
   app: App; otherHosts: boolean; secretNames: string[]; children?: ReactNode;
 }) {
-  const [reply, setReply] = useState<Reply | null>(null);
-  const [trying, setTrying] = useState(false);
-  const headers = call.headers ?? [];
-  useEffect(() => { setReply(null); }, [call.url, call.method, call.headers, otherHosts]);
-  const tryIt = async () => {
-    setTrying(true);
-    const c = cleanCall(call, otherHosts);
-    const names = (c.headers ?? []).map(h => h.secretRef).filter((n): n is string => !!n);
-    const { secrets: values, ...scope } = await secretsForRequest(names).catch(() => ({ secrets: {} }));
-    setReply(await tryCall(c, { engine: getEngine(), appUrl: app.baseUrl, secrets: values, scope }));
-    setTrying(false);
-  };
-  const setHeader = (i: number, h: CallHeader) => onChange({ ...call, headers: headers.map((x, j) => (j === i ? h : x)) });
-
   return (
     <div className="app-call">
       <div className="app-call-head">
         <span className="app-call-disc"><Icon name={icon} size={18} /></span>
         <div className="grow col" style={{ gap: 1 }}><div className="app-call-title">{title}</div><div className="app-call-sub">{sub}</div></div>
       </div>
-      <Field error={error}>
-        <div className="app-call-row">
-          <div className="app-call-method">
-            <Select aria-label={`${title}: method`} value={call.method} onChange={e => onChange({ ...call, method: e.target.value as HttpCall['method'] })}
-              options={METHODS.map(m => ({ value: m, label: m }))} />
-          </div>
-          <TextInput aria-label={`${title}: address`} mono value={call.url} placeholder="https://api.example.com/test/seed" spellCheck={false} autoCapitalize="off"
-            onChange={e => onChange({ ...call, url: e.target.value })} />
-        </div>
-      </Field>
-      {headers.map((h, i) => (
-        <div className="app-call-header" key={i}>
-          <TextInput aria-label={`${title}: header ${i + 1} name`} mono value={h.name} placeholder="Authorization" spellCheck={false} autoCapitalize="off"
-            onChange={e => setHeader(i, { ...h, name: e.target.value })} />
-          <div className="app-call-method">
-            <Select aria-label={`${title}: header ${i + 1} value from`} value={h.secretRef !== undefined ? 'secret' : 'text'}
-              onChange={e => setHeader(i, e.target.value === 'secret' ? { name: h.name, secretRef: secretNames[0] ?? '' } : { name: h.name, value: '' })}
-              options={[{ value: 'text', label: 'Text' }, { value: 'secret', label: 'Saved secret' }]} />
-          </div>
-          {h.secretRef !== undefined
-            ? <Select aria-label={`${title}: header ${i + 1} secret`} value={h.secretRef} onChange={e => setHeader(i, { ...h, secretRef: e.target.value })}
-                options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: osText('No saved secrets on this Mac') }]} />
-            : <TextInput aria-label={`${title}: header ${i + 1} value`} mono value={h.value ?? ''} spellCheck={false} autoCapitalize="off"
-                onChange={e => setHeader(i, { ...h, value: e.target.value })} />}
-          <IconButton icon="close" label={`Remove header ${h.name || i + 1}`} onClick={() => onChange({ ...call, headers: headers.filter((_, j) => j !== i) })} />
-        </div>
-      ))}
-      <div className="app-call-try">
-        <div className="grow" aria-live="polite">
-          {trying ? <span className="app-reply"><Spinner size={16} />Calling…</span>
-            : reply && <span className={`app-reply ${reply.ok ? 'ok' : 'bad'}`}><Icon name={reply.ok ? 'check_circle' : 'error'} size={16} />{describeReply(reply)}</span>}
-        </div>
-        <Button kind="link" size="sm" icon="add" onClick={() => onChange({ ...call, headers: [...headers, { name: '', value: '' }] })}>Add header</Button>
-        <Button kind="link" size="sm" icon="send" disabled={!call.url.trim() || trying} onClick={tryIt}>Try it</Button>
-      </div>
+      <CallFields title={title} call={call} onChange={onChange} error={error} appUrl={app.baseUrl} otherHosts={otherHosts} secretNames={secretNames} />
       {children}
     </div>
   );
