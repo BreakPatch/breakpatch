@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KEEP_DELETED_MS, type Backend, type DeletedItem } from '../backend';
 import type { Person, Run, Step, Test } from '../types';
-import { fromFileText, slugify, toFileText, uniqueSlug } from './format';
+import { NEWEST_READ_SCHEMA_VERSION, fromFileText, slugify, toFileText, uniqueSlug } from './format';
 import { checkWritable, firstNameOf, initFolder, inspectFolder } from './folder';
 import { FolderError, LocalBackend, NEWER_MESSAGE } from './localBackend';
 import { baseName, isTempName, MemoryStorage } from './storage';
@@ -71,7 +71,7 @@ describe('choosing a folder', () => {
   });
   it('refuses a newer format, a broken breakpatch.json and a missing folder', async () => {
     const st = new MemoryStorage();
-    st.poke('/new/breakpatch.json', '{"format":"breakpatch","schemaVersion":3,"name":"x"}');
+    st.poke('/new/breakpatch.json', `{"format":"breakpatch","schemaVersion":${NEWEST_READ_SCHEMA_VERSION + 1},"name":"x"}`);
     await expect(inspectFolder(st, '/new')).rejects.toThrow(NEWER_MESSAGE);
     await expect(LocalBackend.open({ storage: st, path: '/new', person: ana, live: false })).rejects.toMatchObject({ code: 'newer' });
     st.poke('/bad/breakpatch.json', '{ nope');
@@ -655,10 +655,10 @@ describe('reading a whole folder', () => {
       'apps/web-app/tests/ok.json': toFileText({ name: 'OK', version: 1, steps }),
       'apps/web-app/tests/broken.json': '{ "name": ',
     });
-    st.poke(`${ROOT}/breakpatch.json`, toFileText({ format: 'breakpatch', schemaVersion: 3, name: 'Later' }));
+    st.poke(`${ROOT}/breakpatch.json`, toFileText({ format: 'breakpatch', schemaVersion: NEWEST_READ_SCHEMA_VERSION + 1, name: 'Later' }));
     const snap = await LocalBackend.read({ storage: st, path: ROOT, person: ana });
     expect(snap.newer).toBe(true);
-    expect(snap.schemaVersion).toBe(3);
+    expect(snap.schemaVersion).toBe(NEWEST_READ_SCHEMA_VERSION + 1);
     expect(snap.apps[0].tests.map(t => t.test.id)).toEqual(['ok']);
     expect(snap.skipped).toEqual(['apps/web-app/tests/broken.json: not valid JSON, skipped']);
     // The texts it was read from come with it, broken ones included, so a copy can tell if the folder changed.

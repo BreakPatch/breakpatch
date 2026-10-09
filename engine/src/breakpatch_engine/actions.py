@@ -101,6 +101,10 @@ class Context:
     download_mark: int = 0                      # downloads before this index are already accounted for
     relaxed: bool = False                       # screen checks allow for another system (systems.py)
     files_dir: str | None = None                # <tests folder>/files, for uploads of the user's own files
+    # Values Call steps kept from their replies (`keep`), by name: (value, the call's origin). Typed
+    # by a Write step's `valueRef`, only on the app's pages; never logged or sent to the app.
+    values: dict[str, tuple[str, str | None]] = field(default_factory=dict)
+    app_url: str | None = None                  # the app's base address: where a kept value may be typed
 
     def __post_init__(self):
         # Bare values (in-process callers) become Secrets allowed nowhere: typing them fails plainly.
@@ -155,10 +159,14 @@ def resolve_text(step: dict, ctx: Context, now: dt.datetime | None = None) -> st
 
 
 def secret_refs(steps: Sequence[dict]) -> list[tuple[dict, str]]:
+    """Every saved secret the steps use, with its step: a Write step's, and a Call step's headers'."""
     out = []
     for s in steps:
         if s.get("action") == "write" and s.get("secretRef"):
             out.append((s, s["secretRef"]))
+        if s.get("action") == "call" and isinstance(s.get("call"), dict):
+            out.extend((s, str(h["secretRef"])) for h in (s["call"].get("headers") or [])
+                       if isinstance(h, dict) and h.get("secretRef"))
         out.extend(secret_refs(s.get("steps") or []))
     return out
 
@@ -215,6 +223,8 @@ async def perform(b: BrowserSession, step: dict, ctx: Context, at: Sequence[floa
         await b.scroll(frm, dx * dist, dy * dist)
     elif a == "write" and step.get("secretRef"):
         await write_secret(b, step["secretRef"], ctx, at)
+    elif a == "write" and step.get("valueRef"):
+        await write_value(b, str(step["valueRef"]), ctx, at)
     elif a == "write":
         text = resolve_text(step, ctx)
         if at is not None:
@@ -242,7 +252,7 @@ async def perform(b: BrowserSession, step: dict, ctx: Context, at: Sequence[floa
             raise ActionFailed("timeout", "Clicking there didn't open a file picker.")
     elif a == "downloadCheck":
         await download_check(b, step, ctx, at)
-    elif a in ("checkpoint", "loop", "group"):
+    elif a in ("checkpoint", "loop", "group", "call"):
         pass  # handled by the caller
     else:
         raise ActionFailed("unexpectedScreen", f"The engine doesn't know the action {a!r}.")
@@ -260,6 +270,39 @@ async def write_secret(b: BrowserSession, name: str, ctx: Context, at: Sequence[
     blocked = await b.type_guarded(secret.value, secret.allows)
     if blocked is not None:
         raise not_allowed(name, blocked or None)
+
+
+def value_allowed(origin: str | None, ctx: Context, call_origin: str | None) -> bool:
+    """Where a kept value may be typed: a page of the app (its host, or one under the same domain,
+    as calls may reach), or the site of the call it came from."""
+    from .calls import host_allowed
+    from urllib.parse import urlsplit
+    if origin is None:
+        return False
+    if call_origin is not None and origin == call_origin:
+        return True
+    app = origin_of(ctx.app_url)
+    if app is None:
+        return False
+    a, o = urlsplit(app), urlsplit(origin)
+    if a.scheme != o.scheme and not (a.scheme == "http" and o.scheme == "https"):
+        return False
+    return host_allowed(o.hostname or "", a.hostname or "")
+
+
+async def write_value(b: BrowserSession, name: str, ctx: Context, at: Sequence[float] | None) -> None:
+    """Types a value a Call step kept from its reply, only into the app's pages (checked like a
+    saved secret: after the click and before every key)."""
+    got = ctx.values.get(name)
+    if got is None:
+        raise ActionFailed("callFailed", f"No Call step before this one kept a value named {name}.")
+    value, call_origin = got
+    if at is not None:
+        await b.click(at)
+    blocked = await b.type_guarded(value, lambda o: value_allowed(o, ctx, call_origin))
+    if blocked is not None:
+        raise ActionFailed("callFailed", f"The value {name} is only typed into the app's own pages, "
+                                         f"not {site_name(blocked or None)}.")
 
 
 async def wait_until(b: BrowserSession, step: dict, ctx: Context) -> None:

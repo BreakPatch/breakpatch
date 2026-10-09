@@ -1,5 +1,5 @@
 // UI-side view of the Python engine (see engine/PROTOCOL.md).
-import type { Box, Direction, Explanation, Generated, HttpCall, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
+import type { Box, Direction, Explanation, Generated, HttpCall, KeptValue, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
 
 export interface SystemInfo {
   memoryGb: number; chip: string; os: string; engineVersion: string;
@@ -58,6 +58,8 @@ export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' 
   target?: string;
   /** The step's name, when the app already has one (the engine then doesn't ask the AI assistant). */
   label?: string;
+  /** A Call step: the app's base address, which its call may reach (engine/PROTOCOL.md "Call steps"). */
+  appUrl?: string;
   /** <tests folder>/files, for uploads of the user's own files. */
   filesDir?: string;
 };
@@ -131,18 +133,24 @@ export interface RunStart extends SecretScope {
   recordedOn?: RecordedOn;
 }
 
-/** The answer to "Try it" for a set-up or clean-up call (engine `call.try`). */
+/** The answer to "Try it" for a set-up or clean-up call, or a Call step (engine `call.try`). */
 export interface CallReply {
   ok: boolean; status?: number; ms?: number;
-  error?: 'invalid' | 'refused' | 'redirect' | 'secret' | 'unreachable' | 'timeout' | 'status';
+  error?: 'invalid' | 'refused' | 'redirect' | 'secret' | 'unreachable' | 'timeout' | 'status' | 'keep';
   /** A plain sentence when it didn't work. */
   message?: string;
+  /** A Call step's `keep`: the value was found in the reply (the value itself never comes back). */
+  kept?: boolean;
 }
+/** What "Try it" checks beyond the call itself: a Call step's statuses that pass, its wait, its kept value. */
+export interface CallStepOptions { passStatus?: string; timeoutMs?: number; keep?: KeptValue }
 export interface RunStepEvent {
   runId: string; index: number; stepId: string;
   state: 'running' | 'looking' | 'passed' | 'healed' | 'failed';
   reason?: StepRun['reason']; oldAt?: Point; newAt?: Point; screenshot?: string;
   passedBy?: StepRun['passedBy']; why?: string; timings?: StepRun['timings']; unchecked?: string[];
+  /** A Call step's reply: status and time. */
+  reply?: StepRun['reply'];
 }
 export interface RunEnded {
   runId: string; result: 'pass' | 'fail'; durationMs: number; steps: StepRun[];
@@ -234,8 +242,8 @@ export interface Engine {
   startRun(r: RunStart): Promise<void>;
   stopRun(runId: string): Promise<void>;
 
-  /** "Try it": one request under the same rules as a run's set-up and clean-up calls. */
-  tryCall(call: HttpCall, appUrl: string, secrets?: Record<string, string>, scope?: SecretScope): Promise<CallReply>;
+  /** "Try it": one request under the same rules as a run's set-up and clean-up calls (and a Call step's `step` options). */
+  tryCall(call: HttpCall, appUrl: string, secrets?: Record<string, string>, scope?: SecretScope, step?: CallStepOptions): Promise<CallReply>;
 
   /**
    * "Why did this fail?" for one failed step of a finished run (Team; engine `run.explain`).

@@ -13,7 +13,7 @@ import { importScript, leftOutNote, MAX_SCRIPT_BYTES, NOTHING_FOUND, SCRIPT_EXTE
 import { holdImport } from '../../lib/scriptImport/pending';
 import { secretNamesHere } from '../../lib/secretScope';
 import { planSentence } from '../recorder/plan';
-import { isHttpAddress } from './tryCall';
+import { isHttpAddress } from '../../lib/calls';
 import { withScheme } from './TestDetailsDialog';
 import './import.css';
 

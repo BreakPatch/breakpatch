@@ -79,7 +79,7 @@ const RESULT_TEXT: Record<StepState, string> = { passed: 'Passed', fixed: 'Fixed
 const RUN_TEXT: Record<StepState, string> = { passed: 'Passed', fixed: 'Passed with fixes', failed: 'Failed', notRun: 'Not run', stopped: 'Stopped' };
 const SUITE_RESULT: Record<string, StepState> = { passed: 'passed', passed_with_fixes: 'fixed', failed: 'failed', replaced: 'notRun' };
 const SUITE_TEXT: Record<string, string> = { passed: 'Passed', passed_with_fixes: 'Passed with fixes', failed: 'Failed', replaced: 'Replaced by a newer request' };
-const NO_SCREENS = ['secretMissing', 'setUpFailed', 'stopped', 'healingUnavailable'];
+const NO_SCREENS = ['secretMissing', 'setUpFailed', 'stopped', 'healingUnavailable', 'callFailed'];
 const SCREEN_CHECKS = ['targetNotFound', 'unexpectedScreen', 'healFailed', 'timeout'];
 
 // ---------- numbers and times ----------
@@ -180,7 +180,7 @@ function stepView(step: Step, number: string, depth: number, r: ReportStepRun | 
   const reason = r?.reason;
   let headline = '', body = '', advice = '';
   if (!quiet) {
-    if (state === 'failed') { headline = reasonTitle(reason, step); body = reasonText(reason, step); advice = reasonAdvice(reason); }
+    if (state === 'failed') { headline = reasonTitle(reason, step); body = reasonText(reason, step, r); advice = reasonAdvice(reason); }
     else if (state === 'stopped') { headline = reasonTitle('stopped', step); body = reasonText('stopped', step); }
     else if (state === 'fixed') {
       const name = targetName(step);

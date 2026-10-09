@@ -1,6 +1,6 @@
 // Plain-language text for step rows: icons, default labels and notes.
 import type { Generated, Step } from '../../data/types';
-import { actionInfo, GENERATED, labelFor, SAMPLES } from '../../engine/labels';
+import { actionInfo, callLabel, GENERATED, labelFor, SAMPLES } from '../../engine/labels';
 
 /** Tokens the engine replaces at run time (engine/PROTOCOL.md) and how the UI names them. */
 export const TOKENS = [
@@ -20,9 +20,10 @@ export function repeatPreview(text: string | undefined): string | undefined {
   return `${text.replace(/\{i\}/g, '1')}, ${text.replace(/\{i\}/g, '2')}…`;
 }
 
-export function stepIcon(s: Pick<Step, 'action' | 'nav' | 'secretRef'>): string {
+export function stepIcon(s: Pick<Step, 'action' | 'nav' | 'secretRef'> & Partial<Pick<Step, 'valueRef'>>): string {
   if (s.action === 'navigate' && s.nav && s.nav !== 'url') return { reload: 'refresh', back: 'arrow_back', forward: 'arrow_forward' }[s.nav];
   if (s.action === 'write' && s.secretRef) return 'key';
+  if (s.action === 'write' && s.valueRef) return 'data_object';
   return actionInfo(s.action)?.icon ?? 'radio_button_checked';
 }
 
@@ -47,6 +48,7 @@ export function defaultLabel(p: Partial<Step> & { action: Step['action'] }): str
   switch (p.action) {
     case 'write':
       if (p.secretRef) return `Write saved secret ${p.secretRef}`;
+      if (p.valueRef) return `Write the value ${p.valueRef}`;
       if (p.generated) return `Write ${GENERATED[p.generated as Generated]}`;
       if (p.masked) return MASKED_LABEL;
       // A step imported from a script can end by pressing Enter (typed as a line break).
@@ -61,6 +63,7 @@ export function defaultLabel(p: Partial<Step> & { action: Step['action'] }): str
     case 'checkpoint': return 'Check something is visible';
     case 'swipe': case 'scroll': return `${actionInfo(p.action).verb} ${p.direction ?? 'down'}`;
     case 'drag': return 'Drag and drop';
+    case 'call': return callLabel(p.call);
     default: return labelFor(p.action, p).label;
   }
 }
@@ -70,6 +73,7 @@ export function stepNote(s: Step, opts: { range?: [number, number] } = {}): stri
   if (s.action === 'loop') return !opts.range ? 'No steps yet' : opts.range[0] === opts.range[1] ? `Step ${opts.range[0]}` : `Steps ${opts.range[0]} to ${opts.range[1]}`;
   // Which version first: in a narrow row (a run) the end is cut off, and the icon already says shared steps.
   if (s.action === 'group') return s.groupVersion === 'latest' || s.groupVersion === undefined ? 'Always latest · shared steps' : `Version ${s.groupVersion} · shared steps`;
-  if (s.action === 'write') return repeatPreview(s.text);
+  if (s.action === 'write') return s.valueRef ? 'From a Call step' : repeatPreview(s.text);
+  if (s.action === 'call') return s.keep ? `Keeps ${s.keep.path} as ${s.keep.name}` : undefined;
   return undefined;
 }

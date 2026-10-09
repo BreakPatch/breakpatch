@@ -30,12 +30,13 @@ describe('describe flow text', () => {
 describe('action list', () => {
   it('groups per ui-requirements §5.6, with Checkpoint', () => {
     const g = menuGroups({ allowGroups: true });
-    expect(g.map(x => x.title)).toEqual(['Gestures', 'Input', 'Waiting', 'Browser', 'Checkpoint', 'Structure']);
+    expect(g.map(x => x.title)).toEqual(['Gestures', 'Input', 'Waiting', 'Browser', 'Checkpoint', 'API', 'Structure']);
     expect(g[3].items.map(i => i.name)).toEqual(['Go to address', 'Reload', 'Back', 'Forward', 'Switch to new tab or popup', 'Upload file', 'Check a download']);
-    expect(g[5].items.map(i => i.kind)).toEqual(['loop', 'group']);
+    expect(g[5].items.map(i => [i.kind, i.name, i.icon])).toEqual([['call', 'Call your API', 'api']]);
+    expect(g[6].items.map(i => i.kind)).toEqual(['loop', 'group']);
   });
   it('leaves out shared steps inside shared steps', () => {
-    expect(menuGroups({ allowGroups: false })[5].items.map(i => i.kind)).toEqual(['loop']);
+    expect(menuGroups({ allowGroups: false })[6].items.map(i => i.kind)).toEqual(['loop']);
   });
   it('maps actions to page tools and composer inputs', () => {
     expect(toolFor('click')).toBe('point');

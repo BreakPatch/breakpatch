@@ -25,6 +25,7 @@ export function menuGroups(opts: { allowGroups: boolean; touch?: boolean }): Men
       item('switchTab'), item('upload'), item('downloadCheck'),
     ] },
     { title: 'Checkpoint', items: [item('checkpoint')] },
+    { title: 'API', items: [item('call')] },
     { title: 'Structure', items: opts.allowGroups ? by('Structure') : [item('loop')] },
   ];
 }
@@ -32,7 +33,7 @@ export function menuGroups(opts: { allowGroups: boolean; touch?: boolean }): Men
 /** Short name on the composer's action button. */
 export const SHORT: Partial<Record<ActionKind, string>> = {
   checkpoint: 'Checkpoint', loop: 'Repeat', group: 'Shared steps', waitUntil: 'Wait until', waitFor: 'Wait',
-  navigate: 'Go to address', downloadCheck: 'Check download', upload: 'Upload file', drag: 'Drag and drop',
+  navigate: 'Go to address', downloadCheck: 'Check download', upload: 'Upload file', drag: 'Drag and drop', call: 'Call your API',
 };
 export const shortName = (k: ActionKind, touch = false) => SHORT[k] ?? actionWords(k, touch).name;
 

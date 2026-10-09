@@ -6,6 +6,8 @@ import type { ActionKind, Direction, Generated, SampleFile, StepGroup } from '..
 import { secretNamesHere } from '../../lib/secretScope';
 import { actionInfo, GENERATED_CHOICES, SAMPLES, TOUCH_HIDDEN } from '../../engine/labels';
 import { countRows, findStep, TOKENS, numberOf } from '../../components/steps';
+import { CallStepDialog } from '../../components/calls/CallStepDialog';
+import { keptNames } from '../../lib/calls';
 import { Button, ChipSelect, Icon } from '../../components/ui';
 import { useLatched, usePresence } from '../../components/ui/presence';
 import { ActionMenu } from './ActionMenu';
@@ -36,7 +38,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   /** A line floating over the page ("Playing steps 1–9 first…", "You're using the page directly…"). */
   banner?: FloatBanner | null;
 }) {
-  const [menu, setMenu] = useState<'closed' | 'menu' | 'picker'>('closed');
+  const [menu, setMenu] = useState<'closed' | 'menu' | 'picker' | 'call'>('closed');
   const [secretNames, setSecretNames] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const actionBtn = useRef<HTMLButtonElement>(null);
@@ -74,6 +76,15 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   // Try again on a described step: its sentence is back in the box, ready to change.
   useEffect(() => { if (rec.refocus) inputRef.current?.focus(); }, [rec.refocus]);
   useEffect(() => { if (action === 'write' && o.writeSource === 'secret' && !o.secretRef && secretNames[0]) rec.setOptions({ secretRef: secretNames[0] }); }, [action, o.writeSource, o.secretRef, secretNames, rec]);
+  // Values Call steps in this test keep: a Write step can type one of them ("From a call").
+  const kept = keptNames(rec.steps);
+  const keptKey = kept.join('\n');
+  useEffect(() => {
+    if (action !== 'write' || o.writeSource !== 'value') return;
+    const names = keptKey ? keptKey.split('\n') : [];
+    if (!names.length) rec.setOptions({ writeSource: 'typed' });
+    else if (!names.includes(o.valueRef)) rec.setOptions({ valueRef: names[0] });
+  }, [action, o.writeSource, o.valueRef, keptKey, rec]);
 
   const closeMenu = () => { setMenu('closed'); actionBtn.current?.focus(); };
   const pick = (a: MenuAction) => {
@@ -83,6 +94,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
       return;
     }
     if (a.kind === 'loop') { setMenu('closed'); rec.addLoop(); return; }
+    if (a.kind === 'call') { setMenu('call'); return; }
     rec.setAction(a.kind);
     if (a.kind === 'group') { setMenu('picker'); return; }
     setMenu('closed');
@@ -119,6 +131,12 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
       <span className="rec-field-chip">
         <ChipSelect label="Saved secret" up value={o.secretRef} onChange={v => rec.setOptions({ secretRef: v })}
           options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: osText('No saved secrets on this Mac') }]} />
+      </span>
+    );
+  } else if (action === 'write' && o.writeSource === 'value') {
+    field = (
+      <span className="rec-field-chip">
+        <ChipSelect label="Value from a call" up value={o.valueRef} onChange={v => rec.setOptions({ valueRef: v })} options={kept.map(n => ({ value: n, label: n }))} />
       </span>
     );
   } else if (action === 'write' && o.writeSource === 'generated') {
@@ -161,7 +179,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
     if (action === 'write') return (
       <div className="rec-extra">
         <div className="rec-chips" role="radiogroup" aria-label="What to write">
-          {([['typed', 'Typed text'], ['secret', 'Saved secret'], ['generated', 'Generated']] as const).map(([v, l]) => (
+          {([['typed', 'Typed text'], ['secret', 'Saved secret'], ['generated', 'Generated'], ...(kept.length ? [['value', 'From a call']] as const : [])] as const).map(([v, l]) => (
             <button key={v} type="button" role="radio" aria-checked={o.writeSource === v} className={'rec-chip' + (o.writeSource === v ? ' on' : '')} onClick={() => rec.setOptions({ writeSource: v })}>{l}</button>
           ))}
         </div>
@@ -171,6 +189,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
           </div>
         )}
         {o.writeSource === 'secret' && <span className="faint">{osText("The value stays in this Mac's Keychain and is never shown.")}</span>}
+        {o.writeSource === 'value' && <span className="faint">Types what the Call step kept, only on the app's own pages. It's never shown or saved.</span>}
       </div>
     );
     // Drawn or clicked on the page: their options are in the bar, not floating over where you draw.
@@ -221,7 +240,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   // Nothing to type and nothing to send (it's done on the page): no field look and no send button.
   const passive = !!frozen || (input === 'none' && (onPage(action) || action === 'drag'));
   const showSend = !passive && action !== 'group';
-  const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' && !onPage(action) : action === 'write' ? o.writeSource !== 'typed' || rec.text !== '' : !!rec.text.trim());
+  const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' && action !== 'call' && !onPage(action) : action === 'write' ? o.writeSource !== 'typed' || rec.text !== '' : !!rec.text.trim());
 
   if (rec.retryNote && !rr) hint = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click the page again to pick another spot.</>;
   // What the box can't do, by the box, until the sentence is changed (not a toast that goes).
@@ -285,6 +304,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
           )}
         </div>
         <ActionMenu open={menu === 'menu'} current={action} allowGroups={allowGroups} touch={touch} onPick={pick} onClose={closeMenu} />
+        <CallStepDialog open={menu === 'call'} adding appUrl={rec.appUrl ?? ''} takenNames={kept}
+          onSave={patch => rec.recordCall(patch)} onClose={() => { setMenu('closed'); actionBtn.current?.focus(); }} />
         {menu === 'picker' && (
           <SharedStepsPicker appId={appId} insertAs={countRows(rec.steps) + 1}
             onInsert={(g, v) => { setMenu('closed'); onInsertGroup(g, v); }}

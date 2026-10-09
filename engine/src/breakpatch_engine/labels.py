@@ -8,7 +8,7 @@ VERBS = {
     "hover": "Hover over", "swipe": "Swipe", "scroll": "Scroll", "drag": "Drag", "write": "Write",
     "waitUntil": "Wait until", "waitFor": "Wait", "navigate": "Go to", "switchTab": "Switch to",
     "upload": "Upload", "downloadCheck": "Check download", "checkpoint": "Check", "loop": "Repeat",
-    "group": "Shared steps",
+    "group": "Shared steps", "call": "Call",
 }
 SAMPLES = {"docx": "Word document", "pdf": "PDF", "jpeg": "JPEG image", "mp4": "MP4 video",
            "xlsx": "Excel sheet", "csv": "CSV file"}
@@ -21,9 +21,13 @@ def default_label(action: str, p: dict, name: str | None = None) -> str:
     if action == "write":
         if p.get("secretRef"):
             return f"Write saved secret {p['secretRef']}"
+        if p.get("valueRef"):
+            return f"Write the value {p['valueRef']}"
         if p.get("generated"):
             return f"Write {GENERATED.get(p['generated'], p['generated'])}"
         return f'Write "{p.get("text") or ""}"'
+    if action == "call":
+        return call_label(p.get("call"))
     if action == "waitFor":
         return f"Wait {max(1, round((p.get('durationMs') or 1000) / 1000))} seconds"
     if action == "navigate":
@@ -48,6 +52,22 @@ def default_label(action: str, p: dict, name: str | None = None) -> str:
         return f"{verb} {name}"
     # Nothing to name it by (no name in the page, the AI assistant unsure): say so plainly.
     return f"{verb} the spot you clicked" if action in ("click", "doubleClick", "longClick", "rightClick") else f"{verb} here"
+
+
+def call_label(call) -> str:
+    """"Call POST api.acme.com/test/orders/paid": the method and where, never a query string (it
+    may hold a secret). Mirrors app/src/components/steps/stepText.ts callLabel."""
+    from urllib.parse import urlsplit
+    call = call if isinstance(call, dict) else {}
+    method = str(call.get("method") or "GET").upper()
+    try:
+        u = urlsplit(str(call.get("url") or "").strip())
+        where = (u.hostname or "") + (f":{u.port}" if u.port else "") + (u.path if u.path not in ("", "/") else "")
+    except ValueError:
+        where = ""
+    if len(where) > 60:
+        where = where[:59] + "\u2026"
+    return f"Call {method} {where}" if where else "Call your API"
 
 
 # A phone or tablet test is tapped, not clicked (BrowserSession.touch): the words its steps get.

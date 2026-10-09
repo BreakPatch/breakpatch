@@ -39,7 +39,7 @@ SUGGESTION_TEXT = {
 }
 _VERB = {"click": "click", "doubleClick": "double-click", "longClick": "press", "rightClick": "right-click", "hover": "point at",
          "write": "write in", "drag": "drag", "swipe": "swipe", "scroll": "scroll", "upload": "upload to"}
-_NO_SCREENS = ("secretMissing", "setUpFailed", "stopped", "healingUnavailable")
+_NO_SCREENS = ("secretMissing", "setUpFailed", "stopped", "healingUnavailable", "callFailed")
 _SCREEN_CHECKS = ("targetNotFound", "unexpectedScreen", "healFailed", "timeout")
 
 
@@ -67,10 +67,12 @@ def reason_title(reason, step: dict) -> str:
         "setUpFailed": "The set-up call didn't work",
         "stopped": "You stopped the run",
         "fileMissing": "The file to upload isn't in the tests folder",
+        "callFailed": "The value from the call couldn't be typed" if step.get("action") == "write"
+        else "The call to your API didn't work",
     }.get(reason or "", "This step failed")
 
 
-def reason_text(reason, step: dict) -> str:
+def reason_text(reason, step: dict, r: dict | None = None) -> str:
     verb = _VERB.get(step.get("action"), "use")
     action = step.get("action")
     if reason == "targetNotFound":
@@ -99,6 +101,13 @@ def reason_text(reason, step: dict) -> str:
         return "The steps from here on didn't run."
     if reason == "fileMissing":
         return f"{step.get('file') or 'The file'} isn't in the tests folder. Put it back in the files folder, or re-record the step."
+    if reason == "callFailed":
+        if action == "write":
+            return "No Call step before it kept this value, or the page wasn't one of the app's own. The run stopped here."
+        note = reply_note((r or {}).get("reply"))
+        if note:
+            return f"{note}, which this step doesn't count as a pass. The run stopped here."
+        return "It didn't get a reply this step counts as a pass. The run stopped here."
     return "The run stopped here."
 
 
@@ -107,6 +116,7 @@ def reason_advice(reason) -> str:
         "secretMissing": "Saved secrets stay on each Mac. Add it here once and every test that uses it can run.",
         "healingUnavailable": "Without the AI assistant, a moved button fails the run. Re-record the step, or download the assistant.",
         "setUpFailed": "Check that the set-up address works and that the app is running, then run again.",
+        "callFailed": "Check that the address works and that the app is running: the step's Try it shows what it replies now. Then run again.",
         "timeout": "If the app was slow this time, run again. If it always takes longer now, re-record this step.",
         "stopped": "Run again to go through every step.",
     }.get(reason or "", "If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer.")
@@ -117,7 +127,17 @@ def pass_note(r: dict) -> str:
         return "Passed: the dialog closed. The page behind it looked different from when it was recorded."
     if r.get("passedBy") == "note":
         return r["why"] if r.get("why") is not None else "Passed: the step did what its note says."
-    return ""
+    return reply_note(r.get("reply"))
+
+
+def reply_note(reply) -> str:
+    """A Call step's reply: "Replied 200 in 0.4 s" (its status and time, never its body)."""
+    if not isinstance(reply, dict) or not isinstance(reply.get("status"), int) or isinstance(reply.get("status"), bool):
+        return ""
+    ms = reply.get("ms")
+    if isinstance(ms, (int, float)) and not isinstance(ms, bool):
+        return f"Replied {reply['status']} in {short_time(ms)}"
+    return f"Replied {reply['status']}"
 
 
 def tries_text(attempts: list[int]) -> str:
@@ -296,7 +316,7 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
     reason = (r or {}).get("reason")
     if not quiet:
         if state == "failed":
-            headline, body, advice = reason_title(reason, step), reason_text(reason, step), reason_advice(reason)
+            headline, body, advice = reason_title(reason, step), reason_text(reason, step, r), reason_advice(reason)
         elif state == "stopped":
             headline, body = reason_title("stopped", step), reason_text("stopped", step)
         elif state == "fixed":

@@ -9,7 +9,7 @@ from typing import Callable
 
 from pathlib import Path
 
-from . import checks, config, imaging, labels
+from . import calls, checks, config, imaging, labels
 from .actions import FILE_REF, POINTER_ACTIONS, ActionFailed, Context, parse_secrets, perform, sample_path
 from .browser import BrowserSession
 from .dom.flow import LocateFlow
@@ -19,10 +19,11 @@ from .protocol import NULL, EngineError
 log = logging.getLogger("breakpatch.recorder")
 
 ACTIONS = POINTER_ACTIONS | {"write", "waitUntil", "waitFor", "navigate", "switchTab", "upload", "downloadCheck",
-                             "checkpoint", "loop", "group"}
+                             "checkpoint", "loop", "group", "call"}
 # Fields copied from the request into the step as they are.
 PASS_THROUGH = ("from", "to", "direction", "distance", "text", "secretRef", "generated", "durationMs", "url", "nav",
-                "sample", "fileType", "minBytes", "timeoutMs", "count", "groupId", "groupVersion", "steps")
+                "sample", "fileType", "minBytes", "timeoutMs", "count", "groupId", "groupVersion", "steps",
+                "valueRef", "passStatus", "keep")
 Phase = Callable[[str], None]
 ROLE_WORDS = {"button": "button", "link": "link", "textbox": "field", "searchbox": "field", "checkbox": "checkbox",
               "radio": "option", "combobox": "list", "menuitem": "menu item", "tab": "tab", "switch": "switch",
@@ -36,7 +37,7 @@ def varies_each_run(step: dict) -> bool:
     if step.get("action") != "write":
         return False
     text = step.get("text") or ""
-    return bool(step.get("generated")) or any(k in text for k in ("{i}", "{time}", "{date}", "{timestamp}"))
+    return bool(step.get("generated")) or bool(step.get("valueRef")) or any(k in text for k in ("{i}", "{time}", "{date}", "{timestamp}"))
 
 
 def suggest_expect(before, after, blast, ignore, url_before: str, url_after: str) -> str:
@@ -86,6 +87,38 @@ class Recorder:
         self._download_mark = 0
         self._noise: dict[str, list] = {}
         self._last_watch: list = []
+        # What Call steps recorded (or played) in this session kept, for later Write steps (actions.Context.values).
+        self.values: dict[str, tuple[str, str | None]] = {}
+
+    async def _call(self, p: dict, step: dict, phase: Phase) -> dict:
+        """A Call step, added: the call is made now, as a run makes it, so the steps recorded after
+        it see what it did. One that doesn't pass isn't added (the error says why)."""
+        call = p.get("call")
+        if not isinstance(call, dict) or not str(call.get("url") or "").strip():
+            raise EngineError("bad_request", "Enter the address to call.")
+        keep = p.get("keep") if isinstance(p.get("keep"), dict) else None
+        step.pop("keep", None)
+        if keep is not None:
+            name = str(keep.get("name") or "")
+            if not calls.VALUE_NAME.match(name):
+                raise EngineError("bad_request", "Name the value with letters, numbers and _ only, starting with a letter.")
+            step["keep"] = {"path": str(keep.get("path") or "").strip(), "name": name}
+        step["call"] = {k: v for k, v in call.items() if k in ("method", "url", "headers", "body", "allowOtherHosts")}
+        phase("acting")
+        sent = calls.with_run_values(step["call"], 1)
+        app_url = p.get("appUrl") or self.b.start_origin
+        reply = await calls.make(sent, app_url, parse_secrets(p.get("secrets"), self.b.start_origin),
+                                 calls.step_timeout(p.get("timeoutMs"), self.t.http_timeout),
+                                 pass_status=p.get("passStatus"), keep=step["keep"]["path"] if keep else None)
+        log.info("recorded a call step: %s", reply.info)
+        if not reply.ok:
+            code = "bad_request" if reply.error in ("invalid", "refused", "secret") else "network"
+            raise EngineError(code, f"The call didn't work. {reply.message or ''}".strip(), reply.info)
+        if keep and reply.kept is not None:
+            from .sites import origin_of
+            self.values[step["keep"]["name"]] = (reply.kept, origin_of(sent.get("url")))
+        step["label"] = p.get("label") or labels.default_label("call", step)
+        return step
 
     async def _settle(self, shoot, ignore=None):
         return await checks.settle(shoot, ignore, self.t.settle_interval, self.t.settle_frames, self.t.settle_timeout)
@@ -111,6 +144,8 @@ class Recorder:
             step["label"] = p.get("label") or labels.default_label(action, p)
             step.setdefault("steps", [])
             return step
+        if action == "call":
+            return await self._call(p, step, phase)
         if action == "waitFor":
             # Wait N seconds only waits: no checks of its own (the next step's check guards the page).
             await asyncio.sleep(max(0, float(p.get("durationMs") or 1000)) / 1000)
@@ -131,6 +166,9 @@ class Recorder:
             step.setdefault("timeoutMs", 10000)
             return step
 
+        if action == "write" and p.get("valueRef") and str(p["valueRef"]) not in self.values:
+            raise EngineError("not_found", f"There's no value {p['valueRef']} yet. Play the Call step that keeps it "
+                                           "(Play to here), then add this step.")
         self.b.require()
         w, h = self.b.width, self.b.height
         anchor = at or frm
@@ -157,7 +195,8 @@ class Recorder:
         # A download check without a position looks at downloads since the last check, so a
         # "click the link" step followed by "check the download" works as it does in replay.
         ctx = Context(self.t, secrets=parse_secrets(p.get("secrets"), self.b.start_origin),
-                      download_mark=self._download_mark, files_dir=p.get("filesDir"))
+                      download_mark=self._download_mark, files_dir=p.get("filesDir"), values=self.values,
+                      app_url=p.get("appUrl") or self.b.start_origin)
         # A click that opens the page's file picker: the app asks which file to use (no system
         # dialog can show), and the step becomes an upload of that file.
         choosers: list = []

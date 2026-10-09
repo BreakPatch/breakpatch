@@ -12,6 +12,7 @@
         "name": "Create a project",
         "steps": [
           { "id": "s1", "action": "navigate", "label": "Open the dashboard", "url": "https://app.example.com" },
+          { "id": "c1", "action": "call", "label": "Call POST api.example.com/test/orders/paid", "call": { "method": "POST", "url": "https://api.example.com/test/orders/paid?token=abc", "headers": [{ "name": "Authorization", "secretRef": "API_TOKEN" }], "body": "{\"paid\": true}" }, "keep": { "path": "$.code", "name": "CODE" } },
           { "id": "g1", "action": "group", "label": "Log in", "groupId": "login", "groupVersion": "latest", "steps": [
             { "id": "g1a", "action": "write", "label": "Write email", "target": "Email field" },
             { "id": "g1b", "action": "click", "label": "Click Next", "target": "Next button, bottom right" }
@@ -37,6 +38,7 @@
           },
           "steps": [
             { "stepId": "s1", "result": "passed", "timings": { "preMs": 0, "actionMs": 812, "settleMs": 1450, "postMs": 38, "settled": true } },
+            { "stepId": "c1", "result": "passed", "reply": { "status": 200, "ms": 1249 }, "timings": { "actionMs": 1249 } },
             { "stepId": "g1", "result": "passed" },
             { "stepId": "g1a", "result": "passed", "passedBy": "note", "why": "Passed: the email field shows the address, as the note says.", "timings": { "actionMs": 250 } },
             { "stepId": "g1b", "result": "healed", "oldAt": [1180, 812], "newAt": [1180, 760], "screenshotPath": "/tmp/shots/run_8f21c/004-g1b.png",

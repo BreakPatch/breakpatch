@@ -63,15 +63,20 @@ export type TestStatus = 'draft' | 'published';   // UI: "Only you" / "In team s
 export interface CallHeader { name: string; value?: string; secretRef?: string }
 
 /**
- * A set-up or clean-up call (engine/PROTOCOL.md "Set-up and clean-up calls"): https to the app's
- * own hosts unless `allowOtherHosts` ("Allow other hosts"), no redirects, no private addresses.
+ * A set-up or clean-up call, or a Call step's (engine/PROTOCOL.md "Set-up and clean-up calls",
+ * "Call steps"): https to the app's own hosts unless `allowOtherHosts` ("Allow other hosts"), no
+ * redirects, no private addresses. `body`: a Call step's, sent as JSON when it reads as JSON.
  */
 export interface HttpCall {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   url: string;
   headers?: CallHeader[];
+  body?: string;
   allowOtherHosts?: boolean;
 }
+
+/** A value a Call step keeps from its JSON reply (`path`, like `$.code`) for later Write steps, by `name`. */
+export interface KeptValue { path: string; name: string }
 
 export interface Test {
   id: string;
@@ -113,6 +118,7 @@ export type ActionKind =
   | 'waitUntil' | 'waitFor'
   | 'navigate' | 'switchTab' | 'upload' | 'downloadCheck'
   | 'checkpoint'
+  | 'call'
   | 'loop' | 'group';
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
@@ -131,6 +137,10 @@ export interface Step {
   // action-specific
   from?: Point; to?: Point; direction?: Direction; distance?: number;
   text?: string; secretRef?: string; generated?: Generated;
+  /** Write: a value a Call step before it kept (`keep.name`), typed only on the app's own pages. */
+  valueRef?: string;
+  /** Call: the request, the statuses that pass ("2xx" when unset), and the value it keeps. `timeoutMs` is its wait for a reply. */
+  call?: HttpCall; passStatus?: string; keep?: KeptValue;
   region?: Box; hash?: string; tolerance?: number; timeoutMs?: number;
   durationMs?: number;
   url?: string; nav?: 'url' | 'reload' | 'back' | 'forward';
@@ -192,7 +202,7 @@ export type Expect = 'newPage' | 'closes' | 'appears' | 'changes' | 'noChange';
 
 export type FailReason =
   | 'targetNotFound' | 'unexpectedScreen' | 'noChange' | 'timeout'
-  | 'healFailed' | 'healingUnavailable' | 'secretMissing' | 'setUpFailed' | 'stopped' | 'fileMissing';
+  | 'healFailed' | 'healingUnavailable' | 'secretMissing' | 'setUpFailed' | 'stopped' | 'fileMissing' | 'callFailed';
 
 export type RunSource = 'desktop' | 'ci' | 'runner';
 
@@ -213,6 +223,8 @@ export interface StepRun {
   unchecked?: string[];
   /** A failed step: the AI assistant's "Why did this fail?" (Team, engine run.explain), once asked. */
   explanation?: Explanation;
+  /** A Call step's reply: its status and how long it took (never its body). */
+  reply?: CallReplyInfo;
   /**
    * This step failed on earlier tries of a run that was retried (engine/PROTOCOL.md "Retries"),
    * oldest first, whatever it did on the last try.
@@ -230,6 +242,9 @@ export interface RetriedTry {
   preDistance?: number; postDistance?: number;
   screenshotPath?: string;       // local only
 }
+
+/** What a run keeps of a Call step's reply. */
+export interface CallReplyInfo { status?: number; ms?: number }
 
 /**
  * Why a step failed, in plain words, from the AI assistant (engine/PROTOCOL.md "Why did this

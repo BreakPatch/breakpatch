@@ -78,7 +78,12 @@ export class DemoEngine implements Engine {
     for (const phase of ['watching', 'acting', 'settling'] as const) { this.emit('record.checking', { phase }); await this.sleep(phase === 'watching' ? 500 : 250); }
     const hit = p.at ? this.targets.find(t => t.visible() && inside(p.at!, t.box)) : undefined;
     const at = p.at;
-    const { frame: _frame, secrets: _secrets, ...fields } = p;
+    const { frame: _frame, secrets: _secrets, appUrl: _appUrl, workspace: _ws, workspaceSecrets: _wss, ...fields } = p;
+    if (p.action === 'call') {
+      // The preview makes no request: a well-formed https address "replies" 200, as Try it does.
+      if (!/^https:\/\/[^/\s]+/i.test(p.call?.url?.trim() ?? '')) throw new EngineError('bad_request', 'Enter a full address, starting with https://');
+      return { ...fields, id: 's' + Date.now().toString(36) + (this.nextId++), label: labelFor('call', p).label } as Step;
+    }
     const step: Step = {
       ...fields, id: 's' + Date.now().toString(36) + (this.nextId++),
       label: hit ? hit.label.replace(/^Click/, labelFor(p.action).verb) : labelFor(p.action, p).label,
@@ -178,8 +183,10 @@ export class DemoEngine implements Engine {
         }
         if (attempt === 1 && this.flakyStepIds.has(s.id)) return fail(s, 'timeout');
       }
-      results[index.get(s)!] = { stepId: s.id, result: 'passed' };
-      emit(s, 'passed');
+      // A Call step "replies" 200 in the preview: no request is made.
+      const reply = s.action === 'call' ? { status: 200, ms: 120 } : undefined;
+      results[index.get(s)!] = { stepId: s.id, result: 'passed', ...(reply ? { reply } : {}) };
+      this.emit('run.step', { runId: r.runId, index: index.get(s)!, stepId: s.id, state: 'passed', ...(reply ? { reply } : {}) });
       if (r.upToStepId === s.id) reached = true;    // Play to here: the rest stays not run
       return true;
     };

@@ -12,8 +12,16 @@ export const SCHEMA_VERSION = 1;
  * refuse the folder (NEWER_MESSAGE). A folder with no phone or tablet tests stays at 1.
  */
 export const DEVICE_SCHEMA_VERSION = 2;
+/**
+ * 3: a Call step (issue #44, `action: "call"`), or a Write step that types a value one keeps
+ * (`valueRef`), in a test or shared steps file (lib/calls.ts usesCallSteps). Apps from before can't
+ * run such a step (their engine doesn't know it) or edit it, so the first such file this app writes
+ * raises the folder to 3 (localBackend.ts raiseFormat), as phone tests raise it to 2: those apps
+ * then refuse the folder (NEWER_MESSAGE). A folder without Call steps stays where it was.
+ */
+export const CALL_SCHEMA_VERSION = 3;
 /** The newest folder format this app reads and saves to. */
-export const NEWEST_READ_SCHEMA_VERSION = DEVICE_SCHEMA_VERSION;
+export const NEWEST_READ_SCHEMA_VERSION = CALL_SCHEMA_VERSION;
 
 /** Keys that come first, in this order; then the rest alphabetically; then LAST. */
 const FIRST = [
