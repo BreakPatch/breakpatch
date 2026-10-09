@@ -127,7 +127,7 @@ body.bpr-page { margin: 0; }
 <div class="bpr-kind">Suite report</div>
 <h1>Smoke</h1>
 <div class="bpr-pill bpr-failed">Failed</div>
-<p class="bpr-counts">2 of 4 tests passed, 2 failed</p>
+<p class="bpr-counts">2 of 4 tests passed, 1 on a retry, 2 failed</p>
 <nav class="bpr-notpassed" aria-label="Tests that didn't pass"><p>2 tests didn&#39;t pass:</p><ul><li><a href="#test-3">Pay an invoice</a> <span class="bpr-muted">Failed</span></li><li><a href="#test-4">Refund</a> <span class="bpr-muted">Couldn&#39;t run</span></li></ul></nav>
 <dl class="bpr-meta"><div><dt>Tests</dt><dd>4 tests</dd></div><div><dt>Took</dt><dd>4 min 52 s</dd></div><div><dt>Asked by</dt><dd>Schedule</dd></div><div><dt>When</dt><dd>24 Sep 2026, 14:00 UTC</dd></div></dl>
 <p class="bpr-callout">Nightly run before the 4.2 release</p>
@@ -141,6 +141,7 @@ body.bpr-page { margin: 0; }
 <div class="bpr-pill bpr-passed">Passed</div>
 <dl class="bpr-meta"><div><dt>Took</dt><dd>21 s</dd></div><div><dt>Run by</dt><dd>QA Mac mini</dd></div><div><dt>Where</dt><dd>Local runner</dd></div><div><dt>Machine</dt><dd>QA Mac mini</dd></div><div><dt>Runner</dt><dd>Full runner: 16 GB of memory and a processor 6.2× as fast as a Raspberry Pi 4</dd></div><div><dt>When</dt><dd>24 Sep 2026, 14:00 UTC</dd></div><div><dt>Version</dt><dd>2</dd></div><div><dt>Run ID</dt><dd>rn-1</dd></div></dl>
 </div>
+<p class="bpr-callout">Passed on retry 1: the first try failed. A test that passes only on a retry may be flaky.</p>
 <details class="bpr-test-steps"><summary>3 steps</summary>
 <ol class="bpr-steps">
 <li class="bpr-step bpr-passed bpr-d0"><details><summary><span class="bpr-no">1</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Write email</span><span class="bpr-status">Passed</span><span class="bpr-took">900 ms</span></summary>
@@ -155,6 +156,7 @@ body.bpr-page { margin: 0; }
 </details></li>
 <li class="bpr-step bpr-passed bpr-d0"><details><summary><span class="bpr-no">3</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Click Sign in</span><span class="bpr-status">Passed</span><span class="bpr-took">2.0 s</span></summary>
 <div class="bpr-detail">
+<p class="bpr-muted">Failed on try 1: Waited too long for the page. It passed on the next try.</p>
 <p class="bpr-muted bpr-small">Where the time went: check before 45 ms · doing the step 90 ms · waiting for the page to settle 1.8 s · check after 31 ms</p>
 </div>
 </details></li>
@@ -187,6 +189,7 @@ body.bpr-page { margin: 0; }
 <div class="bpr-pill bpr-failed">Failed</div>
 <dl class="bpr-meta"><div><dt>Took</dt><dd>45 s</dd></div><div><dt>Run by</dt><dd>QA Mac mini</dd></div><div><dt>Where</dt><dd>Local runner</dd></div><div><dt>Machine</dt><dd>QA Mac mini</dd></div><div><dt>When</dt><dd>24 Sep 2026, 14:01 UTC</dd></div><div><dt>Version</dt><dd>1</dd></div><div><dt>Run ID</dt><dd>rn-3</dd></div></dl>
 </div>
+<p class="bpr-callout">Failed on both tries.</p>
 <details class="bpr-test-steps" open><summary>2 steps</summary>
 <ol class="bpr-steps">
 <li class="bpr-step bpr-passed bpr-d0"><div class="bpr-row"><span class="bpr-no">1</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Click Pay</span><span class="bpr-status">Passed</span></div></li>
@@ -194,6 +197,7 @@ body.bpr-page { margin: 0; }
 <div class="bpr-detail">
 <p class="bpr-headline">Waited too long for the page</p>
 <p>What this step waits for never appeared. The run stopped here.</p>
+<p class="bpr-muted">Also failed on try 1: Waited too long for the page.</p>
 <p><strong>What to try:</strong> If the app was slow this time, run again. If it always takes longer now, re-record this step.</p>
 </div>
 </details></li>

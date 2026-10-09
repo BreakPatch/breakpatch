@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { Button, Dialog, Icon, Menu, statusInfo, TextInput, type Status } from '../ui';
 import type { Viewport } from '../../data/types';
+import { flakyWord, type Flakiness } from '../../lib/flaky';
 import { DEVICES, deviceViewport } from '../../data/devices';
 import { formatDateTime, formatDay, formatUpdated, formatWhen, sizeLabel, type ResultCounts } from './format';
 import './common.css';
@@ -138,3 +139,18 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, children, confi
 
 export { ImpactDialog, impactSummary } from './ImpactDialog';
 export { useMoveToBin, RECENTLY_DELETED_PATH } from './moveToBin';
+
+// ---------- Flaky ----------
+/**
+ * The Flaky marker (lib/flaky.ts): an icon and the word, with why on hover and for screen readers.
+ * "Known flaky" once someone said so, quieter.
+ */
+export function FlakyChip({ f, className }: { f: Flakiness; className?: string }) {
+  if (!f.flaky) return null;
+  const word = flakyWord(f);
+  return (
+    <span className={`cm-flaky${f.known ? ' known' : ''}${className ? ` ${className}` : ''}`} title={f.why || undefined} aria-label={f.why ? `${word}. ${f.why}` : word} role="note">
+      <Icon name="swap_vert" size={14} />{word}
+    </span>
+  );
+}

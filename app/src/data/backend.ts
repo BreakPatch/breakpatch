@@ -4,7 +4,7 @@
 // Firestore database). Reads are live subscriptions; writes return promises.
 
 import type {
-  App, Explanation, HttpCall, Member, Millis, NotifyInput, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
+  App, Explanation, FlakyMark, HttpCall, Member, Millis, NotifyInput, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
   RunIssue, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Viewport, Workspace,
 } from './types';
 
@@ -22,6 +22,8 @@ export interface NewSuite {
   name: string; tests: Suite['tests']; schedule: Suite['schedule']; resultUrl?: string;
   /** Where the result goes (Team, admins). With `url`, the address is saved apart from the suite; without, it stays as it was. */
   notify?: NotifyInput | null;
+  /** How often a failed test is tried again (lib/retries.ts). Left out: as it was. */
+  retries?: number;
 }
 
 /** The note on the version a new start address makes (Backend.updateTestDetails). */
@@ -222,6 +224,11 @@ export interface Backend {
   updateTestDetails(appId: string, testId: string, d: TestDetails): Promise<Version | null>;
   /** Marks a saved version as the one CI runs with `--version released` (null clears it). Team workspaces only. */
   setReleasedVersion?(appId: string, testId: string, version: number | null): Promise<void>;
+  /**
+   * Someone's answer to the test's Flaky marker (lib/flaky.ts): known flaky, not flaky, or null to
+   * take it back. It isn't an edit of the test: no new version, and its Last updated stays.
+   */
+  setFlakyMark?(appId: string, testId: string, mark: FlakyMark | null): Promise<void>;
   duplicateTest(appId: string, testId: string): Promise<Test>;
   /** To Recently deleted, with its versions (its runs stay in the app's runs). */
   deleteTest(appId: string, testId: string): Promise<void>;

@@ -67,7 +67,8 @@
 .rh-tr.current { background: var(--line-soft); }
 .rh-tr .pill { justify-self: start; }
 .rh-2 { color: var(--text-2); min-width: 0; }
-.rh-who { gap: 2px; }
+.rh-who, .rh-result { gap: 2px; }
+.rh-result { align-items: flex-start; }
 .rh-note { font-size: 12px; color: var(--text-faint); }
 .rp-note { flex: none; padding: 8px 20px; border-bottom: 1px solid var(--line); background: var(--surface); font-size: 13px; color: var(--text-muted); }
 .rh-3 { color: var(--text-muted); }
@@ -75,3 +76,8 @@
 .rh-where > .icon { flex: none; }
 .rh-machine { font-size: 12px; color: var(--text-faint); }
 .rh-more { display: flex; justify-content: center; padding: 12px 0 4px; }
+
+/* Flaky (roadmap #14): the marker, why, and the answer to it, under the report's head. */
+.rp-flaky { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 20px; border-bottom: 1px solid var(--line); background: var(--surface); font-size: 13px; color: var(--text-2); }
+.rp-flaky-text { flex: 1; min-width: 0; line-height: 1.45; }
+.rp-flaky-actions { position: relative; flex: none; }

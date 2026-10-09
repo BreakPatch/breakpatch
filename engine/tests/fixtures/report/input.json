@@ -64,7 +64,7 @@
     "screenshots": false,
     "suite": {
       "result": "failed",
-      "counts": { "total": 4, "passed": 1, "fixed": 1, "failed": 2, "notRun": 0 },
+      "counts": { "total": 4, "passed": 1, "fixed": 1, "failed": 2, "notRun": 0, "flaky": 1 },
       "requestedBy": "Schedule",
       "startedAt": 1790258400000,
       "finishedAt": 1790258692000,
@@ -82,11 +82,12 @@
         "run": {
           "id": "rn-1", "testName": "Sign in", "testVersion": 2, "startedBy": { "serviceAccount": "QA Mac mini" }, "machine": "QA Mac mini",
           "runner": "Full runner: 16 GB of memory and a processor 6.2× as fast as a Raspberry Pi 4",
-          "source": "runner", "startedAt": 1790258400000, "durationMs": 21400, "result": "pass", "healedCount": 0,
+          "source": "runner", "startedAt": 1790258400000, "durationMs": 21400, "result": "pass", "healedCount": 0, "attempts": 2,
           "steps": [
             { "stepId": "a1", "result": "passed", "timings": { "preMs": 120, "actionMs": 300, "settleMs": 450, "postMs": 30 } },
             { "stepId": "a2", "result": "passed", "timings": { "preMs": 60, "actionMs": 280, "settleMs": 200, "postMs": 25 } },
-            { "stepId": "a3", "result": "passed", "timings": { "preMs": 45, "actionMs": 90, "settleMs": 1804, "postMs": 31 } }
+            { "stepId": "a3", "result": "passed", "timings": { "preMs": 45, "actionMs": 90, "settleMs": 1804, "postMs": 31 },
+              "retried": [{ "attempt": 1, "reason": "timeout", "message": "The screen didn't settle in time.", "durationMs": 9600 }] }
           ]
         }
       },
@@ -117,10 +118,11 @@
         ],
         "run": {
           "id": "rn-3", "testName": "Pay an invoice", "testVersion": 1, "startedBy": { "serviceAccount": "QA Mac mini" }, "machine": "QA Mac mini",
-          "source": "runner", "startedAt": 1790258485400, "durationMs": 45000, "result": "fail", "healedCount": 0,
+          "source": "runner", "startedAt": 1790258485400, "durationMs": 45000, "result": "fail", "healedCount": 0, "attempts": 2,
           "steps": [
             { "stepId": "c1", "result": "passed" },
-            { "stepId": "c2", "result": "failed", "reason": "timeout", "screenshotPath": "/tmp/shots/rn-3/002-c2.png",
+            { "stepId": "c2", "result": "failed", "reason": "timeout", "screenshotPath": "/tmp/shots/rn-3/002-c2-try2.png",
+              "retried": [{ "attempt": 1, "reason": "timeout", "durationMs": 21000, "screenshotPath": "/tmp/shots/rn-3/002-c2.png" }],
               "image": { "src": "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAQAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA=", "width": 1440, "height": 900 } }
           ]
         }

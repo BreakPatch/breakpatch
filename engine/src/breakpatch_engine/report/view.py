@@ -11,7 +11,9 @@ The input:
       tests: [{ appName, name, steps: Step[], run: Run | None, note? }] }
 
 `run` is a stored Run (engine run.ended plus who, where and when); a StepRun may carry `image`
-`{ src, width, height }`, the screenshot as a WebP data: URI (images.py).
+`{ src, width, height }`, the screenshot as a WebP data: URI (images.py). A run that took more than
+one try has `attempts`, and its steps the earlier tries' failures (`retried`, engine/PROTOCOL.md
+"Retries"); a suite's `counts` may have `flaky`, the tests that passed on a retry.
 """
 from __future__ import annotations
 
@@ -116,6 +118,50 @@ def pass_note(r: dict) -> str:
     if r.get("passedBy") == "note":
         return r["why"] if r.get("why") is not None else "Passed: the step did what its note says."
     return ""
+
+
+def tries_text(attempts: list[int]) -> str:
+    """"try 1", "tries 1 and 2"."""
+    if len(attempts) == 1:
+        return f"try {attempts[0]}"
+    return f"tries {', '.join(str(a) for a in attempts[:-1])} and {attempts[-1]}"
+
+
+def _retried(r: dict | None) -> list[dict]:
+    """A step's failures on earlier tries (engine/PROTOCOL.md "Retries"), oldest first."""
+    out = [e for e in ((r or {}).get("retried") or []) if isinstance(e, dict) and isinstance(e.get("attempt"), int)]
+    return sorted(out, key=lambda e: e["attempt"])
+
+
+def retried_note(r: dict | None, step: dict, state: str) -> str:
+    """"Failed on try 1: Waited too long for the page. It passed on the next try." on a step that
+    failed on an earlier try (the screens' retriedNote in screens/run/reasons.ts)."""
+    tries = _retried(r)
+    if not tries:
+        return ""
+    titles = list(dict.fromkeys(reason_title(e.get("reason"), step) for e in tries))
+    said = f"Failed on {tries_text([e['attempt'] for e in tries])}: {'; '.join(titles)}."
+    if state in ("passed", "fixed"):
+        return f"{said} It passed on the next try."
+    if state == "failed":
+        return f"Also f{said[1:]}"
+    return f"{said} The last try stopped before this step."
+
+
+def attempts_of(run: dict | None) -> int:
+    n = (run or {}).get("attempts")
+    return n if isinstance(n, int) and not isinstance(n, bool) and n > 1 else 1
+
+
+def retry_note(run: dict | None) -> str:
+    """"Passed on retry 1." on a test that took more than one try (the report's retryText)."""
+    n = attempts_of(run)
+    if n <= 1:
+        return ""
+    if (run or {}).get("result") == "fail":
+        return "Failed on both tries." if n == 2 else f"Failed on all {n} tries."
+    first = "the first try" if n == 2 else f"the first {n - 1} tries"
+    return f"Passed on retry {n - 1}: {first} failed. A test that passes only on a retry may be flaky."
 
 
 # ---------------------------------------------------------------- numbers and times
@@ -260,6 +306,9 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
     note = ""
     if r and state == "passed":
         note = UNCHECKED_NOTE if r.get("unchecked") else pass_note(r)
+    again = retried_note(r, step, state)
+    if again:
+        note = f"{note} {again}".strip()
     took, where = phases((r or {}).get("timings"))
     image = None
     img = (r or {}).get("image") if screenshots and not container else None
@@ -354,16 +403,34 @@ def test_view(t: dict, index: int, offset: int, screenshots: bool, multi: bool) 
     state = run_state(run, views)
     name = str(t.get("name") or (run or {}).get("testName") or "Test")
     j = _junit(state, views, t, run)
+    j["retries"] = _junit_retries(steps, run)
     for v in views:
         v.pop("_reason", None)
     return {
         "anchor": f"test-{index + 1}", "name": name, "appName": str(t.get("appName") or ""), "multi": multi,
         "result": state, "resultText": RUN_TEXT[state] if run else "Couldn't run", "meta": run_meta(run, offset, t.get("recordedOn"), t.get("device")) if run else [],
         "testNote": "" if run else str(t.get("note") or "It couldn't run."),
+        "retryNote": retry_note(run),
         "stepsText": plural(len(views), "step"), "steps": views, "junit": j,
         # In a suite, a test that passed starts closed: what didn't pass is what's read first.
         "stepsOpen": state not in ("passed", "fixed"),
     }
+
+
+def _junit_retries(steps: list[dict], run: dict | None) -> list[dict]:
+    """Each earlier try's failure, for JUnit's <flakyFailure> (a test that then passed) or
+    <rerunFailure> (one that failed every time), oldest first."""
+    if attempts_of(run) <= 1:
+        return []
+    by_id = {str(r.get("stepId")): r for r in (run or {}).get("steps") or [] if isinstance(r, dict)}
+    out = []
+    for s, number, _ in rows(steps):
+        for e in _retried(by_id.get(str(s.get("id")))):
+            title = reason_title(e.get("reason"), s)
+            out.append({"attempt": e["attempt"], "type": str(e.get("reason") or "failed"),
+                        "message": f"Try {e['attempt']}, step {number}: {s.get('label') or ''}: {title}",
+                        "text": f"Try {e['attempt']} failed at step {number}, {s.get('label') or ''}: {title}."})
+    return [{k: v for k, v in e.items() if k != "attempt"} for e in sorted(out, key=lambda e: e["attempt"])]
 
 
 def _junit(state: str, views: list[dict], t: dict, run: dict | None) -> dict:
@@ -396,9 +463,11 @@ def _junit(state: str, views: list[dict], t: dict, run: dict | None) -> dict:
 
 def counts_text(c: dict) -> str:
     total, passed, fixed, failed, not_run = (_int(c.get(k)) for k in ("total", "passed", "fixed", "failed", "notRun"))
+    flaky = _int(c.get("flaky"))
+    retried = f", {flaky} on a retry" if flaky else ""
     if not failed and not not_run:
-        return f"{passed + fixed} of {plural(total, 'test')} passed" + (f", {fixed} fixed automatically" if fixed else "")
-    out = f"{passed + fixed} of {plural(total, 'test')} passed"
+        return f"{passed + fixed} of {plural(total, 'test')} passed" + retried + (f", {fixed} fixed automatically" if fixed else "")
+    out = f"{passed + fixed} of {plural(total, 'test')} passed" + retried
     if failed:
         out += f", {failed} failed"
     if not_run:

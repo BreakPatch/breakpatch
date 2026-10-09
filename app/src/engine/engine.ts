@@ -101,6 +101,11 @@ export interface RunSettings {
   autoFix: boolean; failOnFix: boolean;
   /** "Allow for small differences between systems": the engine treats a missing value as on. */
   allowSystemDifferences?: boolean;
+  /**
+   * How many times a failed run tries again, from the start in a new browser, when its failure
+   * looks like timing (engine/PROTOCOL.md "Retries"): 0 to 2. Missing: none.
+   */
+  retries?: number;
 }
 export interface RunStart extends SecretScope {
   runId: string; startUrl: string; viewport: Viewport; steps: Step[];
@@ -145,6 +150,22 @@ export interface RunEnded {
   ranOn?: RecordedOn;
   /** The test was recorded on another kind of system. */
   systemMismatch?: SystemMismatch;
+  /** How many tries the run took when it was retried (2 or 3); absent after one. */
+  attempts?: number;
+}
+
+/** A try failed in a way that looks like timing, and the next one starts now (engine "Retries"). */
+export interface RunRetryEvent {
+  runId: string;
+  /** The try starting now: 2 or 3. */
+  attempt: number;
+  /** The most tries there can be. */
+  of: number;
+  stepId: string;
+  reason?: StepRun['reason'];
+  /** A short phrase for logs ("the page was slow"). */
+  why?: string;
+  message?: string;
 }
 
 export interface EngineEvents {
@@ -158,6 +179,7 @@ export interface EngineEvents {
   'browser.fileChooser': FileChooserEvent;
   'run.step': RunStepEvent;
   'run.ended': RunEnded;
+  'run.retry': RunRetryEvent;
 }
 
 export class EngineError extends Error {

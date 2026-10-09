@@ -6,6 +6,7 @@ import { FilterChip, WHERE, formatDuration, formatWhen, plural, runBy, runStatus
 import type { App, Run, RunSource } from '../../data/types';
 import { useFeature } from '../../edition';
 import { distinct, filterRuns, type ResultFilter } from './filters';
+import { passedOnRetry } from '../../lib/runWords';
 
 // Community: one person and the latest version only, so no Who and no Version. The features
 // follow the licence while the app runs (edition/features.ts), so they're read in the component.
@@ -54,7 +55,7 @@ export function RunsTab({ app, runs, more }: { app: App; runs: Run[]; more?: () 
           return (
             <div key={r.id} className={`app-row ${COLS} clickable app-row-run`} role="row" tabIndex={0} aria-label={`${r.testName}, ${formatWhen(r.startedAt)}, open report`}
               style={{ animationDelay: `${Math.min(i, 12) * 25}ms` }} onClick={open} onKeyDown={e => { if (e.key === 'Enter') open(); }}>
-              <div role="cell"><StatusPill status={runStatus(r)} /></div>
+              <div role="cell" className="app-run-result"><StatusPill status={runStatus(r)} />{passedOnRetry(r) && <span className="app-meta">{passedOnRetry(r)}</span>}</div>
               <div role="cell" className="app-name ellipsis">{r.testName}</div>
               <div role="cell" className="app-text2">{formatWhen(r.startedAt)}</div>
               {COLS === 'app-cols-runs' && <div role="cell" className="app-text2 ellipsis">{runBy(r)}</div>}

@@ -411,7 +411,7 @@ saves.
 ### Replay
 | Method | Params | Result |
 |---|---|---|
-| `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix, allowSystemDifferences? }, secrets: {NAME: Secret}, runner?, recordedOn?: RecordedOn }` | `{}` — returns at once, then events |
+| `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix, allowSystemDifferences?, retries? }, secrets: {NAME: Secret}, runner?, recordedOn?: RecordedOn }` | `{}` — returns at once, then events |
 | `run.stop` | `{ runId }` | `{}` — stops after the current step |
 | `call.try` | `{ call: Call, appUrl, secrets? }` | `{ ok, status?, ms?, error?, message? }` — "Try it": one request under the same rules as a run |
 | `run.explain` | `{ step: Step, stepRun: StepRun, viewport? }` | `{ explanation: Explanation \| null }` — "Why did this fail?" for one failed step of a finished run (Breakpatch Team, see below) |
@@ -450,8 +450,8 @@ A `waitFor`/`waitUntil` in progress is cut short by `run.stop`.
 Events: `run.step` `{ runId, index, stepId, state: "running"|"looking"|"passed"|"healed"|"failed", reason?, preDistance?, postDistance?, oldAt?, newAt?, screenshot?, iteration?, message?, details? }`
 (`looking` = AI assistant is finding a moved target; `screenshot` is a local file path, only on failure or heal;
 `iteration` is the 1-based repeat number inside a loop; `message` is a plain sentence on failure)
-and `run.ended` `{ runId, result: "pass"|"fail", durationMs, steps: StepRun[], message?, details?, cleanUpFailed?, ranOn?, systemMismatch? }`
-(`ranOn` and `systemMismatch`: see Where a test was recorded).
+and `run.ended` `{ runId, result: "pass"|"fail", durationMs, steps: StepRun[], message?, details?, cleanUpFailed?, ranOn?, systemMismatch?, attempts? }`
+(`ranOn` and `systemMismatch`: see Where a test was recorded; `attempts`: see Retries).
 
 `index` is the step's position in a **pre-order walk** of the nested steps (a loop or group comes
 before its children; children count once, not once per repeat). `run.ended.steps` is in the same
@@ -474,6 +474,34 @@ didn't load, no popup/file picker/download), `healFailed` (the AI assistant's sp
 the stored hash), `healingUnavailable` (`autoFix` on, healing installed, but no model), `secretMissing`,
 `setUpFailed`, `stopped`. `failOnFix` makes a run with a healed step end with `result: "fail"`
 (the step stays `healed`).
+
+**Retries** (roadmap #14, `retry.py`). `settings.retries` (0, 1 or 2; missing, anything else or
+more is 0, 2 at most) lets a failed run try again: the whole test from the start, in a new browser,
+with its set-up call and clean-up call, as the first try did. A single step is never done again on
+its own: its action may already have changed the page. A try is retried only when its failure looks
+like timing:
+
+- `timeout` (the screen didn't settle, the start page didn't load, no popup, file picker or download);
+- `noChange` (the step was done but nothing happened, often a click before the page was ready);
+- `targetNotFound` when its `preDistance` is at most 4 bits past the pre-check's tolerance, and
+  `unexpectedScreen` when its `postDistance` is at most 4 past the check's (relaxed checks add
+  their 2 bits as usual). Further off, the page really is different, and isn't retried.
+
+Never: `secretMissing`, `setUpFailed`, `stopped`, `healingUnavailable`, `healFailed`,
+`fileMissing`, a failure with no distance (something went wrong inside the engine), `failOnFix`,
+or a run the client stopped. No retry starts once the run has taken 5 minutes (`retry_budget`,
+stretched by `BP_TIMINGS_SCALE` and breakpatch-ci's tier like the other long waits); the next try
+starts 1 s after the last. The recorder's own runs (`keepOpen`, `fromStepId`) are never retried.
+
+Before each retry the engine sends `run.retry` `{ runId, attempt, of, stepId, reason, why, message }`
+(`attempt`: the try starting now, 2 or 3; `of`: the most there can be; `why`: a short phrase for
+logs), then the new try's `run.step` events from the first step. `run.ended` is the last try's,
+with `durationMs` over every try, `attempts` (how many tries it took: 2 or 3; absent after one try),
+and each earlier try's failure kept on the step it failed at, whatever the last try did there:
+`StepRun.retried: [{ attempt, reason, message?, durationMs, preDistance?, postDistance?, screenshotPath? }]`.
+So a run that passes on a retry says so, and one that never passes keeps every try's failure. An
+earlier try's screenshot is `<n>-<stepId>-try<attempt>.png` from the second try on, so none is
+overwritten. Without `retries`, or after one try, `run.ended` is exactly as before.
 
 Healing (spec §11.2, only with `autoFix`) is Breakpatch Team: it runs only when the Team engine
 (`breakpatch_team_engine`) is installed next to this one (`plugins.py`) **and** its licence (see
@@ -658,7 +686,7 @@ with `error` one of `invalid`, `refused`, `redirect`, `secret`, `unreachable`, `
 | `BP_CHROMIUM` | – | explicit Chromium binary (development, CI images) |
 | `BP_HEADED` | – | `1` shows the browser window |
 | `BP_FAST` | – | `1` shortens every wait (tests) |
-| `BP_TIMINGS_SCALE` | `1` | a slow machine (a Raspberry Pi): multiplies the settle, pre-check, navigation and start-page waits by this number, from 1 to 10; the noise watch isn't stretched |
+| `BP_TIMINGS_SCALE` | `1` | a slow machine (a Raspberry Pi): multiplies the settle, pre-check, navigation and start-page waits by this number, from 1 to 10, and the time after which no retry starts (see Retries); the noise watch isn't stretched |
 | `BP_LOG` | `INFO` | log level (stderr) |
 | `HF_ENDPOINT`, `HF_TOKEN` | Hugging Face defaults | model download; development only, ignored by a release build (a packaged sidecar) |
 | `BP_NO_SANDBOX` | – | `1` turns Chromium's sandbox off; development only |
@@ -689,10 +717,16 @@ the pipeline names their sites (`--secret NAME=https://site[,…]`), each goes a
 listed, or whose sites don't include the test's start page, `appUrl` or a call that sends it. Each run is written to
 `apps/<appId>/runs` as the app writes one, with `source: "ci"` and the local `screenshotPath` left
 out; a suite also writes `suiteRuns`. A suite prints `{ result, suite, suiteId, version, counts,
-tests: [{ name, appId, testId, version, result, failedStep?, note?, runId? }], suiteRunId?, saved }`
+tests: [{ name, appId, testId, version, result, failedStep?, note?, runId?, attempts? }], suiteRunId?, saved }`
 and exits 0 when it passed (with fixes too) and 1 when a test failed; 2 also covers a workspace,
 suite or test that can't be read and a sign-in that fails. The Team repo's
 `engine/src/breakpatch_team_engine/workspace.py` has the details.
+
+**Retries.** `--retries N` (0 to 2, default 0) sends `settings.retries` (see Retries): a test that
+passes on a retry passes (exit 0), its JSON has `attempts` and each step's `retried`, a suite row has
+`attempts` and the suite's `counts.flaky` (only when some did) counts the tests that passed only on a
+retry, and runs written to the workspace carry `attempts` (the rules allow 2 or 3). Without it,
+nothing changes. A suite's own `retries` (the app's setting) isn't used by breakpatch-ci.
 
 **Another system.** A test file's `recordedOn` is compared with the CI machine as in Where a
 test was recorded. On a mismatch `breakpatch-ci` prints one line on stderr before the run

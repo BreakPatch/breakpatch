@@ -6,7 +6,7 @@ import {
   type Backend, type DeletedItem, type DeletedRef, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type RecentlyDeleted, type RunNotes, type TestDetails, type TrackerStore, type Unsubscribe,
 } from '../backend';
 import type {
-  App, Explanation, Member, Person, QueueItem, RecordedOn, Role, Run, RunIssue, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Workspace,
+  App, Explanation, FlakyMark, Member, Person, QueueItem, RecordedOn, Role, Run, RunIssue, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Workspace,
 } from '../types';
 import { applyRunnerPreview, runnerPreviewFlag, type RunnerPreview } from './preview';
 import { communityDemo, people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
@@ -151,6 +151,13 @@ export class DemoBackend implements Backend {
     const last = moved && t.currentVersion > 0 ? this.st.versions[`${appId}/${testId}`]?.at(-1) : undefined;
     // The same steps as a new version that starts at the new address, like the Firebase backend.
     return last ? this.saveTest(appId, testId, last.steps, startUrlNote(d.startUrl), last.recordedOn) : this.wait(null);
+  }
+  async setFlakyMark(appId: string, testId: string, mark: FlakyMark | null) {
+    this.mutate(s => { s.tests = s.tests.map(t => {
+      if (t.appId !== appId || t.id !== testId) return t;
+      const { flakyMark: _old, ...rest } = t;
+      return mark ? { ...rest, flakyMark: mark } : rest;
+    }); });
   }
   private patchTest(appId: string, testId: string, p: Partial<Test>) {
     const me = this.me();

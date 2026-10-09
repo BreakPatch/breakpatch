@@ -302,6 +302,44 @@ describe('LocalBackend', () => {
     expect(await first(l => b.suites(l))).toEqual([]);
   });
 
+  it('keeps a suite\'s retries, and keeps them when a save leaves them out (roadmap #14)', async () => {
+    const { st, b } = await setup();
+    const { app, test } = await appWithTest(b);
+    const tests = [{ appId: app.id, testId: test.id }];
+    await b.saveSuite(null, { name: 'Smoke', tests, schedule: null, retries: 2 });
+    expect(await read(st, 'suites/smoke.json')).toContain('"retries": 2');
+    await b.saveSuite('smoke', { name: 'Smoke', tests, schedule: null });
+    expect((await first<{ retries?: number }[]>(l => b.suites(l)))[0].retries).toBe(2);
+    await b.saveSuite('smoke', { name: 'Smoke', tests, schedule: null, retries: 0 });
+    expect((await first<{ retries?: number }[]>(l => b.suites(l)))[0].retries).toBe(0);
+    st.poke(`${ROOT}/suites/odd.json`, toFileText({ name: 'Odd', tests, retries: 9 }));
+    const reopened = await LocalBackend.open({ storage: st, path: ROOT, person: ana, live: false });
+    opened.push(reopened);
+    const suites = await first<{ id: string; retries?: number }[]>(l => reopened.suites(l));
+    expect(suites.find(x => x.id === 'odd')?.retries).toBeUndefined();     // not 0 to 2: the default
+    expect(suites.find(x => x.id === 'smoke')?.retries).toBe(0);
+  });
+
+  it('keeps a run\'s tries and each earlier try on its step, and the Flaky answer in the test file', async () => {
+    const { st, b } = await setup();
+    const { app, test } = await appWithTest(b);
+    await b.saveTest(app.id, test.id, steps);
+    await b.addRun({ appId: app.id, testId: test.id, testName: 'Log in', testVersion: 1, startedBy: ana, machine: 'This Mac', source: 'desktop', startedAt: 5, durationMs: 9000,
+      result: 'pass', healedCount: 0, attempts: 2, steps: [{ stepId: 's2', result: 'passed', retried: [{ attempt: 1, reason: 'timeout', durationMs: 4000 }] }] });
+    const [run] = await first<Run[]>(l => b.testRuns(app.id, test.id, l));
+    expect(run).toMatchObject({ attempts: 2, steps: [{ stepId: 's2', retried: [{ attempt: 1, reason: 'timeout' }] }] });
+    const before = await read(st, 'apps/web-app/tests/log-in.json');
+    const updatedAt = fromFileText<{ updatedAt: number }>(before!).updatedAt;
+    await b.setFlakyMark(app.id, test.id, { state: 'known', version: 1, by: 'Ana Ruiz', at: Date.UTC(2026, 9, 1) });
+    const text = (await read(st, 'apps/web-app/tests/log-in.json'))!;
+    expect(text).toContain('"flakyMark": {');
+    expect(text).toContain('"at": "2026-10-01T00:00:00.000Z"');
+    expect(fromFileText<{ updatedAt: number }>(text).updatedAt).toBe(updatedAt);          // not an edit
+    expect((await first<Test | null>(l => b.test(app.id, test.id, l)))?.flakyMark).toEqual({ state: 'known', version: 1, by: 'Ana Ruiz', at: Date.UTC(2026, 9, 1) });
+    await b.setFlakyMark(app.id, test.id, null);
+    expect(await read(st, 'apps/web-app/tests/log-in.json')).not.toContain('flakyMark');
+  });
+
   it('keeps a schedule and where the result goes in the suite, and the address only on this Mac', async () => {
     const { st } = await setup();
     const { resultAddresses } = await import('../../platform');

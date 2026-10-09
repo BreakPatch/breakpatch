@@ -24,13 +24,14 @@ import {
   type Backend, type DeletedItem, type DeletedKind, type DeletedRef, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type RecentlyDeleted, type TestDetails, type Unsubscribe,
 } from '../backend';
 import type {
-  App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
+  App, FlakyMark, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
 } from '../types';
 import { folderConnectionId } from '../../state/connectionIds';
 import { DEVICE_SCHEMA_VERSION, FORMAT, NEWEST_READ_SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
 import { osText } from '../../lib/osWords';
 import { deviceOf } from '../devices';
+import { MAX_RETRIES } from '../../lib/retries';
 
 /** Stands for a file over 5 MB in the texts read from the folder: it's skipped, never parsed. */
 const TOO_BIG = '\u0000breakpatch: file too big\u0000';
@@ -172,6 +173,11 @@ export function notifyIn(v: unknown): SuiteNotify | undefined {
   if (!isObj(v) || !['webhook', 'slack', 'teams'].includes(v.kind as string)) return undefined;
   const when = ['every', 'failures', 'changes'].includes(v.when as string) ? v.when as SuiteNotify['when'] : 'every';
   return { kind: v.kind as SuiteNotify['kind'], when, ...(v.screenshot === true ? { screenshot: true } : {}) };
+}
+
+/** A suite file's `retries` (lib/retries.ts): 0, 1 or 2, else none (the default). */
+export function retriesIn(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_RETRIES ? v : undefined;
 }
 
 /** Steps as saved: no UI-only markers, no undefined fields, children cleaned too. */
@@ -421,7 +427,8 @@ export class LocalBackend implements Backend {
         const v = parse(rel); if (!v) continue;
         if (typeof v.name !== 'string' || !Array.isArray(v.tests)) { bad(rel, 'not a suite, skipped'); continue; }
         const notify = notifyIn(v.notify);
-        suites.set(s[1], { id: s[1], name: v.name, tests: (v.tests as Suite['tests']).filter(t => isObj(t) && typeof t.appId === 'string' && typeof t.testId === 'string'), schedule: scheduleIn(v.schedule), ...(notify ? { notify } : {}), resultUrl: typeof v.resultUrl === 'string' ? v.resultUrl : undefined, createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) });
+        const retries = retriesIn(v.retries);
+        suites.set(s[1], { id: s[1], name: v.name, tests: (v.tests as Suite['tests']).filter(t => isObj(t) && typeof t.appId === 'string' && typeof t.testId === 'string'), schedule: scheduleIn(v.schedule), ...(notify ? { notify } : {}), ...(retries !== undefined ? { retries } : {}), resultUrl: typeof v.resultUrl === 'string' ? v.resultUrl : undefined, createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) });
       }
     }
 
@@ -626,6 +633,14 @@ export class LocalBackend implements Backend {
     });
   }
   setTestStatus(appId: string, testId: string, status: TestStatus) { return this.patchTest(appId, testId, { status }); }
+  /** Kept in the test's file, so it goes to Git with it; not an edit, so the file's updatedAt stays. */
+  setFlakyMark(appId: string, testId: string, mark: FlakyMark | null) {
+    return this.write(async () => {
+      const r = this.testRec(appId, testId);
+      const { flakyMark: _old, ...test } = r.test;
+      await this.put(`apps/${appId}/tests/${testId}.json`, this.testFile({ ...r, test: { ...test, ...(mark ? { flakyMark: { ...mark } } : {}) } }));
+    });
+  }
   renameTest(appId: string, testId: string, name: string) { return this.patchTest(appId, testId, { name }); }
   /** Only the latest version is kept, so a new start address moves the version number on (like a save). */
   updateTestDetails(appId: string, testId: string, details: TestDetails) {
@@ -859,7 +874,8 @@ export class LocalBackend implements Backend {
       const schedule = scheduleIn(n.schedule);
       const notify = n.notify === null ? undefined : n.notify ? notifyIn(n.notify) : old?.notify;
       if (this.addresses && n.notify !== undefined && (n.notify === null || n.notify.url)) await this.addresses.set(this.connectionId, sid, n.notify?.url ?? null);
-      const file = { name: n.name, tests: n.tests.map(t => ({ appId: t.appId, testId: t.testId })), ...(schedule ? { schedule } : {}), ...(notify ? { notify } : {}), resultUrl: n.resultUrl || undefined, createdBy: old?.createdBy ?? this.me, createdAt: old?.createdAt ?? now };
+      const retries = n.retries !== undefined ? retriesIn(n.retries) : old?.retries;
+      const file = { name: n.name, tests: n.tests.map(t => ({ appId: t.appId, testId: t.testId })), ...(schedule ? { schedule } : {}), ...(notify ? { notify } : {}), ...(retries !== undefined ? { retries } : {}), resultUrl: n.resultUrl || undefined, createdBy: old?.createdBy ?? this.me, createdAt: old?.createdAt ?? now };
       // Saved again unchanged: keep the file (and its updatedAt) as it is.
       const same = !!old && this.texts.get(rel) === toFileText({ ...file, updatedBy: old.updatedBy, updatedAt: old.updatedAt });
       const stamped = same ? { ...file, updatedBy: old!.updatedBy, updatedAt: old!.updatedAt } : { ...file, updatedBy: this.me, updatedAt: now };

@@ -37,7 +37,8 @@
 .app-text2 { color: var(--text-2); }
 .app-muted { color: var(--text-muted); }
 .app-where { display: flex; align-items: center; gap: 6px; color: var(--text-muted); white-space: nowrap; }
-.app-result { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.app-result { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.app-result-word { display: inline-flex; align-items: center; gap: 5px; }
 .app-used { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--accent); }
 .app-disc { width: 32px; height: 32px; border-radius: 50%; background: var(--selected); display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .app-row .chip-shared { font-size: 12px; padding: 3px 10px; }
@@ -99,3 +100,4 @@
 /* The app's tests and shared steps in Recently deleted (Settings), under the table. */
 .app-bin { display: flex; justify-content: flex-end; margin-top: -14px; padding: 0 14px 20px; }   /* inside the table's 20px side, the link's own 6px padding included */
 .app-bin .btn { color: var(--text-muted); }
+.app-run-result { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }

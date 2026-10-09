@@ -83,6 +83,7 @@
         }
       ],
       "testNote": "",
+      "retryNote": "",
       "stepsText": "10 steps",
       "steps": [
         {
@@ -290,7 +291,8 @@
         "status": "failed",
         "type": "targetNotFound",
         "message": "Step 7: Click Done: Couldn't find the Done button",
-        "text": "Step 7: Click Done\nCouldn't find the Done button\nIt wasn't where it was when this step was recorded, so there was nothing to click. The run stopped here.\nAI assistant: The Done button moved into a menu after the redesign.\nLikely cause: It moved.\nSuggested: Re-record this step.\nThis test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks.\nWhat to try: If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer."
+        "text": "Step 7: Click Done\nCouldn't find the Done button\nIt wasn't where it was when this step was recorded, so there was nothing to click. The run stopped here.\nAI assistant: The Done button moved into a menu after the redesign.\nLikely cause: It moved.\nSuggested: Re-record this step.\nThis test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks.\nWhat to try: If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer.",
+        "retries": []
       },
       "stepsOpen": true
     }
