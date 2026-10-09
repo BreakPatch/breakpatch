@@ -2,7 +2,7 @@
 // whole real-world-like files (Playwright codegen output, a hand-written spec, a Cypress spec) to
 // the steps they map to and the lines they list.
 import { describe, expect, it } from 'vitest';
-import { frameworkOf, importScript, nameFromFile, withBase, withSecrets, type ImportedTest } from '.';
+import { frameworkOf, importScript, nameFromFile, toWalk, withBase, withSecrets, type ImportedTest } from '.';
 import { Parser } from './parse';
 import { tokenize } from './tokens';
 import { idWords, regexWords, selectorLoc, targetWords } from './locators';
@@ -356,6 +356,10 @@ describe('before learning', () => {
     expect(steps[0]).toMatchObject({ secretRef: 'SHOP_PASSWORD' });
     expect(steps[0].needs).toBeUndefined();
     expect(steps[1]).toMatchObject({ needs: 'secret' });
+  });
+  it('hands the recorder the steps without where they came from, marking the guessed ones to check', () => {
+    expect(toWalk({ action: 'click', target: 'the submit button', guessed: true, line: 3, code: "cy.get('#submit').click()" })).toEqual({ action: 'click', target: 'the submit button', check: true });
+    expect(toWalk({ action: 'write', target: 'the "Password" field', needs: 'secret', secretHint: 'PW', line: 4, code: '' })).toEqual({ action: 'write', target: 'the "Password" field', needs: 'secret' });
   });
   it('names a test after its file', () => {
     expect(nameFromFile('/x/checkout-flow.spec.ts')).toBe('Checkout flow');

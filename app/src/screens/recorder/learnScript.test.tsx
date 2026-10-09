@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getEngine } from '../../engine';
 import { secrets } from '../../platform';
 import { AddStepBar } from './AddStepBar';
-import { leftOutText, planDoneText, planHead, planIntent, planNeeds, planRun, planSentence, type WalkStep } from './plan';
+import { CHECK_NOTE, leftOutText, planDoneText, planHead, planIntent, planNeeds, planRun, planSentence, type WalkStep } from './plan';
 import { useRecorder } from './useRecorder';
 import { defaultLabel, StepsPanel } from '../../components/steps';
 import type { Step } from '../../data/types';
@@ -111,6 +111,33 @@ describe('learning a script in the recorder', () => {
     // Going on does the waiting step and the rest.
     act(() => { result.current.setPlanAuto(true); });
     await waitFor(() => expect(result.current.plan?.index).toBe(2));
+  });
+
+  it('a step marked Check always stops for Confirm, even going on by itself', async () => {
+    const point = recordPoint();
+    const { result } = hook();
+    act(() => { result.current.startPlan({ steps: [{ action: 'click', target: 'Next' }, { action: 'write', target: 'the email field', text: 'a@b.c', check: true }, { action: 'click', target: 'Done' }] }, { source: 'script', auto: true }); });
+    await waitFor(() => expect(result.current.plan?.index).toBe(1));
+    await waitFor(() => expect(result.current.ai.state).toBe('result'));
+    expect(result.current.ask).toBe(`Is this the email field? Confirm to type "a@b.c" into it. ${CHECK_NOTE}`);
+    act(() => { result.current.setPlanAuto(false); });
+    act(() => { result.current.setPlanAuto(true); });
+    await new Promise(r => setTimeout(r, 20));
+    expect(point).toHaveBeenCalledTimes(1);                         // still waiting for Confirm
+    expect(result.current.plan?.index).toBe(1);
+    act(() => { result.current.confirmAi(); });
+    await waitFor(() => expect(result.current.plan?.index).toBe(3));   // and the rest go on by themselves
+    expect(point).toHaveBeenCalledTimes(3);
+  });
+
+  it('a step marked Check goes on by itself once the person gives its words', async () => {
+    const point = recordPoint();
+    const { result } = hook();
+    act(() => { result.current.startPlan({ steps: [{ action: 'click', target: 'submit button', check: true }] }, { source: 'script', auto: true }); });
+    await waitFor(() => expect(result.current.ai.state).toBe('result'));
+    act(() => { result.current.editPlanStep({ target: 'the Send button' }); });
+    await waitFor(() => expect(result.current.plan?.index).toBe(1));
+    expect(point.mock.calls[0][0]).toMatchObject({ action: 'click', target: 'the Send button' });
   });
 
   it('a click on the page still asks while learning', async () => {

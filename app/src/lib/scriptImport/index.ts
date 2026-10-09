@@ -816,10 +816,10 @@ export const SCRIPT_EXTENSIONS = ['ts', 'js', 'mjs', 'cjs', 'mts', 'cts', 'tsx',
 export const MAX_SCRIPT_BYTES = 2_000_000;
 export const NOTHING_FOUND = "Breakpatch didn't find a Playwright or Cypress test in this script. It reads test() and it() blocks, or a script that uses page or cy.";
 
-/** A step as the recorder learns it: without where it came from. */
+/** A step as the recorder learns it: without where it came from; a guessed one asks before it's done (`check`). */
 export function toWalk(s: ImportStep): WalkStep {
-  const { line: _l, code: _c, guessed: _g, secretHint: _s, note: _n, ...w } = s;
-  return w;
+  const { line: _l, code: _c, guessed, secretHint: _s, note: _n, ...w } = s;
+  return guessed ? { ...w, check: true } : w;
 }
 
 /** "3 lines of the script weren't imported." for the recorder's card, or nothing. */

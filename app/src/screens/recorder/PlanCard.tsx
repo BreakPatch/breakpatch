@@ -52,6 +52,7 @@ export function PlanCard({ rec }: { rec: Recorder }) {
               <span className="grow">{rec.planText(s)}</span>
               {s.state === 'skipped' && <span className="faint">Skipped</span>}
               {s.careful && <Icon name="warning" size={16} className="rec-plan-warn" label="May delete, pay for or send something" />}
+              {s.check && <span className="faint" title="These words come from the script's code: it asks before this step">Check</span>}
             </li>
           ))}
         </ol>

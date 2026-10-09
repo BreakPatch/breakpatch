@@ -16,7 +16,7 @@ import { ensureSecretSites } from '../../lib/secretSites';
 import { secretsForRequest } from '../../lib/secretScope';
 import { checkpointLabel, intentAskText, notFoundText, planNotFoundText, thinkingText } from './describe';
 import { chosenIntent, fromEngine, readIntent, type Intent } from './intent';
-import { answered, CAREFUL_NOTE, planIntent, planNeeds, planRun, planSentence, type PlanItem, type PlanRun, type WalkStep } from './plan';
+import { answered, CAREFUL_NOTE, CHECK_NOTE, planIntent, planNeeds, planRun, planSentence, type PlanItem, type PlanRun, type WalkStep } from './plan';
 
 /** `plan`: the index of the story's step (plan.ts) this is about, when it is one. */
 export type AiState =
@@ -503,11 +503,12 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   /**
    * Learning a script (`auto`): a step found on the page, or one with nothing to find (typing into
    * the focused field, an address), is done at once. A click on the page (the person showing where
-   * a step is) still asks, and so does a step that wasn't found or needs a value.
+   * a step is) still asks, and so does a step that wasn't found or needs a value, and one marked
+   * Check (its words came from the script's code).
    */
   function learning(plan: number | undefined): boolean {
     const run = planRef.current;
-    return plan !== undefined && !!run?.auto && run.index === plan;
+    return plan !== undefined && !!run?.auto && run.index === plan && !run.steps[plan]?.check;
   }
   /** Learning a script: pause (each step is asked about again) or go on by itself. */
   function setPlanAuto(on: boolean) {
@@ -516,8 +517,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     const next = { ...run, auto: on };
     setPlan(next);
     if (!on || ai.state === 'idle' || ai.plan !== run.index) return;
-    // Going on: the step waiting for Confirm is done now; one that wasn't found is looked for again.
-    if (ai.state === 'result' || (ai.state === 'proposal' && ai.said !== undefined)) confirmAi();
+    // Going on: the step waiting for Confirm is done now (unless it's marked Check); one that wasn't found is looked for again.
+    if ((ai.state === 'result' || (ai.state === 'proposal' && ai.said !== undefined)) && !run.steps[run.index]?.check) confirmAi();
     else if (ai.state === 'notfound') askPlan(next);
   }
   /** The current step changed by the person (Edit): what to look for, what to type. Asked about again. */
@@ -526,7 +527,9 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     if (!run || !run.steps[run.index]) return;
     const steps = run.steps.map((s, k): PlanItem => {
       if (k !== run.index) return s;
-      const { needs: _n, text: _t, secretRef: _s, generated: _g, ...rest } = s;
+      // New words to look for are the person's own: a step marked Check no longer needs asking about.
+      const { needs: _n, text: _t, secretRef: _s, generated: _g, check, ...rest } = s;
+      if (check && !('target' in patch)) Object.assign(rest, { check });
       const value = 'text' in patch || 'secretRef' in patch || 'generated' in patch ? {} : { text: s.text, secretRef: s.secretRef, generated: s.generated };
       const next = { ...rest, ...value, ...patch };
       return Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined && v !== '')) as unknown as PlanItem;
@@ -642,6 +645,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
   const askBase = ai.state === 'result' ? intentAskText(ai.what, ai.intent) : ai.state === 'proposal' ? `${ai.label}?${ai.note ? ` ${ai.note}` : ''}` : null;
   // A story's step that looks like it deletes, pays or sends something says so as it asks.
   const careful = (ai.state === 'result' || ai.state === 'proposal') && ai.plan !== undefined && !!plan?.steps[ai.plan]?.careful;
+  const toCheck = (ai.state === 'result' || ai.state === 'proposal') && ai.plan !== undefined && !!plan?.steps[ai.plan]?.check;
 
   return {
     steps, dirty, selectedId, openLoopId, rerecordId, action, text, options, ai, busyId, checking, savedPill, sample, addedId,
@@ -689,7 +693,7 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     },
     pagePoint, pageDrag, pageBox, startRerecord, cancelRerecord: () => setRerecordId(null),
     thinking: ai.state === 'thinking' ? thinkingText(ai.what) : null,
-    ask: askBase && (careful ? `${askBase} ${CAREFUL_NOTE}` : askBase),
+    ask: askBase && [askBase, careful ? CAREFUL_NOTE : null, toCheck ? CHECK_NOTE : null].filter(Boolean).join(' '),
     notFound: ai.state === 'notfound' ? ai.message ?? (ai.plan !== undefined ? planNotFoundText(ai.what) : notFoundText(ai.what)) : null,
     busy: busyId !== null,
   };

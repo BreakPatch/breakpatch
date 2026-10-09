@@ -149,7 +149,7 @@ export function ImportDialog({ open, app, onClose }: { open: boolean; app: App; 
                     <span className="imp-n">{i + 1}</span>
                     <span className="grow">
                       {planSentence(s)}
-                      {s.guessed && <span className="imp-check" title="Worked out from the page's code, or from a narrower locator. Check it finds the right thing when it's learned.">Check</span>}
+                      {s.guessed && <span className="imp-check" title="Worked out from the page's code, or from a narrower locator. Learning stops at this step for you to confirm it's the right thing.">Check</span>}
                       {s.note && <span className="imp-note">{s.note}</span>}
                       {s.secretHint && s.needs === 'secret' && <span className="imp-note">The script reads {s.secretHint}. You pick the saved secret to type when it's learned.</span>}
                     </span>

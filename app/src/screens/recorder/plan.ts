@@ -62,6 +62,8 @@ export function planNeeds(s: WalkStep, source: PlanRun['source'] = 'story'): str
 
 /** Said with a step that looks like it deletes, pays or sends something. */
 export const CAREFUL_NOTE = 'This step may delete, pay for or send something. Check it before you confirm.';
+/** Said with an imported step whose words were worked out from the page's code: it always asks. */
+export const CHECK_NOTE = "These words come from the script's code, so check it's the right one.";
 
 /** The step as the describe flow's intent: what to find and what Confirm does with it. */
 export function planIntent(s: WalkStep): Intent {

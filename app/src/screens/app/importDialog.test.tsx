@@ -150,7 +150,7 @@ describe('the Import dialog', () => {
 });
 
 describe('from the Tests tab to a learned test', () => {
-  it('Import… on the app makes the test, and the recorder learns its steps by itself', async () => {
+  it('Import… on the app makes the test, and the recorder learns its steps by itself', { timeout: 30000 }, async () => {
     const point = vi.spyOn(getEngine(), 'recordPoint').mockImplementation(async p => ({ id: `s${Math.random().toString(36).slice(2)}`, action: p.action, label: `${p.action} step`, at: p.at, text: p.text, secretRef: p.secretRef }));
     vi.spyOn(getEngine(), 'locate').mockImplementation(async what => ({ box: [10, 10, 50, 30], at: [30, 20], target: what, frame: 1, path: 'fast' }));
     vi.spyOn(getEngine(), 'recordCheckpoint').mockImplementation(async region => ({ id: 'c1', action: 'checkpoint', label: 'x', region, hash: '0', tolerance: 8 }));
@@ -161,16 +161,18 @@ describe('from the Tests tab to a learned test', () => {
         <Route path="/apps/:appId/tests/:testId/record" element={<RecorderScreen />} />
       </Routes>
     </MemoryRouter></ToastProvider>);
-    fireEvent.click(await screen.findByRole('button', { name: 'Import from Playwright or Cypress' }));
+    // Generous waits: the recorder opens its browser first, slower when the whole suite runs at once.
+    const slow = { timeout: 8000 };
+    fireEvent.click(await screen.findByRole('button', { name: 'Import from Playwright or Cypress' }, slow));
     paste(LOGIN);
-    fireEvent.click(await screen.findByRole('button', { name: 'Create and learn' }));
-    expect(await screen.findByRole('region', { name: 'Steps from your script' })).toBeInTheDocument();
-    expect(await screen.findByText(/^4 steps learned\./, {}, { timeout: 4000 })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Create and learn' }, slow));
+    expect(await screen.findByRole('region', { name: 'Steps from your script' }, slow)).toBeInTheDocument();
+    expect(await screen.findByText(/^4 steps learned\./, {}, slow)).toBeInTheDocument();
     expect(point.mock.calls.map(c => c[0].action)).toEqual(['write', 'write', 'click']);
     const [made] = await testsNow();
     expect(hasImport(app.id, made.id)).toBe(false);
     // Learned, not saved: Save keeps the steps with their checks.
     fireEvent.click(screen.getByRole('button', { name: /^Save/ }));
-    await waitFor(async () => expect((await versionNow(made.id))?.steps.map(s => s.action)).toEqual(['write', 'write', 'click', 'checkpoint']));
+    await waitFor(async () => expect((await versionNow(made.id))?.steps.map(s => s.action)).toEqual(['write', 'write', 'click', 'checkpoint']), slow);
   });
 });

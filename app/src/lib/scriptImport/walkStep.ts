@@ -7,4 +7,6 @@ import type { PlanStep } from '../../engine/engine';
 export interface WalkStep extends Omit<PlanStep, 'action'> {
   action: PlanStep['action'] | 'switchTab' | 'waitUntil';
   nav?: 'url' | 'reload' | 'back' | 'forward';
+  /** An imported step whose words came from the page's code, or a wider locator than the script's: always asks before it's done. */
+  check?: boolean;
 }
