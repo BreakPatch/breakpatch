@@ -4,6 +4,7 @@ import type { Step } from '../../data/types';
 import { plural } from '../../components/common/format';
 import { preorder, rowIds, rowRefs } from './resolve';
 import { passNote, reasonTitle, slowNote, UNCHECKED_NOTE, targetName } from './reasons';
+import { triesText } from '../../lib/runWords';
 import { progress, type RunView } from './runState';
 
 export type Tone = 'running' | 'passed' | 'fixed' | 'failed' | 'muted';
@@ -41,7 +42,9 @@ export function runStrip(view: RunView, info: RunInfo): Strip {
     if (cur && view.states[cur.id] === 'looking') {
       return { icon: 'auto_awesome', tone: 'running', motion: 'pulse', title: `Looking for ${targetName(cur)}…`, text: "It's not where it was last time. This takes a few seconds." };
     }
-    return { icon: 'progress_activity', tone: 'running', motion: 'spin', title: cur?.label ?? 'Opening the start page…', text: n ? `Step ${n} of ${total}` : plural(total, 'step') };
+    const again = view.attempt && view.of ? ` · try ${view.attempt} of ${view.of}` : '';
+    if (!cur && view.retries.length) return { icon: 'replay', tone: 'running', motion: 'spin', title: 'Trying again from the start…', text: tryFailed(view, info) };
+    return { icon: 'progress_activity', tone: 'running', motion: 'spin', title: cur?.label ?? 'Opening the start page…', text: (n ? `Step ${n} of ${total}` : plural(total, 'step')) + again };
   }
   // ended
   const failed = view.failedId ? info.byId.get(view.failedId) : undefined;
@@ -49,7 +52,8 @@ export function runStrip(view: RunView, info: RunInfo): Strip {
   if (view.result === 'fail' && failed) {
     const reason = view.reasons[failed.id];
     if (reason === 'stopped') return { icon: 'block', tone: 'muted', title: 'You stopped the run', text: `It stopped at step ${at}. The steps after it didn't run.` };
-    return { icon: 'cancel', tone: 'failed', title: reasonTitle(reason, failed), text: `The run stopped at step ${at}. See the report for what was expected.` };
+    const every = view.retries.length ? `It failed on ${view.retries.length + 1 === 2 ? 'both tries' : `all ${view.retries.length + 1} tries`}. ` : '';
+    return { icon: 'cancel', tone: 'failed', title: reasonTitle(reason, failed), text: `${every}The run stopped at step ${at}. See the report for what was expected.` };
   }
   if (view.result === 'fail') return { icon: 'cancel', tone: 'failed', title: 'Failed', text: 'See the report for what happened.' };
   const fixedIds = Object.keys(view.fixes).filter(id => !info.byId.get(id)?.steps);
@@ -61,7 +65,19 @@ export function runStrip(view: RunView, info: RunInfo): Strip {
       text: `${what} moved and the AI assistant found it. The new position isn't saved until you accept it in the report.`,
     };
   }
+  if (view.retries.length) {
+    return { icon: 'check_circle', tone: 'passed', title: `Passed on retry ${view.retries.length}`, text: `${tryFailed(view, info)} A test that passes only on a retry may be flaky.` };
+  }
   return { icon: 'check_circle', tone: 'passed', title: 'Passed', text: `All ${plural(total, 'step')} worked.` };
+}
+
+/** "Try 1 failed at step 5: Waited too long for the page." for the latest earlier try. */
+function tryFailed(view: RunView, info: RunInfo): string {
+  const last = view.retries[view.retries.length - 1];
+  if (!last) return '';
+  const s = info.byId.get(last.stepId);
+  const at = rowNumber(info, last.stepId);
+  return `Try ${last.attempt} failed${at ? ` at step ${at}` : ''}${s ? `: ${reasonTitle(last.reason, s)}` : ''}.`;
 }
 
 /** The steps panel's heading count. */
@@ -99,6 +115,15 @@ export function rowNotes(view: RunView, info: RunInfo): Record<string, string> {
     const rowId = info.refs.get(id)?.rowId;
     const text = passNote(p);
     if (rowId && text && !notes[rowId]) notes[rowId] = text;
+  }
+  // The earlier tries' failures, on rows the last try passed or didn't reach.
+  const byStep = new Map<string, number[]>();
+  for (const r of view.retries) byStep.set(r.stepId, [...(byStep.get(r.stepId) ?? []), r.attempt]);
+  for (const [id, tries] of byStep) {
+    const s = info.byId.get(id);
+    const rowId = info.refs.get(id)?.rowId;
+    const reason = view.retries.find(r => r.stepId === id)?.reason;
+    if (s && rowId && !notes[rowId]) notes[rowId] = `Failed on ${triesText(tries)}: ${reasonTitle(reason, s)}`;
   }
   if (view.failedId) {
     const s = info.byId.get(view.failedId);

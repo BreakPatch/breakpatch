@@ -32,6 +32,8 @@ import { getEngine } from '../../engine';
 import type { RecordedOn, Run, Step } from '../../data/types';
 import '../run/run.css';
 import { thisComputer, ThisComputer } from '../../lib/osWords';
+import { retriesOf } from '../../lib/retries';
+import { passedOnRetry } from '../../lib/runWords';
 
 const DEFAULT_VP = { width: 1440, height: 900 };
 
@@ -97,7 +99,8 @@ export default function SuiteRunScreen() {
       act({ type: 'testStart', index: i });
       if (!test) { act({ type: 'testEnd', index: i, state: 'missing', note: "Couldn't run: it was deleted" }); continue; }
       try {
-        const out = await start(test, { notify: false });
+        // A suite's own retries; Run all retries as a suite does when it doesn't say (lib/retries.ts).
+        const out = await start(test, { notify: false, retries: retriesOf(plan.suite) });
         if (!out || !alive.current) return;                       // left the screen
         if (out.run) runIds.push(out.run.id);
         results.current.set(i, { run: out.run, steps: out.steps, recordedOn: out.recordedOn });
@@ -106,10 +109,11 @@ export default function SuiteRunScreen() {
         const flat = preorder(out.steps);
         const step = failed ? flat.find(s => s.id === failed.stepId) : undefined;
         const healed = out.run?.healedCount ?? out.ended.steps.filter(s => s.result === 'healed').length;
+        const retried = Math.max(0, (out.ended.attempts ?? 1) - 1);
         act({
-          type: 'testEnd', index: i, runId: out.run?.id,
+          type: 'testEnd', index: i, runId: out.run?.id, retried,
           state: stopped ? 'notRun' : testOutcome(out.ended.result, healed),
-          note: stopped ? 'You stopped it' : failed && step ? reasonTitle(failed.reason, step) : undefined,
+          note: stopped ? 'You stopped it' : failed && step ? reasonTitle(failed.reason, step) : passedOnRetry(out.ended) || undefined,
         });
       } catch (e) {
         if (!alive.current) return;
@@ -193,7 +197,8 @@ export default function SuiteRunScreen() {
       ? { icon: 'block', tone: 'muted', title: 'You stopped the suite', text: `${done} of ${plural(total, 'test')} ran.` }
       : { icon: ok ? (counts.fixed ? 'auto_fix_high' : 'check_circle') : 'cancel', tone: ok ? (counts.fixed ? 'fixed' : 'passed') : 'failed',
           title: ok ? (counts.fixed ? 'Passed with fixes' : 'Passed') : `${plural(counts.failed, 'test')} failed`,
-          text: (ok ? `All ${plural(total, 'test')} worked.` : `${counts.passed + counts.fixed} of ${plural(total, 'test')} passed. Open a failed test's report to see what happened.`) + leftOut };
+          text: (ok ? `All ${plural(total, 'test')} worked.` : `${counts.passed + counts.fixed} of ${plural(total, 'test')} passed. Open a failed test's report to see what happened.`)
+            + (counts.flaky ? ` ${counts.flaky === 1 ? '1 of them' : `${counts.flaky} of them`} passed only on a retry, so may be flaky.` : '') + leftOut };
   } else if (cur && info) {
     const s = runStrip(run.view, info);
     strip = { ...s, title: `${cur.name} · ${s.title}`, text: `${s.text} · ${cur.appName}` };

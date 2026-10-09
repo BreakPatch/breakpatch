@@ -1,7 +1,7 @@
 // Live state of one test run (README "State (UI level)" → Run: status per step, current step,
 // running, ended, failed at, elapsed), fed by the engine's run.step / run.ended events.
 import type { FailReason, Point, Run, Step, StepRun } from '../../data/types';
-import type { RunEnded, RunStepEvent } from '../../engine';
+import type { RunEnded, RunRetryEvent, RunStepEvent } from '../../engine';
 import type { RowStatus } from '../../components/steps';
 
 export type StepState = 'waiting' | 'running' | 'looking' | 'passed' | 'fixed' | 'failed' | 'notRun';
@@ -30,6 +30,12 @@ export interface RunView {
   durationMs?: number;
   steps?: StepRun[];
   error?: string;
+  /** The try running now, after a retry (engine "Retries"): 2 or 3. Unset on the first. */
+  attempt?: number;
+  /** The most tries this run can take, once it has retried. */
+  of?: number;
+  /** The earlier tries' failures, oldest first: which step and why. */
+  retries: { attempt: number; stepId: string; reason?: FailReason }[];
 }
 
 export type RunAction =
@@ -37,9 +43,13 @@ export type RunAction =
   | { type: 'start'; runId: string; ids: string[]; at: number }
   | { type: 'step'; ev: RunStepEvent }
   | { type: 'ended'; ev: RunEnded }
+  | { type: 'retry'; ev: RunRetryEvent }
   | { type: 'error'; message: string };
 
-export const INITIAL_RUN: RunView = { phase: 'idle', ids: [], states: {}, reasons: {}, fixes: {}, screenshots: {}, passes: {}, timings: {}, unchecked: {} };
+export const INITIAL_RUN: RunView = { phase: 'idle', ids: [], states: {}, reasons: {}, fixes: {}, screenshots: {}, passes: {}, timings: {}, unchecked: {}, retries: [] };
+
+/** What a try shows, cleared when the next one starts. */
+const EMPTY_TRY = { reasons: {}, fixes: {}, screenshots: {}, passes: {}, timings: {}, unchecked: {}, currentId: undefined, failedId: undefined } satisfies Partial<RunView>;
 
 const FROM_RESULT: Record<StepRun['result'], StepState> = { passed: 'passed', healed: 'fixed', failed: 'failed', notRun: 'notRun' };
 
@@ -49,6 +59,15 @@ export function runReducer(s: RunView, a: RunAction): RunView {
     case 'start':
       return { ...INITIAL_RUN, phase: 'running', runId: a.runId, ids: a.ids, startedAt: a.at, states: Object.fromEntries(a.ids.map(id => [id, 'waiting' as StepState])) };
     case 'error': return { ...s, phase: 'error', error: a.message, currentId: undefined };
+    case 'retry': {
+      // The try that failed is kept in `retries`; the next starts from the first step again.
+      const ev = a.ev;
+      if (ev.runId !== s.runId || s.phase !== 'running') return s;
+      return {
+        ...s, ...EMPTY_TRY, states: Object.fromEntries(s.ids.map(id => [id, 'waiting' as StepState])),
+        attempt: ev.attempt, of: ev.of, retries: [...s.retries, { attempt: ev.attempt - 1, stepId: ev.stepId, ...(ev.reason ? { reason: ev.reason } : {}) }],
+      };
+    }
     case 'step': {
       const ev = a.ev;
       if (ev.runId !== s.runId || s.phase !== 'running') return s;

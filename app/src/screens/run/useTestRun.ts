@@ -50,6 +50,8 @@ async function appUrlOf(backend: Backend, test: Test): Promise<string> {
  */
 export async function engineRun(backend: Backend, t: Test, steps: Step[], runId: string, opts: {
   keepOpen?: boolean; upToStepId?: string; fromStepId?: string; abandoned?: () => boolean;
+  /** How many times a failed run tries again when its failure looks like timing (a suite's, lib/retries.ts). */
+  retries?: number;
   /** Where the test was recorded (its version's `recordedOn`), to compare with this system. */
   recordedOn?: RecordedOn;
   /** Where the version being run starts (startUrlOf); the test's start address by default. */
@@ -79,7 +81,10 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
     const offEnd = engine.on('run.ended', ev => { if (ev.runId !== runId) return; offStep(); offEnd(); resolve(ev); });
     engine.startRun({
       runId, startUrl: opts.startUrl ?? t.startUrl, appUrl, viewport: t.viewport, steps, setUp: t.setUp, cleanUp: t.cleanUp,
-      settings: { autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix, allowSystemDifferences: prefs.allowSystemDifferences },
+      settings: {
+        autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix, allowSystemDifferences: prefs.allowSystemDifferences,
+        ...(opts.retries ? { retries: opts.retries } : {}),
+      },
       ...forRun, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}),
       ...(filesDir(backend.local?.path) ? { filesDir: filesDir(backend.local?.path) } : {}),
       ...(opts.keepOpen ? { keepOpen: true } : {}), ...(opts.upToStepId ? { upToStepId: opts.upToStepId } : {}),
@@ -117,16 +122,20 @@ export function useTestRun() {
     const engine = getEngine();
     const offStep = engine.on('run.step', ev => dispatch({ type: 'step', ev }));
     const offEnd = engine.on('run.ended', ev => dispatch({ type: 'ended', ev }));
+    const offRetry = engine.on('run.retry', ev => dispatch({ type: 'retry', ev }));
     return () => {
-      offStep(); offEnd();
+      offStep(); offEnd(); offRetry();
       // Leaving the screen stops the run; it isn't saved, since nobody chose to stop it.
       const cur = active.current;
       if (cur) { cur.abandoned = true; void engine.stopRun(cur.runId).catch(() => {}); }
     };
   }, []);
 
-  /** `notify: false` inside a suite: the suite says how it went as a whole. */
-  const start = useCallback(async (t: Test, opts: { notify?: boolean } = {}): Promise<Finished | null> => {
+  /**
+   * `notify: false` inside a suite: the suite says how it went as a whole. `retries`: the suite's
+   * (lib/retries.ts retriesOf); a test run on its own isn't retried: the person is watching it.
+   */
+  const start = useCallback(async (t: Test, opts: { notify?: boolean; retries?: number } = {}): Promise<Finished | null> => {
     if (active.current) return null;
     dispatch({ type: 'prepare' });
     setTest(t); setRun(null); setSaveError(null);
@@ -147,7 +156,7 @@ export function useTestRun() {
       }
       const { user } = useSession.getState();
       const got = await engineRun(backend, t, resolved, handle.runId, {
-        abandoned: () => handle.abandoned, recordedOn, startUrl,
+        abandoned: () => handle.abandoned, recordedOn, startUrl, retries: opts.retries,
         onStart: at => dispatch({ type: 'start', runId: handle.runId, ids: [...byId.keys()], at }),
         onStep: ev => {
           // The sample page follows the run. A run that will fail at the moved Done button
@@ -171,6 +180,7 @@ export function useTestRun() {
           result: ended.result, healedCount,
           steps: ended.steps.map(s => (shots[s.stepId] && !s.screenshotPath ? { ...s, screenshotPath: shots[s.stepId] } : s)),
           ...(ended.systemMismatch ? { systemMismatch: ended.systemMismatch } : {}),
+          ...(ended.attempts && ended.attempts > 1 ? { attempts: ended.attempts } : {}),
         });
         if (demo && ended.result === 'fail') demoSeen.set(saved.id, sampleApp.get());
       } catch (e) {

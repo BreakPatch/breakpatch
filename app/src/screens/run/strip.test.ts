@@ -81,3 +81,53 @@ describe('the preview\'s "Why did this fail?"', () => {
     resetFeaturesForTests();
   });
 });
+
+describe('a retried run (roadmap #14)', () => {
+  const retry = (s: RunView, stepId: string, attempt = 2, of = 2) => runReducer(s, { type: 'retry', ev: { runId: 'r', attempt, of, stepId, reason: 'timeout' } });
+  it('starts again from the first step, saying which try and why', () => {
+    let s = step(base(), 'A', 'passed');
+    s = step(s, 'Done', 'failed', 'timeout');
+    s = retry(s, 'Done', 2, 3);
+    expect(Object.values(s.states).every(x => x === 'waiting')).toBe(true);
+    expect(s.failedId).toBeUndefined();
+    expect(runStrip(s, info)).toMatchObject({ title: 'Trying again from the start…', text: 'Try 1 failed at step 3: Waited too long for the page.' });
+    s = step(s, 'A', 'running');
+    expect(runStrip(s, info)).toMatchObject({ title: 'Click A', text: 'Step 1 of 3 · try 2 of 3' });
+  });
+  it('a pass on the retry says so, and the step that failed first', () => {
+    let s = step(base(), 'Done', 'failed', 'timeout');
+    s = retry(s, 'Done');
+    s = runReducer(s, { type: 'ended', ev: { runId: 'r', result: 'pass', durationMs: 1, attempts: 2, steps: [{ stepId: 'Done', result: 'passed', retried: [{ attempt: 1, reason: 'timeout' }] }] } });
+    expect(runStrip(s, info)).toMatchObject({ title: 'Passed on retry 1', text: 'Try 1 failed at step 3: Waited too long for the page. A test that passes only on a retry may be flaky.' });
+    expect(rowNotes(s, info).Done).toBe('Failed on try 1: Waited too long for the page');
+  });
+  it('a failure on every try says so', () => {
+    let s = step(base(), 'Done', 'failed', 'timeout');
+    s = retry(s, 'Done');
+    s = step(s, 'Done', 'failed', 'timeout');
+    s = runReducer(s, { type: 'ended', ev: { runId: 'r', result: 'fail', durationMs: 1, attempts: 2, steps: [{ stepId: 'Done', result: 'failed', reason: 'timeout' }] } });
+    expect(runStrip(s, info).text).toBe('It failed on both tries. The run stopped at step 3. See the report for what was expected.');
+  });
+  it('a retry for another run is ignored', () => {
+    const s = step(base(), 'A', 'passed');
+    expect(runReducer(s, { type: 'retry', ev: { runId: 'other', attempt: 2, of: 2, stepId: 'A' } })).toBe(s);
+  });
+});
+
+describe('the demo engine retries a slow step once', () => {
+  it('fails the first try with a timeout and passes the second, when asked to retry', async () => {
+    vi.useFakeTimers();
+    const e = new DemoEngine();
+    e.flakyStepIds = new Set(['A']);
+    const ended: unknown[] = []; const retries: unknown[] = [];
+    e.on('run.ended', ev => ended.push(ev)); e.on('run.retry', ev => retries.push(ev));
+    await e.startRun({ runId: 'x', startUrl: 'https://a.example', viewport: { width: 10, height: 10, dpr: 1 }, steps: [st('A')], settings: { autoFix: false, failOnFix: false, retries: 1 }, secrets: {} });
+    await vi.runAllTimersAsync();
+    expect(retries).toEqual([{ runId: 'x', attempt: 2, of: 2, stepId: 'A', reason: 'timeout' }]);
+    expect(ended[0]).toMatchObject({ result: 'pass', attempts: 2, steps: [{ stepId: 'A', result: 'passed', retried: [{ attempt: 1, reason: 'timeout' }] }] });
+    await e.startRun({ runId: 'y', startUrl: 'https://a.example', viewport: { width: 10, height: 10, dpr: 1 }, steps: [st('A')], settings: { autoFix: false, failOnFix: false }, secrets: {} });
+    await vi.runAllTimersAsync();
+    expect(ended[1]).toMatchObject({ result: 'fail' });
+    vi.useRealTimers();
+  });
+});

@@ -22,6 +22,8 @@ export class DemoEngine implements Engine {
   targets: DemoTarget[] = [];
   /** Step ids the demo run should fail on (the prototype fails at "Click Done" until it is re-recorded). */
   failStepIds = new Set<string>();
+  /** Steps that fail with `timeout` on a run's first try only (a slow page), for retries. */
+  flakyStepIds = new Set<string>();
   // `?ready` previews a Mac that finished setup; `?mem=64` a Mac with more memory.
   private q = new URLSearchParams(typeof location === 'undefined' ? '' : location.search);
   memoryGb = Number(this.q.get('mem')) || 16;
@@ -147,7 +149,10 @@ export class DemoEngine implements Engine {
     const walk = (list: Step[]) => list.forEach(s => { flat.push(s); if ((s.action === 'loop' || s.action === 'group') && s.steps) walk(s.steps); });
     walk(r.steps);
     const index = new Map(flat.map((s, i) => [s, i]));
-    const results: StepRun[] = flat.map(s => ({ stepId: s.id, result: 'notRun' }));
+    let results: StepRun[] = flat.map(s => ({ stepId: s.id, result: 'notRun' }));
+    // Retries (engine/PROTOCOL.md "Retries"): a step in flakyStepIds is slow on the first try only.
+    const retries = r.keepOpen || r.fromStepId ? 0 : Math.max(0, Math.min(2, Math.floor(Number(r.settings.retries) || 0)));
+    let attempt = 1;
     const emit = (s: Step, state: 'running' | 'looking' | 'passed' | 'failed', reason?: FailReason) =>
       this.emit('run.step', { runId: r.runId, index: index.get(s)!, stepId: s.id, state, ...(reason ? { reason } : {}) });
     let lastReason: FailReason = 'targetNotFound';
@@ -171,6 +176,7 @@ export class DemoEngine implements Engine {
           if (r.settings.autoFix && s.target && s.at) { emit(s, 'looking'); await this.sleep(1200); }
           return fail(s, 'targetNotFound');
         }
+        if (attempt === 1 && this.flakyStepIds.has(s.id)) return fail(s, 'timeout');
       }
       results[index.get(s)!] = { stepId: s.id, result: 'passed' };
       emit(s, 'passed');
@@ -179,8 +185,24 @@ export class DemoEngine implements Engine {
     };
     void (async () => {
       await this.sleep(300);
-      const ok = await runList(r.steps);
-      this.emit('run.ended', { runId: r.runId, result: ok ? 'pass' : 'fail', durationMs: Date.now() - t0, steps: results });
+      const earlier: { stepId: string; attempt: number; reason: FailReason }[] = [];
+      let ok = await runList(r.steps);
+      while (!ok && attempt <= retries && !this.stops.has(r.runId)) {
+        const failed = [...results].reverse().find(x => x.result === 'failed' && !flat.find(f => f.id === x.stepId)?.steps?.length);
+        if (!failed?.reason || !['timeout', 'noChange'].includes(failed.reason)) break;
+        earlier.push({ stepId: failed.stepId, attempt, reason: failed.reason });
+        this.emit('run.retry', { runId: r.runId, attempt: attempt + 1, of: retries + 1, stepId: failed.stepId, reason: failed.reason });
+        await this.sleep(400);
+        attempt++;
+        results = flat.map(x => ({ stepId: x.id, result: 'notRun' }));
+        reached = false; started = !r.fromStepId;
+        ok = await runList(r.steps);
+      }
+      for (const e of earlier) {
+        const i = results.findIndex(x => x.stepId === e.stepId);
+        if (i >= 0) results[i] = { ...results[i], retried: [...(results[i].retried ?? []), { attempt: e.attempt, reason: e.reason, durationMs: 1200 }] };
+      }
+      this.emit('run.ended', { runId: r.runId, result: ok ? 'pass' : 'fail', durationMs: Date.now() - t0, steps: results, ...(earlier.length ? { attempts: attempt } : {}) });
     })();
   }
   async stopRun(runId: string) { this.stops.add(runId); }
