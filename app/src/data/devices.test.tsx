@@ -19,7 +19,7 @@ import { ActionMenu } from '../screens/recorder/ActionMenu';
 import { buildView } from '../lib/report/view';
 import { initFolder } from './local/folder';
 import { LocalBackend, NEWER_MESSAGE, parseMeta, viewportIn } from './local/localBackend';
-import { DEVICE_SCHEMA_VERSION, fromFileText, SCHEMA_VERSION } from './local/format';
+import { DEVICE_SCHEMA_VERSION, fromFileText, NEWEST_READ_SCHEMA_VERSION, SCHEMA_VERSION } from './local/format';
 import { MemoryStorage } from './local/storage';
 
 Element.prototype.scrollIntoView ??= () => undefined;
@@ -195,7 +195,7 @@ describe('test files', () => {
       expect(await meta(st)).toMatchObject({ format: 'breakpatch', schemaVersion: DEVICE_SCHEMA_VERSION, name: 'tests' });
       // An app from before phone tests reads only up to SCHEMA_VERSION: this folder is newer to it.
       expect(DEVICE_SCHEMA_VERSION).toBeGreaterThan(SCHEMA_VERSION);
-      expect(() => parseMeta(JSON.stringify({ format: 'breakpatch', schemaVersion: DEVICE_SCHEMA_VERSION + 1 }))).toThrow(NEWER_MESSAGE);
+      expect(() => parseMeta(JSON.stringify({ format: 'breakpatch', schemaVersion: NEWEST_READ_SCHEMA_VERSION + 1 }))).toThrow(NEWER_MESSAGE);
       // This app keeps saving to it.
       await b.createTest({ appId: app.id, name: 'Another', startUrl: 'https://app.example.com', viewport: LAPTOP });
       expect((await meta(st)).schemaVersion).toBe(DEVICE_SCHEMA_VERSION);
