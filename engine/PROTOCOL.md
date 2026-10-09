@@ -692,8 +692,9 @@ order as paid, turn on a feature flag, ask a test API for a one-time code.
   `timeoutMs` and `keep`, and makes the call at once, as a run would, so the steps recorded after it
   see what it did. One that doesn't pass isn't recorded: `bad_request` (a rule it breaks) or
   `network` ("The call didn't work. It replied 500."). The recorder keeps what it kept for the Write
-  steps recorded after it (`record.point` with `valueRef`), and so does a run with `keepOpen`;
-  Play this step (`fromStepId`) uses what the recorder has.
+  steps recorded after it (`record.point` with `valueRef`; `not_found` when it has nothing by that
+  name yet: play the Call step first), and so does a run with `keepOpen`; Play this step
+  (`fromStepId`) uses what the recorder has. A failed Call step keeps no screenshot.
 
 ## Environment
 
