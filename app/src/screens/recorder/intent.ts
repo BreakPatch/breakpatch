@@ -26,6 +26,8 @@ export interface Intent {
   seconds?: number;
   /** Go to address. */
   url?: string;
+  /** Go back, forward or reload instead of to an address (a step imported from a script). */
+  nav?: 'reload' | 'back' | 'forward';
   /** A stepper's "+" or "−" next to something (record.locate `near`). */
   near?: Near;
   /** Where the action came from: the sentence, the AI assistant, the chosen action, or a step of a story's plan. */
