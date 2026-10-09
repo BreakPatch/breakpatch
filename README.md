@@ -120,6 +120,9 @@ Linux comes next, then Windows: see the [roadmap](https://github.com/BreakPatch/
 - **Every action a person does.** Click, double, long and right click, hover, swipe, scroll, drag
   and drop, typing, uploads, downloads, tabs and popups, plus checkpoints, loops, shared steps
   (record *Log in* once, use it everywhere) and suites.
+- **Bring your Playwright and Cypress tests.** **Import…** reads a script (never runs it), turns its
+  steps into Breakpatch steps, lists what it left out and why, then learns the screens by doing each
+  step once.
 - **Tests are plain files.** Each test is a readable JSON file in a folder you pick. Keep the folder
   in your project's Git repo and Git is your history.
 - **Anything your Mac can open.** Staging behind a VPN, an internal tool or `localhost`, with no

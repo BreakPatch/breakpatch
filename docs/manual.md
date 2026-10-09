@@ -244,7 +244,7 @@ If you already have Playwright or Cypress tests, Breakpatch can make a test from
 1. Open an app → **Import…** (next to **New test**). **Choose a script…** and pick a Playwright test (`.spec.ts`, `.spec.js`, or what `npx playwright codegen` writes) or a Cypress test (`.cy.js`, `.cy.ts`). Or press **Paste the script instead**, for example to paste what Playwright's code generator shows.
 2. Breakpatch lists the steps it made from the script, and every line it left out, with why. If the script has more than one test, pick one under **Test**. Check the name, the start address and the screen size. The start address is the first address the script goes to, on the app's address when the script only gives a path like `/login`.
 3. Press **Create and learn**. The test opens in the recorder, and Breakpatch does each step by itself: it finds what the step acts on from its words and records the step like one you clicked, with its screen checks. The card over the page says which step it's learning.
-4. It stops and asks when it can't find something, or when a step needs a value. Click the thing on the page, **Edit** what to look for, or **Skip** the step. If it's below the bottom of the screen, scroll the page, then press **Find it**. **Pause** makes it ask before each step; **Go on by itself** carries on.
+4. It stops and asks when it can't find something, or when a step needs a value. Click the thing on the page, **Edit** what to look for, or **Skip** the step. If it's below the bottom of the screen, scroll the page, then press **Find it**. A step marked **Check** always waits for you to press **Confirm**. **Pause** makes it ask before each step; **Go on by itself** carries on.
 5. Check the steps, add the ones it left out, then press **Save**. Nothing is saved before that, and nothing of the script is kept.
 
 What's imported:
@@ -256,7 +256,7 @@ What's imported:
 - **A new tab or popup** the script waits for, as Playwright's code generator writes it.
 - **`beforeEach` steps**, at the start of the test. A screen size the script sets (`test.use`, `setViewportSize`, `cy.viewport`) is picked when it's one of Breakpatch's sizes.
 
-**How things are found.** Breakpatch finds things by what they say and what they are, never by CSS or XPath, so each locator becomes words. `getByRole('button', { name: 'Sign in' })` becomes *the "Sign in" button*, `getByLabel('Email')` becomes *the "Email" field* and `cy.contains('Welcome')` becomes *"Welcome"*. A selector with an id, a test id or a name, like `#email` or `[data-cy=submit]`, becomes words too (*the email field*). The list marks those **Check**: the words come from the page's code and may not be what the page says. Selectors that only have CSS classes or the page's structure, like `.btn-primary` or `div > span`, aren't imported.
+**How things are found.** Breakpatch finds things by what they say and what they are, never by CSS or XPath, so each locator becomes words. `getByRole('button', { name: 'Sign in' })` becomes *the "Sign in" button*, `getByLabel('Email')` becomes *the "Email" field* and `cy.contains('Welcome')` becomes *"Welcome"*. A selector with an id, a test id or a name, like `#email` or `[data-cy=submit]`, becomes words too (*the email field*). The list marks those **Check**: the words come from the page's code and may not be what the page says, so learning stops at them for you to confirm. Selectors that only have CSS classes or the page's structure, like `.btn-primary` or `div > span`, aren't imported.
 
 **What it types.** Text in the script is typed as it is. Breakpatch types into the field as it is: it doesn't empty it first, as Playwright's `fill` does. A value the script reads from the environment, like `process.env.PASSWORD` or `Cypress.env('password')`, uses the [saved secret](#saved-secrets) of the same name if this Mac has one. Otherwise Breakpatch asks which saved secret to type when it gets there. `Date.now()` in a value becomes `{timestamp}`, a new value on every run.
 
@@ -268,6 +268,8 @@ What's imported:
 - Keys other than Enter, uploads, drag and drop, clicks at a position in pixels, and network calls like `page.route` or `cy.intercept`. For data a test needs, use a set-up call (see [Record a test](#record-a-test)).
 
 Waiting for the page to load and taking screenshots are listed as not needed: Breakpatch waits for the page to settle after every step, and checks the screen by itself.
+
+Later: a step for keys other than Enter, scrolling by itself to find something below the bottom of the screen, and importing every test in a script at once.
 
 ## Run a test and read the report
 
