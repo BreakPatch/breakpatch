@@ -309,6 +309,7 @@ async def test_a_call_step_that_fails_stops_the_run_with_its_reason(api):
     assert ended["result"] == "fail"
     assert ended["steps"][0]["reason"] == "callFailed" and ended["steps"][0]["reply"]["status"] == 500
     assert ended["steps"][1]["result"] == "notRun"
+    assert "screenshotPath" not in ended["steps"][0]                # about the reply, not the page
     assert ended["message"] == "The call to your API didn't work. It replied 500."
     assert "s3cret-in-reply" not in json.dumps(ended) and "s3cret-in-reply" not in json.dumps(hx.events)
     # One the rules refuse fails the same way, before anything is sent.
@@ -352,6 +353,15 @@ async def test_a_kept_value_is_typed_by_a_later_write_step(api, caplog):
         assert await hx.engine.browser.page.input_value("#name") == "424242"
     finally:
         await hx.h["browser.close"]({})
+    # A new recording session has kept nothing yet: it says to play the Call step first.
+    hx2 = Harness()
+    await hx2.h["browser.open"]({"url": api + "/index.html", "viewport": VIEWPORT})
+    try:
+        with pytest.raises(EngineError) as e:
+            await hx2.h["record.point"]({"action": "write", "at": FIELD_AT, "valueRef": "CODE", "appUrl": api})
+        assert e.value.code == "not_found" and "Play the Call step that keeps it" in e.value.message
+    finally:
+        await hx2.h["browser.close"]({})
     # Without a Call step before it that kept the value, the Write step fails plainly.
     ended = await hx.run([write], api + "/index.html")
     assert ended["steps"][0]["reason"] == "callFailed"

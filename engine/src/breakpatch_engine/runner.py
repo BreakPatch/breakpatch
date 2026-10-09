@@ -294,7 +294,8 @@ class Runner:
                     log.exception("step %s crashed", step.get("id"))
                     e = StepFailed("unexpectedScreen", "Something went wrong in the engine during this step.",
                                    details=f"{type(e).__name__}: {e}")
-                if e.reason not in ("stopped", "secretMissing"):
+                # A Call step's failure is about its reply, not the page: no screenshot.
+                if e.reason not in ("stopped", "secretMissing") and kind != "call":
                     e.extra.setdefault("screenshotPath", await self._keep_screenshot(step))
                     await self._keep_page(e)
                 self._fail(step, e, iteration)

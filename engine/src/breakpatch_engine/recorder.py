@@ -166,6 +166,9 @@ class Recorder:
             step.setdefault("timeoutMs", 10000)
             return step
 
+        if action == "write" and p.get("valueRef") and str(p["valueRef"]) not in self.values:
+            raise EngineError("not_found", f"There's no value {p['valueRef']} yet. Play the Call step that keeps it "
+                                           "(Play to here), then add this step.")
         self.b.require()
         w, h = self.b.width, self.b.height
         anchor = at or frm
