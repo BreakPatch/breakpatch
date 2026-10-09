@@ -70,6 +70,7 @@ const WHY = {
   alias: "Cypress aliases aren't imported. Name what to look for in words instead.",
   callback: "Steps inside .within(), .then() or .each() aren't imported. Add them by hand when the test is learned.",
   special: (k: string) => `The key {${k}} isn't a step in Breakpatch yet. Only {enter} is imported.`,
+  notWeb: 'Breakpatch only opens web addresses that start with https:// or http://.',
   // Not needed
   waits: 'Not needed: Breakpatch waits for the page to settle after every step.',
   browser: 'Not needed: Breakpatch opens its own browser.',
@@ -773,14 +774,23 @@ function scriptBody(p: Parser, root: string): Stmt[] | null {
   return p.statements(0, p.t.length).filter(s => !(s.kind === 'other' && /^(import|export)\b/.test(s.src)) && !(s.kind === 'decl' && /require\(/.test(s.src)));
 }
 
-/** The steps' addresses made full against `base` (the app's address): "/login" → "https://app.example.com/login". */
+/**
+ * The steps' addresses made full against `base` (the app's address): "/login" →
+ * "https://app.example.com/login". A Go to step to anything but a web address (`file:`,
+ * `javascript:`…) is left out and listed: the test browser only opens http and https.
+ */
 export function withBase(t: ImportedTest, base: string): ImportedTest {
   const full = (u: string) => { try { return new URL(u, base).href; } catch { return u; } };
-  return {
-    ...t,
-    ...(t.startUrl !== undefined ? { startUrl: full(t.startUrl) } : {}),
-    steps: t.steps.map(s => (s.action === 'navigate' && s.url ? { ...s, url: full(s.url) } : s)),
-  };
+  const web = (u: string) => /^https?:\/\//i.test(u);
+  const steps: ImportStep[] = [], skipped = [...t.skipped];
+  for (const s of t.steps) {
+    if (s.action !== 'navigate' || !s.url) { steps.push(s); continue; }
+    const url = full(s.url);
+    if (web(url)) steps.push({ ...s, url });
+    else skipped.push({ line: s.line, code: s.code, why: WHY.notWeb });
+  }
+  skipped.sort((a, b) => a.line - b.line);
+  return { ...t, ...(t.startUrl !== undefined ? { startUrl: full(t.startUrl) } : {}), steps, skipped };
 }
 
 /**

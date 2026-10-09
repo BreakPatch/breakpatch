@@ -341,6 +341,13 @@ describe('before learning', () => {
     expect(t.startUrl).toBe('https://app.example.com/login');
     expect(t.steps.map(s => s.url)).toEqual(['https://app.example.com/account', 'https://other.example/x']);
   });
+  it('leaves out a Go to step that isn\'t a web address, and says why', () => {
+    const t = withBase({ name: 'a', startUrl: '/', steps: [{ action: 'navigate', url: 'javascript:alert(1)', line: 4, code: "await page.goto('javascript:alert(1)')" }, { action: 'click', target: '"A"', line: 5, code: '' }],
+      skipped: [{ line: 2, code: 'x', why: 'y' }, { line: 9, code: 'x', why: 'y' }] }, 'https://app.example.com');
+    expect(t.steps.map(s => s.action)).toEqual(['click']);
+    expect(t.skipped.map(s => s.line)).toEqual([2, 4, 9]);
+    expect(t.skipped[1].why).toMatch(/only opens web addresses/);
+  });
   it('uses a saved secret named like the environment variable, whatever its case', () => {
     const steps = withSecrets([
       { action: 'write', target: 'the "Password" field', needs: 'secret', secretHint: 'shop-password', line: 1, code: '' },
