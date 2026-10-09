@@ -1,0 +1,57 @@
+import { test, expect, type Page } from '@playwright/test';
+import { login } from './helpers';
+
+/* The checkout, from the cart to the receipt.
+   page.goto('/nowhere') in a comment isn't a step. */
+const BASE = process.env.BASE_URL ?? 'http://localhost:3000';
+
+test.use({ viewport: { width: 1280, height: 800 } });
+
+test.describe('Checkout', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/shop');
+    await page.getByLabel('Email').fill('ada@example.com');
+    await page.getByLabel('Password').fill(process.env.SHOP_PASSWORD!);
+    await page.getByRole('button', { name: /sign in/i }).click();
+  });
+
+  test('pays with a card', async ({ page }: { page: Page }) => {
+    const cart = page.getByRole('link', { name: 'Cart' });
+    const user = { name: 'Ada Lovelace', card: '4242 4242 4242 4242' };
+    await page.getByRole('listitem').filter({ hasText: 'Blue shoes' }).getByRole('button', { name: 'Add to cart' }).click();
+    await cart.click();
+    await expect(page).toHaveURL(/\/cart/);
+    await page.locator('#full-name').fill(user.name);
+    await page.locator('[data-testid="card-number"]').fill(user.card);
+    await page.getByLabel('Country').selectOption('Sweden');
+    await page.getByLabel('I accept the terms').check();
+    await page.getByPlaceholder('Discount code').fill(`SAVE-${Date.now()}`);
+    await page.keyboard.press('Tab');
+    if (await page.getByText('Gift wrap').isVisible()) {
+      await page.getByText('Gift wrap').click();
+    }
+    await test.step('pay', async () => {
+      await page.getByRole('button', { name: 'Pay now' }).click();
+      await page.waitForTimeout(1500);
+    });
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Thank you' })).toBeVisible();
+    await expect(page.getByRole('heading')).toHaveText('Order placed');
+    await expect(page.getByText('Error')).not.toBeVisible();
+    await expect(page.getByRole('checkbox')).toBeChecked();
+    await page.getByRole('row').nth(2).getByRole('button', { name: 'Details' }).click();
+    await page.locator('.receipt > div:nth-child(2)').click();
+    await page.setInputFiles('input[type=file]', 'receipt.pdf');
+    await login(page);
+    await page.goto(`${BASE}/account`);
+    await page.goBack();
+    await expect(page).toHaveScreenshot();
+  });
+
+  test.skip('refunds', async ({ page }) => {
+    await page.click('text=Orders');
+    await page.fill('#search', 'A-1001');
+    await page.press('#search', 'Enter');
+    await page.waitForSelector('role=row[name="A-1001"]');
+  });
+});

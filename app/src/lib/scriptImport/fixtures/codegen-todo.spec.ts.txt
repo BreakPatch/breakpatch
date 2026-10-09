@@ -1,0 +1,16 @@
+import { test, expect } from '@playwright/test';
+
+test('test', async ({ page }) => {
+  await page.goto('https://demo.playwright.dev/todomvc/#/');
+  await page.getByRole('textbox', { name: 'What needs to be done?' }).click();
+  await page.getByRole('textbox', { name: 'What needs to be done?' }).fill('Buy milk');
+  await page.getByRole('textbox', { name: 'What needs to be done?' }).press('Enter');
+  await page.getByRole('checkbox', { name: 'Toggle Todo' }).check();
+  await page.getByRole('link', { name: 'Completed' }).click();
+  await expect(page.getByTestId('todo-title')).toContainText('Buy milk');
+  await expect(page.getByRole('link', { name: 'Completed' })).toBeVisible();
+  const page1Promise = page.waitForEvent('popup');
+  await page.getByRole('link', { name: 'real TodoMVC app' }).click();
+  const page1 = await page1Promise;
+  await page1.getByRole('link', { name: 'Docs' }).click();
+});
