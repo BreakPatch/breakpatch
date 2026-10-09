@@ -41,3 +41,7 @@
 .cm-devices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .cm-device { padding: 8px 10px; }
 .cm-device .cm-size-name { display: flex; align-items: center; gap: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The Flaky marker (lib/flaky.ts): amber like a fix, never colour alone; Known flaky is quiet. */
+.cm-flaky { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px 1px 5px; border-radius: 100px; font-size: 12px; font-weight: 700; line-height: 18px; background: var(--fixed-tint); color: var(--fixed); white-space: nowrap; }
+.cm-flaky.known { background: var(--raised); color: var(--text-muted); }

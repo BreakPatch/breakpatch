@@ -15,7 +15,7 @@ import { clock } from '../../components/common/format';
 import { isTauri } from '../../platform';
 import { edition } from '../../edition';
 import { demoSeen, isDemo, targetBox } from '../run/demo';
-import { reasonAdvice } from '../run/reasons';
+import { reasonAdvice, retriedNote } from '../run/reasons';
 import { issueContent } from './issueText';
 import { copyDetails, detailKind, detailText, expectLabel, fixBoxes, showsScreens, systemNote } from './reportData';
 import { WhyFailed } from './WhyFailed';
@@ -114,6 +114,8 @@ export function ReportDetail({ run, test, steps, step, stepRun, number, groupId,
   }
 
   const otherSystem = kind === 'failed' ? systemNote(run, stepRun) : null;
+  // Failed on an earlier try of this run (engine "Retries"), whatever it did on the last.
+  const again = retriedNote(stepRun, step, kind);
   const failedActions = kind === 'failed' && (
     <>
       {otherSystem && <div className="rp-try" role="note"><div className="rp-try-title">Recorded on another system</div><div className="rp-try-text">{otherSystem}</div></div>}
@@ -147,6 +149,7 @@ export function ReportDetail({ run, test, steps, step, stepRun, number, groupId,
         </div>
       </div>
       {kind === 'failed' && <WhyFailed run={run} step={step} stepRun={stepRun} viewport={vp} onAnswer={setWhy} />}
+      {again && <div className="rp-try" role="note" data-testid="retried"><div className="rp-try-title">Earlier tries</div><div className="rp-try-text">{again}</div></div>}
       {content}
       {failedActions}
       {kind === 'fixed' && FixActions && stepRun && <FixActions run={run} stepRun={stepRun} step={step} test={test} />}

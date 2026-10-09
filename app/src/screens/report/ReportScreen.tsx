@@ -6,13 +6,17 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import type { Run } from '../../data/types';
 import { screenName } from '../../data/devices';
 import { AppFrame } from '../../components/shell/AppFrame';
-import { Button, EmptyState, Segmented, Skeleton, StatusPill } from '../../components/ui';
+import { Button, EmptyState, Menu, Segmented, Skeleton, StatusPill } from '../../components/ui';
 import { StepRow, flatRows, type RowStatus } from '../../components/steps';
 import { formatWhen, plural } from '../../components/common/format';
 import { runBy, runStatus, WHERE } from '../../components/common/runs';
 import { hasFeature } from '../../edition';
 import { preorder, rowRefs } from '../run/resolve';
-import { reasonTitle, passNote, slowNote, UNCHECKED_NOTE } from '../run/reasons';
+import { CLOSE_NOTE, closeToFailing, reasonTitle, passNote, retriedNote, slowNote, UNCHECKED_NOTE } from '../run/reasons';
+import { retryNote } from '../../lib/runWords';
+import { flakinessOf } from '../../lib/flaky';
+import { FlakyChip } from '../../components/common';
+import { flakyMenuItems, useFlakyMark } from '../../components/common/useFlakyMark';
 import { focusStep } from '../run/runState';
 import { ReportDetail } from './ReportDetail';
 import { ExportDialog } from './ExportDialog';
@@ -50,6 +54,11 @@ export default function ReportScreen() {
   const selId = sel ?? focus?.stepId ?? null;
   const selStep = selId ? flat.find(s => s.id === selId) : undefined;
   const selRef = selId ? refs.get(selId) : undefined;
+  // Flaky (lib/flaky.ts): from the test's runs this workspace or folder keeps.
+  const flaky = useMemo(() => (test && runs ? flakinessOf(test, runs) : undefined), [test, runs]);
+  const mark = useFlakyMark();
+  const [flakyMenu, setFlakyMenu] = useState(false);
+  const relaxed = !!run?.systemMismatch?.relaxed;
 
   const back = () => (location.key !== 'default' ? navigate(-1) : navigate(`/apps/${appId}?tab=runs`));
   const crumb = [app?.name, run?.testName ?? test?.name].filter(Boolean).join(' · ') || ' ';
@@ -101,6 +110,23 @@ export default function ReportScreen() {
       </div>
 
       {tab === 'run' && run?.note && <p className="rp-note" data-testid="run-note">{run.note}</p>}
+      {tab === 'run' && run && retryNote(run) && <p className="rp-note" data-testid="retry-note">{retryNote(run)}</p>}
+      {flaky?.flaky && test && (
+        <div className="rp-flaky" role="note" data-testid="flaky">
+          <FlakyChip f={flaky} />
+          <span className="rp-flaky-text">
+            {flaky.why}
+            {flaky.steps[0] && refs.get(flaky.steps[0].stepId) && ` It fails most often at step ${refs.get(flaky.steps[0].stepId)!.number}, ${flat.find(s => s.id === flaky.steps[0].stepId)?.label ?? ''}.`}
+          </span>
+          {mark && (
+            <div className="rp-flaky-actions">
+              <Button size="sm" iconAfter="expand_more" aria-haspopup="menu" aria-expanded={flakyMenu} onClick={() => setFlakyMenu(o => !o)}>{flaky.known ? 'Known flaky' : 'Is it flaky?'}</Button>
+              <Menu open={flakyMenu} onClose={() => setFlakyMenu(false)} label="Flaky" width={230} style={{ top: 'calc(100% + 4px)', right: 0 }}
+                items={flakyMenuItems(flaky.known, a => void mark(test, a))} />
+            </div>
+          )}
+        </div>
+      )}
       {tab === 'history' ? (
         <div className="rp-history-wrap">
           {runs ? <RunHistory runs={runs} currentId={runId} onOpen={r => navigate(`/apps/${appId}/runs/${r.id}`)} more={moreRuns} /> : <Skeleton h={200} />}
@@ -114,10 +140,12 @@ export default function ReportScreen() {
                 const st = sr ? (sr.reason === 'stopped' ? 'notRun' : ROW[sr.result]) : undefined;
                 const failedChild = r.step.action === 'group' && focus && refs.get(focus.stepId)?.rowId === r.step.id && focus.stepId !== r.step.id;
                 const stopped = (failedChild ? focus!.reason : sr?.reason) === 'stopped';
+                const again = sr ? retriedNote(sr, r.step, sr.result === 'healed' ? 'fixed' : sr.result === 'failed' ? (stoppedHere(sr) ? 'stopped' : 'failed') : sr.result) : '';
                 const note = stopped && sr?.result === 'failed' ? 'You stopped the run here'
                   : sr?.result === 'failed' && !failedChild ? reasonTitle(sr.reason, r.step)
                   : failedChild ? `Step ${refs.get(focus!.stepId)?.number}: ${reasonTitle(focus!.reason, flat.find(s => s.id === focus!.stepId) ?? r.step)}`
-                  : sr?.unchecked?.length ? UNCHECKED_NOTE : passNote(sr) ?? slowNote(sr?.timings, typeof r.number === 'number' && r.number > 1 ? r.number - 1 : undefined);
+                  : sr?.unchecked?.length ? UNCHECKED_NOTE : again || (passNote(sr) ?? (closeToFailing(r.step, sr, relaxed) ? CLOSE_NOTE : undefined)
+                    ?? slowNote(sr?.timings, typeof r.number === 'number' && r.number > 1 ? r.number - 1 : undefined));
                 return (
                   <div role="listitem" key={r.step.id}>
                     <StepRow step={r.step} number={r.number} depth={r.depth} status={st} note={note} noteWrap noteTone={sr?.result === 'failed' && !stopped ? 'failed' : 'muted'}
@@ -144,3 +172,5 @@ export default function ReportScreen() {
     </AppFrame>
   );
 }
+
+const stoppedHere = (sr: Run['steps'][number]) => sr.result === 'failed' && sr.reason === 'stopped';

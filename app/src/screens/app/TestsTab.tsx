@@ -3,10 +3,12 @@ import { useMemo, useState, type SyntheticEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Icon, IconButton, Menu, SharedChip, statusInfo, useToast } from '../../components/ui';
 import {
-  FilterChip, RelativeTime, ResultTally, SearchBox, countResults, formatWhen, lastRunStatus, plural, useMoveToBin,
+  FilterChip, FlakyChip, RelativeTime, ResultTally, SearchBox, countResults, formatWhen, lastRunStatus, plural, useMoveToBin,
 } from '../../components/common';
-import { useBackend } from '../../data/hooks';
-import type { App, Test } from '../../data/types';
+import { flakyMenuItems, useFlakyMark } from '../../components/common/useFlakyMark';
+import { useBackend, useLive } from '../../data/hooks';
+import type { App, Run, Test } from '../../data/types';
+import { FLAKY_SCAN, flakinessByTest, type Flakiness } from '../../lib/flaky';
 import { useFeature } from '../../edition';
 import { distinct, filterTests, type LastRunFilter, type SharedFilter } from './filters';
 import { TestDetailsDialog } from './TestDetailsDialog';
@@ -28,6 +30,10 @@ export function TestsTab({ app, tests }: { app: App; tests: Test[] }) {
   const remove = (t: Test) => void moveToBin({ kind: 'test', id: t.id, appId: app.id }, t.name, () => backend.deleteTest(app.id, t.id), "Couldn't delete the test.");
 
   const creators = useMemo(() => distinct(tests.map(t => t.createdBy), p => p.uid), [tests]);
+  // The Flaky marker, from the runs the workspace or folder keeps (lib/flaky.ts). A workspace
+  // already has the app's latest runs at hand for the Last run column, so this reads nothing more.
+  const runs = useLive<Run[]>((b, l) => b.runs(app.id, l, FLAKY_SCAN), [app.id]).data;
+  const flaky = useMemo(() => flakinessByTest(tests, runs ?? []), [tests, runs]);
   const shown = filterTests(tests, { q, shared, lastRun, createdBy });
   const filtered = q || shared !== 'all' || lastRun !== 'all' || createdBy !== 'all';
   const clear = () => { setQ(''); setShared('all'); setLastRun('all'); setCreatedBy('all'); };
@@ -50,7 +56,7 @@ export function TestsTab({ app, tests }: { app: App; tests: Test[] }) {
           <div role="columnheader">Name</div>{TEAM && <div role="columnheader">Shared</div>}<div role="columnheader">Last run</div>
           <div role="columnheader">Created</div><div role="columnheader">Last updated</div><div role="columnheader"><span className="sr-only">Actions</span></div>
         </div>
-        {shown.map((t, i) => <TestRow key={t.id} app={app} test={t} index={i} onDelete={() => remove(t)} onDetails={() => setEditing(t)} />)}
+        {shown.map((t, i) => <TestRow key={t.id} app={app} test={t} index={i} flaky={flaky.get(t.id)} onDelete={() => remove(t)} onDetails={() => setEditing(t)} />)}
         {!shown.length && filtered && (
           <div className="app-nomatch">No tests match. <Button kind="link" size="sm" onClick={clear}>Clear filters</Button></div>
         )}
@@ -60,12 +66,13 @@ export function TestsTab({ app, tests }: { app: App; tests: Test[] }) {
   );
 }
 
-function TestRow({ app, test: t, index, onDelete, onDetails }: { app: App; test: Test; index: number; onDelete: () => void; onDetails: () => void }) {
+function TestRow({ app, test: t, index, flaky, onDelete, onDetails }: { app: App; test: Test; index: number; flaky?: Flakiness; onDelete: () => void; onDetails: () => void }) {
   const { TEAM, HISTORY, COLS } = useCols();
   const navigate = useNavigate();
   const backend = useBackend();
   const toast = useToast();
   const [menu, setMenu] = useState(false);
+  const mark = useFlakyMark();
   const base = `/apps/${app.id}/tests/${t.id}`;
   const st = statusInfo(lastRunStatus(t.lastRun));
   const open = () => navigate(`${base}/record`);
@@ -86,7 +93,7 @@ function TestRow({ app, test: t, index, onDelete, onDetails }: { app: App; test:
       </div>
       {TEAM && <div role="cell"><SharedChip published={t.status === 'published'} /></div>}
       <div role="cell" className="app-cell-2">
-        <div className="app-result" style={{ color: st.color }}><Icon name={st.icon} size={17} />{st.word}</div>
+        <div className="app-result"><span className="app-result-word" style={{ color: st.color }}><Icon name={st.icon} size={17} />{st.word}</span>{flaky && <FlakyChip f={flaky} />}</div>
         <div className="app-meta">{t.lastRun ? formatWhen(t.lastRun.at) : 'No runs yet'}</div>
       </div>
       <div role="cell" className="app-cell-2">
@@ -108,6 +115,7 @@ function TestRow({ app, test: t, index, onDelete, onDetails }: { app: App; test:
               { label: 'Test details', icon: 'description', onSelect: onDetails },
               { label: 'Duplicate', icon: 'content_copy', onSelect: duplicate },
               ...(HISTORY ? [{ label: 'View history', icon: 'history', onSelect: () => navigate(`${base}/history`) }] : []),
+              ...(flaky?.flaky && mark ? ['sep' as const, ...flakyMenuItems(flaky.known, a => void mark(t, a))] : []),
               'sep',
               { label: 'Delete', icon: 'delete', danger: true, onSelect: onDelete },
             ]} />
