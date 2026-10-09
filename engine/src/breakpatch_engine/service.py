@@ -421,11 +421,17 @@ class Engine:
         self._activity = "run"
         runner = Runner(self.browser, self.locator_fn, self.timings, self.emit, healer=self.healer,
                         explainer=self.explainer)
+        # Play this step goes on from the recorder's page, with the values its Call steps kept.
+        if p.get("fromStepId") is not None:
+            runner.values = self.recorder.values
 
         async def go():
             try:
                 await self._drain_explanations()
                 ended = await runner.run(p, stop)
+                if p.get("keepOpen"):
+                    # Recording carries on from where the run left the page, and from what it kept.
+                    self.recorder.values = runner.values
             except Exception as e:  # noqa: BLE001
                 log.exception("run crashed")
                 ended = {"runId": run_id, "result": "fail", "durationMs": 0,
@@ -538,13 +544,21 @@ class Engine:
     # ---------------------------------------------------------------- set-up and clean-up calls
 
     async def call_try(self, p: dict) -> dict:
-        """"Try it" for a set-up or clean-up call: the same rules as a run (calls.py), one request."""
+        """"Try it" for a set-up or clean-up call, or a Call step: the same rules as a run
+        (calls.py), one request. A Call step's statuses that pass and the value it keeps are checked
+        too (`passStatus`, `keep`); the kept value itself never comes back."""
         call = p.get("call")
         if not isinstance(call, dict):
             raise EngineError("bad_request", "There's no call to try.")
-        reply = await calls.make(call, p.get("appUrl"), parse_secrets(p.get("secrets")), TRY_TIMEOUT)
+        keep = p.get("keep") if isinstance(p.get("keep"), dict) else None
+        reply = await calls.make(calls.with_run_values(call, 1), p.get("appUrl"), parse_secrets(p.get("secrets")),
+                                 calls.step_timeout(p.get("timeoutMs"), TRY_TIMEOUT), pass_status=p.get("passStatus"),
+                                 keep=str(keep.get("path") or "") if keep else None)
         log.info("tried a call: %s", reply.info)
-        return reply.to_json()
+        out = reply.to_json()
+        if keep and reply.ok:
+            out["kept"] = True
+        return out
 
     async def shutdown(self) -> None:
         if self._run:

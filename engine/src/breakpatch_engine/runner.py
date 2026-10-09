@@ -51,6 +51,7 @@ MESSAGES = {
     "setUpFailed": "The set-up call didn't succeed, so the test didn't start.",
     "stopped": "The run was stopped.",
     "fileMissing": "The file this upload chooses isn't in the tests folder.",
+    "callFailed": "The call to your API didn't work.",
 }
 
 
@@ -101,6 +102,9 @@ class Runner:
         self.relaxed = False                  # screen checks allow for another system (systems.py)
         self.ran_on: dict | None = None
         self.mismatch: dict | None = None
+        # Values Call steps kept (actions.Context.values): those of the recorder's session for Play
+        # this step, and after the run, those the run kept (the recorder carries on with them).
+        self.values: dict[str, tuple[str, str | None]] = {}
 
     async def run(self, req: dict, stop: asyncio.Event) -> dict:
         run_id = str(req.get("runId") or "run")
@@ -176,8 +180,9 @@ class Runner:
             if not self.b.is_open:
                 self.message = "The browser isn't open."
                 return False
-            ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed, files_dir=self.files_dir)
+            ctx = self._context(secrets, stop)
             return await self._run_list(steps, ctx, stop, iteration=None)
+        self.values = {}
         if req.get("setUp"):
             reply = await calls.make(req["setUp"], self.app_url, secrets, self.t.http_timeout)
             log.info("set-up call: %s", reply.info)
@@ -202,8 +207,14 @@ class Runner:
         first = next((s for s in order if s.get("action") not in ("loop", "group")), {})
         await checks.settle(self.b.shoot, first.get("ignore"), self.t.settle_interval, self.t.settle_frames,
                             self.t.settle_timeout)
-        ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed, files_dir=self.files_dir)
+        ctx = self._context(secrets, stop)
         return await self._run_list(steps, ctx, stop, iteration=None)
+
+    def _context(self, secrets: dict[str, Secret], stop: asyncio.Event) -> Context:
+        ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed, files_dir=self.files_dir,
+                      values=self.values, app_url=self.app_url)
+        self.values = ctx.values
+        return ctx
 
     def _compare_systems(self, recorded_on) -> None:
         """Where the test was recorded against where it runs (systems.py). A mismatch relaxes the
@@ -245,7 +256,7 @@ class Runner:
     def _fail(self, step: dict, err: StepFailed, iteration: int | None = None) -> None:
         i = self.index[id(step)]
         rec = {"stepId": step.get("id"), "result": "failed", "reason": err.reason}
-        for k in ("preDistance", "postDistance", "oldAt", "newAt", "screenshotPath", "timings"):
+        for k in ("preDistance", "postDistance", "oldAt", "newAt", "screenshotPath", "timings", "reply"):
             if err.extra.get(k) is not None:
                 rec[k] = err.extra[k]
         self.results[i] = rec
@@ -254,7 +265,7 @@ class Runner:
         self._event(step, "failed", iteration, reason=err.reason, message=err.message, details=err.extra.get("details"),
                     preDistance=rec.get("preDistance"), postDistance=rec.get("postDistance"),
                     oldAt=rec.get("oldAt"), newAt=rec.get("newAt"), screenshot=rec.get("screenshotPath"),
-                    timings=rec.get("timings"))
+                    timings=rec.get("timings"), reply=rec.get("reply"))
 
     async def _run_list(self, steps: list[dict], ctx: Context, stop: asyncio.Event, iteration: int | None) -> bool:
         for step in steps:
@@ -296,7 +307,7 @@ class Runner:
             self._event(step, rec["result"], iteration, preDistance=rec.get("preDistance"),
                         postDistance=rec.get("postDistance"), oldAt=rec.get("oldAt"), newAt=rec.get("newAt"),
                         screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"), why=rec.get("why"),
-                        timings=rec.get("timings"), unchecked=rec.get("unchecked"))
+                        timings=rec.get("timings"), unchecked=rec.get("unchecked"), reply=rec.get("reply"))
             self._stop_if_reached(step)
         return True
 
@@ -408,6 +419,9 @@ class Runner:
             timings[name] = int((now - clock) * 1000)
             clock = now
 
+        if kind == "call":
+            return await self._call_step(step, ctx, rec, lap)
+
         if kind == "waitFor":
             # Wait N seconds only waits: any pre, post or expect a file has on it (recorded before
             # this rule) is ignored. The next step's pre-check still guards the page.
@@ -503,6 +517,32 @@ class Runner:
                 raise StepFailed(reason, message, **_keep(rec))
         if rec["result"] == "healed":
             rec["screenshotPath"] = await self._keep_screenshot(step)
+        return rec
+
+    async def _call_step(self, step: dict, ctx: Context, rec: dict, lap) -> dict:
+        """A Call step (issue #44): one request to the app's API under the set-up call's rules
+        (calls.py), judged by its status. Nothing on the page is checked. The report gets the status
+        and the time, never the reply; a value it keeps (`keep`) goes to later Write steps only."""
+        call = step.get("call")
+        if not isinstance(call, dict):
+            raise StepFailed("callFailed", "This step has no call to make.")
+        keep = step.get("keep") if isinstance(step.get("keep"), dict) else None
+        name = str(keep.get("name") or "") if keep else ""
+        if keep and not calls.VALUE_NAME.match(name):
+            raise StepFailed("callFailed", "The name this step keeps the value as uses letters, numbers and _ only.")
+        call = calls.with_run_values(call, ctx.i)
+        reply = await calls.make(call, self.app_url, ctx.secrets,
+                                 calls.step_timeout(step.get("timeoutMs"), self.t.http_timeout),
+                                 pass_status=step.get("passStatus"), keep=str(keep.get("path") or "") if keep else None)
+        lap("actionMs")
+        log.info("call step %s: %s", step.get("id"), reply.info)
+        rec["reply"] = reply.shown()
+        if not reply.ok:
+            reason = "secretMissing" if reply.error == "secret" else "callFailed"
+            raise StepFailed(reason, f"{MESSAGES['callFailed']} {reply.message or ''}".strip(), details=reply.info,
+                             reply=rec["reply"] or None, timings=rec.get("timings"))
+        if keep and reply.kept is not None:
+            ctx.values[name] = (reply.kept, origin_of(call.get("url")))
         return rec
 
     async def _wait_region(self, region, want: str, tol: int, ignore) -> int:

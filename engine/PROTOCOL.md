@@ -191,7 +191,7 @@ A device name the engine doesn't know (a test from a newer Breakpatch) fails wit
 ### Recording
 | Method | Params | Result |
 |---|---|---|
-| `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
+| `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame?, valueRef?, call?, appUrl?, passStatus?, keep? }` | `{ step: Step }` |
 | `record.locate` | `{ description, absence?, near?, shows? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below). `shows: true`: what to find may be text on the screen, not a control (a checkpoint, a Wait until; below) |
 | `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell. An empty sentence is `bad_request`; only its first 300 characters are read |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
@@ -413,7 +413,7 @@ saves.
 |---|---|---|
 | `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix, allowSystemDifferences? }, secrets: {NAME: Secret}, runner?, recordedOn?: RecordedOn }` | `{}` — returns at once, then events |
 | `run.stop` | `{ runId }` | `{}` — stops after the current step |
-| `call.try` | `{ call: Call, appUrl, secrets? }` | `{ ok, status?, ms?, error?, message? }` — "Try it": one request under the same rules as a run |
+| `call.try` | `{ call: Call, appUrl, secrets?, passStatus?, timeoutMs?, keep? }` | `{ ok, status?, ms?, error?, message?, kept? }` — "Try it": one request under the same rules as a run (a Call step's `passStatus`, `timeoutMs` and `keep` too; `kept: true` when the value was found, never the value) |
 | `run.explain` | `{ step: Step, stepRun: StepRun, viewport? }` | `{ explanation: Explanation \| null }` — "Why did this fail?" for one failed step of a finished run (Breakpatch Team, see below) |
 | `report.images` | `{ items: [{ path, size: "full"\|"small" }], viewportWidth? }` | `{ images: [{ src, width, height, bytes } \| null] }` — screenshots for an exported report, as WebP `data:` URIs (see Export a report) |
 
@@ -447,9 +447,10 @@ runner (see Saved secrets).
 isn't installed. The run opens its own browser (closing the live view's) and closes it at the end.
 A `waitFor`/`waitUntil` in progress is cut short by `run.stop`.
 
-Events: `run.step` `{ runId, index, stepId, state: "running"|"looking"|"passed"|"healed"|"failed", reason?, preDistance?, postDistance?, oldAt?, newAt?, screenshot?, iteration?, message?, details? }`
+Events: `run.step` `{ runId, index, stepId, state: "running"|"looking"|"passed"|"healed"|"failed", reason?, preDistance?, postDistance?, oldAt?, newAt?, screenshot?, iteration?, message?, details?, reply? }`
 (`looking` = AI assistant is finding a moved target; `screenshot` is a local file path, only on failure or heal;
-`iteration` is the 1-based repeat number inside a loop; `message` is a plain sentence on failure)
+`iteration` is the 1-based repeat number inside a loop; `message` is a plain sentence on failure;
+`reply` `{ status?, ms? }` is a Call step's, also in its `StepRun`: see Call steps below)
 and `run.ended` `{ runId, result: "pass"|"fail", durationMs, steps: StepRun[], message?, details?, cleanUpFailed?, ranOn?, systemMismatch? }`
 (`ranOn` and `systemMismatch`: see Where a test was recorded).
 
@@ -472,7 +473,8 @@ nothing), `unexpectedScreen` (post-check or checkpoint mismatch, wrong download 
 `noChange` (`expectChange` but nothing changed), `timeout` (the screen never settled, the page
 didn't load, no popup/file picker/download), `healFailed` (the AI assistant's spot doesn't match
 the stored hash), `healingUnavailable` (`autoFix` on, healing installed, but no model), `secretMissing`,
-`setUpFailed`, `stopped`. `failOnFix` makes a run with a healed step end with `result: "fail"`
+`setUpFailed`, `stopped`, `fileMissing`, `callFailed` (a Call step's call didn't pass, or a Write step's
+kept value isn't there or may not be typed on that page). `failOnFix` makes a run with a healed step end with `result: "fail"`
 (the step stays `healed`).
 
 Healing (spec §11.2, only with `autoFix`) is Breakpatch Team: it runs only when the Team engine
@@ -645,7 +647,53 @@ neither `workspace` nor `workspaceSecrets`, and the UI never gets a workspace se
 
 A refused or failed set-up call fails the first step with `setUpFailed` and a message that says
 why. `call.try` answers `{ ok: true, status, ms }`, or `{ ok: false, status?, ms?, error, message }`
-with `error` one of `invalid`, `refused`, `redirect`, `secret`, `unreachable`, `timeout`, `status`.
+with `error` one of `invalid`, `refused`, `redirect`, `secret`, `unreachable`, `timeout`, `status`,
+`keep`.
+
+### Call steps
+
+A **Call** step (issue #44) makes a call like a set-up call at its place among the steps: mark an
+order as paid, turn on a feature flag, ask a test API for a one-time code.
+
+```jsonc
+{ "id": "s1", "action": "call", "label": "Call POST api.acme.com/test/orders/42/pay",
+  "call": { "method": "POST", "url": "https://api.acme.com/test/orders/42/pay",
+            "headers": [{ "name": "Authorization", "secretRef": "API_TOKEN" }],
+            "body": "{\"paid\": true}", "allowOtherHosts": false },
+  "passStatus": "2xx",                         // optional: "200, 201", "2xx, 404", "200-204"
+  "timeoutMs": 30000,                          // optional: 1 s to 120 s, default 30 s
+  "keep": { "path": "$.code", "name": "CODE" } // optional: a value for a later Write step
+}
+```
+
+- `call` is a `Call` with the same rules (above), and also `body`: text, at most 64 KB, not on a
+  GET. Without a `Content-Type` header it goes as `application/json` when it reads as JSON, else as
+  plain text. `{i}`, `{time}`, `{date}` and `{timestamp}` in its address and body are filled in at
+  run time, as in a Write step's text. `allowOtherHosts` is the step's own.
+- It passes when the reply's status is in `passStatus` (statuses from 200 to 599, classes like
+  `2xx`, ranges like `200-204`; default `2xx`). A redirect is never followed and never a pass.
+- Nothing on the page is checked: no `pre`, `post`, `ignore` or `expect`. The step's `StepRun`
+  and its `run.step` events carry `reply: { status?, ms? }`, the reply's status and how long it
+  took. The reply's body is never in an event, a result, a report or a log.
+- A failure is `callFailed` with a message that says why (`It replied 500.`, `No reply after
+  30 s.`, a rule it breaks), or `secretMissing` when a header's saved secret is missing or not
+  allowed on the call's site. Secrets in headers are checked before the run starts, like a Write
+  step's, and go in `secrets` (the shell fills their sites, workspaces and workspace secrets as for
+  any other).
+- `keep`: where a value is in a JSON reply (`$.code`, `$.data.items[0].id`, `$['one-time code']`)
+  and a name for it (letters, numbers and `_`, starting with a letter). The value (a string,
+  number or true/false, at most 1,000 characters, no line breaks) is kept for the rest of the run
+  only. A reply that isn't JSON or has nothing there fails the step (`callFailed`). A Write step
+  with `valueRef: "CODE"` (and no `text`) types it, under the same guard as a saved secret: only
+  into a page of the app (its host, or another under the same domain, as calls may reach) or of
+  the call's own site, checked after the click and before every key. A value no Call step before
+  it kept fails the Write step with `callFailed`.
+- `record.point` with `action: "call"` takes `call`, `appUrl`, `secrets`, `passStatus`,
+  `timeoutMs` and `keep`, and makes the call at once, as a run would, so the steps recorded after it
+  see what it did. One that doesn't pass isn't recorded: `bad_request` (a rule it breaks) or
+  `network` ("The call didn't work. It replied 500."). The recorder keeps what it kept for the Write
+  steps recorded after it (`record.point` with `valueRef`), and so does a run with `keepOpen`;
+  Play this step (`fromStepId`) uses what the recorder has.
 
 ## Environment
 
