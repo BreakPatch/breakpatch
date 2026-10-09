@@ -49,6 +49,9 @@ export function defaultLabel(p: Partial<Step> & { action: Step['action'] }): str
       if (p.secretRef) return `Write saved secret ${p.secretRef}`;
       if (p.generated) return `Write ${GENERATED[p.generated as Generated]}`;
       if (p.masked) return MASKED_LABEL;
+      // A step imported from a script can end by pressing Enter (typed as a line break).
+      if (p.text === '\n') return 'Press Enter';
+      if (p.text?.endsWith('\n')) return `Write "${friendlyText(p.text.slice(0, -1))}" and press Enter`;
       return `Write "${friendlyText(p.text ?? '')}"`;
     case 'waitUntil': return 'Wait until something appears';
     case 'waitFor': return `Wait ${Math.round((p.durationMs ?? 1000) / 1000)} seconds`;

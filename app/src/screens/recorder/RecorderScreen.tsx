@@ -22,6 +22,7 @@ import { checksNothing, UNCHECKED_NOTE } from '../run/reasons';
 import { preorder } from '../run/resolve';
 import { getEngine } from '../../engine';
 import { recordedOnForSave } from './recordedOn';
+import { takeImport } from '../../lib/scriptImport/pending';
 
 const DEFAULT_VP = { width: 1440, height: 900 };
 
@@ -78,6 +79,16 @@ export default function RecorderScreen() {
     else if (step && findStep(steps, step)) rec.setSelectedId(step);
     setParams({}, { replace: true });
   }, [loaded, browser.ready, params, setParams, rec]);
+
+  // A test just imported from a script (ImportDialog): once the browser is ready, its steps are
+  // learned one after another, each done once so its screen checks are recorded (plan.ts `auto`).
+  const learnTaken = useRef(false);
+  useEffect(() => {
+    if (!loaded || !browser.ready || learnTaken.current) return;
+    learnTaken.current = true;
+    const p = takeImport(appId, testId);
+    if (p) rec.startPlan({ steps: p.steps, note: p.note }, { source: 'script', auto: true });
+  }, [loaded, browser.ready, appId, testId, rec]);
 
   async function save(note?: string): Promise<boolean> {
     if (!test) return false;

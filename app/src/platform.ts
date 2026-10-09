@@ -54,17 +54,32 @@ export async function saveTextFile(defaultName: string, contents: string, opts: 
 
 /** Lets the user pick a file and returns its text (e.g. a .bpworkspace file). */
 export async function openTextFile(extensions: string[]): Promise<string | null> {
+  return (await openNamedTextFile(extensions, 'Workspace'))?.text ?? null;
+}
+
+/**
+ * Lets the user pick a file and returns its name and text (e.g. a test script to import). With
+ * `maxBytes`, a bigger file isn't read: the call throws `tooBig` instead.
+ */
+export async function openNamedTextFile(extensions: string[], filterName: string, limit?: { maxBytes: number; tooBig: string }): Promise<{ name: string; text: string } | null> {
+  const tooBig = () => new Error(limit?.tooBig);
   if (isTauri()) {
     const { open } = await import('@tauri-apps/plugin-dialog');
-    const path = await open({ multiple: false, filters: [{ name: 'Workspace', extensions }] });
+    const path = await open({ multiple: false, filters: [{ name: filterName, extensions }] });
     if (!path || Array.isArray(path)) return null;
-    const { readTextFile } = await import('@tauri-apps/plugin-fs');
-    return readTextFile(path);
+    const { readTextFile, stat } = await import('@tauri-apps/plugin-fs');
+    if (limit && (await stat(path)).size > limit.maxBytes) throw tooBig();
+    return { name: path.split(/[\\/]/).pop() ?? path, text: await readTextFile(path) };
   }
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = extensions.map(e => '.' + e).join(',');
-    input.onchange = () => { const f = input.files?.[0]; if (!f) return resolve(null); f.text().then(resolve, () => resolve(null)); };
+    input.onchange = () => {
+      const f = input.files?.[0];
+      if (!f) return resolve(null);
+      if (limit && f.size > limit.maxBytes) return reject(tooBig());
+      f.text().then(text => resolve({ name: f.name, text }), () => resolve(null));
+    };
     input.click();
   });
 }

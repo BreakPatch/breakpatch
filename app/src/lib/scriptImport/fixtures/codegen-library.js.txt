@@ -1,0 +1,16 @@
+const { chromium } = require('playwright');
+
+(async () => {
+  const browser = await chromium.launch({
+    headless: false
+  });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const page = await context.newPage();
+  await page.goto('https://example.com/');
+  await page.getByRole('link', { name: 'More information...' }).click();
+  await page.getByText('Example Domains').dblclick();
+
+  // ---------------------
+  await context.close();
+  await browser.close();
+})();

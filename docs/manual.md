@@ -15,41 +15,42 @@ Breakpatch is **Community** for now: free and open source, for one person on one
 
 5. [The tests folder](#the-tests-folder)
 6. [Record a test](#record-a-test)
-7. [Run a test and read the report](#run-a-test-and-read-the-report)
-8. [Shared steps](#shared-steps)
-9. [Suites](#suites)
-10. [Get a deleted app or test back](#get-a-deleted-app-or-test-back)
-11. [Saved secrets](#saved-secrets)
-12. [The AI assistant](#the-ai-assistant)
-13. [Updates](#updates)
-14. [Privacy](#privacy)
-15. [Using Breakpatch on a company network](#using-breakpatch-on-a-company-network)
-16. [Troubleshooting](#troubleshooting)
+7. [Import from Playwright or Cypress](#import-from-playwright-or-cypress)
+8. [Run a test and read the report](#run-a-test-and-read-the-report)
+9. [Shared steps](#shared-steps)
+10. [Suites](#suites)
+11. [Get a deleted app or test back](#get-a-deleted-app-or-test-back)
+12. [Saved secrets](#saved-secrets)
+13. [The AI assistant](#the-ai-assistant)
+14. [Updates](#updates)
+15. [Privacy](#privacy)
+16. [Using Breakpatch on a company network](#using-breakpatch-on-a-company-network)
+17. [Troubleshooting](#troubleshooting)
 
 **Team**
 
-17. [What Team adds](#what-team-adds)
-18. [Solo](#solo)
-19. [Upgrading to Team](#upgrading-to-team)
-20. [Workspaces on this Mac](#workspaces-on-this-mac)
-21. [Hosted by Breakpatch](#hosted-by-breakpatch)
-22. [Host it yourself](#host-it-yourself)
-23. [Members and roles](#members-and-roles)
-24. [Version history](#version-history)
-25. [Fixed automatically](#fixed-automatically)
-26. [Why did this fail?](#why-did-this-fail)
-27. [Write a test from a story](#write-a-test-from-a-story)
-28. [Schedules](#schedules)
-29. [The local runner](#the-local-runner)
-30. [Run requests](#run-requests)
-31. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
-32. [Result messages](#result-messages)
-33. [Create an issue](#create-an-issue)
-34. [Security rules](#security-rules)
-35. [Licences and seats](#licences-and-seats)
-36. [The back office](#the-back-office)
-37. [Encryption and the recovery code](#encryption-and-the-recovery-code)
-38. [Workspace secrets](#workspace-secrets)
+18. [What Team adds](#what-team-adds)
+19. [Solo](#solo)
+20. [Upgrading to Team](#upgrading-to-team)
+21. [Workspaces on this Mac](#workspaces-on-this-mac)
+22. [Hosted by Breakpatch](#hosted-by-breakpatch)
+23. [Host it yourself](#host-it-yourself)
+24. [Members and roles](#members-and-roles)
+25. [Version history](#version-history)
+26. [Fixed automatically](#fixed-automatically)
+27. [Why did this fail?](#why-did-this-fail)
+28. [Write a test from a story](#write-a-test-from-a-story)
+29. [Schedules](#schedules)
+30. [The local runner](#the-local-runner)
+31. [Run requests](#run-requests)
+32. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
+33. [Result messages](#result-messages)
+34. [Create an issue](#create-an-issue)
+35. [Security rules](#security-rules)
+36. [Licences and seats](#licences-and-seats)
+37. [The back office](#the-back-office)
+38. [Encryption and the recovery code](#encryption-and-the-recovery-code)
+39. [Workspace secrets](#workspace-secrets)
 
 ---
 
@@ -235,6 +236,40 @@ To test your site on a phone or tablet, pick one under **Screen size** in **New 
 - The run view and the report name the device.
 
 A test's device is fixed once you start, like any screen size. Tests made before phones and tablets stay computer tests. Older versions of Breakpatch can't run phone and tablet tests, so update Breakpatch everywhere your tests run before you make the first one: every Mac, the local runner and `breakpatch-ci`. Your first one marks the tests folder as newer, so an older version of the app won't open it. In Team, it marks the workspace, and an older version stops saving there. But an older version can still run the test as a computer test: the app or local runner in Team, which still open the workspace, and `breakpatch-ci`, from a workspace or a test file. From this version on, the local runner and `breakpatch-ci` don't run any test from a workspace saved by a newer Breakpatch, and say to update.
+
+## Import from Playwright or Cypress
+
+If you already have Playwright or Cypress tests, Breakpatch can make a test from one. It reads the script and never runs it. A script has no screens for Breakpatch to compare with, so Breakpatch learns them by doing each step once, the way it does when you record.
+
+1. Open an app → **Import…** (next to **New test**). **Choose a script…** and pick a Playwright test (`.spec.ts`, `.spec.js`, or what `npx playwright codegen` writes) or a Cypress test (`.cy.js`, `.cy.ts`). Or press **Paste the script instead**, for example to paste what Playwright's code generator shows.
+2. Breakpatch lists the steps it made from the script, and every line it left out, with why. If the script has more than one test, pick one under **Test**. Check the name, the start address and the screen size. The start address is the first address the script goes to, on the app's address when the script only gives a path like `/login`.
+3. Press **Create and learn**. The test opens in the recorder, and Breakpatch does each step by itself: it finds what the step acts on from its words and records the step like one you clicked, with its screen checks. The card over the page says which step it's learning.
+4. It stops and asks when it can't find something, or when a step needs a value. Click the thing on the page, **Edit** what to look for, or **Skip** the step. If it's below the bottom of the screen, scroll the page, then press **Find it**. A step marked **Check** always waits for you to press **Confirm**. **Pause** makes it ask before each step; **Go on by itself** carries on.
+5. Check the steps, add the ones it left out, then press **Save**. Nothing is saved before that, and nothing of the script is kept.
+
+What's imported:
+
+- **Addresses**: `page.goto` and `cy.visit` (the first one is the start address), going back, going forward and reloading.
+- **Clicks and typing**: click, double click, right click, hover, typing (`fill`, `type`), pressing Enter, ticking a checkbox, and choosing from a drop-down list (a click on the list, then a click on the option).
+- **Waits**: a wait of some seconds (`waitForTimeout`, `cy.wait(1000)`), and waiting until something shows (`waitFor`, `waitForSelector`).
+- **Checks**: `toBeVisible`, `toHaveText` and `toContainText`, and Cypress's `should('be.visible')` and `should('contain', …)`, become checkpoints.
+- **A new tab or popup** the script waits for, as Playwright's code generator writes it.
+- **`beforeEach` steps**, at the start of the test. A screen size the script sets (`test.use`, `setViewportSize`, `cy.viewport`) is picked when it's one of Breakpatch's sizes.
+
+**How things are found.** Breakpatch finds things by what they say and what they are, never by CSS or XPath, so each locator becomes words. `getByRole('button', { name: 'Sign in' })` becomes *the "Sign in" button*, `getByLabel('Email')` becomes *the "Email" field* and `cy.contains('Welcome')` becomes *"Welcome"*. A selector with an id, a test id or a name, like `#email` or `[data-cy=submit]`, becomes words too (*the email field*). The list marks those **Check**: the words come from the page's code and may not be what the page says, so learning stops at them for you to confirm. Selectors that only have CSS classes or the page's structure, like `.btn-primary` or `div > span`, aren't imported.
+
+**What it types.** Text in the script is typed as it is. Breakpatch types into the field as it is: it doesn't empty it first, as Playwright's `fill` does. A value the script reads from the environment, like `process.env.PASSWORD` or `Cypress.env('password')`, uses the [saved secret](#saved-secrets) of the same name if this Mac has one. Otherwise Breakpatch asks which saved secret to type when it gets there. `Date.now()` in a value becomes `{timestamp}`, a new value on every run.
+
+**What isn't imported.** The list says why for each line:
+
+- Your own functions and custom commands, like `login(page)` or `cy.login()`: Breakpatch can't see what they do. Record those steps once as [shared steps](#shared-steps) and insert them.
+- Conditions and loops (`if`, `for`), and steps inside `.within()`, `.then()` or `.each()`.
+- Checks of the address or the page title, of a field's value, a class or an attribute, and checks that something isn't there.
+- Keys other than Enter, uploads, drag and drop, clicks at a position in pixels, and network calls like `page.route` or `cy.intercept`. For data a test needs, use a set-up call (see [Record a test](#record-a-test)).
+
+Waiting for the page to load and taking screenshots are listed as not needed: Breakpatch waits for the page to settle after every step, and checks the screen by itself.
+
+Later: a step for keys other than Enter, scrolling by itself to find something below the bottom of the screen, and importing every test in a script at once.
 
 ## Run a test and read the report
 

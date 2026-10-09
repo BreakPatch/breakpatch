@@ -1,14 +1,14 @@
 // The steps of a story, floating over the page above the add step bar (README "Add step bar":
 // what comes and goes floats; the page never moves). One line for the step being asked about,
 // the whole list on demand, and Edit for the current step. Confirm, Try again and Skip for a
-// step that was found are on the AI bar under it (AddStepBar).
+// step that was found are on the AI bar under it (AddStepBar). An imported script's steps are
+// learned the same way, by themselves until one isn't found (Pause and Go on switch that).
 import { useEffect, useState } from 'react';
 import type { Generated } from '../../data/types';
-import type { PlanStep } from '../../engine';
 import { GENERATED_CHOICES } from '../../engine/labels';
 import { secretNamesHere } from '../../lib/secretScope';
 import { Button, ChipSelect, Icon } from '../../components/ui';
-import { CAREFUL_NOTE, leftOutText, planDoneText, planNeeds, type PlanItem } from './plan';
+import { CAREFUL_NOTE, leftOutText, planDoneText, planHead, planNeeds, type PlanItem, type WalkStep } from './plan';
 import type { Recorder } from './useRecorder';
 import { isHttpAddress } from '../app/tryCall';
 import { withScheme } from '../app/TestDetailsDialog';
@@ -21,18 +21,21 @@ export function PlanCard({ rec }: { rec: Recorder }) {
   const [open, setOpen] = useState(false);
   const run = rec.plan;
   if (!run) return null;
-  const n = run.steps.length;
   const cur = run.steps[run.index];
   const asking = rec.ai.state !== 'idle' && rec.ai.plan === run.index;
   const waiting = !!cur && !asking && !rec.planEditing && !rec.busy;
+  const script = run.source === 'script';
   return (
-    <div className="rec-ai rec-plan" role="region" aria-label="Steps from your story">
+    <div className="rec-ai rec-plan" role="region" aria-label={script ? 'Steps from your script' : 'Steps from your story'}>
       <div className="rec-plan-head">
-        <Icon name="auto_awesome" size={20} className="rec-ai-icon" />
+        <Icon name={script ? 'upload_file' : 'auto_awesome'} size={20} className="rec-ai-icon" />
         <div className="grow rec-plan-title">
-          {cur ? <><span className="faint">From your story · step {run.index + 1} of {n}</span><span className="rec-plan-now">{rec.planText(cur)}</span></>
+          {cur ? <><span className="faint">{planHead(run)}</span><span className="rec-plan-now">{rec.planText(cur)}</span></>
             : <span className="rec-plan-now">{planDoneText(run)}</span>}
         </div>
+        {script && cur && (run.auto
+          ? <button type="button" className="rec-ai-link" onClick={() => rec.setPlanAuto(false)} title="Ask before each step">Pause</button>
+          : <button type="button" className="rec-ai-link" onClick={() => rec.setPlanAuto(true)} title="Do each step as soon as it's found">Go on by itself</button>)}
         <button type="button" className="rec-ai-link" aria-expanded={open} onClick={() => setOpen(o => !o)}>{open ? 'Hide steps' : 'All steps'}</button>
         {cur ? <button type="button" className="rec-ai-link" onClick={rec.stopPlan}>Stop</button>
           : <Button kind="primary" onClick={rec.stopPlan}>Done</Button>}
@@ -49,11 +52,12 @@ export function PlanCard({ rec }: { rec: Recorder }) {
               <span className="grow">{rec.planText(s)}</span>
               {s.state === 'skipped' && <span className="faint">Skipped</span>}
               {s.careful && <Icon name="warning" size={16} className="rec-plan-warn" label="May delete, pay for or send something" />}
+              {s.check && <span className="faint" title="These words come from the script's code: it asks before this step">Check</span>}
             </li>
           ))}
         </ol>
       )}
-      {cur && rec.planEditing && <PlanEdit key={run.index} step={cur} rec={rec} />}
+      {cur && rec.planEditing && <PlanEdit key={run.index} step={cur} rec={rec} from={run.source} />}
       {waiting && (
         <div className="rec-plan-actions">
           <Button kind="primary" icon="search" onClick={rec.retryPlanStep}>Find it</Button>
@@ -68,8 +72,8 @@ export function PlanCard({ rec }: { rec: Recorder }) {
 type Source = 'typed' | 'secret' | 'generated';
 
 /** Edit the current step: what to look for, and for a typing step what it types. */
-function PlanEdit({ step, rec }: { step: PlanItem; rec: Recorder }) {
-  const needs = planNeeds(step);
+function PlanEdit({ step, rec, from }: { step: PlanItem; rec: Recorder; from?: 'story' | 'script' }) {
+  const needs = planNeeds(step, from);
   const [target, setTarget] = useState(step.target ?? '');
   const [source, setSource] = useState<Source>(step.secretRef || step.needs === 'secret' ? 'secret' : step.generated ? 'generated' : 'typed');
   const [text, setText] = useState(step.text ?? '');
@@ -79,23 +83,23 @@ function PlanEdit({ step, rec }: { step: PlanItem; rec: Recorder }) {
   const [seconds, setSeconds] = useState(String(step.seconds ?? 2));
   const [names, setNames] = useState<string[]>([]);
   useEffect(() => { void secretNamesHere().then(n => { setNames(n); setSecretRef(r => r || n[0] || ''); }).catch(() => setNames([])); }, []);
-  const write = step.action === 'write', go = step.action === 'navigate', wait = step.action === 'waitFor';
-  const needsTarget = step.action !== 'write' && step.action !== 'scroll' && !go && !wait;
+  const write = step.action === 'write', go = step.action === 'navigate' && (!step.nav || step.nav === 'url'), wait = step.action === 'waitFor';
+  const needsTarget = step.action !== 'write' && step.action !== 'scroll' && step.action !== 'navigate' && step.action !== 'switchTab' && !wait;
   const address = withScheme(url.trim());
   const secs = Number(seconds);
   const ok = (!needsTarget || !!target.trim()) && (!write || (source === 'typed' ? text !== '' : source === 'secret' ? !!secretRef : true))
     && (!go || isHttpAddress(address)) && (!wait || (Number.isInteger(secs) && secs >= 1 && secs <= MAX_WAIT_S));
   const save = () => {
     if (!ok) return;
-    const patch: Partial<PlanStep> = go ? { url: address } : wait ? { seconds: secs } : { target: target.trim() || undefined };
+    const patch: Partial<WalkStep> = go ? { url: address } : wait ? { seconds: secs } : { target: target.trim() || undefined };
     if (write) Object.assign(patch, source === 'typed' ? { text } : source === 'secret' ? { secretRef } : { generated });
     rec.editPlanStep(patch);
   };
   return (
     <form className="rec-plan-edit" aria-label="Edit this step" onSubmit={e => { e.preventDefault(); save(); }}>
       {needs && <div className="rec-plan-needs" role="status"><Icon name="info" size={16} />{needs}</div>}
-      {step.action !== 'navigate' && step.action !== 'waitFor' && (
-        <label className="rec-plan-field">{write ? 'Field to type into' : step.action === 'checkpoint' ? 'What should show' : 'What to find'}
+      {step.action !== 'navigate' && step.action !== 'waitFor' && step.action !== 'switchTab' && (
+        <label className="rec-plan-field">{write ? 'Field to type into' : step.action === 'checkpoint' || step.action === 'waitUntil' ? 'What should show' : 'What to find'}
           <input className="rec-num rec-plan-input" value={target} autoFocus={!needs} placeholder={write ? 'The field that has the focus' : undefined}
             onChange={e => setTarget(e.target.value)} />
         </label>

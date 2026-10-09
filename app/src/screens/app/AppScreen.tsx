@@ -8,6 +8,7 @@ import { useBackend, useLive, usePagedLive } from '../../data/hooks';
 import type { DeletedItem } from '../../data/backend';
 import type { App, Run, StepGroup, Test } from '../../data/types';
 import { NewTestDialog } from './NewTestDialog';
+import { ImportDialog } from './ImportDialog';
 import { RunsTab } from './RunsTab';
 import { SharedTab } from './SharedTab';
 import { TestsTab } from './TestsTab';
@@ -35,6 +36,7 @@ export default function AppScreen() {
     .filter(x => !x.startsWith('0 ')).join(' and ');
 
   const [newOpen, setNewOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   // ?new (from the first-use checklist) opens the New test dialog once.
   useEffect(() => {
     if (!params.has('new') || !app) return;
@@ -74,6 +76,7 @@ export default function AppScreen() {
         <Button kind="primary" icon="add" aria-keyshortcuts={ariaShortcut('N')} onClick={newGroup} disabled={!app}>New shared steps</Button>
       ) : <>
         <Button icon="playlist_play" onClick={runAll} disabled={!tests.data?.length}>Run all</Button>
+        <Button icon="upload_file" onClick={() => setImportOpen(true)} disabled={!app} title="Import a Playwright or Cypress test">Import…</Button>
         <Button kind="primary" icon="add" aria-keyshortcuts={ariaShortcut('N')} onClick={() => setNewOpen(true)} disabled={!app}>New test</Button>
       </>}>
       <Tabs<Tab> label={`${name} sections`} value={tab} onChange={setTab} items={[
@@ -87,7 +90,10 @@ export default function AppScreen() {
             tests.data!.length ? <TestsTab app={app} tests={tests.data!} />
               : <EmptyState icon="radio_button_checked" title={`No tests for ${name} yet.`}
                   text="Use the app the way a user would. Every click becomes a step you can replay later."
-                  action={<Button kind="primary" size="lg" icon="add" onClick={() => setNewOpen(true)}>Create your first test</Button>} />
+                  action={<div className="row" style={{ gap: 10, marginTop: 4 }}>
+                    <Button kind="primary" size="lg" icon="add" onClick={() => setNewOpen(true)}>Create your first test</Button>
+                    <Button size="lg" icon="upload_file" onClick={() => setImportOpen(true)}>Import from Playwright or Cypress</Button>
+                  </div>} />
           ) : tab === 'shared' ? (
             groups.data!.length ? <SharedTab app={app} groups={groups.data!} tests={tests.data!} />
               : <EmptyState icon="account_tree" title="No shared steps yet."
@@ -106,6 +112,7 @@ export default function AppScreen() {
         )}
       </div>
       {app && <NewTestDialog open={newOpen} app={app} onClose={() => setNewOpen(false)} />}
+      {app && <ImportDialog open={importOpen} app={app} onClose={() => setImportOpen(false)} />}
     </AppFrame>
   );
 }

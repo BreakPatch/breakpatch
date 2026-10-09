@@ -3,22 +3,31 @@
 // one at a time with the describe box's own flow: the target is found on the live page (the fast
 // locator first, then the AI assistant), shown for Confirm, Try again, Skip or Edit, and recorded
 // like a clicked step. These are the words and the mapping; the state is in useRecorder.
-import type { PlanStep } from '../../engine/engine';
+//
+// An imported Playwright or Cypress script (roadmap #16, lib/scriptImport) goes through the same
+// flow, as a "learning" run: `auto` does each step as soon as it's found, without Confirm, and
+// stops at the first one it can't find or that needs a value.
+import type { WalkStep } from '../../lib/scriptImport/walkStep';
 import { GENERATED } from '../../engine/labels';
 import { SCROLL_PX, type Intent } from './intent';
 
 export type PlanItemState = 'todo' | 'done' | 'skipped';
 /** The most steps a plan has (engine plan.MAX_STEPS). */
 export const MAX_PLAN_STEPS = 30;
-export interface PlanItem extends PlanStep { state: PlanItemState }
+export type { WalkStep };
+export interface PlanItem extends WalkStep { state: PlanItemState }
 
-/** The steps of a story being gone through. `index`: the step being asked about (steps.length when all are answered). */
-export interface PlanRun { steps: PlanItem[]; index: number; note?: string; dropped?: number; overLimit?: number }
+/**
+ * The steps being gone through. `index`: the step being asked about (steps.length when all are
+ * answered). `source`: a story (the default) or an imported script. `auto`: each step found is
+ * done at once (learning an imported script); off once paused.
+ */
+export interface PlanRun { steps: PlanItem[]; index: number; note?: string; dropped?: number; overLimit?: number; source?: 'story' | 'script'; auto?: boolean }
 
-const into = (s: PlanStep) => s.target ?? 'the field that has the focus';
+const into = (s: WalkStep) => s.target ?? 'the field that has the focus';
 
 /** The step in plain words: "Click the Sign up button", 'Type "Ada" into the Name field'; on a phone or tablet (`touch`) "Tap …". */
-export function planSentence(s: PlanStep, { touch = false }: { touch?: boolean } = {}): string {
+export function planSentence(s: WalkStep, { touch = false }: { touch?: boolean } = {}): string {
   switch (s.action) {
     case 'click': return `${touch ? 'Tap' : 'Click'} ${s.target}`;
     case 'doubleClick': return `${touch ? 'Double-tap' : 'Double-click'} ${s.target}`;
@@ -27,31 +36,41 @@ export function planSentence(s: PlanStep, { touch = false }: { touch?: boolean }
     case 'write':
       if (s.secretRef) return `Type the saved secret ${s.secretRef} into ${into(s)}`;
       if (s.generated) return `Type ${GENERATED[s.generated]} into ${into(s)}`;
+      if (s.text === '\n') return s.target ? `Press Enter in ${s.target}` : 'Press Enter';
+      if (s.text?.endsWith('\n')) return `Type "${s.text.slice(0, -1)}" into ${into(s)} and press Enter`;
       if (s.text !== undefined) return `Type "${s.text}" into ${into(s)}`;
       return `Type into ${into(s)}`;
-    case 'navigate': return `Go to ${s.url}`;
+    case 'navigate': return s.nav === 'reload' ? 'Reload the page' : s.nav === 'back' ? 'Go back' : s.nav === 'forward' ? 'Go forward' : `Go to ${s.url}`;
     case 'scroll': return `Scroll ${s.direction ?? 'down'}${s.target ? ` in ${s.target}` : ''}`;
     case 'waitFor': return `Wait ${s.seconds ?? 2} seconds`;
     case 'checkpoint': return `Check that ${s.target} shows`;
+    case 'waitUntil': return `Wait until ${s.target} shows`;
+    case 'switchTab': return 'Switch to the new tab';
   }
 }
 
 /** What the step still needs from the person before it can be done, in words, or null. */
-export function planNeeds(s: PlanStep): string | null {
+export function planNeeds(s: WalkStep, source: PlanRun['source'] = 'story'): string | null {
   if (s.action !== 'write' || (!s.needs && (s.text !== undefined || s.secretRef || s.generated))) return null;
+  if (source === 'script') {
+    return s.needs === 'secret' ? 'The script takes this from a setting or the environment. Pick the saved secret to type here.'
+      : 'The script works this value out in code. Say what to type here.';
+  }
   return s.needs === 'secret' ? 'Pick the saved secret to type here. Breakpatch never makes up a password.'
     : "Say what to type here. Breakpatch only types what your story says, a saved secret you picked, or a generated value.";
 }
 
 /** Said with a step that looks like it deletes, pays or sends something. */
 export const CAREFUL_NOTE = 'This step may delete, pay for or send something. Check it before you confirm.';
+/** Said with an imported step whose words were worked out from the page's code: it always asks. */
+export const CHECK_NOTE = "These words come from the script's code, so check it's the right one.";
 
 /** The step as the describe flow's intent: what to find and what Confirm does with it. */
-export function planIntent(s: PlanStep): Intent {
+export function planIntent(s: WalkStep): Intent {
   const base = { repeat: 1, from: 'plan' as const, ...(s.target ? { target: s.target } : {}) };
   switch (s.action) {
     case 'write': return { ...base, action: 'write', ...(s.secretRef ? { secretRef: s.secretRef } : s.generated ? { generated: s.generated } : { text: s.text ?? '' }) };
-    case 'navigate': return { ...base, action: 'navigate', url: s.url };
+    case 'navigate': return { ...base, action: 'navigate', url: s.url, ...(s.nav && s.nav !== 'url' ? { nav: s.nav } : {}) };
     case 'scroll': return { ...base, action: 'scroll', direction: s.direction ?? 'down', distance: SCROLL_PX };
     case 'waitFor': return { ...base, action: 'waitFor', seconds: s.seconds ?? 2 };
     default: return { ...base, action: s.action };
@@ -59,13 +78,17 @@ export function planIntent(s: PlanStep): Intent {
 }
 
 /** A new run through a plan's steps, from the first. */
-export function planRun(steps: PlanStep[], note?: string, dropped?: number, overLimit?: number): PlanRun {
-  return { steps: steps.map(s => ({ ...s, state: 'todo' as const })), index: 0, ...(note ? { note } : {}), ...(dropped ? { dropped } : {}), ...(overLimit ? { overLimit } : {}) };
+export function planRun(steps: WalkStep[], note?: string, dropped?: number, overLimit?: number, opts: Pick<PlanRun, 'source' | 'auto'> = {}): PlanRun {
+  return { steps: steps.map(s => ({ ...s, state: 'todo' as const })), index: 0, ...(note ? { note } : {}), ...(dropped ? { dropped } : {}), ...(overLimit ? { overLimit } : {}),
+    ...(opts.source === 'script' ? { source: 'script' as const, auto: !!opts.auto } : {}) };
 }
 
 /** Said under the first step when steps were left out: ones that can't be a step, and ones past the limit. */
-export function leftOutText(run: Pick<PlanRun, 'dropped' | 'overLimit'>): string | null {
+export function leftOutText(run: Pick<PlanRun, 'dropped' | 'overLimit' | 'source'>): string | null {
   const n = (k: number) => (k === 1 ? 'One step' : `${k} steps`);
+  if (run.source === 'script') {
+    return run.dropped ? `${n(run.dropped)} need${run.dropped === 1 ? 's' : ''} a mouse (hover or right click), so ${run.dropped === 1 ? "it's" : "they're"} left out on a phone or tablet.` : null;
+  }
   const out = [
     run.dropped ? `${n(run.dropped)} the AI assistant suggested can't be a step, so ${run.dropped === 1 ? "it's" : "they're"} left out.` : null,
     run.overLimit ? `${n(run.overLimit)} past the first ${MAX_PLAN_STEPS} ${run.overLimit === 1 ? 'is' : 'are'} left out: split a long story into a few tests.` : null,
@@ -78,9 +101,17 @@ export function answered(run: PlanRun, i: number, state: Exclude<PlanItemState, 
   return { ...run, steps: run.steps.map((s, k) => (k === i ? { ...s, state } : s)), index: Math.max(run.index, i + 1) };
 }
 
-/** "5 steps added, 1 skipped." when the last step has been answered. */
+/** "5 steps added, 1 skipped." when the last step has been answered ("learned" for a script). */
 export function planDoneText(run: PlanRun): string {
   const done = run.steps.filter(s => s.state === 'done').length, skipped = run.steps.filter(s => s.state === 'skipped').length;
-  const added = done === 1 ? '1 step added' : `${done} steps added`;
+  const verb = run.source === 'script' ? 'learned' : 'added';
+  const added = done === 1 ? `1 step ${verb}` : `${done} steps ${verb}`;
   return `${added}${skipped ? `, ${skipped} skipped` : ''}. Check them, then save the test.`;
+}
+
+/** The line over the steps: "From your story · step 2 of 5", "Learning step 2 of 9" for a script. */
+export function planHead(run: PlanRun): string {
+  const at = `step ${run.index + 1} of ${run.steps.length}`;
+  if (run.source !== 'script') return `From your story · ${at}`;
+  return run.auto ? `Learning ${at}` : `From your script · ${at}`;
 }

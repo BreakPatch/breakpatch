@@ -365,7 +365,9 @@ interface EditPanelProps {
 function StepEditPanelBody({ step, secretNames, canRerecord, onRerecord, closing, onSave, onCancel }: EditPanelProps & { closing: boolean }) {
   const [label, setLabel] = useState(step.label);
   const [source, setSource] = useState<'typed' | 'secret' | 'generated'>(step.secretRef ? 'secret' : step.generated ? 'generated' : 'typed');
-  const [text, setText] = useState(step.text ?? '');
+  // Typing that ends by pressing Enter (a step imported from a script): the text without it, and Enter kept.
+  const enter = !!step.text?.endsWith('\n');
+  const [text, setText] = useState(enter ? step.text!.slice(0, -1) : step.text ?? '');
   const [secretRef, setSecretRef] = useState(step.secretRef ?? secretNames[0] ?? '');
   const [generated, setGenerated] = useState<Generated>(step.generated ?? 'uniqueName');
   const [seconds, setSeconds] = useState(Math.round((step.durationMs ?? 2000) / 1000));
@@ -381,7 +383,7 @@ function StepEditPanelBody({ step, secretNames, canRerecord, onRerecord, closing
     let affects = false;
     if (a === 'write') {
       const was = { text: step.text, secretRef: step.secretRef, generated: step.generated };
-      const now = source === 'typed' ? { text, secretRef: undefined, generated: undefined }
+      const now = source === 'typed' ? { text: enter ? text + '\n' : text, secretRef: undefined, generated: undefined }
         : source === 'secret' ? { text: undefined, secretRef: secretRef || undefined, generated: undefined }
         : { text: undefined, secretRef: undefined, generated };
       Object.assign(patch, now);                                   // `masked` stays as recorded

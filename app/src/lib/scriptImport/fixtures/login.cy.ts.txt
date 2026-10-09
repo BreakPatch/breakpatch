@@ -1,0 +1,40 @@
+/// <reference types="cypress" />
+
+describe('Sign in', () => {
+  beforeEach(() => {
+    cy.viewport(1366, 768)
+    cy.visit('/login')
+  })
+
+  it('signs in and sees the dashboard', () => {
+    cy.get('[data-cy=email]').type('ada@example.com')
+    cy.get('input[name="password"]').type(Cypress.env('PASSWORD'), { log: false })
+    cy.contains('button', 'Sign in').click()
+    cy.url().should('include', '/dashboard')
+    cy.contains('Welcome back').should('be.visible')
+    cy.get('h1').should('have.text', 'Dashboard')
+    cy.get('.toast').should('not.exist')
+    cy.intercept('GET', '/api/orders').as('orders')
+    cy.get('nav')
+      .contains('Orders')
+      .click()
+    cy.wait('@orders')
+    cy.get('#search').type('shoes{enter}')
+    cy.get('select#country').select('Sweden')
+    cy.get('#terms').check()
+    cy.get('.menu > li').eq(2).click()
+    cy.get('.btn-primary').click()
+    cy.get('[data-test=row]').within(() => {
+      cy.contains('Edit').click()
+    })
+    cy.login('ada')
+    cy.wait(500)
+    cy.get('#name').clear().type('{selectall}Ada')
+  })
+
+  it('shows an error for a wrong password', function () {
+    cy.get('[data-cy=email]').type('ada@example.com')
+    cy.get('[data-cy=password]').type('wrong{enter}')
+    cy.contains(/wrong password/i).should('be.visible')
+  })
+})
