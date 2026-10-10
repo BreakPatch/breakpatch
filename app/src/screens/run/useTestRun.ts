@@ -19,6 +19,7 @@ import { backendGroupLoader, callSecretNames, preorder, resolveSteps, secretName
 import { INITIAL_RUN, runReducer } from './runState';
 import { demoFailIds, demoSeen } from './demo';
 import { computer, ThisComputer } from '../../lib/osWords';
+import { inboxSecretNames, readInbox, usesEmail } from '../../lib/email';
 
 export interface Finished { ended: RunEnded; run: Run | null; steps: Step[]; recordedOn?: RecordedOn }
 
@@ -66,8 +67,12 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
   const names = [...new Set([...secretNames(steps), ...callSecretNames(t.setUp, t.cleanUp)])];
   const appUrl = await appUrlOf(backend, t);
   await ensureSecretSites(names, appUrl);
+  // The workspace's test inbox, when the steps wait for an email or use {email} (Team, lib/email.ts);
+  // its password is a saved secret like any other, used on the inbox's site only.
+  const inbox = usesEmail(steps) ? await readInbox(backend) : null;
+  const inboxNames = inboxSecretNames(steps, inbox).filter(n => !names.includes(n));
   // This Mac's values, where the run is, and the workspace's sealed secrets (lib/secretScope.ts).
-  const forRun = await secretsForRequest(names);
+  const forRun = await secretsForRequest([...names, ...inboxNames]);
   if (opts.abandoned?.()) return null;
   const startedAt = Date.now();
   opts.onStart?.(startedAt);
@@ -89,7 +94,7 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
         autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix, allowSystemDifferences: prefs.allowSystemDifferences,
         ...(opts.retries ? { retries: opts.retries } : {}),
       },
-      ...forRun, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}),
+      ...forRun, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}), ...(inbox ? { inbox } : {}),
       ...(filesDir(backend.local?.path) ? { filesDir: filesDir(backend.local?.path) } : {}),
       ...(opts.keepOpen ? { keepOpen: true } : {}), ...(opts.upToStepId ? { upToStepId: opts.upToStepId } : {}),
       ...(opts.fromStepId ? { fromStepId: opts.fromStepId } : {}),

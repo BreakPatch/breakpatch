@@ -5,7 +5,7 @@
 // imports Team code, only this contract.
 import type { ComponentType, LazyExoticComponent, ReactNode } from 'react';
 import type { Backend } from '../data/backend';
-import type { NotifyInput, Person, Run, Step, StepRun, Suite, Test, Workspace } from '../data/types';
+import type { ActionKind, NotifyInput, Person, Run, Step, StepRun, Suite, Test, Workspace } from '../data/types';
 import type { MenuItem } from '../components/ui';
 import type { Connection } from '../state/connections';
 import type { SealedSecret } from '../engine/engine';
@@ -34,11 +34,14 @@ export interface Features {
   integrations: boolean;
   /** "Write a test from a story": the AI assistant proposes the steps of a user story in the recorder (engine record.plan). */
   aiTests: boolean;
+  /** "Wait for an email" steps and the workspace's test inbox (engine `emailWait`, issue #12). */
+  email: boolean;
 }
 
 export const NO_FEATURES: Features = {
   collaboration: false, versions: false, autoFix: false, calibration: false,
   schedules: false, runner: false, ci: false, modelOverride: false, explain: false, integrations: false, aiTests: false,
+  email: false,
 };
 
 type Screen = ComponentType | LazyExoticComponent<ComponentType>;
@@ -159,6 +162,39 @@ export interface Slots {
   switcherExtra?: ComponentType;
   /** The workspace switcher: ⌘1 to ⌘9 open its first nine entries, and its menu shows them (Team). */
   switcherShortcuts?: boolean;
+  /** The recorder's action list: actions the edition performs (Team: Wait for an email). */
+  recorderActions?: RecorderAction[];
+}
+
+/**
+ * What a recorder action's dialog gets (Slots.recorderActions): `step` when it edits one, else it
+ * adds one. `onSave` adds the step (the recorder has the engine do it, as for any step: it isn't
+ * added when that doesn't work, and the recorder says why) or saves the edit. It resolves false
+ * when the step wasn't added: the dialog then stays open; otherwise the dialog closes itself.
+ */
+export interface RecorderActionDialogProps {
+  open: boolean;
+  step?: Step;
+  /** The steps of the test so far (what the step can use, e.g. `{email}`). */
+  steps: Step[];
+  onSave(patch: Partial<Step>): void | boolean | Promise<boolean | void>;
+  onClose(): void;
+}
+
+/**
+ * An action the edition adds to the recorder's action list, with its own dialog for adding and
+ * editing the step (Team: Wait for an email, issue #12). Shown only while `feature` is on; a test
+ * that has such a step still lists and runs it without (the run fails it with `actionUnavailable`).
+ */
+export interface RecorderAction {
+  kind: ActionKind;
+  /** The menu's name ("Wait for an email") and icon. */
+  name: string;
+  icon: string;
+  /** The action list's group it goes in, after the open ones ("Email"). */
+  group: string;
+  feature?: keyof Features;
+  Dialog: ComponentType<RecorderActionDialogProps>;
 }
 
 /** A workspace secret as the screens may know it: its name and who may use it, never its value. */

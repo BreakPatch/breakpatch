@@ -1,7 +1,7 @@
 // Plain-language names and icons for each action (ui-requirements §5.6 action list).
-import type { ActionKind, HttpCall, Step } from '../data/types';
+import type { ActionKind, EmailMatch, HttpCall, Step } from '../data/types';
 
-export interface ActionInfo { kind: ActionKind; name: string; verb: string; icon: string; group: 'Gestures' | 'Input' | 'Waiting' | 'Browser' | 'Structure' | 'Check' | 'API' }
+export interface ActionInfo { kind: ActionKind; name: string; verb: string; icon: string; group: 'Gestures' | 'Input' | 'Waiting' | 'Browser' | 'Structure' | 'Check' | 'API' | 'Email' }
 
 export const ACTIONS: ActionInfo[] = [
   { kind: 'click', name: 'Click', verb: 'Click', icon: 'touch_app', group: 'Gestures' },
@@ -21,6 +21,8 @@ export const ACTIONS: ActionInfo[] = [
   { kind: 'downloadCheck', name: 'Check a download', verb: 'Check download', icon: 'download_done', group: 'Browser' },
   { kind: 'checkpoint', name: 'Also check something is visible', verb: 'Check', icon: 'fact_check', group: 'Check' },
   { kind: 'call', name: 'Call your API', verb: 'Call', icon: 'api', group: 'API' },
+  // Breakpatch Team performs it (the edition's recorderActions offer it); every edition lists and names it.
+  { kind: 'emailWait', name: 'Wait for an email', verb: 'Wait for an email', icon: 'mail', group: 'Email' },
   { kind: 'loop', name: 'Repeat steps', verb: 'Repeat', icon: 'repeat', group: 'Structure' },
   { kind: 'group', name: 'Insert shared steps', verb: 'Shared steps', icon: 'account_tree', group: 'Structure' },
 ];
@@ -61,16 +63,22 @@ export function labelFor(kind: ActionKind, p: Partial<Step> = {}): { verb: strin
   const a = BY_KIND[kind];
   switch (kind) {
     case 'write':
-      return { verb: a.verb, label: p.secretRef ? `Write saved secret ${p.secretRef}` : p.valueRef ? `Write the value ${p.valueRef}` : p.generated ? `Write ${GENERATED[p.generated]}` : `Write "${p.text ?? ''}"` };
+      return { verb: a.verb, label: p.secretRef ? `Write saved secret ${p.secretRef}` : p.valueRef ? `Write ${p.valueRef === 'emailCode' ? 'the code from the email' : p.valueRef === 'emailLink' ? 'the link from the email' : `the value ${p.valueRef}`}` : p.generated ? `Write ${GENERATED[p.generated]}` : `Write "${p.text ?? ''}"` };
     case 'waitFor': return { verb: a.verb, label: `Wait ${Math.round((p.durationMs ?? 1000) / 1000)} seconds` };
     case 'navigate':
       return { verb: a.verb, label: p.nav === 'reload' ? 'Reload the page' : p.nav === 'back' ? 'Go back' : p.nav === 'forward' ? 'Go forward' : `Go to ${p.url ?? 'address'}` };
     case 'upload': return { verb: a.verb, label: `Upload ${p.sample ? SAMPLE_NAMES[p.sample] : 'a file'}` };
     case 'loop': return { verb: a.verb, label: `Repeat ${p.count ?? 2} times` };
     case 'call': return { verb: a.verb, label: callLabel(p.call) };
+    case 'emailWait': return { verb: a.verb, label: emailLabel(p.email) };
     case 'scroll': case 'swipe': return { verb: a.verb, label: `${a.verb} ${p.direction ?? 'down'}` };
     default: return { verb: a.verb, label: a.verb + ' here' };
   }
+}
+
+/** "Wait for an email with a code": what a Wait for an email step picks out. The engine's labels.email_label says the same. */
+export function emailLabel(email: EmailMatch | undefined): string {
+  return email?.pick === 'code' ? 'Wait for an email with a code' : email?.pick === 'link' ? 'Wait for an email with a link' : 'Wait for an email';
 }
 
 /**

@@ -14,6 +14,11 @@ NOW = dt.datetime(2026, 9, 24, 7, 5, 9)
 def test_tokens_are_replaced_at_run_time():
     assert substitute("Note {i} at {time} on {date}", 3, NOW) == "Note 3 at 07:05 on 2026-09-24"
     assert substitute("plain", 1, NOW) == "plain"
+    # {email} is the run's own address (Breakpatch Team, test_email_step.py); {emailCode} and
+    # {emailLink} are typed by the Write step itself, under a kept value's guard.
+    ctx = Context(Timings.fast(), i=3, email="qa+bp-abc@acme.com")
+    assert resolve_text({"text": "{email} {i} {date}"}, ctx, NOW) == "qa+bp-abc@acme.com 3 2026-09-24"
+    assert substitute("{emailCode}", 1, NOW) == "{emailCode}"
 
 
 def test_generated_values_and_secrets():

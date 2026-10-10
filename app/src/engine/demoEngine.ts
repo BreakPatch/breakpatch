@@ -1,7 +1,7 @@
 // Simulated engine for the browser preview and tests. Timings follow the prototype:
 // "Checking the screen…" ~1 s, run steps ~750 ms each, AI thinking ~1.5 s.
-import type { Box, Explanation, FailReason, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Plan, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
+import type { Box, Explanation, FailReason, HttpCall, InboxSettings, Point, Step, StepRun, Viewport } from '../data/types';
+import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type InboxCheck, type LocateResult, type Near, type EngineIntent, type Plan, type Proposal, type RecordParams, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
 import { edition } from '../edition';
 import { hasFeature } from '../edition/features';
 import { labelFor } from './labels';
@@ -79,6 +79,13 @@ export class DemoEngine implements Engine {
     const hit = p.at ? this.targets.find(t => t.visible() && inside(p.at!, t.box)) : undefined;
     const at = p.at;
     const { frame: _frame, secrets: _secrets, appUrl: _appUrl, workspace: _ws, workspaceSecrets: _wss, ...fields } = p;
+    if (p.action === 'emailWait') {
+      // The preview reads no inbox: the sample app's email "comes" with a 6-digit code (Team only, as the engine).
+      const { inbox: _inbox, ...rest } = fields;
+      if (!hasFeature('email')) throw new EngineError('not_ready', 'Waiting for an email needs Breakpatch Team.');
+      await this.sleep(1200);
+      return { ...rest, id: 's' + Date.now().toString(36) + (this.nextId++), label: labelFor('emailWait', p).label } as Step;
+    }
     if (p.action === 'call') {
       // The preview makes no request: a well-formed https address "replies" 200, as Try it does.
       if (!/^https:\/\/[^/\s]+/i.test(p.call?.url?.trim() ?? '')) throw new EngineError('bad_request', 'Enter a full address, starting with https://');
@@ -183,10 +190,14 @@ export class DemoEngine implements Engine {
         }
         if (attempt === 1 && this.flakyStepIds.has(s.id)) return fail(s, 'timeout');
       }
-      // A Call step "replies" 200 in the preview: no request is made.
+      // Steps only Breakpatch Team performs fail without it, as in the engine (never a pass).
+      if (s.action === 'emailWait' && !hasFeature('email')) return fail(s, 'actionUnavailable');
+      // A Call step "replies" 200 in the preview: no request is made. Nor is an inbox read: a code "comes".
       const reply = s.action === 'call' ? { status: 200, ms: 120 } : undefined;
-      results[index.get(s)!] = { stepId: s.id, result: 'passed', ...(reply ? { reply } : {}) };
-      this.emit('run.step', { runId: r.runId, index: index.get(s)!, stepId: s.id, state: 'passed', ...(reply ? { reply } : {}) });
+      const email = s.action === 'emailWait' ? (s.email?.pick === 'link' ? { got: 'link' as const, site: 'app.example.com', ms: 1800 }
+        : s.email?.pick === 'code' ? { got: 'code' as const, chars: 6, digits: true, ms: 1800 } : { got: 'email' as const, ms: 1800 }) : undefined;
+      results[index.get(s)!] = { stepId: s.id, result: 'passed', ...(reply ? { reply } : {}), ...(email ? { email } : {}) };
+      this.emit('run.step', { runId: r.runId, index: index.get(s)!, stepId: s.id, state: 'passed', ...(reply ? { reply } : {}), ...(email ? { email } : {}) });
       if (r.upToStepId === s.id) reached = true;    // Play to here: the rest stays not run
       return true;
     };
@@ -213,6 +224,14 @@ export class DemoEngine implements Engine {
     })();
   }
   async stopRun(runId: string) { this.stops.add(runId); }
+
+  /** The preview reads no inbox: a well-formed one "connects" (Team only, as the engine). */
+  async checkInbox(inbox: InboxSettings): Promise<InboxCheck> {
+    if (!hasFeature('email')) throw new EngineError('not_ready', 'Checking a test inbox needs Breakpatch Team.');
+    await this.sleep(500);
+    if (!inbox.server.trim() || !/@/.test(inbox.address)) return { ok: false, message: 'Add the server and the address emails go to.' };
+    return { ok: true, message: 'Connected. The inbox has 3 emails.' };
+  }
 
   /** The preview makes no request: a well-formed https address "replies" 200. */
   async tryCall(call: HttpCall, _appUrl: string): Promise<CallReply> {

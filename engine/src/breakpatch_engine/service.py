@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import calls, config, explain, imaging, install, labels, plan, plugins
-from .actions import parse_secrets
+from .actions import EmailSession, parse_secrets
 from .browser import BrowserSession
 from .locator import Locator, MlxLocator, NoLocator
 from .protocol import EngineError
@@ -113,6 +113,7 @@ class Engine:
             "run.explain": self.run_explain,
             "report.images": self.report_images,
             "call.try": self.call_try,
+            "email.check": self.email_check,
         }
 
     # ---------------------------------------------------------------- system
@@ -148,8 +149,10 @@ class Engine:
         await self.browser_hand({"on": False})
         async with self._browser_lock:
             await self.browser.open(p.get("url") or "", p.get("viewport") or {})
-        # A new recording session: nothing a Call step kept in an earlier one carries over.
+        # A new recording session: nothing a Call step kept in an earlier one carries over, it gets its
+        # own `{email}` address, and only emails from now on count for it.
         self.recorder.values = {}
+        self.recorder.email = EmailSession()
         return {}
 
     async def browser_close(self, p: dict) -> dict:
@@ -427,6 +430,7 @@ class Engine:
         # Play this step goes on from the recorder's page, with the values its Call steps kept.
         if p.get("fromStepId") is not None:
             runner.values = self.recorder.values
+            runner.email = self.recorder.email
 
         async def go():
             try:
@@ -435,6 +439,8 @@ class Engine:
                 if p.get("keepOpen"):
                     # Recording carries on from where the run left the page, and from what it kept.
                     self.recorder.values = runner.values
+                    if runner.email is not None:
+                        self.recorder.email = runner.email
             except Exception as e:  # noqa: BLE001
                 log.exception("run crashed")
                 ended = {"runId": run_id, "result": "fail", "durationMs": 0,
@@ -562,6 +568,18 @@ class Engine:
         if keep and reply.ok:
             out["kept"] = True
         return out
+
+    async def email_check(self, p: dict) -> dict:
+        """Settings → Test inbox, "Check the inbox" (Breakpatch Team, issue #12): signs in to the
+        inbox as a run would and answers `{ ok, message? }`, never what's in it. Community:
+        `not_ready`."""
+        from . import plugins
+        check = getattr(plugins.action("emailWait"), "check", None)
+        if not callable(check):
+            raise EngineError("not_ready", "Checking a test inbox needs Breakpatch Team.")
+        if not isinstance(p.get("inbox"), dict):
+            raise EngineError("bad_request", "There's no test inbox to check.")
+        return await check({"inbox": p["inbox"], "secrets": parse_secrets(p.get("secrets"))})
 
     async def shutdown(self) -> None:
         if self._run:

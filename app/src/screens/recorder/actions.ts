@@ -1,17 +1,28 @@
 // The action list (ui-requirements §5.6) and what each action does with the page and the composer.
 import type { ActionKind } from '../../data/types';
+import type { RecorderAction } from '../../edition/types';
 import { ACTIONS, actionInfo, actionWords, TOUCH_HIDDEN } from '../../engine/labels';
 import type { LiveTool } from '../../components/live';
 
-/** Menu entries. Reload, Back and Forward are Go-to-address variants that record at once. */
-export interface MenuAction { id: string; kind: ActionKind; name: string; icon: string; nav?: 'reload' | 'back' | 'forward' }
+/**
+ * Menu entries. Reload, Back and Forward are Go-to-address variants that record at once. `edition`:
+ * an action the edition adds (Slots.recorderActions), with its own dialog.
+ */
+export interface MenuAction { id: string; kind: ActionKind; name: string; icon: string; nav?: 'reload' | 'back' | 'forward'; edition?: boolean }
 export interface MenuGroup { title: string; items: MenuAction[] }
 
 const item = (kind: ActionKind, touch = false): MenuAction => { const a = actionInfo(kind); return { id: kind, kind, name: actionWords(kind, touch).name, icon: a.icon }; };
 
 /** `touch`: a phone or tablet test. Its gestures are named for touch (Tap, Long press), and Right click and Hover, which need a mouse, aren't offered. */
-export function menuGroups(opts: { allowGroups: boolean; touch?: boolean }): MenuGroup[] {
+export function menuGroups(opts: { allowGroups: boolean; touch?: boolean; extra?: RecorderAction[] }): MenuGroup[] {
   const touch = !!opts.touch;
+  // The edition's actions (Team: Wait for an email), each in its group, before Structure.
+  const extra: MenuGroup[] = [];
+  for (const a of opts.extra ?? []) {
+    const item: MenuAction = { id: a.kind, kind: a.kind, name: a.name, icon: a.icon, edition: true };
+    const g = extra.find(x => x.title === a.group);
+    if (g) g.items.push(item); else extra.push({ title: a.group, items: [item] });
+  }
   const by = (g: string) => ACTIONS.filter(a => a.group === g && !(touch && TOUCH_HIDDEN.has(a.kind))).map(a => item(a.kind, touch));
   return [
     { title: 'Gestures', items: by('Gestures') },
@@ -26,6 +37,7 @@ export function menuGroups(opts: { allowGroups: boolean; touch?: boolean }): Men
     ] },
     { title: 'Checkpoint', items: [item('checkpoint')] },
     { title: 'API', items: [item('call')] },
+    ...extra,
     { title: 'Structure', items: opts.allowGroups ? by('Structure') : [item('loop')] },
   ];
 }
@@ -34,6 +46,7 @@ export function menuGroups(opts: { allowGroups: boolean; touch?: boolean }): Men
 export const SHORT: Partial<Record<ActionKind, string>> = {
   checkpoint: 'Checkpoint', loop: 'Repeat', group: 'Shared steps', waitUntil: 'Wait until', waitFor: 'Wait',
   navigate: 'Go to address', downloadCheck: 'Check download', upload: 'Upload file', drag: 'Drag and drop', call: 'Call your API',
+  emailWait: 'Wait for an email',
 };
 export const shortName = (k: ActionKind, touch = false) => SHORT[k] ?? actionWords(k, touch).name;
 

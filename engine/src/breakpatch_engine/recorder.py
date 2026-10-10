@@ -10,7 +10,8 @@ from typing import Callable
 from pathlib import Path
 
 from . import calls, checks, config, imaging, labels
-from .actions import FILE_REF, POINTER_ACTIONS, ActionFailed, Context, parse_secrets, perform, sample_path
+from .actions import (BUILT_IN_ACTIONS, FILE_REF, POINTER_ACTIONS, TEAM_ACTIONS, ActionFailed, Context, EmailSession,
+                      email_address, parse_secrets, perform, sample_path)
 from .browser import BrowserSession
 from .dom.flow import LocateFlow
 from .locator import Locator
@@ -18,17 +19,17 @@ from .protocol import NULL, EngineError
 
 log = logging.getLogger("breakpatch.recorder")
 
-ACTIONS = POINTER_ACTIONS | {"write", "waitUntil", "waitFor", "navigate", "switchTab", "upload", "downloadCheck",
-                             "checkpoint", "loop", "group", "call"}
+ACTIONS = BUILT_IN_ACTIONS | set(TEAM_ACTIONS)
 # Fields copied from the request into the step as they are.
 PASS_THROUGH = ("from", "to", "direction", "distance", "text", "secretRef", "generated", "durationMs", "url", "nav",
                 "sample", "fileType", "minBytes", "timeoutMs", "count", "groupId", "groupVersion", "steps",
-                "valueRef", "passStatus", "keep")
+                "valueRef", "passStatus", "keep", "email")
 Phase = Callable[[str], None]
 ROLE_WORDS = {"button": "button", "link": "link", "textbox": "field", "searchbox": "field", "checkbox": "checkbox",
               "radio": "option", "combobox": "list", "menuitem": "menu item", "tab": "tab", "switch": "switch",
               "img": "image", "heading": "heading"}
 CLICKY = {"click", "doubleClick", "longClick", "rightClick"}   # what can open a page's file picker
+RECORD_WAIT_MS = 150_000      # a Team step's wait while recording (Wait for an email), at most
 
 
 def varies_each_run(step: dict) -> bool:
@@ -37,7 +38,8 @@ def varies_each_run(step: dict) -> bool:
     if step.get("action") != "write":
         return False
     text = step.get("text") or ""
-    return bool(step.get("generated")) or bool(step.get("valueRef")) or any(k in text for k in ("{i}", "{time}", "{date}", "{timestamp}"))
+    return bool(step.get("generated")) or bool(step.get("valueRef")) or any(
+        k in text for k in ("{i}", "{time}", "{date}", "{timestamp}", "{email}", "{emailCode}", "{emailLink}"))
 
 
 def suggest_expect(before, after, blast, ignore, url_before: str, url_after: str) -> str:
@@ -89,6 +91,44 @@ class Recorder:
         self._last_watch: list = []
         # What Call steps recorded (or played) in this session kept, for later Write steps (actions.Context.values).
         self.values: dict[str, tuple[str, str | None]] = {}
+        # `{email}` while recording (Breakpatch Team): a new one each time the recorder opens its
+        # browser (service.browser_open); a Run there hands over its last try's.
+        self.email = EmailSession()
+
+    def context(self, p: dict, **kw) -> Context:
+        """A step's actions.Context while recording: its secrets, this session's kept values and `{email}`."""
+        from . import plugins
+        inbox = p.get("inbox") if isinstance(p.get("inbox"), dict) else None
+        address = (email_address(inbox.get("address"), self.email.tag)
+                   if inbox and plugins.action("emailWait") is not None else None)
+        return Context(self.t, secrets=parse_secrets(p.get("secrets"), self.b.start_origin), values=self.values,
+                       app_url=p.get("appUrl") or self.b.start_origin, inbox=inbox, email=address,
+                       email_since=self.email.since, email_used=self.email.used, **kw)
+
+    async def _team_action(self, p: dict, step: dict, phase: Phase) -> dict:
+        """A step the Team engine performs (Wait for an email, issue #12), added: it's done now, as
+        a run does it, so the steps recorded after it can use what it kept. One that doesn't work
+        isn't added (the error says why). Community: `not_ready`."""
+        from . import plugins
+        action = step["action"]
+        do = plugins.action(action)
+        if do is None:
+            raise EngineError("not_ready", f"{TEAM_ACTIONS[action]} needs Breakpatch Team.")
+        step["label"] = p.get("label") or labels.default_label(action, step)
+        phase("acting")
+        # The app gives record.point 180 s (the shell's engine.rs): while recording, a wait stops
+        # at RECORD_WAIT_MS whatever the step says; the step keeps its own for runs.
+        now = dict(step)
+        if isinstance(step.get("timeoutMs"), (int, float)) and not isinstance(step.get("timeoutMs"), bool):
+            now["timeoutMs"] = min(step["timeoutMs"], RECORD_WAIT_MS)
+        try:
+            await do(now, self.context(p))
+        except ActionFailed as e:
+            code = {"actionUnavailable": "not_ready", "secretMissing": "not_found", "timeout": "not_found",
+                    "stopped": "bad_request"}.get(e.reason, "network" if e.reason == "emailFailed" else "bad_request")
+            raise EngineError(code, e.message)
+        log.info("recorded a %s step", action)
+        return step
 
     async def _call(self, p: dict, step: dict, phase: Phase) -> dict:
         """A Call step, added: the call is made now, as a run makes it, so the steps recorded after
@@ -146,6 +186,8 @@ class Recorder:
             return step
         if action == "call":
             return await self._call(p, step, phase)
+        if action in TEAM_ACTIONS:
+            return await self._team_action(p, step, phase)
         if action == "waitFor":
             # Wait N seconds only waits: no checks of its own (the next step's check guards the page).
             await asyncio.sleep(max(0, float(p.get("durationMs") or 1000)) / 1000)
@@ -166,9 +208,17 @@ class Recorder:
             step.setdefault("timeoutMs", 10000)
             return step
 
-        if action == "write" and p.get("valueRef") and str(p["valueRef"]) not in self.values:
-            raise EngineError("not_found", f"There's no value {p['valueRef']} yet. Play the Call step that keeps it "
-                                           "(Play to here), then add this step.")
+        wants = [str(p["valueRef"])] if action == "write" and p.get("valueRef") else []
+        wants += [n for n in ("emailCode", "emailLink") if action in ("write", "navigate")
+                  and "{" + n + "}" in str(p.get("text") or p.get("url") or "")]
+        for name in wants:
+            if name not in self.values and name in ("emailCode", "emailLink"):
+                what = "a code" if name == "emailCode" else "a link"
+                raise EngineError("not_found", f"No email has given {what} yet. Play the Wait for an email step "
+                                               "(Play to here), then add this step.")
+            if name not in self.values:
+                raise EngineError("not_found", f"There's no value {name} yet. Play the Call step that keeps it "
+                                               "(Play to here), then add this step.")
         self.b.require()
         w, h = self.b.width, self.b.height
         anchor = at or frm
@@ -194,9 +244,7 @@ class Recorder:
             self._download_mark = 0          # the browser was reopened
         # A download check without a position looks at downloads since the last check, so a
         # "click the link" step followed by "check the download" works as it does in replay.
-        ctx = Context(self.t, secrets=parse_secrets(p.get("secrets"), self.b.start_origin),
-                      download_mark=self._download_mark, files_dir=p.get("filesDir"), values=self.values,
-                      app_url=p.get("appUrl") or self.b.start_origin)
+        ctx = self.context(p, download_mark=self._download_mark, files_dir=p.get("filesDir"))
         # A click that opens the page's file picker: the app asks which file to use (no system
         # dialog can show), and the step becomes an upload of that file.
         choosers: list = []

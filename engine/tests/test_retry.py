@@ -8,7 +8,8 @@ from breakpatch_engine import calls, config, retry
 from breakpatch_engine.runner import MESSAGES, Runner, StepFailed
 
 ALL_REASONS = ["targetNotFound", "unexpectedScreen", "noChange", "timeout", "healFailed", "healingUnavailable",
-               "secretMissing", "setUpFailed", "stopped", "fileMissing", "callFailed"]
+               "secretMissing", "setUpFailed", "stopped", "fileMissing", "callFailed",
+               "actionUnavailable", "emailFailed"]
 CLICK = {"id": "s1", "action": "click", "pre": {"region": [0, 0, 10, 10], "hash": "0" * 16, "tolerance": 6},
          "post": {"region": [0, 0, 10, 10], "hash": "0" * 16, "tolerance": 10}}
 CHECKPOINT = {"id": "c1", "action": "checkpoint", "region": [0, 0, 10, 10], "hash": "0" * 16, "tolerance": 8}

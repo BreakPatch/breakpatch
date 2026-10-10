@@ -18,7 +18,8 @@ from typing import Awaitable, Callable, Iterator, Protocol
 import numpy as np
 
 from . import calls, checks, config, explain, imaging, retry, systems
-from .actions import ActionFailed, Context, Secret, parse_secrets, perform, secret_refs
+from .actions import (TEAM_ACTIONS, ActionFailed, Context, EmailSession, Secret, email_address, fill_email, parse_secrets,
+                      perform, secret_refs)
 from .sites import origin_of
 from .browser import BrowserSession
 from .locator import Locator
@@ -52,7 +53,11 @@ MESSAGES = {
     "stopped": "The run was stopped.",
     "fileMissing": "The file this upload chooses isn't in the tests folder.",
     "callFailed": "The call to your API didn't work.",
+    "actionUnavailable": "This step needs Breakpatch Team.",
+    "emailFailed": "The test inbox couldn't be read.",
 }
+# What a step the Team engine performs (plugins.register_action) may add to its StepRun.
+ACTION_FIELDS = ("email",)
 
 
 def walk(steps: list[dict]) -> Iterator[dict]:
@@ -105,6 +110,9 @@ class Runner:
         # Values Call steps kept (actions.Context.values): those of the recorder's session for Play
         # this step, and after the run, those the run kept (the recorder carries on with them).
         self.values: dict[str, tuple[str, str | None]] = {}
+        # `{email}` for this try (actions.EmailSession): for Play this step, the recorder's; after the
+        # run, the last try's (the recorder carries on with it). Every try of a run shares `used`.
+        self.email: EmailSession | None = None
 
     async def run(self, req: dict, stop: asyncio.Event) -> dict:
         """The whole run: one try, and with `settings.retries` up to that many more when a try
@@ -119,6 +127,7 @@ class Runner:
         earlier: list[dict] = []
         clean_up_failed = False
         self.attempt = 1
+        self._email_used: set = self.email.used if self.email is not None else set()
         while True:
             started = time.monotonic()
             ok = await self._attempt(req, stop)
@@ -181,6 +190,8 @@ class Runner:
         self.as_runner = bool(req.get("runner"))
         # Set-up and clean-up calls may only reach the app's own hosts (calls.py).
         self.app_url = str(req.get("appUrl") or req.get("startUrl") or "")
+        # The test inbox a Wait for an email step reads and `{email}` builds on (Breakpatch Team).
+        self.inbox = req.get("inbox") if isinstance(req.get("inbox"), dict) else None
         self._steps = steps
         order = list(walk(steps))
         self.index = {id(s): i for i, s in enumerate(order)}
@@ -231,6 +242,10 @@ class Runner:
         """True when every step passed (or healed)."""
         refs = secret_refs(steps)
         first = order[0] if order else None
+        # The test inbox's password, for its first Wait for an email step (the step says so if it's missing).
+        waits = [s for s in order if s.get("action") == "emailWait"]
+        if waits and self.inbox and self.inbox.get("passwordRef"):
+            refs.append((waits[0], str(self.inbox["passwordRef"])))
         refs += [(first, n) for n in calls.call_secret_refs(req.get("setUp")) + calls.call_secret_refs(req.get("cleanUp"))]
         for s, name in refs:
             problem = secret_problem(name, secrets.get(name), self.as_runner)
@@ -246,9 +261,13 @@ class Runner:
             if not self.b.is_open:
                 self.message = "The browser isn't open."
                 return False
+            if self.email is None:
+                self.email = EmailSession(used=self._email_used)
             ctx = self._context(secrets, stop)
             return await self._run_list(steps, ctx, stop, iteration=None)
         self.values = {}
+        # Every try its own `{email}` address, and only emails from now on count for it.
+        self.email = EmailSession(used=self._email_used)
         if req.get("setUp"):
             reply = await calls.make(req["setUp"], self.app_url, secrets, self.t.http_timeout)
             log.info("set-up call: %s", reply.info)
@@ -277,8 +296,14 @@ class Runner:
         return await self._run_list(steps, ctx, stop, iteration=None)
 
     def _context(self, secrets: dict[str, Secret], stop: asyncio.Event) -> Context:
+        from . import plugins
+        email = self.email or EmailSession(used=self._email_used)
+        # `{email}` only when a test inbox was sent and something can read it (the Team engine).
+        address = (email_address(self.inbox.get("address"), email.tag)
+                   if self.inbox and plugins.action("emailWait") is not None else None)
         ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed, files_dir=self.files_dir,
-                      values=self.values, app_url=self.app_url)
+                      values=self.values, app_url=self.app_url, inbox=self.inbox, email=address,
+                      email_since=email.since, email_used=email.used)
         self.values = ctx.values
         return ctx
 
@@ -333,7 +358,7 @@ class Runner:
     def _fail(self, step: dict, err: StepFailed, iteration: int | None = None) -> None:
         i = self.index[id(step)]
         rec = {"stepId": step.get("id"), "result": "failed", "reason": err.reason}
-        for k in ("preDistance", "postDistance", "oldAt", "newAt", "screenshotPath", "timings", "reply"):
+        for k in ("preDistance", "postDistance", "oldAt", "newAt", "screenshotPath", "timings", "reply", *ACTION_FIELDS):
             if err.extra.get(k) is not None:
                 rec[k] = err.extra[k]
         self.results[i] = rec
@@ -342,7 +367,7 @@ class Runner:
         self._event(step, "failed", iteration, reason=err.reason, message=err.message, details=err.extra.get("details"),
                     preDistance=rec.get("preDistance"), postDistance=rec.get("postDistance"),
                     oldAt=rec.get("oldAt"), newAt=rec.get("newAt"), screenshot=rec.get("screenshotPath"),
-                    timings=rec.get("timings"), reply=rec.get("reply"))
+                    timings=rec.get("timings"), reply=rec.get("reply"), email=rec.get("email"))
 
     async def _run_list(self, steps: list[dict], ctx: Context, stop: asyncio.Event, iteration: int | None) -> bool:
         for step in steps:
@@ -371,8 +396,9 @@ class Runner:
                     log.exception("step %s crashed", step.get("id"))
                     e = StepFailed("unexpectedScreen", "Something went wrong in the engine during this step.",
                                    details=f"{type(e).__name__}: {e}")
-                # A Call step's failure is about its reply, not the page: no screenshot.
-                if e.reason not in ("stopped", "secretMissing") and kind != "call":
+                # A Call step's failure is about its reply, not the page: no screenshot. The same for
+                # a Wait for an email step's (the inbox's).
+                if e.reason not in ("stopped", "secretMissing") and kind != "call" and kind not in TEAM_ACTIONS:
                     e.extra.setdefault("screenshotPath", await self._keep_screenshot(step))
                     await self._keep_page(e)
                 self._fail(step, e, iteration)
@@ -385,7 +411,8 @@ class Runner:
             self._event(step, rec["result"], iteration, preDistance=rec.get("preDistance"),
                         postDistance=rec.get("postDistance"), oldAt=rec.get("oldAt"), newAt=rec.get("newAt"),
                         screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"), why=rec.get("why"),
-                        timings=rec.get("timings"), unchecked=rec.get("unchecked"), reply=rec.get("reply"))
+                        timings=rec.get("timings"), unchecked=rec.get("unchecked"), reply=rec.get("reply"),
+                        email=rec.get("email"))
             self._stop_if_reached(step)
         return True
 
@@ -500,6 +527,8 @@ class Runner:
 
         if kind == "call":
             return await self._call_step(step, ctx, rec, lap)
+        if kind in TEAM_ACTIONS or (kind and _registered(kind)):
+            return await self._action_step(step, ctx, rec, lap)
 
         if kind == "waitFor":
             # Wait N seconds only waits: any pre, post or expect a file has on it (recorded before
@@ -610,6 +639,10 @@ class Runner:
         if keep and not calls.VALUE_NAME.match(name):
             raise StepFailed("callFailed", "The name this step keeps the value as uses letters, numbers and _ only.")
         call = calls.with_run_values(call, ctx.i)
+        try:
+            call = {k: (fill_email(v, ctx) if k in ("url", "body") and isinstance(v, str) else v) for k, v in call.items()}
+        except ActionFailed as e:
+            raise StepFailed(e.reason, e.message)
         made = asyncio.ensure_future(calls.make(
             call, self.app_url, ctx.secrets, calls.step_timeout(step.get("timeoutMs"), self.t.http_timeout),
             pass_status=step.get("passStatus"), keep=str(keep.get("path") or "") if keep else None))
@@ -636,6 +669,25 @@ class Runner:
                              reply=rec["reply"] or None, timings=rec.get("timings"))
         if keep and reply.kept is not None:
             ctx.values[name] = (reply.kept, origin_of(call.get("url")))
+        return rec
+
+    async def _action_step(self, step: dict, ctx: Context, rec: dict, lap) -> dict:
+        """A step the Team engine performs (plugins.register_action): Wait for an email (issue #12).
+        Nothing on the page is checked. Without the Team engine it fails with `actionUnavailable`,
+        never passes; what it adds to the StepRun is only ACTION_FIELDS (never a value it kept)."""
+        from . import plugins
+        kind = step.get("action")
+        do = plugins.action(kind)
+        if do is None:
+            what = TEAM_ACTIONS.get(kind, "This step")
+            raise StepFailed("actionUnavailable", f"{what} needs Breakpatch Team.", timings=rec.get("timings"))
+        try:
+            extra = await do(step, ctx)
+        except ActionFailed as e:
+            raise StepFailed(e.reason, e.message, timings=rec.get("timings"))
+        lap("actionMs")
+        if isinstance(extra, dict):
+            rec.update({k: extra[k] for k in ACTION_FIELDS if isinstance(extra.get(k), dict)})
         return rec
 
     async def _wait_region(self, region, want: str, tol: int, ignore) -> int:
@@ -738,6 +790,11 @@ EXPECTS = ("newPage", "closes", "appears", "changes", "noChange")
 
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9_-]+")
+
+
+def _registered(kind: str) -> bool:
+    from . import plugins
+    return plugins.action(kind) is not None
 
 
 def safe_name(value, fallback: str) -> str:

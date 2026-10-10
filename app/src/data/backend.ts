@@ -4,7 +4,7 @@
 // Firestore database). Reads are live subscriptions; writes return promises.
 
 import type {
-  App, Explanation, FlakyMark, HttpCall, Member, Millis, NotifyInput, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
+  App, Explanation, FlakyMark, HttpCall, InboxSettings, Member, Millis, NotifyInput, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
   RunIssue, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Viewport, Workspace,
 } from './types';
 
@@ -162,6 +162,18 @@ export interface TrackerStore {
   save(t: TrackerSettings): Promise<void>;
 }
 
+/**
+ * The workspace's test inbox (Team, issue #12: Settings → Test inbox), for Wait for an email steps
+ * and `{email}`. Everyone in the team (and the runner, and breakpatch-ci) reads it; admins set it.
+ * Never a password: that's a saved secret, by name.
+ */
+export interface InboxStore {
+  /** null: none set up. */
+  settings(l: Listener<InboxSettings | null>): Unsubscribe;
+  /** Admins only. null removes it. */
+  save(i: InboxSettings | null): Promise<void>;
+}
+
 export interface Backend {
   readonly kind: 'demo' | 'firebase' | 'local';
   /** Optional: things added to saved runs later (see RunNotes). */
@@ -170,6 +182,8 @@ export interface Backend {
   readonly notify?: NotifyStore;
   /** Optional (Team): issue trackers (see TrackerStore). */
   readonly trackers?: TrackerStore;
+  /** Optional (Team): the test inbox (see InboxStore). */
+  readonly inbox?: InboxStore;
   /** Recently deleted (see RecentlyDeleted): where deleteApp, deleteTest, deleteGroup and deleteSuite move things. */
   readonly recentlyDeleted?: RecentlyDeleted;
   /** The team workspace; null for a local tests folder. */

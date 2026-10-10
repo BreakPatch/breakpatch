@@ -9,6 +9,21 @@ export const TOKENS = [
   { token: '{date}', name: "Today's date", shown: '{date}' },
 ] as const;
 
+/**
+ * Tokens for the test inbox (Breakpatch Team, engine/PROTOCOL.md "Wait for an email"): the run's own
+ * address, and what a Wait for an email step before picked out. Offered only with the `email` feature.
+ */
+export const EMAIL_TOKENS = [
+  { token: '{email}', name: 'Test inbox address', shown: '{email}' },
+  { token: '{emailCode}', name: 'Code from the email', shown: '{emailCode}' },
+  { token: '{emailLink}', name: 'Link from the email', shown: '{emailLink}' },
+] as const;
+
+/** What a Write step's `valueRef` reads as: "the code from the email", or the Call step value's name. */
+export function valueName(ref: string): string {
+  return ref === 'emailCode' ? 'the code from the email' : ref === 'emailLink' ? 'the link from the email' : `the value ${ref}`;
+}
+
 /** Text as shown in labels: `{i}` reads as `{repeat}`. */
 export function friendlyText(text: string): string {
   return text.replace(/\{i\}/g, '{repeat}');
@@ -48,7 +63,7 @@ export function defaultLabel(p: Partial<Step> & { action: Step['action'] }): str
   switch (p.action) {
     case 'write':
       if (p.secretRef) return `Write saved secret ${p.secretRef}`;
-      if (p.valueRef) return `Write the value ${p.valueRef}`;
+      if (p.valueRef) return `Write ${valueName(p.valueRef)}`;
       if (p.generated) return `Write ${GENERATED[p.generated as Generated]}`;
       if (p.masked) return MASKED_LABEL;
       // A step imported from a script can end by pressing Enter (typed as a line break).
@@ -73,7 +88,16 @@ export function stepNote(s: Step, opts: { range?: [number, number] } = {}): stri
   if (s.action === 'loop') return !opts.range ? 'No steps yet' : opts.range[0] === opts.range[1] ? `Step ${opts.range[0]}` : `Steps ${opts.range[0]} to ${opts.range[1]}`;
   // Which version first: in a narrow row (a run) the end is cut off, and the icon already says shared steps.
   if (s.action === 'group') return s.groupVersion === 'latest' || s.groupVersion === undefined ? 'Always latest · shared steps' : `Version ${s.groupVersion} · shared steps`;
-  if (s.action === 'write') return s.valueRef ? 'From a Call step' : repeatPreview(s.text);
+  if (s.action === 'write') return s.valueRef ? (s.valueRef === 'emailCode' || s.valueRef === 'emailLink' ? 'From the email' : 'From a Call step') : repeatPreview(s.text);
   if (s.action === 'call') return s.keep ? `Keeps ${s.keep.path} as ${s.keep.name}` : undefined;
+  if (s.action === 'emailWait') return emailNote(s);
   return undefined;
+}
+
+/** "To the run's own address · keeps the code for {emailCode}": what a Wait for an email step waits for and keeps. */
+export function emailNote(s: Pick<Step, 'email'>): string {
+  const e = s.email ?? {};
+  const to = !e.to || e.to === '{email}' ? "To the run's own address" : `To ${e.to}`;
+  const keeps = e.pick === 'code' ? 'keeps the code for {emailCode}' : e.pick === 'link' ? 'keeps the link for {emailLink}' : undefined;
+  return keeps ? `${to} · ${keeps}` : to;
 }

@@ -147,6 +147,9 @@ export function keptNames(steps: Step[]): string[] {
   const out: string[] = [];
   const walk = (list: Step[]) => list.forEach(s => {
     if (s.action === 'call' && s.keep?.name && !out.includes(s.keep.name)) out.push(s.keep.name);
+    // A Wait for an email step keeps what it picks out as emailCode or emailLink (Breakpatch Team).
+    const picked = s.action === 'emailWait' ? (s.email?.pick === 'code' ? 'emailCode' : s.email?.pick === 'link' ? 'emailLink' : undefined) : undefined;
+    if (picked && !out.includes(picked)) out.push(picked);
     if (s.steps) walk(s.steps);
   });
   walk(steps);

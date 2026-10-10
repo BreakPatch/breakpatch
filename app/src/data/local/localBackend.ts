@@ -27,8 +27,9 @@ import type {
   App, FlakyMark, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
 } from '../types';
 import { folderConnectionId } from '../../state/connectionIds';
-import { CALL_SCHEMA_VERSION, DEVICE_SCHEMA_VERSION, FORMAT, NEWEST_READ_SCHEMA_VERSION, SCHEMA_VERSION, fromFileText, isFolderId, newFolderId, toFileText, uniqueSlug } from './format';
+import { CALL_SCHEMA_VERSION, DEVICE_SCHEMA_VERSION, EMAIL_SCHEMA_VERSION, FORMAT, NEWEST_READ_SCHEMA_VERSION, SCHEMA_VERSION, fromFileText, isFolderId, newFolderId, toFileText, uniqueSlug } from './format';
 import { usesCallSteps } from '../../lib/calls';
+import { usesEmailSteps } from '../../lib/email';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
 import { osText } from '../../lib/osWords';
 import { deviceOf } from '../devices';
@@ -162,14 +163,23 @@ function needsCallFormat(rel: string, value: unknown): boolean {
   return isObj(value) && /^apps\/[^/]+\/(tests|shared)\/[^/]+\.json$/.test(rel) && usesCallSteps(value.steps);
 }
 
+/** A test or shared steps file with a Wait for an email step: format 4 (format.ts EMAIL_SCHEMA_VERSION). */
+function needsEmailFormat(rel: string, value: unknown): boolean {
+  return isObj(value) && /^apps\/[^/]+\/(tests|shared)\/[^/]+\.json$/.test(rel) && usesEmailSteps(value.steps);
+}
+
 /**
- * The folder format a file needs (format.ts), by its path in the folder: CALL_SCHEMA_VERSION for a
- * test or shared steps with a Call step, DEVICE_SCHEMA_VERSION for a phone or tablet test (or an
- * app.json whose default screen is one), else SCHEMA_VERSION. A folder's breakpatch.json says the
- * highest of its files' (this backend raises it as it writes them; an export writes it so).
+ * The folder format a file needs (format.ts), by its path in the folder: EMAIL_SCHEMA_VERSION for a
+ * test or shared steps with a Wait for an email step, CALL_SCHEMA_VERSION for one with a Call step,
+ * DEVICE_SCHEMA_VERSION for a phone or tablet test (or an app.json whose default screen is one),
+ * else SCHEMA_VERSION. A folder's breakpatch.json says the highest of its files' (this backend
+ * raises it as it writes them; an export writes it so).
  */
 export function folderFormatFor(rel: string, value: unknown): number {
-  return needsCallFormat(rel, value) ? CALL_SCHEMA_VERSION : needsDeviceFormat(rel, value) ? DEVICE_SCHEMA_VERSION : SCHEMA_VERSION;
+  return needsEmailFormat(rel, value) ? EMAIL_SCHEMA_VERSION
+    : needsCallFormat(rel, value) ? CALL_SCHEMA_VERSION
+    : needsDeviceFormat(rel, value) ? DEVICE_SCHEMA_VERSION
+    : SCHEMA_VERSION;
 }
 
 const WEEKDAYS: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];

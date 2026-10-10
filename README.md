@@ -153,6 +153,7 @@ they're ready. **Solo**, the automation for one person, isn't on sale yet either
 | History | The latest version and the last run of each test | Version history with restore, and the team's run history for 90 days |
 | When a button moves | The step fails and says why | Fixed automatically: the AI finds it again, and you accept or dismiss the fix |
 | When a step fails | The report, with **Copy** as plain text or Markdown for an issue | Also **Why did this fail?** (the AI says what changed) and **Create issue** in GitHub, Linear or Jira |
+| Emails and one-time codes | A Call step can get a code from your test API | Also **Wait for an email**: a test signs up with its own address, then types the code or opens the link from the email in your test inbox |
 | Running | By hand: tests and suites (**Run all** for an app) | Also schedules, a local runner, run requests from CI, result messages to Slack, Microsoft Teams or any web address, and the `breakpatch-ci` command line |
 
 The exact line between them is in [docs/editions.md](docs/editions.md). When Team is out, moving to

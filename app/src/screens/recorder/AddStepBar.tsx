@@ -8,6 +8,9 @@ import { actionInfo, GENERATED_CHOICES, SAMPLES, TOUCH_HIDDEN } from '../../engi
 import { countRows, findStep, TOKENS, numberOf } from '../../components/steps';
 import { CallStepDialog } from '../../components/calls/CallStepDialog';
 import { keptNames } from '../../lib/calls';
+import { keptChoiceLabel, keptValueLabel } from '../../lib/email';
+import { edition, useFeature } from '../../edition';
+import { EMAIL_TOKENS } from '../../components/steps';
 import { Button, ChipSelect, Icon } from '../../components/ui';
 import { useLatched, usePresence } from '../../components/ui/presence';
 import { ActionMenu } from './ActionMenu';
@@ -38,7 +41,9 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   /** A line floating over the page ("Playing steps 1–9 first…", "You're using the page directly…"). */
   banner?: FloatBanner | null;
 }) {
-  const [menu, setMenu] = useState<'closed' | 'menu' | 'picker' | 'call'>('closed');
+  const [menu, setMenu] = useState<'closed' | 'menu' | 'picker' | 'call' | `edition:${string}`>('closed');
+  // Tokens from the test inbox, offered with the feature (Team: Wait for an email).
+  const email = useFeature('email');
   const [secretNames, setSecretNames] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const actionBtn = useRef<HTMLButtonElement>(null);
@@ -95,6 +100,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
     }
     if (a.kind === 'loop') { setMenu('closed'); rec.addLoop(); return; }
     if (a.kind === 'call') { setMenu('call'); return; }
+    if (a.edition) { setMenu(`edition:${a.kind}`); return; }
     rec.setAction(a.kind);
     if (a.kind === 'group') { setMenu('picker'); return; }
     setMenu('closed');
@@ -136,7 +142,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   } else if (action === 'write' && o.writeSource === 'value') {
     field = (
       <span className="rec-field-chip">
-        <ChipSelect label="Value from a call" up value={o.valueRef} onChange={v => rec.setOptions({ valueRef: v })} options={kept.map(n => ({ value: n, label: n }))} />
+        <ChipSelect label={keptChoiceLabel(kept) === 'From the email' ? 'Value from the email' : 'Value from a call'} up value={o.valueRef} onChange={v => rec.setOptions({ valueRef: v })} options={kept.map(n => ({ value: n, label: keptValueLabel(n) }))} />
       </span>
     );
   } else if (action === 'write' && o.writeSource === 'generated') {
@@ -179,17 +185,17 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
     if (action === 'write') return (
       <div className="rec-extra">
         <div className="rec-chips" role="radiogroup" aria-label="What to write">
-          {([['typed', 'Typed text'], ['secret', 'Saved secret'], ['generated', 'Generated'], ...(kept.length ? [['value', 'From a call']] as const : [])] as const).map(([v, l]) => (
+          {([['typed', 'Typed text'], ['secret', 'Saved secret'], ['generated', 'Generated'], ...(kept.length ? [['value', keptChoiceLabel(kept)]] as const : [])] as const).map(([v, l]) => (
             <button key={v} type="button" role="radio" aria-checked={o.writeSource === v} className={'rec-chip' + (o.writeSource === v ? ' on' : '')} onClick={() => rec.setOptions({ writeSource: v })}>{l}</button>
           ))}
         </div>
         {o.writeSource === 'typed' && (
           <div className="rec-chips"><span className="faint">Insert:</span>
-            {TOKENS.map(t => <button key={t.token} type="button" className="rec-chip" onClick={() => insertToken(t.token)}>{t.name}</button>)}
+            {[...TOKENS, ...(email ? EMAIL_TOKENS : [])].map(t => <button key={t.token} type="button" className="rec-chip" onClick={() => insertToken(t.token)}>{t.name}</button>)}
           </div>
         )}
         {o.writeSource === 'secret' && <span className="faint">{osText("The value stays in this Mac's Keychain and is never shown.")}</span>}
-        {o.writeSource === 'value' && <span className="faint">Types what the Call step kept, only on the app's own pages. It isn't saved with the test or logged, but in a field you can see, it can show in a screenshot.</span>}
+        {o.writeSource === 'value' && <span className="faint">Types what {keptChoiceLabel(kept) === 'From the email' ? 'the email had' : keptChoiceLabel(kept) === 'From a call' ? 'the Call step kept' : 'the step before kept'}, only on the app's own pages. It isn't saved with the test or logged, but in a field you can see, it can show in a screenshot.</span>}
       </div>
     );
     // Drawn or clicked on the page: their options are in the bar, not floating over where you draw.
@@ -306,6 +312,11 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
         <ActionMenu open={menu === 'menu'} current={action} allowGroups={allowGroups} touch={touch} onPick={pick} onClose={closeMenu} />
         <CallStepDialog open={menu === 'call'} adding appUrl={rec.appUrl ?? ''} takenNames={kept}
           onSave={patch => rec.recordCall(patch)} onClose={() => { setMenu('closed'); actionBtn.current?.focus(); }} />
+        {(edition.slots.recorderActions ?? []).map(a => (
+          <a.Dialog key={a.kind} open={menu === `edition:${a.kind}`} steps={rec.steps}
+            onSave={patch => rec.recordAction({ ...patch, action: a.kind })}
+            onClose={() => { setMenu('closed'); actionBtn.current?.focus(); }} />
+        ))}
         {menu === 'picker' && (
           <SharedStepsPicker appId={appId} insertAs={countRows(rec.steps) + 1}
             onInsert={(g, v) => { setMenu('closed'); onInsertGroup(g, v); }}

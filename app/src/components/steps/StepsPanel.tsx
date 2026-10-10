@@ -16,6 +16,7 @@ import './steps.css';
 import { osText } from '../../lib/osWords';
 import { keptNames } from '../../lib/calls';
 import { CallStepDialog } from '../calls/CallStepDialog';
+import { edition } from '../../edition';
 
 export interface StepsPanelProps {
   steps: Step[];
@@ -196,10 +197,10 @@ export function StepsPanel(p: StepsPanelProps) {
       <>
         {groupOpen && <GroupChildren number={r.number} steps={children} onEdit={p.onEditGroup && s.groupId ? () => p.onEditGroup!(s.groupId!) : undefined} />}
         {edit && (selected || leaving) && editable && (
-          <StepEditor step={s} number={r.number} secretNames={p.secretNames ?? []} closing={leaving} appUrl={p.appUrl ?? ''} kept={keptNames(steps)}
+          <StepEditor step={s} number={r.number} secretNames={p.secretNames ?? []} closing={leaving} appUrl={p.appUrl ?? ''} kept={keptNames(steps)} steps={steps}
             onChange={patch => change(updateStep(steps, s.id, patch))}
             onEdit={(patch, affectsPage) => { change(updateStep(steps, s.id, patch)); p.onEdited?.(s.id, affectsPage); }}
-            onRerecord={s.action !== 'loop' && s.action !== 'group' && s.action !== 'waitFor' && s.action !== 'call' && p.onRerecord ? () => p.onRerecord!(s.id) : undefined}
+            onRerecord={s.action !== 'loop' && s.action !== 'group' && s.action !== 'waitFor' && s.action !== 'call' && s.action !== 'emailWait' && p.onRerecord ? () => p.onRerecord!(s.id) : undefined}
             onPlayTo={p.onPlayTo ? () => p.onPlayTo!(s.id) : undefined}
             onPlayStep={p.onPlayStep && s.action !== 'loop' && s.action !== 'group' ? () => p.onPlayStep!(s.id) : undefined}
             onAddAfter={p.onAddAfter ? () => p.onAddAfter!(s.id) : undefined}
@@ -273,10 +274,12 @@ const EXPECT_CHOICES: { value: Expect | ''; label: string }[] = [
   { value: 'noChange', label: 'Nothing visible changes' },
 ];
 
-function StepEditor({ step, number, secretNames, closing, appUrl, kept, onChange, onEdit, onRerecord, onPlayTo, onPlayStep, onAddAfter, onDuplicate, onDelete }: {
+function StepEditor({ step, number, secretNames, closing, appUrl, kept, steps, onChange, onEdit, onRerecord, onPlayTo, onPlayStep, onAddAfter, onDuplicate, onDelete }: {
   step: Step; number: number | string; secretNames: string[];
   /** The app's base address (a Call step's editor), and the values Call steps in this list keep. */
   appUrl: string; kept: string[];
+  /** The list's steps (an edition's step dialog may look at them). */
+  steps: Step[];
   /** Folding shut after another step was picked (DES-01). */
   closing?: boolean;
   onChange: (patch: Partial<Step>) => void; onEdit: (patch: Partial<Step>, affectsPage: boolean) => void;
@@ -285,6 +288,8 @@ function StepEditor({ step, number, secretNames, closing, appUrl, kept, onChange
 }) {
   const isLoop = step.action === 'loop';
   const isGroup = step.action === 'group';
+  // An action the edition performs and edits in its own dialog (Team: Wait for an email).
+  const own = edition.slots.recorderActions?.find(a => a.kind === step.action);
   const [menu, setMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -331,7 +336,11 @@ function StepEditor({ step, number, secretNames, closing, appUrl, kept, onChange
             help="Optional. Used only if this step's check fails." more="Read by the AI assistant only if this step's check fails, to judge it." />}
         </div>
       )}
-      {step.action === 'call'
+      {own
+        // A step an edition adds (Wait for an email) is edited in its own dialog, as when it was added.
+        ? <own.Dialog open={editing && !closing} step={step} steps={steps} onClose={() => setEditing(false)}
+            onSave={patch => onEdit(patch, JSON.stringify([step.email, step.timeoutMs]) !== JSON.stringify([patch.email ?? step.email, patch.timeoutMs ?? step.timeoutMs]))} />
+        : step.action === 'call'
         // A call has more to it than fits over the list: its own dialog, as when it was added.
         ? <CallStepDialog open={editing && !closing} step={step} appUrl={appUrl} takenNames={kept} onClose={() => setEditing(false)}
             onSave={patch => onEdit(patch, JSON.stringify([step.call, step.passStatus, step.keep]) !== JSON.stringify([patch.call, patch.passStatus, patch.keep]))} />

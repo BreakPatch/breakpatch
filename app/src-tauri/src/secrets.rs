@@ -534,9 +534,10 @@ pub fn refused_elsewhere(name: &str) -> Value {
     ) })
 }
 
-/// Engine methods whose params carry saved secrets (engine/PROTOCOL.md "Saved secrets").
+/// Engine methods whose params carry saved secrets (engine/PROTOCOL.md "Saved secrets"), and
+/// `email.check` (Settings → Test inbox, Breakpatch Team): the inbox's password, used on its site only.
 pub fn carries_secrets(method: &str) -> bool {
-    matches!(method, "run.start" | "record.point" | "call.try")
+    matches!(method, "run.start" | "record.point" | "call.try" | "email.check")
 }
 
 /// Gives every secret in `params.secrets` the sites and runner flag from the index, replacing
@@ -827,6 +828,7 @@ mod tests {
         attach_policies(&mut none, &index, None);
         assert_eq!(none, json!({ "runId": "r" }));
         assert!(carries_secrets("run.start") && carries_secrets("record.point") && carries_secrets("call.try"));
+        assert!(carries_secrets("email.check"));
         assert!(!carries_secrets("browser.open"));
     }
 

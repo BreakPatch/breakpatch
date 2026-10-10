@@ -91,7 +91,7 @@ export function ReportDetail({ run, test, steps, step, stepRun, number, groupId,
   );
 
   let content = null;
-  if (kind === 'failed' && showsScreens(stepRun)) {
+  if (kind === 'failed' && showsScreens(stepRun, step)) {
     content = (
       <div className="rp-compare">
         <div className="rp-col">
@@ -122,7 +122,7 @@ export function ReportDetail({ run, test, steps, step, stepRun, number, groupId,
       <div className="rp-try">
         <div className="rp-try-title">What to try</div>
         {why && suggestionText(why) && <div className="rp-try-ai"><Icon name="auto_awesome" size={16} /><span><b>The AI assistant suggests:</b> {suggestionText(why)}</span></div>}
-        <div className="rp-try-text">{reasonAdvice(stepRun?.reason)}</div>
+        <div className="rp-try-text">{reasonAdvice(stepRun?.reason, step)}</div>
       </div>
       <div className="rp-actions">
         {stepRun?.reason === 'secretMissing'
