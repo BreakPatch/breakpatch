@@ -186,7 +186,7 @@ The same test always gives the same file: two-space indents, keys in a fixed ord
 - **Secrets never land in the folder.** Tests only store a secret's name. The value stays in this Mac's Keychain. See [Saved secrets](#saved-secrets).
 - **Pulled a change?** Switch back to Breakpatch and it reads the folder again.
 - **Merge conflict in a test file?** Fix it as you would any JSON file. Until it's valid again, Breakpatch skips that file and tells you which one.
-- **Saved by a newer Breakpatch?** If `breakpatch.json` has a higher `schemaVersion` than your app knows, update Breakpatch to open the folder. If it changes while the folder is open, saving stops until you update. Your first phone or tablet test raises it, and so does your first [Call step](#call-your-api), so update Breakpatch on every Mac that uses the folder, and `breakpatch-ci` if it runs the folder's tests.
+- **Saved by a newer Breakpatch?** If `breakpatch.json` has a higher `schemaVersion` than your app knows, update Breakpatch to open the folder. If it changes while the folder is open, saving stops until you update. Your first phone or tablet test raises it, and so does your first [Call step](#call-your-api) or [Wait for an email](#wait-for-an-email) step, so update Breakpatch on every Mac that uses the folder, and `breakpatch-ci` if it runs the folder's tests.
 
 Settings → Tests folder shows the folder, how many apps and tests it has, **Show in Finder** and **Change folder**. Changing folders leaves the old one as it is, with all its tests.
 
@@ -204,7 +204,7 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
    - Describing a step in words, instead of clicking it, is coming back in a later update.
    - For **Wait until** and **Checkpoint**, draw a box around the area on the page, or click it.
    - **Write text** has a box for what to type, and **Go to address** a box for the address.
-4. Use the action button in the bar below the page for everything else: double, long and right click, hover, swipe, scroll, drag and drop, **Write text**, **Wait until**, **Go to address**, reload, back and forward, tabs and popups, upload a sample file, check a download, **Checkpoint**, **Call your API** (see [Call your API](#call-your-api)), **Repeat** and **Shared steps**.
+4. Use the action button in the bar below the page for everything else: double, long and right click, hover, swipe, scroll, drag and drop, **Write text**, **Wait until**, **Go to address**, reload, back and forward, tabs and popups, upload a sample file, check a download, **Checkpoint**, **Call your API** (see [Call your API](#call-your-api)), **Wait for an email** (Team, see [Wait for an email](#wait-for-an-email)), **Repeat** and **Shared steps**.
 5. Press **Save**.
 
 Screen checks are worked out automatically after every step. There's nothing to draw or approve.
@@ -235,6 +235,8 @@ A **Call** step calls your app's API at that point in the test: for example to m
 - In the run view and the report, a Call step shows the reply's status and how long it took, never what the reply said. If the reply doesn't pass, the run stops there: "The call to your API didn't work".
 
 **Keep a value from the reply.** Turn on **Keep a value from the reply**, say where the value is in the JSON reply, like `$.code` or `$.data.items[0].id`, and give it a name, like `CODE`. A **Write text** step after it can type that value: pick **From a call**. The value is kept only while the test runs, and it's never shown, saved or logged. It's only typed into the app's own pages, as a saved secret is only typed on its sites. If the reply isn't JSON or has nothing there, the Call step fails.
+
+**Codes from a mail service.** Mail services built for testing, such as Mailosaur or MailSlurp, have an address that waits for the next email and replies with it as JSON. When the reply has the code in a field of its own, a Call step to that address, with **Allow other hosts** and a **Wait** long enough for the email, can keep it for a Write step (for example `$.html.codes[0].value`; check the service's documentation for where it puts the code). With Team, [Wait for an email](#wait-for-an-email) reads a Mailpit or IMAP inbox itself.
 
 Older versions of Breakpatch can't run Call steps. Your first one marks the tests folder as newer, so an older version of the app won't open it; in Team it marks the workspace, so an older app stops saving there and an older local runner or `breakpatch-ci` doesn't run its tests. Update Breakpatch everywhere your tests run first.
 
@@ -304,6 +306,8 @@ Common reasons:
 - **STAGING_PASSWORD is kept for other workspaces on this Mac.** The secret is set to be used only in some workspaces or tests folders, and this isn't one of them, so nothing was typed. If it's right to use it here, tick this one under **Where it may be used** in Settings → Saved secrets.
 - **STAGING_PASSWORD isn't allowed on login.example.com.** The page wasn't one of the secret's sites, so nothing was typed. If that site is right, add it to the secret in Settings → Saved secrets.
 - **The call to your API didn't work.** A Call step's reply didn't pass, or it got none, for example "Replied 500 in 0.3 s". Check the address and that the app is running: **Try it** on the step shows what it replies now.
+- **No email came in time.** A [Wait for an email](#wait-for-an-email) step waited, and no email it waits for arrived, for example "No email to qa+bp-k3j9x2ma@acme.com arrived within 60 s." Check that the app sends it, to that address.
+- **This step needs Breakpatch Team.** The test has a Wait for an email step, which only Team runs. It fails every run without it, and never passes.
 
 Every error has **Copy**, with two choices: **Plain text**, to paste into a message or send to a developer, and **Markdown, for an issue**: a ready-made bug report with a title, the steps up to the failure, what was expected and what was seen, the reason, and where and when it ran. Paste it into GitHub, Jira, Linear or any tracker that takes Markdown. In Team, **Create issue** makes the issue for you: see [Create an issue](#create-an-issue).
 
@@ -345,8 +349,8 @@ In Community you run suites by hand. A suite's result is kept until you close Br
 
 A test sometimes fails only because the page was slow this time. **When a test fails because the page was slow**, in the suite, says what a suite run does then: **Don't retry**, **Retry once** (the default) or **Retry twice**.
 
-- Only failures that look like timing are retried: the page didn't settle or didn't load in time, a popup or download didn't come, nothing happened after a click (often a page that wasn't ready yet), or the screen almost matched the recording. A button that isn't there, a page that looks different, a missing saved secret, a set-up call that didn't work or a [Call step](#call-your-api) whose call didn't pass fail at once, as before.
-- A retry runs the whole test again from the start, in a new browser, with its set-up and clean-up calls. A single step is never done twice on its own. Its Call steps make their calls again, so a value one keeps is the one this try's call replied.
+- Only failures that look like timing are retried: the page didn't settle or didn't load in time, a popup or download didn't come, nothing happened after a click (often a page that wasn't ready yet), or the screen almost matched the recording. A button that isn't there, a page that looks different, a missing saved secret, a set-up call that didn't work, a [Call step](#call-your-api) whose call didn't pass or a test inbox that can't be read fail at once, as before. No email in time is retried.
+- A retry runs the whole test again from the start, in a new browser, with its set-up and clean-up calls. A single step is never done twice on its own. Its Call steps make their calls again, so a value one keeps is the one this try's call replied. `{email}` is a new address for each try, and a [Wait for an email](#wait-for-an-email) step waits for a new email, never one from the try before.
 - No retry starts once the test has taken 5 minutes.
 - Every retry shows. The run view says which try is running and why the last one failed. A test that passed on a retry says **Passed on retry 1** in the suite run, the report, the Runs tab and Run history, and its report says which step failed on the earlier try and why. It counts as passed, so the suite still passes, and the suite's result says how many tests passed only on a retry.
 
@@ -523,6 +527,7 @@ Everything in this part comes with **Breakpatch Team** (and Business, which is T
 - **Run requests** from CI or any other tool, and **result messages** after every suite run, to Slack, Microsoft Teams or any web address.
 - **Create issue** in GitHub, Linear or Jira from a failed step, with the steps, the screenshot and a link to the report.
 - **Workspace secrets**: an admin saves a password or token once, encrypted, and everyone's tests can type it.
+- **Wait for an email**: sign-up, password reset and log-in with a code run end to end. A step waits for the email in your test inbox and picks out the code or the link.
 - **`breakpatch-ci`**: run the workspace's suites on your CI machines, with the results in the run history.
 
 Prices, seats and support for Team and Business are set when they go on sale, on the [pricing page](https://breakpatch.dev/pricing/).
@@ -813,6 +818,47 @@ A step that looks like it deletes, pays for or sends something says so: "This st
 - The steps are ordinary steps. A run doesn't use the AI assistant for them.
 - It needs the AI assistant on this Mac and a licence that includes it. Your story and the page stay on your Mac.
 - It suggests at most 30 steps; the card says when it left some out. A story that's long or vague gives worse steps: split it into a few tests.
+
+## Wait for an email
+
+Sign-up, password reset and log-in with a code all stop at "check your email". A **Wait for an email** step waits for that email in your team's test inbox and picks out the code or the link in it, so the test can type the code or open the link and go on.
+
+**A sign-up test, step by step:**
+
+1. Record up to the sign-up form. In the email field, write `{email}`: pick **Write text** and press **Test inbox address**. Each run types its own address there, like `qa+bp-k3j9x2ma@acme.com`.
+2. Click **Sign up**, as usual.
+3. Pick **Wait for an email** with the action button. Choose what to pick out: **A code** (6 digits unless you give a pattern), **A link** (the first, or the first containing some text, like `/verify`) or **Only that it came**. **Add step** waits for the email now, as a run will, so the steps after it can use it.
+4. For a code, record the next step with **Write text**: press **Code from the email** (`{emailCode}`), or pick **From the email**. For a link, add a **Go to address** step with `{emailLink}`.
+
+The step's other fields:
+
+- **To**: `{email}`, the run's own address, unless you change it. Every run (and every try of a run) has its own, so an email from an earlier run can't be taken by mistake. With a fixed address, only emails that came after the run started count.
+- **From contains** and **Subject contains**, to tell emails apart, for example a welcome email and the one with the code.
+- **Wait, seconds**: how long it waits, 60 seconds unless you change it (5 to 300). While you record, it waits at most 150 seconds.
+
+What a run shows and keeps:
+
+- The run view and the report say what came, for example "Got a 6-digit code in 4.2 s" or "Got a link to app.acme.com in 3.1 s", never the code or the link itself.
+- Only what's picked out is kept, in memory, for the rest of the run. The email itself is never kept, shown or saved. The code and the link are typed or opened only on your app's own pages, as a saved secret is only typed on its sites: a link to another site isn't opened.
+- If no email comes in time, the step fails: "No email to qa+bp-k3j9x2ma@acme.com arrived within 60 s." A [retry](#retries) gets a new address and waits for a new email. If the email came without a code or link to pick out, or the inbox can't be read, the step fails and isn't retried.
+- Without Team, or with a licence that doesn't include it, a Wait for an email step fails with "This step needs Breakpatch Team". It never passes.
+
+### Test inbox
+
+An admin sets up the inbox once for the workspace, in **Settings → Test inbox**. Use a mailbox for testing only.
+
+- **Mailpit** (recommended for staging): the address of the Mailpit your staging servers send their email to, like `https://mailpit.staging.acme.com`. Plain `http://` only works for one on your own network. If it's behind a password, add the user name and the password.
+- **IMAP mailbox**: the server (like `imap.acme.com`, port 993), the user name, the password and, if it isn't INBOX, the folder. The mailbox must take plus addressing, so `qa+anything@acme.com` reaches `qa@acme.com` (Gmail, Google Workspace, Microsoft 365 and Fastmail do). Breakpatch only reads it, over TLS: nothing is marked as read, moved or deleted.
+- **Address emails go to**: the mailbox's address. `{email}` adds `+bp-` and a few letters to it for each run.
+- **The password** is a [saved secret](#saved-secrets), picked by name, never typed here. Save it first, on your Mac or as a [workspace secret](#workspace-secrets), with the inbox's site: the Mailpit address, or the IMAP server (`imap.acme.com`). For the local runner, let the runner use it.
+
+**Check the inbox** signs in and says how many emails it has, without reading them. Everyone in the team can check it from their Mac; only admins change it.
+
+Mail services with an API of their own, such as Mailosaur and MailSlurp, can be used with a [Call step](#call-your-api) that keeps the code from their reply, when the reply has it in a field of its own. A test inbox hosted by Breakpatch may come later.
+
+`breakpatch-ci` uses the workspace's inbox for tests from the workspace: name the password's site with `--secret QA_INBOX=https://imap.acme.com` (see [Where secrets may be used](#from-ci-with-breakpatch-ci)), or use a workspace secret `breakpatch-ci` may use. The CI machine must reach the inbox: Mailpit through its proxy, IMAP directly.
+
+Older versions of Breakpatch don't know this step. Your first one marks the workspace (or tests folder) as newer, so an older app stops saving there, and an older local runner or `breakpatch-ci` doesn't run its tests. Update Breakpatch everywhere your tests run first.
 
 ## Schedules
 
@@ -1376,17 +1422,18 @@ Create issue comes with a Breakpatch Team licence that includes it; licences get
 - Versions can only be added. History can't be edited.
 - Deleting an app, a test, shared steps or a suite marks it as deleted (Recently deleted), and only whoever may delete it can mark it or take the mark off. Only then can it, its versions and, for an app, everything in it be deleted for good. Breakpatch from before this can't delete.
 - `runRequests` accepts a small document of a fixed shape from members and from accounts with the `ci` role. Only the runner can read or delete them.
-- Accounts with the `ci` role read apps, tests, shared steps, their versions and suites, and add runs marked `ci` as themselves. They can't change anything, or read members, runs or the licence.
+- Accounts with the `ci` role read apps, tests, shared steps, their versions, suites and the test inbox, and add runs marked `ci` as themselves. They can't change anything, or read members, runs or the licence.
 - A test's released version must be one that's saved.
 - Every change to apps, tests, shared steps or suites also updates `workspace/changes`, a small document that tells the other Macs what changed, so they don't read everything again. Apps from before this can't save until they're updated.
 - Runs and suite runs must carry `expiresAt`, 90 days after they're saved, which the TTL policy deletes them by. It can't be changed. Runs from Breakpatch or `breakpatch-ci` from before this are refused, so update them first.
+- Only admins set the [test inbox](#test-inbox). Everyone in the team, the runner and accounts with the `ci` role read it. It never holds a password: that's a saved secret, by name.
 - Only admins set where a suite's result goes. Its address is kept apart from the suite, and only admins and the runner can read it.
 - Anyone in the team can mark a test as known flaky or not flaky (see [Flaky tests](#flaky-tests)), for a saved version of it.
 - Anyone in the team can note the issue made from a run, and change nothing else about it. Only admins set where issues go. Tokens for GitHub, Linear and Jira are never in the workspace.
 - [Workspace secrets](#workspace-secrets) are always stored encrypted. Only admins save, change or delete them. People in the team read them (encrypted); the runner reads only those it may use, and accounts with the `ci` role only those `breakpatch-ci` may use.
 - In an encrypted workspace, names, steps, addresses and results are stored encrypted, and the rules check only their size. Only admins can encrypt what's there again (turning encryption on, a new key), and nothing else about it. The copies of the key for the recovery code and the machine key are for admins (the machine key's for the runner and CI too), and each Mac's request to be let in is its owner's.
 
-**After an update.** The rules carry a date (search what you copy for *These rules are dated*), and each Breakpatch version needs its own date's rules or newer: this version's are dated 2026-10-09. In a workspace in your own Firebase, an admin copies them again after updating (Settings → Workspace → **Copy security rules**) and publishes them in the Firebase console → Firestore → your database → Rules. Until then, **Check the connection** says the rules for this version aren't published, and each Mac reads the whole workspace every time it opens it. The 2026-10-06 rules also make sure a removed admin can't change which Mac's signature was withdrawn (see [Encryption and the recovery code](#encryption-and-the-recovery-code)), and the 2026-10-08 rules add [workspace secrets](#workspace-secrets). Hosted by Breakpatch, the rules are always up to date.
+**After an update.** The rules carry a date (search what you copy for *These rules are dated*), and each Breakpatch version needs its own date's rules or newer: this version's are dated 2026-10-10. In a workspace in your own Firebase, an admin copies them again after updating (Settings → Workspace → **Copy security rules**) and publishes them in the Firebase console → Firestore → your database → Rules. Until then, **Check the connection** says the rules for this version aren't published, and each Mac reads the whole workspace every time it opens it. The 2026-10-06 rules also make sure a removed admin can't change which Mac's signature was withdrawn (see [Encryption and the recovery code](#encryption-and-the-recovery-code)), the 2026-10-08 rules add [workspace secrets](#workspace-secrets), and the 2026-10-10 rules add the [test inbox](#test-inbox). Hosted by Breakpatch, the rules are always up to date.
 
 To give an account the `ci` role, have it sign in to Breakpatch once, then change its role in Settings → Members. Or, in the Firebase console, set `role` to `"ci"` in its document `members/<user id>` in the workspace's database. Disable the user in Firebase Authentication to cut it off.
 
