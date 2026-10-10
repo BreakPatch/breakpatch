@@ -20,39 +20,41 @@ Breakpatch is **Community** for now: free and open source, for one person on one
 9. [Run a test and read the report](#run-a-test-and-read-the-report)
 10. [Shared steps](#shared-steps)
 11. [Suites](#suites)
-12. [Get a deleted app or test back](#get-a-deleted-app-or-test-back)
-13. [Saved secrets](#saved-secrets)
-14. [The AI assistant](#the-ai-assistant)
-15. [Updates](#updates)
-16. [Privacy](#privacy)
-17. [Using Breakpatch on a company network](#using-breakpatch-on-a-company-network)
-18. [Troubleshooting](#troubleshooting)
+12. [Flaky tests](#flaky-tests)
+13. [Get a deleted app or test back](#get-a-deleted-app-or-test-back)
+14. [Saved secrets](#saved-secrets)
+15. [The AI assistant](#the-ai-assistant)
+16. [Updates](#updates)
+17. [Privacy](#privacy)
+18. [Using Breakpatch on a company network](#using-breakpatch-on-a-company-network)
+19. [Troubleshooting](#troubleshooting)
 
 **Team**
 
-19. [What Team adds](#what-team-adds)
-20. [Solo](#solo)
-21. [Upgrading to Team](#upgrading-to-team)
-22. [Export to a tests folder](#export-to-a-tests-folder)
-23. [Workspaces on this Mac](#workspaces-on-this-mac)
-24. [Hosted by Breakpatch](#hosted-by-breakpatch)
-25. [Host it yourself](#host-it-yourself)
-26. [Members and roles](#members-and-roles)
-27. [Version history](#version-history)
-28. [Fixed automatically](#fixed-automatically)
-29. [Why did this fail?](#why-did-this-fail)
-30. [Write a test from a story](#write-a-test-from-a-story)
-31. [Schedules](#schedules)
-32. [The local runner](#the-local-runner)
-33. [Run requests](#run-requests)
-34. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
-35. [Result messages](#result-messages)
-36. [Create an issue](#create-an-issue)
-37. [Security rules](#security-rules)
-38. [Licences and seats](#licences-and-seats)
-39. [The back office](#the-back-office)
-40. [Encryption and the recovery code](#encryption-and-the-recovery-code)
-41. [Workspace secrets](#workspace-secrets)
+20. [What Team adds](#what-team-adds)
+21. [Solo](#solo)
+22. [Upgrading to Team](#upgrading-to-team)
+23. [Export to a tests folder](#export-to-a-tests-folder)
+24. [Workspaces on this Mac](#workspaces-on-this-mac)
+25. [Hosted by Breakpatch](#hosted-by-breakpatch)
+26. [Host it yourself](#host-it-yourself)
+27. [Members and roles](#members-and-roles)
+28. [Version history](#version-history)
+29. [Fixed automatically](#fixed-automatically)
+30. [Why did this fail?](#why-did-this-fail)
+31. [Write a test from a story](#write-a-test-from-a-story)
+32. [Wait for an email](#wait-for-an-email)
+33. [Schedules](#schedules)
+34. [The local runner](#the-local-runner)
+35. [Run requests](#run-requests)
+36. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
+37. [Result messages](#result-messages)
+38. [Create an issue](#create-an-issue)
+39. [Security rules](#security-rules)
+40. [Licences and seats](#licences-and-seats)
+41. [The back office](#the-back-office)
+42. [Encryption and the recovery code](#encryption-and-the-recovery-code)
+43. [Workspace secrets](#workspace-secrets)
 
 ---
 
@@ -419,6 +421,7 @@ In a tests folder, Recently deleted is the `deleted/` folder: one folder per del
 Passwords and emails that tests type in. Add them in Settings → **Saved secrets** → **Add a secret**, then pick one when a test writes into a field.
 
 - Values stay in this Mac's Keychain and are never uploaded. Tests only store the name, so they're safe to commit.
+- Breakpatch never shows or logs a value. Typed into a field you can see (not a password field), it's on the page, so it can be in a screenshot of the run.
 - Names use capital letters, numbers and `_` only, starting with a letter, for example `STAGING_PASSWORD`.
 - Saved secrets stay on each Mac. If a test needs one this Mac doesn't have, the run stops at that step and tells you which one to add. In a Team workspace, an admin can also save one once for everyone: see [Workspace secrets](#workspace-secrets).
 - **Each secret is only typed on the sites you allow**, for example `https://app.example.com`. Add sites when you add the secret, or change them later with the edit button. Leave them empty and Breakpatch asks, the first time a test uses the secret, whether to allow the site of the test's app.
@@ -612,7 +615,7 @@ What the folder gets:
 - **Suites**, with their tests in order, their schedules and retries.
 - **Who made, changed and ran each test**, by name. Email addresses stay out of the folder, which often ends up in Git.
 - **Encrypted content opened.** In an [encrypted workspace](#encryption-and-the-recovery-code), Breakpatch opens the tests on your Mac with the workspace's key, so the folder is plain files. A Mac without the key can't export: Breakpatch says how to get it first.
-- **The folder format the tests need.** With [Call steps](#call-your-api) or [phone and tablet tests](#phones-and-tablets) in it, the folder needs a Breakpatch that knows them, as a folder you make yourself does (see [Git tips](#git-tips)). The preview says so.
+- **The folder format the tests need.** With [Call steps](#call-your-api), [Wait for an email](#wait-for-an-email) steps or [phone and tablet tests](#phones-and-tablets) in it, the folder needs a Breakpatch that knows them, as a folder you make yourself does (see [Git tips](#git-tips)). The preview says so.
 
 What isn't exported:
 
@@ -880,7 +883,7 @@ The step's other fields:
 What a run shows and keeps:
 
 - The run view and the report say what came, for example "Got a 6-digit code in 4.2 s" or "Got a link to app.acme.com in 3.1 s", never the code or the link itself.
-- Only what's picked out is kept, in memory, for the rest of the run. The email itself is never kept, shown or saved. The code and the link are typed or opened only on your app's own pages, as a saved secret is only typed on its sites: a link to another site isn't opened.
+- Only what's picked out is kept, in memory, for the rest of the run, and it's never saved with the test or logged. Breakpatch doesn't show it, but the page does when the code is typed into a field you can see (not a password field), so it can be in a screenshot of the run. The email itself is never kept, shown or saved. The code and the link are typed or opened only on your app's own pages, as a saved secret is only typed on its sites: a link to another site isn't opened.
 - If no email comes in time, the step fails: "No email to qa+bp-k3j9x2ma@acme.com arrived within 60 s." A [retry](#retries) gets a new address and waits for a new email. If the email came without a code or link to pick out, or the inbox can't be read, the step fails and isn't retried.
 - Without Team, or with a licence that doesn't include it, a Wait for an email step fails with "This step needs Breakpatch Team". It never passes.
 
@@ -1601,7 +1604,7 @@ An admin can save a password or token once for the whole workspace, so nobody ty
 
 **A secret on this Mac wins.** When a Mac has its own saved secret of the same name, and it may be used in this workspace, tests on that Mac type that one, on its own sites. So nothing changes for people who already have one. To use the workspace's, delete yours, or keep it for other workspaces under **Where it may be used**.
 
-**Encrypted before it's saved.** The workspace has to be [encrypted](#encryption-and-the-recovery-code) first. A workspace secret is encrypted on the admin's Mac with the workspace's key, like your tests, so the workspace's database keeps only unreadable text, its name and sites included, and Breakpatch never has the key. A Mac decrypts a value only to hand it to the test browser for the step that types it. It's never shown in the app, and never goes into logs, reports, the run history or result messages. Its sites are encrypted with it, so nobody without the key can add a site to it.
+**Encrypted before it's saved.** The workspace has to be [encrypted](#encryption-and-the-recovery-code) first. A workspace secret is encrypted on the admin's Mac with the workspace's key, like your tests, so the workspace's database keeps only unreadable text, its name and sites included, and Breakpatch never has the key. A Mac decrypts a value only to hand it to the test browser for the step that types it. The app never shows it, and it never goes into logs, the run history or result messages. Typed into a field you can see (not a password field), it can be in a screenshot of the run, and so in its report. Its sites are encrypted with it, so nobody without the key can add a site to it.
 
 **What it doesn't protect against.** Every Mac in the team holds the workspace's key, so the people in your team can use these secrets, and someone determined could get a value out of their own Mac. Only save secrets for test accounts everyone in the team may use. When someone leaves, **Make a new key** encrypts the secrets again, but they may have kept a copy: change those passwords and tokens where they're used, then save the new values here.
 

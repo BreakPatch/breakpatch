@@ -194,7 +194,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
             {[...TOKENS, ...(email ? EMAIL_TOKENS : [])].map(t => <button key={t.token} type="button" className="rec-chip" onClick={() => insertToken(t.token)}>{t.name}</button>)}
           </div>
         )}
-        {o.writeSource === 'secret' && <span className="faint">{osText("The value stays in this Mac's Keychain and is never shown.")}</span>}
+        {o.writeSource === 'secret' && <span className="faint">{osText("The value stays in this Mac's Keychain and isn't logged, but in a field you can see, it can show in a screenshot.")}</span>}
         {o.writeSource === 'value' && <span className="faint">Types what {keptChoiceLabel(kept) === 'From the email' ? 'the email had' : keptChoiceLabel(kept) === 'From a call' ? 'the Call step kept' : 'the step before kept'}, only on the app's own pages. It isn't saved with the test or logged, but in a field you can see, it can show in a screenshot.</span>}
       </div>
     );
