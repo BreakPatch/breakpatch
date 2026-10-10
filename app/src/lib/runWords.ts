@@ -49,11 +49,23 @@ export function targetName(step: Pick<Step, 'target' | 'label' | 'action'>): str
   return 'what to click';
 }
 
-/** A pass that wasn't a plain match with the recording, in words for the report; a Call step's reply. */
-export function passNote(r: Pick<StepRun, 'passedBy' | 'why'> & Partial<Pick<StepRun, 'reply'>> | undefined): string | undefined {
+/** A pass that wasn't a plain match with the recording, in words for the report; a Call step's reply; what an email gave. */
+export function passNote(r: Pick<StepRun, 'passedBy' | 'why'> & Partial<Pick<StepRun, 'reply' | 'email'>> | undefined): string | undefined {
   if (r?.passedBy === 'gone') return 'Passed: the dialog closed. The page behind it looked different from when it was recorded.';
   if (r?.passedBy === 'note') return r.why ?? 'Passed: the step did what its note says.';
-  return replyNote(r?.reply);
+  return replyNote(r?.reply) ?? gotNote(r?.email);
+}
+
+/**
+ * What a Wait for an email step got: "Got a 6-digit code in 4.2 s", "Got a link to app.acme.com in
+ * 3.1 s", never the code or the link (report/view.py email_note says the same).
+ */
+export function gotNote(got: StepRun['email'] | undefined): string | undefined {
+  if (!got || !['code', 'link', 'email'].includes(got.got)) return undefined;
+  const took = typeof got.ms === 'number' ? ` in ${replyTime(got.ms)}` : '';
+  if (got.got === 'code') return got.digits === true && typeof got.chars === 'number' ? `Got a ${got.chars}-digit code${took}` : `Got a code${took}`;
+  if (got.got === 'link') return got.site ? `Got a link to ${got.site}${took}` : `Got a link${took}`;
+  return `The email came${took}`;
 }
 
 /** A Call step's reply: "Replied 200 in 0.4 s" (its status and time, never its body). */
@@ -72,6 +84,7 @@ function replyTime(ms: number): string {
 
 /** The headline: "Couldn't find the Done button". */
 export function reasonTitle(reason: FailReason | undefined, step: Pick<Step, 'target' | 'label' | 'action'>): string {
+  if (reason === 'timeout' && step.action === 'emailWait') return 'No email came in time';
   switch (reason) {
     case 'targetNotFound': case 'healFailed': return `Couldn't find ${targetName(step)}`;
     case 'unexpectedScreen': return step.action === 'checkpoint' ? "The screen didn't look as expected" : "The screen didn't look as expected after this step";
@@ -83,6 +96,8 @@ export function reasonTitle(reason: FailReason | undefined, step: Pick<Step, 'ta
     case 'stopped': return 'You stopped the run';
     case 'fileMissing': return "The file to upload isn't in the tests folder";
     case 'callFailed': return step.action === 'write' ? "The value from the call couldn't be typed" : "The call to your API didn't work";
+    case 'actionUnavailable': return 'This step needs Breakpatch Team';
+    case 'emailFailed': return step.action === 'emailWait' ? "The test inbox couldn't be read" : "What the email had couldn't be used";
     default: return 'This step failed';
   }
 }
@@ -105,6 +120,7 @@ export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'tar
       return 'The page looked different from when it was recorded once the step was done. The run stopped here.';
     case 'noChange': return 'The step was done, but nothing changed on the page the way it did when it was recorded. The run stopped here.';
     case 'timeout':
+      if (step.action === 'emailWait') return 'No email this step waits for arrived in time. The run stopped here.';
       if (step.action === 'waitUntil') return 'What this step waits for never appeared. The run stopped here.';
       return "The page didn't finish loading or settle in time. The run stopped here.";
     case 'healingUnavailable': return 'Download it in Settings → AI assistant, then run again.';
@@ -116,12 +132,19 @@ export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'tar
       if (step.action === 'write') return "No Call step before it kept this value, or the page wasn't one of the app's own. The run stopped here.";
       if (typeof r?.reply?.status === 'number') return `${replyNote(r.reply)}, which this step doesn't count as a pass. The run stopped here.`;
       return "It didn't get a reply this step counts as a pass. The run stopped here.";
+    case 'actionUnavailable': return "It's part of Breakpatch Team, so it couldn't run here, and it never passes without it. The run stopped here.";
+    case 'emailFailed':
+      if (step.action === 'emailWait') return "The inbox couldn't be read, or the email didn't have what this step picks out. The run stopped here.";
+      return "No Wait for an email step before it picked this out, or the page wasn't one of the app's own. The run stopped here.";
     default: return 'The run stopped here.';
   }
 }
 
-/** What to try, under the side-by-side screenshots. */
-export function reasonAdvice(reason: FailReason | undefined): string {
+/** What to try, under the side-by-side screenshots. `step`: the step that failed (a Wait for an email step's own advice). */
+export function reasonAdvice(reason: FailReason | undefined, step?: Pick<Step, 'action'>): string {
+  if (reason === 'timeout' && step?.action === 'emailWait') {
+    return 'Check that the app sends the email, to the address this step waits for. If emails take long, let the step wait longer, then run again.';
+  }
   switch (reason) {
     case 'secretMissing': return osText('Saved secrets stay on each Mac. Add it here once and every test that uses it can run.');
     case 'healingUnavailable': return 'Without the AI assistant, a moved button fails the run. Re-record the step, or download the assistant.';
@@ -129,6 +152,8 @@ export function reasonAdvice(reason: FailReason | undefined): string {
     case 'callFailed': return "Check that the address works and that the app is running: the step's Try it shows what it replies now. Then run again.";
     case 'timeout': return 'If the app was slow this time, run again. If it always takes longer now, re-record this step.';
     case 'stopped': return 'Run again to go through every step.';
+    case 'actionUnavailable': return 'Run it with Breakpatch Team, or remove this step.';
+    case 'emailFailed': return 'Check the test inbox in Settings, Test inbox, and what this step picks out, then run again.';
     default: return 'If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer.';
   }
 }

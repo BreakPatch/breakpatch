@@ -2,8 +2,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useSystem } from '../state/system';
 import { listen } from '@tauri-apps/api/event';
-import type { Box, Explanation, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import { EngineError, type CallReply, type CallStepOptions, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Plan, type Proposal, type RecordParams, type ReportImageReply, type ReportImageRequest, type RunStart, type SecretScope, type SetupTaskName, type SystemInfo } from './engine';
+import type { Box, Explanation, HttpCall, InboxSettings, Point, Step, StepRun, Viewport } from '../data/types';
+import { EngineError, type CallReply, type CallStepOptions, type Engine, type EngineEvents, type FileChoice, type HandInput, type InboxCheck, type LocateResult, type Near, type EngineIntent, type Plan, type Proposal, type RecordParams, type ReportImageReply, type ReportImageRequest, type RunStart, type SecretScope, type SetupTaskName, type SystemInfo } from './engine';
 
 interface Wire { event: keyof EngineEvents; data: unknown }
 
@@ -61,6 +61,11 @@ export class SidecarEngine implements Engine {
 
   async startRun(r: RunStart) { await this.call('run.start', r); }
   async stopRun(runId: string) { await this.call('run.stop', { runId }); }
+
+  /** "Check the inbox" (Team): the engine signs in as a run would; Community answers not_ready. */
+  checkInbox(inbox: InboxSettings, secrets: Record<string, string> = {}, scope: SecretScope = {}) {
+    return this.call<InboxCheck>('email.check', { inbox, secrets, ...scope });
+  }
 
   /** Through the engine, not the webview's fetch: the release CSP blocks that, and the engine keeps to the same rules as a run. */
   tryCall(call: HttpCall, appUrl: string, secrets: Record<string, string> = {}, scope: SecretScope = {}, step: CallStepOptions = {}) {

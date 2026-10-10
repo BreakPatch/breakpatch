@@ -15,6 +15,7 @@ import { originOf } from '../../lib/sites';
 import { ensureSecretSites } from '../../lib/secretSites';
 import { secretsForRequest } from '../../lib/secretScope';
 import { callSecretRefs } from '../../lib/calls';
+import { hasEmailToken, readInbox } from '../../lib/email';
 import { checkpointLabel, intentAskText, notFoundText, planNotFoundText, thinkingText } from './describe';
 import { chosenIntent, fromEngine, readIntent, type Intent } from './intent';
 import { answered, CAREFUL_NOTE, CHECK_NOTE, planIntent, planNeeds, planRun, planSentence, type PlanItem, type PlanRun, type WalkStep } from './plan';
@@ -79,6 +80,7 @@ const ACTING: Partial<Record<ActionKind, string>> = {
   click: 'Clicking…', doubleClick: 'Clicking…', longClick: 'Clicking…', rightClick: 'Clicking…', hover: 'Moving the pointer…',
   write: 'Typing…', navigate: 'Opening the page…', waitFor: 'Waiting…', swipe: 'Swiping…', scroll: 'Scrolling…', drag: 'Dragging…',
   upload: 'Uploading…', switchTab: 'Switching tabs…', downloadCheck: 'Checking the download…', call: 'Calling your API…',
+  emailWait: 'Waiting for the email…',
 };
 
 /**
@@ -237,11 +239,19 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     setSelectedId(rr ?? tempId);
     setChecking(true); setSavedPill(null); setPhase('watching'); setBusyAction(params.action); setAddedId(null);
     try {
+      // The workspace's test inbox (Team, lib/email.ts): for a Wait for an email step, and for {email}
+      // or what an email gave in a Write, a Go to address or a call.
+      const usesInbox = params.action === 'emailWait' || [params.text, params.url, params.call?.url, params.call?.body].some(hasEmailToken);
+      const backend = useSession.getState().backend;
+      const inbox = usesInbox && backend ? await readInbox(backend) : null;
       // The secret's value goes to the engine with this call only, never into the step. A Call
-      // step's headers may name saved secrets too; it and a Write of a kept value need the app's address.
-      const forStep = extra.checkpoint ? undefined : params.action === 'call' ? await secretsForRequest(callSecretRefs(params.call)) : await secretFor(params.secretRef, appUrl);
-      const needsApp = params.action === 'call' || (params.action === 'write' && !!params.valueRef);
-      const sent: RecordParams = { ...params, ...(filesDir ? { filesDir } : {}), ...(forStep ?? {}), ...(needsApp && appUrl ? { appUrl } : {}), ...(extra.frame !== undefined ? { frame: extra.frame } : {}),
+      // step's headers may name saved secrets too, and a Wait for an email step the inbox's password;
+      // they, a Write of a kept value and anything from an email need the app's address.
+      const forStep = extra.checkpoint ? undefined : params.action === 'call' ? await secretsForRequest(callSecretRefs(params.call))
+        : params.action === 'emailWait' ? await secretsForRequest(inbox?.passwordRef ? [inbox.passwordRef] : [])
+        : await secretFor(params.secretRef, appUrl);
+      const needsApp = params.action === 'call' || (params.action === 'write' && !!params.valueRef) || usesInbox;
+      const sent: RecordParams = { ...params, ...(filesDir ? { filesDir } : {}), ...(forStep ?? {}), ...(needsApp && appUrl ? { appUrl } : {}), ...(inbox ? { inbox } : {}), ...(extra.frame !== undefined ? { frame: extra.frame } : {}),
         // Found with the AI assistant: the user's words are what to look for (the engine still names it).
         ...(extra.target && !extra.checkpoint ? { target: extra.target } : {}),
         ...(extra.label && !extra.checkpoint && params.action !== 'checkpoint' ? { label: extra.label } : {}) };
@@ -670,6 +680,14 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     recordCall: (patch: Pick<Step, 'call' | 'passStatus' | 'timeoutMs' | 'keep' | 'label'>) =>
       record({ action: 'call', call: patch.call, ...(patch.passStatus ? { passStatus: patch.passStatus } : {}), ...(patch.timeoutMs ? { timeoutMs: patch.timeoutMs } : {}),
         ...(patch.keep ? { keep: patch.keep } : {}) }, { label: patch.label }),
+    /**
+     * Adds a step an edition's action (Slots.recorderActions) made in its dialog: the engine does it
+     * now (a Wait for an email step waits for its email), and it isn't added when that doesn't work.
+     */
+    recordAction: (patch: Partial<Step> & { action: ActionKind }) => {
+      const { id: _id, label, ...fields } = patch;
+      return record(fields as RecordParams, label ? { label } : {});
+    },
     appUrl,
     /** A test from a story: the run through its steps, and what the person does with them. */
     plan, planEditing, startPlan, stopPlan, editPlanStep, setPlanAuto,

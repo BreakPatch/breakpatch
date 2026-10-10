@@ -1,5 +1,5 @@
 // UI-side view of the Python engine (see engine/PROTOCOL.md).
-import type { Box, Direction, Explanation, Generated, HttpCall, KeptValue, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
+import type { Box, Direction, Explanation, Generated, HttpCall, InboxSettings, KeptValue, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
 
 export interface SystemInfo {
   memoryGb: number; chip: string; os: string; engineVersion: string;
@@ -62,6 +62,8 @@ export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' 
   appUrl?: string;
   /** <tests folder>/files, for uploads of the user's own files. */
   filesDir?: string;
+  /** The workspace's test inbox, for a Wait for an email step and `{email}` (Team, engine/PROTOCOL.md "Wait for an email"). */
+  inbox?: InboxSettings;
 };
 
 /** What a click on the live view would act on (nothing is done to the page): `record.propose`. */
@@ -131,7 +133,12 @@ export interface RunStart extends SecretScope {
   filesDir?: string;
   /** Where the test was recorded (its version's `recordedOn`), to compare with this system. */
   recordedOn?: RecordedOn;
+  /** The workspace's test inbox, when the steps wait for an email or use `{email}` (Team). */
+  inbox?: InboxSettings;
 }
+
+/** The answer to "Check the inbox" (Team, engine `email.check`): a plain sentence either way, never what's in it. */
+export interface InboxCheck { ok: boolean; message?: string }
 
 /** The answer to "Try it" for a set-up or clean-up call, or a Call step (engine `call.try`). */
 export interface CallReply {
@@ -151,6 +158,8 @@ export interface RunStepEvent {
   passedBy?: StepRun['passedBy']; why?: string; timings?: StepRun['timings']; unchecked?: string[];
   /** A Call step's reply: status and time. */
   reply?: StepRun['reply'];
+  /** A Wait for an email step's: what came, never the value. */
+  email?: StepRun['email'];
 }
 export interface RunEnded {
   runId: string; result: 'pass' | 'fail'; durationMs: number; steps: StepRun[];
@@ -241,6 +250,12 @@ export interface Engine {
 
   startRun(r: RunStart): Promise<void>;
   stopRun(runId: string): Promise<void>;
+
+  /**
+   * Settings → Test inbox, "Check the inbox" (Team, engine `email.check`): signs in as a run would.
+   * Throws EngineError `not_ready` in Community. Absent on an engine that can't.
+   */
+  checkInbox?(inbox: InboxSettings, secrets?: Record<string, string>, scope?: SecretScope): Promise<InboxCheck>;
 
   /** "Try it": one request under the same rules as a run's set-up and clean-up calls (and a Call step's `step` options). */
   tryCall(call: HttpCall, appUrl: string, secrets?: Record<string, string>, scope?: SecretScope, step?: CallStepOptions): Promise<CallReply>;
