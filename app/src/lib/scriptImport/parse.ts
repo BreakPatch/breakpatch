@@ -37,12 +37,24 @@ export type Stmt =
 
 /** Deeper than this, nesting isn't read (a test is never nested this deep; it keeps the stack safe). */
 const MAX_DEPTH = 200;
+/** An arrow function's return type longer than this many tokens (outside brackets) isn't looked for. */
+const RETURN_TYPE_TOKENS = 64;
 const BLOCK_WORDS = new Set(['if', 'for', 'while', 'do', 'switch', 'try', 'with']);
 const DECL_WORDS = new Set(['const', 'let', 'var']);
 /** Tokens that close a value in a list or a statement. */
 const CLOSERS = new Set([',', ')', ']', '}', ';', ':']);
 /** Punctuation that, ending a line, carries the expression on to the next one. */
 const CARRIES = new Set(['.', '?.', '(', '[', '{', ',', '=', '=>', '+', '-', '*', '/', '%', '&&', '||', '??', '?', ':', '==', '===', '!=', '!==', '<', '>', '<=', '>=', '!', '+=', '-=']);
+
+/**
+ * `s` on one line: each run of white space with a line break in it becomes one space. Line by line,
+ * not with the pattern `\s*\n\s*`, which backtracks over a long run of spaces with no line break
+ * for seconds.
+ */
+function oneLine(s: string): string {
+  if (!s.includes('\n')) return s.trim();
+  return s.split('\n').map(l => l.trim()).filter(l => l).join(' ');
+}
 
 export class Parser {
   readonly t: Token[];
@@ -64,7 +76,7 @@ export class Parser {
   /** The source text from token `a` to token `b` (inclusive), on one line. */
   text(a: number, b: number): string {
     if (a > b || !this.t[a]) return '';
-    return this.src.slice(this.t[a].start, this.t[Math.min(b, this.t.length - 1)].end).replace(/\s*\n\s*/g, ' ').trim();
+    return oneLine(this.src.slice(this.t[a].start, this.t[Math.min(b, this.t.length - 1)].end));
   }
   is(i: number, value: string): boolean { const k = this.t[i]; return !!k && k.kind === 'punct' && k.value === value; }
   isWord(i: number, value?: string): boolean { const k = this.t[i]; return !!k && k.kind === 'id' && (value === undefined || k.value === value); }
@@ -180,8 +192,10 @@ export class Parser {
     if (word === 'for' && this.isWord(j, 'await')) j++;
     if (this.is(j, '(')) j = this.close(j) + 1;
     j = this.bodyEnd(j, to);
+    // A loop, not a call for each `else if`: a chain of thousands mustn't run out of stack.
     for (;;) {
-      if (this.isWord(j, 'else')) { j = this.isWord(j + 1, 'if') ? this.blockEnd(j + 1, to) : this.bodyEnd(j + 1, to); continue; }
+      if (this.isWord(j, 'else') && this.isWord(j + 1, 'if')) { j += 2; if (this.is(j, '(')) j = this.close(j) + 1; j = this.bodyEnd(j, to); continue; }
+      if (this.isWord(j, 'else')) { j = this.bodyEnd(j + 1, to); continue; }
       if (this.isWord(j, 'catch')) { j++; if (this.is(j, '(')) j = this.close(j) + 1; j = this.bodyEnd(j, to); continue; }
       if (this.isWord(j, 'finally')) { j = this.bodyEnd(j + 1, to); continue; }
       return j;
@@ -198,11 +212,14 @@ export class Parser {
   value(i: number, to: number): [Value, number] {
     const start = i;
     const [v, n] = this.primary(i, to);
-    // An operator after it (`a + b`, `x ?? 'y'`, `a as T`): the whole thing is "other".
-    let j = n, depth = 0;
+    // An operator after it (`a + b`, `x ?? 'y'`, `a as T`): the whole thing is "other". `open`
+    // counts the `?`s at this level still waiting for their `:`; a `:` with none ends the value.
+    let j = n, depth = 0, open = 0;
     for (; j < to; j++) {
       const k = this.t[j];
-      if (depth === 0 && k.kind === 'punct' && CLOSERS.has(k.value) && !(k.value === ':' && this.ternary(start, j))) break;
+      if (depth === 0 && k.kind === 'punct' && k.value === '?') open++;
+      else if (depth === 0 && k.kind === 'punct' && k.value === ':' && open > 0) { open--; continue; }
+      if (depth === 0 && k.kind === 'punct' && CLOSERS.has(k.value)) break;
       if (depth === 0 && k.nl && !CARRIES.has(k.value) && !CARRIES.has(this.t[j - 1].value)) break;
       if (k.kind === 'punct' && (k.value === '(' || k.value === '[' || k.value === '{')) depth++;
       else if (k.kind === 'punct' && (k.value === ')' || k.value === ']' || k.value === '}')) { if (depth === 0) break; depth--; }
@@ -211,12 +228,6 @@ export class Parser {
     // `x as const`, `x!`: the value itself.
     if (this.isWord(n, 'as') || this.isWord(n, 'satisfies') || (this.is(n, '!') && j === n + 1)) return [v, j];
     return [{ kind: 'other', text: this.text(start, j - 1) }, j];
-  }
-  /** A `:` at `j` belongs to a `?` before it, in the value from `start`. */
-  private ternary(start: number, j: number): boolean {
-    let q = 0;
-    for (let k = start; k < j; k++) if (this.is(k, '?')) q++; else if (this.is(k, ':')) q--;
-    return q > 0;
   }
 
   /** How deep values and statements are nested now: past MAX_DEPTH the rest is skipped, not read. */
@@ -281,12 +292,16 @@ export class Parser {
   private arrowAt(j: number): number {
     let k = this.close(j) + 1;
     if (this.is(k, ':')) {           // a return type: `(): Promise<void> =>`
-      let depth = 0;
+      // Over brackets in one step, and only so far: a return type is short, and reading on to the
+      // end of the script for every `(…):` in a long list of them takes minutes.
+      let depth = 0, n = 0;
       for (k = k + 1; k < this.t.length; k++) {
-        if (this.is(k, '<') || this.is(k, '(') || this.is(k, '{') || this.is(k, '[')) depth++;
-        else if (this.is(k, '>') || this.is(k, ')') || this.is(k, '}') || this.is(k, ']')) depth--;
+        if (++n > RETURN_TYPE_TOKENS) return -1;
+        if (this.is(k, '(') || this.is(k, '{') || this.is(k, '[')) { k = this.close(k); continue; }
+        if (this.is(k, '<')) depth++;
+        else if (this.is(k, '>')) depth--;
+        else if (this.is(k, ')') || this.is(k, '}') || this.is(k, ']') || this.is(k, ';')) return -1;
         else if (depth <= 0 && this.is(k, '=>')) break;
-        if (this.is(k, ';')) return -1;
       }
     }
     return this.is(k, '=>') ? k : -1;

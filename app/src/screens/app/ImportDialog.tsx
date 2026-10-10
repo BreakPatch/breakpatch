@@ -18,6 +18,7 @@ import { withScheme } from './TestDetailsDialog';
 import './import.css';
 
 const TOO_BIG = 'This file is too big to be a test script.';
+const TOO_BIG_PASTED = 'This is too big to be a test script.';
 
 interface Read { file: string; result: ScriptImport }
 
@@ -64,6 +65,12 @@ export function ImportDialog({ open, app, onClose }: { open: boolean; app: App; 
     catch { setError("Couldn't read this script. Check it's a JavaScript or TypeScript file."); return; }
     if (!result.tests.length) { setError(NOTHING_FOUND); return; }
     setError(null); setRead({ file, result }); setWhich(0); setTried(false); setSeq(n => n + 1);
+  };
+  // The same limit as a chosen file's, in UTF-8 bytes as a file's size is.
+  const readPasted = () => {
+    if (!pasted.trim()) return;
+    if (new TextEncoder().encode(pasted).length > MAX_SCRIPT_BYTES) { setError(TOO_BIG_PASTED); return; }
+    take('', pasted);
   };
   const choose = async () => {
     try {
@@ -117,7 +124,7 @@ export function ImportDialog({ open, app, onClose }: { open: boolean; app: App; 
           {!pasting
             ? <Button kind="link" size="sm" onClick={() => setPasting(true)}>Paste the script instead</Button>
             : (
-              <form className="imp-paste" onSubmit={e => { e.preventDefault(); if (pasted.trim()) take('', pasted); }}>
+              <form className="imp-paste" onSubmit={e => { e.preventDefault(); readPasted(); }}>
                 <TextArea label="Script" mono rows={8} value={pasted} autoFocus spellCheck={false}
                   placeholder={"test('Sign in', async ({ page }) => {\n  await page.goto('/login');\n  …"}
                   onChange={e => { setPasted(e.target.value); setError(null); }} />
