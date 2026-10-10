@@ -14,43 +14,45 @@ Breakpatch is **Community** for now: free and open source, for one person on one
 **Community**
 
 5. [The tests folder](#the-tests-folder)
-6. [Record a test](#record-a-test)
-7. [Import from Playwright or Cypress](#import-from-playwright-or-cypress)
-8. [Run a test and read the report](#run-a-test-and-read-the-report)
-9. [Shared steps](#shared-steps)
-10. [Suites](#suites)
-11. [Get a deleted app or test back](#get-a-deleted-app-or-test-back)
-12. [Saved secrets](#saved-secrets)
-13. [The AI assistant](#the-ai-assistant)
-14. [Updates](#updates)
-15. [Privacy](#privacy)
-16. [Using Breakpatch on a company network](#using-breakpatch-on-a-company-network)
-17. [Troubleshooting](#troubleshooting)
+6. [Links to a test](#links-to-a-test)
+7. [Record a test](#record-a-test)
+8. [Import from Playwright or Cypress](#import-from-playwright-or-cypress)
+9. [Run a test and read the report](#run-a-test-and-read-the-report)
+10. [Shared steps](#shared-steps)
+11. [Suites](#suites)
+12. [Get a deleted app or test back](#get-a-deleted-app-or-test-back)
+13. [Saved secrets](#saved-secrets)
+14. [The AI assistant](#the-ai-assistant)
+15. [Updates](#updates)
+16. [Privacy](#privacy)
+17. [Using Breakpatch on a company network](#using-breakpatch-on-a-company-network)
+18. [Troubleshooting](#troubleshooting)
 
 **Team**
 
-18. [What Team adds](#what-team-adds)
-19. [Solo](#solo)
-20. [Upgrading to Team](#upgrading-to-team)
-21. [Workspaces on this Mac](#workspaces-on-this-mac)
-22. [Hosted by Breakpatch](#hosted-by-breakpatch)
-23. [Host it yourself](#host-it-yourself)
-24. [Members and roles](#members-and-roles)
-25. [Version history](#version-history)
-26. [Fixed automatically](#fixed-automatically)
-27. [Why did this fail?](#why-did-this-fail)
-28. [Write a test from a story](#write-a-test-from-a-story)
-29. [Schedules](#schedules)
-30. [The local runner](#the-local-runner)
-31. [Run requests](#run-requests)
-32. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
-33. [Result messages](#result-messages)
-34. [Create an issue](#create-an-issue)
-35. [Security rules](#security-rules)
-36. [Licences and seats](#licences-and-seats)
-37. [The back office](#the-back-office)
-38. [Encryption and the recovery code](#encryption-and-the-recovery-code)
-39. [Workspace secrets](#workspace-secrets)
+19. [What Team adds](#what-team-adds)
+20. [Solo](#solo)
+21. [Upgrading to Team](#upgrading-to-team)
+22. [Export to a tests folder](#export-to-a-tests-folder)
+23. [Workspaces on this Mac](#workspaces-on-this-mac)
+24. [Hosted by Breakpatch](#hosted-by-breakpatch)
+25. [Host it yourself](#host-it-yourself)
+26. [Members and roles](#members-and-roles)
+27. [Version history](#version-history)
+28. [Fixed automatically](#fixed-automatically)
+29. [Why did this fail?](#why-did-this-fail)
+30. [Write a test from a story](#write-a-test-from-a-story)
+31. [Schedules](#schedules)
+32. [The local runner](#the-local-runner)
+33. [Run requests](#run-requests)
+34. [From CI with breakpatch-ci](#from-ci-with-breakpatch-ci)
+35. [Result messages](#result-messages)
+36. [Create an issue](#create-an-issue)
+37. [Security rules](#security-rules)
+38. [Licences and seats](#licences-and-seats)
+39. [The back office](#the-back-office)
+40. [Encryption and the recovery code](#encryption-and-the-recovery-code)
+41. [Workspace secrets](#workspace-secrets)
 
 ---
 
@@ -126,7 +128,7 @@ Your tests are plain JSON files in the folder you picked. Breakpatch picks up ch
 
 ```
 breakpatch-tests/
-  breakpatch.json                 the folder's name and format version
+  breakpatch.json                 the folder's name, its own id and format version
   apps/
     web-app/
       app.json                    name, address, screen size
@@ -189,6 +191,16 @@ The same test always gives the same file: two-space indents, keys in a fixed ord
 - **Saved by a newer Breakpatch?** If `breakpatch.json` has a higher `schemaVersion` than your app knows, update Breakpatch to open the folder. If it changes while the folder is open, saving stops until you update. Your first phone or tablet test raises it, and so does your first [Call step](#call-your-api), so update Breakpatch on every Mac that uses the folder, and `breakpatch-ci` if it runs the folder's tests.
 
 Settings → Tests folder shows the folder, how many apps and tests it has, **Show in Finder** and **Change folder**. Changing folders leaves the old one as it is, with all its tests.
+
+## Links to a test
+
+**Copy link** in a test's **⋯** menu (in the app's **Tests** tab), or in a suite's **⋯** menu in **Suites**, copies a link like `breakpatch://open?ws=folder:3f9a…&path=apps/web-app/tests/log-in`. Paste it in a pull request, an issue or a chat. Clicking it on a Mac with Breakpatch opens Breakpatch, switches to that tests folder or workspace the way the [switcher](#workspaces-on-this-mac) does, and opens the test in the recorder, or the suite.
+
+- **A tests folder is found by its own id**, which Breakpatch keeps in `breakpatch.json`. So the link works in every copy of the folder, your teammates' clones too, wherever it is on their Mac, once they've opened it in Breakpatch. A folder made before links gets its id the first time you copy one: commit `breakpatch.json` so the copies in Git have it too.
+- **In a Team workspace** the link works for everyone who has that workspace on their Mac.
+- **Not on this Mac?** Breakpatch says so and does nothing else: open the folder or connect the workspace, then click the link again. Breakpatch Community opens links to tests folders only.
+- **Nothing is interrupted.** While a test is being recorded or run, Breakpatch asks you to finish first. On the [local runner's](#the-local-runner) Mac it doesn't switch workspace. If the workspace needs you to sign in, the test opens once you have.
+- A link only says where a test is. It never carries steps, and opening it changes nothing.
 
 ## Record a test
 
@@ -581,6 +593,33 @@ Good to know:
 - **Already in the workspace?** Anything that's already there is left out. If a test there differs from the folder's (a teammate copied an older version, say), Breakpatch names it, and you can keep the workspace's version.
 - A folder saved by a newer Breakpatch can't be moved until you update.
 
+## Export to a tests folder
+
+The way back, if you move down to Community or leave: a one-time copy of a workspace into a new, empty tests folder on your Mac. Only admins can export, from **Settings → Workspace → Export to a tests folder**, in a workspace of your own or one [hosted by Breakpatch](#hosted-by-breakpatch). The workspace stays exactly as it is: exporting only reads it, and nothing is kept in step afterwards.
+
+1. **Show what will be exported.** Breakpatch reads the whole workspace on this Mac, then shows what the folder will get, for example "2 apps, 14 tests, 3 sets of shared steps, 2 suites and 12 last runs will be exported.", which folder each app goes in, what changes on the way and what isn't exported. Nothing is written yet.
+2. **Choose an empty folder and export.** Pick a new, empty folder. Breakpatch never writes into a folder that has files in it. It writes the tests folder, then reads it back the way it opens any tests folder and compares it, file for file, with what it wrote. If writing stops part-way, what it wrote is removed again.
+3. **Open it in Breakpatch**, or **Show in Finder**. It's an ordinary [tests folder](#the-tests-folder): Breakpatch Community opens it, and you can keep it in Git.
+
+What the folder gets:
+
+- **Each app**, with its address, icon and screen size, its **tests** at their latest version (with the version's number, its steps and where it was recorded), its **shared steps** at their latest version, and **each test's last run**. File names come from the names, as in any tests folder: *Log in* becomes `log-in.json`.
+- **Suites**, with their tests in order, their schedules and retries.
+- **Encrypted content opened.** In an [encrypted workspace](#encryption-and-the-recovery-code), Breakpatch opens the tests on your Mac with the workspace's key, so the folder is plain files. A Mac without the key can't export: Breakpatch says how to get it first.
+- **The folder format the tests need.** With [Call steps](#call-your-api) or [phone and tablet tests](#phones-and-tablets) in it, the folder needs a Breakpatch that knows them, as a folder you make yourself does (see [Git tips](#git-tips)). The preview says so.
+
+What isn't exported:
+
+- **Earlier runs.** Each test keeps its last run.
+- **Earlier versions.** Each test and set of shared steps keeps its latest version, and which version is [marked as released](#version-history) isn't kept. A test that uses an earlier version of shared steps uses the latest in the folder; the preview names them.
+- **The workspace's saved secrets.** Steps keep their names: save the values again in **Settings → Saved secrets** on the Mac that runs the tests.
+- **Members and their roles.**
+- **Where suites send their results**, and the history of suite runs.
+- **The workspace's settings**, such as issue trackers and the local runner.
+- **What's in Recently deleted.**
+
+A hosted workspace's **Download export** is something else: a zip of everything the workspace keeps, its whole run and version history too, as it's stored, so its tests stay encrypted in it. Use **Export to a tests folder** for a folder Breakpatch opens.
+
 ## Workspaces on this Mac
 
 Like Slack, one Breakpatch holds your tests folder and any number of Team workspaces. The switcher next to the Breakpatch name, at the top of Apps, Suites and Local runner, shows which one is open. *Personal* is a tests folder on this Mac.
@@ -589,6 +628,7 @@ Like Slack, one Breakpatch holds your tests folder and any number of Team worksp
 - **Add a workspace…** opens the usual connect screen: [Hosted by Breakpatch](#hosted-by-breakpatch), or your own with an invite link (click it, or paste it under **Host it yourself**), a `.bpworkspace` file (**Open a workspace file**, or double-click it) or [Create a workspace](#create-a-workspace). Before a workspace from a link or file opens, Breakpatch asks, and says which Firebase project it's in. What you had open stays on the list. Then sign in to the new one.
 - **Open a tests folder…** opens another tests folder, as **Change folder** in Settings → Tests folder does. Each folder you open is its own *Personal* entry.
 - **Manage workspaces…** lists everything on this Mac, each with **Remove…**.
+- **A link to a test** opens it in the right workspace: see [Links to a test](#links-to-a-test).
 
 **Each workspace keeps its own.** Its sign-in, [licence and seat](#licences-and-seats), usage counts, [encryption key](#encryption-and-the-recovery-code), local runner and what Breakpatch keeps of it on this Mac belong to it alone, and nothing of one shows in another. When you switch, Team features come only from the new workspace's own licence: nothing is unlocked in between. If two workspaces have the same name, the menu says where each one is.
 
@@ -653,7 +693,7 @@ A runner Mac and CI sign in with a token instead of an email. An admin makes one
 
 Settings → **Workspace** shows the plan and seats, where the workspace is kept, how long runs are kept, and how many tests and how much storage it uses against its allowance (counted once a day). From 80 % the storage bar says **Nearly full**; when it's full, runs keep working and are saved, but new tests, new versions and screenshots wait until there's room. To add storage, write to [support@breakpatch.dev](mailto:support@breakpatch.dev), or delete tests and apps you no longer need. The emails and the account page say the same.
 
-**Download export** (admins) makes a zip of the workspace's tests, versions, runs and suites and opens the download in your browser; the link works for 7 days. The account page has the same **Download export**. When the licence ends, the workspace becomes read-only for 30 days, so you can still open and export your tests, and then it's deleted: Settings → Workspace shows the date first. Renewing makes it active again. **Remove from this Mac** signs you out here, gives your seat back and deletes what this Mac keeps of the workspace; the workspace and its tests stay (see [Remove from this Mac](#remove-from-this-mac)).
+**Download export** (admins) makes a zip of the workspace's tests, versions, runs and suites and opens the download in your browser; the link works for 7 days. Its tests stay encrypted in it, as the workspace keeps them: for a folder Breakpatch opens, use [Export to a tests folder](#export-to-a-tests-folder). The account page has the same **Download export**. When the licence ends, the workspace becomes read-only for 30 days, so you can still open and export your tests, and then it's deleted: Settings → Workspace shows the date first. Renewing makes it active again. **Remove from this Mac** signs you out here, gives your seat back and deletes what this Mac keeps of the workspace; the workspace and its tests stay (see [Remove from this Mac](#remove-from-this-mac)).
 
 ## Host it yourself
 
