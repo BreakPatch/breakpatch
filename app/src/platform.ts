@@ -20,6 +20,22 @@ export async function copyText(text: string): Promise<void> {
 }
 
 /**
+ * Copies text that's still being worked out (e.g. a link that needs a file read first). WebKit
+ * lets a page write the clipboard only while the click that asked for it is going on, so the
+ * write starts at once with the text to come (ClipboardItem); where that isn't there, it's
+ * copyText once the text is known. Rejects when the text can't be had.
+ */
+export async function copyTextSoon(text: Promise<string>): Promise<void> {
+  const Item = (globalThis as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
+  if (Item && navigator.clipboard?.write) {
+    const blob = text.then(t => new Blob([t], { type: 'text/plain' }));
+    try { await navigator.clipboard.write([new Item({ 'text/plain': blob })]); return; }
+    catch { await blob; /* the text itself failed: say so; else the older way below */ }
+  }
+  await copyText(await text);
+}
+
+/**
  * The clipboard's text, for a Paste button; null when it can't be read. In the app it's read
  * through the shell (tauri-plugin-clipboard-manager): WebKit's navigator.clipboard.readText()
  * first shows a "Paste" bubble to confirm. In a browser (the preview), navigator.clipboard.
@@ -165,6 +181,18 @@ export async function onWorkspaceLink(cb: (payload: string) => void): Promise<()
   const launchFile = await tauriInvoke<string | null>('workspace_file_take').catch(() => null);
   if (launchFile) cb(launchFile);
   return () => { offFile(); offUrl(); };
+}
+
+/**
+ * Listens for breakpatch:// links only (lib/openLinks.ts), the one the app opened with first. Opened
+ * .bpworkspace files are onWorkspaceLink's alone: the shell hands a file opened at launch over once.
+ */
+export async function onLinkOpened(cb: (link: string) => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { onOpenUrl, getCurrent } = await import('@tauri-apps/plugin-deep-link');
+  const first = await getCurrent().catch(() => null);
+  first?.forEach(cb);
+  return onOpenUrl(urls => urls.forEach(cb));
 }
 
 export function appVersion(): string { return import.meta.env.VITE_APP_VERSION ?? '0.1.0'; }

@@ -176,6 +176,11 @@ export interface Backend {
   readonly workspace: Workspace | null;
   /** The tests folder (kind 'local'). */
   readonly local?: { path: string };
+  /**
+   * Optional (a tests folder): the folder's own id, the same in every copy of it, which links to
+   * its tests name (lib/openLinks.ts). Made and saved in the folder the first time it's asked for.
+   */
+  folderId?(): Promise<string>;
   /** Optional: plain lines about data that was skipped (e.g. a file that isn't valid JSON). Calls `l` at once. */
   onWarnings?(l: Listener<string[]>): Unsubscribe;
   /** Optional: stop watching for changes when the app switches away from this backend. */

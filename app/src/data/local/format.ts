@@ -23,6 +23,21 @@ export const CALL_SCHEMA_VERSION = 3;
 /** The newest folder format this app reads and saves to. */
 export const NEWEST_READ_SCHEMA_VERSION = CALL_SCHEMA_VERSION;
 
+/**
+ * A tests folder's own id: breakpatch.json `id`, made once (when the folder is set up, or for an
+ * older folder the first time a link to one of its tests is copied). It travels with the folder,
+ * through Git too, so a link to a test (lib/openLinks.ts) finds the folder on any Mac that has it,
+ * wherever it is. Apps from before it keep it as it is (they rewrite breakpatch.json only to raise
+ * its format, keeping every key).
+ */
+export function newFolderId(): string {
+  const bytes = new Uint8Array(10);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+/** A folder id as newFolderId makes them (or one edited by hand within the same characters). */
+export function isFolderId(v: unknown): v is string { return typeof v === 'string' && /^[a-z0-9]{8,64}$/.test(v); }
+
 /** Keys that come first, in this order; then the rest alphabetically; then LAST. */
 const FIRST = [
   'format', 'schemaVersion', 'id', 'action', 'name', 'label', 'description', 'target', 'text',

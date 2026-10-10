@@ -1,6 +1,6 @@
 // Community's backend: tests saved as JSON files in a folder the person picked (docs/editions.md).
 //
-//   <folder>/breakpatch.json                     { format, schemaVersion, name }
+//   <folder>/breakpatch.json                     { format, schemaVersion, id, name } (id: format.ts newFolderId)
 //   <folder>/apps/<appId>/app.json
 //   <folder>/apps/<appId>/tests/<testId>.json    test fields + "recordedOn" + "steps" (latest only)
 //   <folder>/apps/<appId>/shared/<groupId>.json  shared steps + "steps"
@@ -27,7 +27,7 @@ import type {
   App, FlakyMark, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
 } from '../types';
 import { folderConnectionId } from '../../state/connectionIds';
-import { CALL_SCHEMA_VERSION, DEVICE_SCHEMA_VERSION, FORMAT, NEWEST_READ_SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
+import { CALL_SCHEMA_VERSION, DEVICE_SCHEMA_VERSION, FORMAT, NEWEST_READ_SCHEMA_VERSION, SCHEMA_VERSION, fromFileText, isFolderId, newFolderId, toFileText, uniqueSlug } from './format';
 import { usesCallSteps } from '../../lib/calls';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
 import { osText } from '../../lib/osWords';
@@ -48,7 +48,7 @@ export class FolderError extends Error {
 export const NEWER_MESSAGE = 'This folder was saved by a newer Breakpatch. Update to open it.';
 const NOT_HERE = 'Community runs tests and suites by hand on this Mac.';
 
-export interface FolderMeta { format: typeof FORMAT; schemaVersion: number; name: string }
+export interface FolderMeta { format: typeof FORMAT; schemaVersion: number; name: string; /** The folder's own id (format.ts newFolderId); none in a folder from before it. */ id?: string }
 
 /**
  * Everything in a tests folder at one moment, read the way the screens read it: each app with
@@ -162,6 +162,16 @@ function needsCallFormat(rel: string, value: unknown): boolean {
   return isObj(value) && /^apps\/[^/]+\/(tests|shared)\/[^/]+\.json$/.test(rel) && usesCallSteps(value.steps);
 }
 
+/**
+ * The folder format a file needs (format.ts), by its path in the folder: CALL_SCHEMA_VERSION for a
+ * test or shared steps with a Call step, DEVICE_SCHEMA_VERSION for a phone or tablet test (or an
+ * app.json whose default screen is one), else SCHEMA_VERSION. A folder's breakpatch.json says the
+ * highest of its files' (this backend raises it as it writes them; an export writes it so).
+ */
+export function folderFormatFor(rel: string, value: unknown): number {
+  return needsCallFormat(rel, value) ? CALL_SCHEMA_VERSION : needsDeviceFormat(rel, value) ? DEVICE_SCHEMA_VERSION : SCHEMA_VERSION;
+}
+
 const WEEKDAYS: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 /**
@@ -223,7 +233,7 @@ export function parseMeta(text: string | null): FolderMeta {
   if (!isObj(v) || v.format !== FORMAT) throw new FolderError('notBreakpatch', "This folder's breakpatch.json isn't a Breakpatch file.");
   const schemaVersion = num(v.schemaVersion, 1);
   if (schemaVersion > NEWEST_READ_SCHEMA_VERSION) throw new FolderError('newer', NEWER_MESSAGE);
-  return { format: FORMAT, schemaVersion, name: str(v.name) };
+  return { format: FORMAT, schemaVersion, name: str(v.name), ...(isFolderId(v.id) ? { id: v.id } : {}) };
 }
 
 export class LocalBackend implements Backend {
@@ -441,8 +451,8 @@ export class LocalBackend implements Backend {
 
   /** Writes a file (temp file, then rename) unless it already says exactly this. */
   private async put(rel: string, value: unknown) {
-    if (needsCallFormat(rel, value)) await this.raiseFormat(CALL_SCHEMA_VERSION);
-    else if (needsDeviceFormat(rel, value)) await this.raiseFormat(DEVICE_SCHEMA_VERSION);
+    const needs = folderFormatFor(rel, value);
+    if (needs > SCHEMA_VERSION) await this.raiseFormat(needs);
     const text = toFileText(value);
     if (this.texts.get(rel) === text) return;
     const path = this.abs(rel);
@@ -519,6 +529,24 @@ export class LocalBackend implements Backend {
   onReadOnly(l: Listener<boolean>): Unsubscribe { this.roSubs.add(l); l(this.readOnly); return () => { this.roSubs.delete(l); }; }
   /** Folder name from breakpatch.json. */
   get name(): string { return this.model.meta?.name || baseName(this.root); }
+  /**
+   * The folder's own id (breakpatch.json `id`, format.ts newFolderId), which links to its tests
+   * name (lib/openLinks.ts). A folder from before it gets one now, saved in breakpatch.json (one
+   * line to commit, so the links work in teammates' copies too).
+   */
+  folderId(): Promise<string> {
+    const have = this.model.meta?.id;
+    if (have) return Promise.resolve(have);
+    return this.write(async () => {
+      let v: unknown = null;
+      try { v = fromFileText(this.texts.get('breakpatch.json') ?? ''); } catch { /* rewritten below */ }
+      const meta = isObj(v) ? v : { format: FORMAT, schemaVersion: SCHEMA_VERSION, name: this.name };
+      if (isFolderId(meta.id)) return meta.id;
+      const id = newFolderId();
+      await this.put('breakpatch.json', { ...meta, format: FORMAT, id });
+      return id;
+    });
+  }
   /** N apps · N tests for Settings. */
   counts(l: Listener<{ apps: number; tests: number }>): Unsubscribe {
     return this.watch(() => ({ apps: this.model.apps.size, tests: [...this.model.apps.values()].reduce((n, a) => n + a.tests.size, 0) }), l);
