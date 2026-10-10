@@ -78,6 +78,34 @@ export interface HttpCall {
 /** A value a Call step keeps from its JSON reply (`path`, like `$.code`) for later Write steps, by `name`. */
 export interface KeptValue { path: string; name: string }
 
+/**
+ * What a Wait for an email step waits for and picks out (Breakpatch Team, engine/PROTOCOL.md "Wait for
+ * an email"). `to`: `{email}` (the run's own address) unless set. `pick`: a code (`codePattern`, a
+ * 6-digit one by default) or a link (the first, or the first containing `linkContains`), typed or
+ * opened later as `{emailCode}` or `{emailLink}`; absent: only that the email came.
+ */
+export interface EmailMatch {
+  to?: string; from?: string; subjectContains?: string;
+  pick?: 'code' | 'link';
+  codePattern?: string; linkContains?: string;
+}
+
+/**
+ * The workspace's test inbox (Breakpatch Team, Settings → Test inbox): where Wait for an email
+ * steps look, and what `{email}` builds on (`address` plus `+bp-<tag>`). Mailpit: `server` is its
+ * web address; IMAP: the server's name, `port` 993 by default. The password is a saved secret's
+ * name (`passwordRef`), never the password.
+ */
+export interface InboxSettings {
+  kind: 'mailpit' | 'imap';
+  server: string;
+  port?: number;
+  user?: string;
+  passwordRef?: string;
+  address: string;
+  folder?: string;
+}
+
 export interface Test {
   id: string;
   appId: string;
@@ -119,6 +147,7 @@ export type ActionKind =
   | 'navigate' | 'switchTab' | 'upload' | 'downloadCheck'
   | 'checkpoint'
   | 'call'
+  | 'emailWait'
   | 'loop' | 'group';
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
@@ -141,6 +170,8 @@ export interface Step {
   valueRef?: string;
   /** Call: the request, the statuses that pass ("2xx" when unset), and the value it keeps. `timeoutMs` is its wait for a reply. */
   call?: HttpCall; passStatus?: string; keep?: KeptValue;
+  /** Wait for an email (Breakpatch Team): what it waits for and picks out. `timeoutMs` is its wait (60 s when unset). */
+  email?: EmailMatch;
   region?: Box; hash?: string; tolerance?: number; timeoutMs?: number;
   durationMs?: number;
   url?: string; nav?: 'url' | 'reload' | 'back' | 'forward';
@@ -202,7 +233,11 @@ export type Expect = 'newPage' | 'closes' | 'appears' | 'changes' | 'noChange';
 
 export type FailReason =
   | 'targetNotFound' | 'unexpectedScreen' | 'noChange' | 'timeout'
-  | 'healFailed' | 'healingUnavailable' | 'secretMissing' | 'setUpFailed' | 'stopped' | 'fileMissing' | 'callFailed';
+  | 'healFailed' | 'healingUnavailable' | 'secretMissing' | 'setUpFailed' | 'stopped' | 'fileMissing' | 'callFailed'
+  /** A step only Breakpatch Team performs (Wait for an email), run without it: never a pass. */
+  | 'actionUnavailable'
+  /** The test inbox couldn't be read, or the email (or a later step's use of it) didn't work out. */
+  | 'emailFailed';
 
 export type RunSource = 'desktop' | 'ci' | 'runner';
 
@@ -225,6 +260,8 @@ export interface StepRun {
   explanation?: Explanation;
   /** A Call step's reply: its status and how long it took (never its body). */
   reply?: CallReplyInfo;
+  /** A Wait for an email step's: what came, never the code or the link itself. */
+  email?: EmailGot;
   /**
    * This step failed on earlier tries of a run that was retried (engine/PROTOCOL.md "Retries"),
    * oldest first, whatever it did on the last try.
@@ -245,6 +282,12 @@ export interface RetriedTry {
 
 /** What a run keeps of a Call step's reply. */
 export interface CallReplyInfo { status?: number; ms?: number }
+
+/**
+ * What a Wait for an email step got: a code (`chars` long, `digits` when all digits), a link (to
+ * `site`, the host only) or just the email, and how long it took. Never the value.
+ */
+export interface EmailGot { got: 'code' | 'link' | 'email'; chars?: number; digits?: boolean; site?: string; ms?: number }
 
 /**
  * Why a step failed, in plain words, from the AI assistant (engine/PROTOCOL.md "Why did this

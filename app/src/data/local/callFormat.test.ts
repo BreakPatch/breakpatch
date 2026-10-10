@@ -21,7 +21,7 @@ describe('the tests folder format', () => {
   it('goes up to 3 with the first Call step saved, so apps from before refuse the folder rather than fail to run it', async () => {
     expect(CALL_SCHEMA_VERSION).toBe(3);
     expect(CALL_SCHEMA_VERSION).toBeGreaterThan(DEVICE_SCHEMA_VERSION);
-    expect(NEWEST_READ_SCHEMA_VERSION).toBe(CALL_SCHEMA_VERSION);
+    expect(NEWEST_READ_SCHEMA_VERSION).toBeGreaterThanOrEqual(CALL_SCHEMA_VERSION);
     const st = new MemoryStorage();
     await st.mkdir(ROOT);
     await initFolder(st, ROOT);

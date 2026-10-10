@@ -27,8 +27,9 @@ import type {
   App, FlakyMark, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
 } from '../types';
 import { folderConnectionId } from '../../state/connectionIds';
-import { CALL_SCHEMA_VERSION, DEVICE_SCHEMA_VERSION, FORMAT, NEWEST_READ_SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
+import { CALL_SCHEMA_VERSION, DEVICE_SCHEMA_VERSION, EMAIL_SCHEMA_VERSION, FORMAT, NEWEST_READ_SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
 import { usesCallSteps } from '../../lib/calls';
+import { usesEmailSteps } from '../../lib/email';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
 import { osText } from '../../lib/osWords';
 import { deviceOf } from '../devices';
@@ -160,6 +161,11 @@ function needsDeviceFormat(rel: string, value: unknown): boolean {
 /** A test or shared steps file with a Call step in it: the folder needs CALL_SCHEMA_VERSION. */
 function needsCallFormat(rel: string, value: unknown): boolean {
   return isObj(value) && /^apps\/[^/]+\/(tests|shared)\/[^/]+\.json$/.test(rel) && usesCallSteps(value.steps);
+}
+
+/** A test or shared steps file with a Wait for an email step: format 4 (format.ts EMAIL_SCHEMA_VERSION). */
+function needsEmailFormat(rel: string, value: unknown): boolean {
+  return isObj(value) && /^apps\/[^/]+\/(tests|shared)\/[^/]+\.json$/.test(rel) && usesEmailSteps(value.steps);
 }
 
 const WEEKDAYS: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -446,7 +452,8 @@ export class LocalBackend implements Backend {
 
   /** Writes a file (temp file, then rename) unless it already says exactly this. */
   private async put(rel: string, value: unknown) {
-    if (needsCallFormat(rel, value)) await this.raiseFormat(CALL_SCHEMA_VERSION);
+    if (needsEmailFormat(rel, value)) await this.raiseFormat(EMAIL_SCHEMA_VERSION);
+    else if (needsCallFormat(rel, value)) await this.raiseFormat(CALL_SCHEMA_VERSION);
     else if (needsDeviceFormat(rel, value)) await this.raiseFormat(DEVICE_SCHEMA_VERSION);
     const text = toFileText(value);
     if (this.texts.get(rel) === text) return;

@@ -20,8 +20,15 @@ export const DEVICE_SCHEMA_VERSION = 2;
  * then refuse the folder (NEWER_MESSAGE). A folder without Call steps stays where it was.
  */
 export const CALL_SCHEMA_VERSION = 3;
+/**
+ * 4: a Wait for an email step (Breakpatch Team, issue #12, `action: "emailWait"`) in a test or shared
+ * steps file (lib/email.ts usesEmailSteps). Apps from before don't know the step: they'd show it as
+ * nothing and could save over it, so the first such file this app writes raises the folder to 4, as
+ * Call steps raise it to 3. A folder without one stays where it was.
+ */
+export const EMAIL_SCHEMA_VERSION = 4;
 /** The newest folder format this app reads and saves to. */
-export const NEWEST_READ_SCHEMA_VERSION = CALL_SCHEMA_VERSION;
+export const NEWEST_READ_SCHEMA_VERSION = EMAIL_SCHEMA_VERSION;
 
 /** Keys that come first, in this order; then the rest alphabetically; then LAST. */
 const FIRST = [
