@@ -485,8 +485,14 @@ async def test_a_call_step_inside_a_loop_uses_the_repeat_number(api):
 
 # ---------------------------------------------------------------- with retries (roadmap #14)
 
+def counted_code(n: int) -> str:
+    """The code Counted's nth call replies: letters around the number, so it can't turn up by chance
+    in the events (a timing like "settleMs": 1001 once did when it was a bare number)."""
+    return f"kept-zq{n}x"
+
+
 class Counted(SiteAndApi):
-    """/api/next replies with a new code on every call: 1001, then 1002..."""
+    """/api/next replies with a new code on every call: counted_code(1), then counted_code(2)..."""
     n = 0
 
     def _reply(self):
@@ -496,7 +502,7 @@ class Counted(SiteAndApi):
                 self.rfile.read(n)
             Counted.n += 1
             Api.seen.append((self.command, "/next", None, None, b""))
-            out = json.dumps({"code": str(1000 + Counted.n)}).encode()
+            out = json.dumps({"code": counted_code(Counted.n)}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(out)))
@@ -543,13 +549,14 @@ async def test_a_retried_run_makes_its_call_again_and_keeps_only_that_try_s_valu
         ended = hx.of("run.ended")[-1]
         assert ended["result"] == "pass" and ended["attempts"] == 2, ended
         assert [s[1] for s in Api.seen] == ["/next", "/next"]                 # the call, once per try
-        assert seen == [(1, "c1", {}), (1, "w1", {"CODE": "1001"}), (1, "slow", {"CODE": "1001"}), (1, "typed", "1001"),
-                        (2, "c1", {}), (2, "w1", {"CODE": "1002"}), (2, "slow", {"CODE": "1002"}), (2, "typed", "1002")]
+        one, two = counted_code(1), counted_code(2)
+        assert seen == [(1, "c1", {}), (1, "w1", {"CODE": one}), (1, "slow", {"CODE": one}), (1, "typed", one),
+                        (2, "c1", {}), (2, "w1", {"CODE": two}), (2, "slow", {"CODE": two}), (2, "typed", two)]
         by = {s["stepId"]: s for s in ended["steps"]}
         assert by["c1"]["result"] == "passed" and by["c1"]["reply"]["status"] == 200 and "retried" not in by["c1"]
         assert by["slow"]["retried"][0]["reason"] == "timeout"
         assert [d["attempt"] for d in hx.of("run.retry")] == [2]
-        assert "1001" not in json.dumps(hx.events) and "1002" not in json.dumps(hx.events)
+        assert one not in json.dumps(hx.events) and two not in json.dumps(hx.events)
 
         # A Call step that doesn't pass isn't retried: the run fails on its first try.
         Api.seen.clear()
