@@ -20,6 +20,22 @@ export async function copyText(text: string): Promise<void> {
 }
 
 /**
+ * Copies text that's still being worked out (e.g. a link that needs a file read first). WebKit
+ * lets a page write the clipboard only while the click that asked for it is going on, so the
+ * write starts at once with the text to come (ClipboardItem); where that isn't there, it's
+ * copyText once the text is known. Rejects when the text can't be had.
+ */
+export async function copyTextSoon(text: Promise<string>): Promise<void> {
+  const Item = (globalThis as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
+  if (Item && navigator.clipboard?.write) {
+    const blob = text.then(t => new Blob([t], { type: 'text/plain' }));
+    try { await navigator.clipboard.write([new Item({ 'text/plain': blob })]); return; }
+    catch { await blob; /* the text itself failed: say so; else the older way below */ }
+  }
+  await copyText(await text);
+}
+
+/**
  * The clipboard's text, for a Paste button; null when it can't be read. In the app it's read
  * through the shell (tauri-plugin-clipboard-manager): WebKit's navigator.clipboard.readText()
  * first shows a "Paste" bubble to confirm. In a browser (the preview), navigator.clipboard.
