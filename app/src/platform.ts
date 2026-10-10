@@ -183,6 +183,18 @@ export async function onWorkspaceLink(cb: (payload: string) => void): Promise<()
   return () => { offFile(); offUrl(); };
 }
 
+/**
+ * Listens for breakpatch:// links only (lib/openLinks.ts), the one the app opened with first. Opened
+ * .bpworkspace files are onWorkspaceLink's alone: the shell hands a file opened at launch over once.
+ */
+export async function onLinkOpened(cb: (link: string) => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { onOpenUrl, getCurrent } = await import('@tauri-apps/plugin-deep-link');
+  const first = await getCurrent().catch(() => null);
+  first?.forEach(cb);
+  return onOpenUrl(urls => urls.forEach(cb));
+}
+
 export function appVersion(): string { return import.meta.env.VITE_APP_VERSION ?? '0.1.0'; }
 
 export async function openExternal(url: string): Promise<void> {

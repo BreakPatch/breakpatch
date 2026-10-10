@@ -10,7 +10,7 @@ import { create } from 'zustand';
 import { edition } from '../../edition';
 import { readFolderId } from '../../data/local/folder';
 import { BAD_LINK, isOpenLink, parseOpenLink, resolveOpenLink, routeOf } from '../../lib/openLinks';
-import { onWorkspaceLink } from '../../platform';
+import { onLinkOpened } from '../../platform';
 import { useConnections } from '../../state/connections';
 import { canOpenHere, useSession } from '../../state/session';
 import { useSystem, type AppError } from '../../state/system';
@@ -60,7 +60,7 @@ export function OpenLinks() {
   useEffect(() => {
     let off: (() => void) | undefined;
     let live = true;
-    void onWorkspaceLink(payload => { if (isOpenLink(payload)) void handleOpenLink(payload, now.current); })
+    void onLinkOpened(link => { if (isOpenLink(link)) void handleOpenLink(link, now.current); })
       .then(f => { if (live) off = f; else f(); });
     return () => { live = false; off?.(); };
   }, []);

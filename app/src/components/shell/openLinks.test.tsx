@@ -135,4 +135,24 @@ describe('a link clicked elsewhere', () => {
     useSession.setState({ user });
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent('/suites/s1'));
   });
+
+  it('listens to links only: a workspace file opened at launch is left for the Team edition', async () => {
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    const invoke = vi.fn(async () => null);
+    let later: ((urls: string[]) => void) | undefined;
+    vi.doMock('@tauri-apps/api/core', () => ({ invoke }));
+    vi.doMock('@tauri-apps/plugin-deep-link', () => ({
+      getCurrent: async () => ['breakpatch://open?ws=demo&path=suites/s1'],
+      onOpenUrl: async (cb: (urls: string[]) => void) => { later = cb; return () => {}; },
+    }));
+    try {
+      const { onLinkOpened } = await import('../../platform');
+      const got: string[] = [];
+      await onLinkOpened(l => got.push(l));
+      later?.(['breakpatch://open?ws=demo&path=suites/s2']);
+      expect(got).toEqual(['breakpatch://open?ws=demo&path=suites/s1', 'breakpatch://open?ws=demo&path=suites/s2']);
+      // workspace_file_take hands a file over once: only the Team edition's onWorkspaceLink asks for it.
+      expect(invoke).not.toHaveBeenCalled();
+    } finally { vi.doUnmock('@tauri-apps/api/core'); vi.doUnmock('@tauri-apps/plugin-deep-link'); }
+  });
 });
