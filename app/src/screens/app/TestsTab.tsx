@@ -6,6 +6,7 @@ import {
   FilterChip, FlakyChip, RelativeTime, ResultTally, SearchBox, countResults, formatWhen, lastRunStatus, plural, useMoveToBin,
 } from '../../components/common';
 import { flakyMenuItems, useFlakyMark } from '../../components/common/useFlakyMark';
+import { useCopyLink } from '../../components/common/useCopyLink';
 import { useBackend, useLive } from '../../data/hooks';
 import type { App, Run, Test } from '../../data/types';
 import { FLAKY_SCAN, flakinessByTest, type Flakiness } from '../../lib/flaky';
@@ -73,6 +74,7 @@ function TestRow({ app, test: t, index, flaky, onDelete, onDetails }: { app: App
   const toast = useToast();
   const [menu, setMenu] = useState(false);
   const mark = useFlakyMark();
+  const copyLink = useCopyLink();
   const base = `/apps/${app.id}/tests/${t.id}`;
   const st = statusInfo(lastRunStatus(t.lastRun));
   const open = () => navigate(`${base}/record`);
@@ -114,6 +116,7 @@ function TestRow({ app, test: t, index, flaky, onDelete, onDetails }: { app: App
               { label: 'Edit steps', icon: 'edit', onSelect: open },
               { label: 'Test details', icon: 'description', onSelect: onDetails },
               { label: 'Duplicate', icon: 'content_copy', onSelect: duplicate },
+              { label: 'Copy link', icon: 'link', onSelect: () => void copyLink({ kind: 'test', appId: app.id, testId: t.id }, t.name) },
               ...(HISTORY ? [{ label: 'View history', icon: 'history', onSelect: () => navigate(`${base}/history`) }] : []),
               ...(flaky?.flaky && mark ? ['sep' as const, ...flakyMenuItems(flaky.known, a => void mark(t, a))] : []),
               'sep',

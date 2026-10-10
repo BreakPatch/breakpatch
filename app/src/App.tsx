@@ -7,6 +7,7 @@ import { ErrorDialog } from './components/shell/ErrorDialog';
 import { UsageNotice } from './components/shell/UsageNotice';
 import { EngineStarting } from './components/shell/EngineStarting';
 import { NotificationReturn } from './components/shell/NotificationReturn';
+import { OpenLinks } from './components/shell/OpenLinks';
 import { getEngine } from './engine';
 import { SecretSitesPrompt } from './components/shell/SecretSitesPrompt';
 import { useSession } from './state/session';
@@ -41,6 +42,7 @@ const SuiteRunScreen = lazy(() => import('./screens/suites/SuiteRunScreen'));
  *   /suites/:suiteId/run                  Run a suite by hand on this Mac
  *   /settings/:section                     ai|secrets|appearance|privacy|about, plus the edition's sections
  * The edition adds its own (Team: /connect, /signin, /runner, /runner-mode, version history).
+ * breakpatch://open links (lib/openLinks.ts) open a test's recorder or a suite in its workspace.
  */
 export default function App() {
   useEffect(() => { getEngine(); }, []);        // starts asking the engine at once ("Starting Breakpatch…")
@@ -79,6 +81,7 @@ export default function App() {
           <UsageNotice />
           <EngineStarting />
           <NotificationReturn />
+          <OpenLinks />
         </HashRouter>
       </Provider>
     </ToastProvider>
