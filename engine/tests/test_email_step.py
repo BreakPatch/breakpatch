@@ -291,6 +291,35 @@ async def test_a_retry_waits_for_a_new_email_at_a_new_address(site, fake_wait, m
 
 
 @needs_browser
+async def test_a_retry_cleans_up_before_it_waits_at_a_new_address(site, fake_wait, monkeypatch):
+    """Both retry rules at once: the clean-up call the failed try left out runs before the next try
+    (alsoOnFailure off), and that try has a new `{email}` address with the first try's email used."""
+    from breakpatch_engine import calls
+    from breakpatch_engine import runner as runner_mod
+    made = []
+
+    async def make(call, app_url, secrets, timeout, *a, **kw):
+        made.append((call["url"].rsplit("/", 1)[1], len(fake_wait)))       # which call, after how many waits
+        return calls.Reply(True, 200)
+    monkeypatch.setattr(calls, "make", make)
+    real = runner_mod.Runner._run_step
+
+    async def run_step(self, step, ctx, iteration):
+        if step["id"] == "slow" and self.attempt == 1:
+            raise runner_mod.StepFailed("timeout", "The screen didn't settle in time.")
+        return await real(self, step, ctx, iteration)
+    monkeypatch.setattr(runner_mod.Runner, "_run_step", run_step)
+    hx = Harness()
+    slow = {"id": "slow", "action": "waitFor", "durationMs": 10}
+    ended = await hx.run([WAIT, slow], site + "/index.html", inbox=INBOX, settings={"retries": 1},
+                         setUp={"method": "POST", "url": site + "/seed"}, cleanUp={"method": "POST", "url": site + "/cleanup"})
+    assert ended["result"] == "pass" and ended["attempts"] == 2 and "cleanUpFailed" not in ended, ended
+    assert made == [("seed", 0), ("cleanup", 1), ("seed", 1), ("cleanup", 2)]
+    first, second = fake_wait
+    assert first["email"] != second["email"] and second["used"] == {"m1"} and second["values"] == {}
+
+
+@needs_browser
 async def test_recording_waits_for_the_email_and_later_steps_type_what_it_kept(site, fake_wait):
     hx = Harness()
     await hx.h["browser.open"]({"url": site + "/index.html", "viewport": VIEWPORT})
