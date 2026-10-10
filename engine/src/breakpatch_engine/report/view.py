@@ -39,7 +39,8 @@ SUGGESTION_TEXT = {
 }
 _VERB = {"click": "click", "doubleClick": "double-click", "longClick": "press", "rightClick": "right-click", "hover": "point at",
          "write": "write in", "drag": "drag", "swipe": "swipe", "scroll": "scroll", "upload": "upload to"}
-_NO_SCREENS = ("secretMissing", "setUpFailed", "stopped", "healingUnavailable", "callFailed")
+_NO_SCREENS = ("secretMissing", "setUpFailed", "stopped", "healingUnavailable", "callFailed", "actionUnavailable",
+               "emailFailed")
 _SCREEN_CHECKS = ("targetNotFound", "unexpectedScreen", "healFailed", "timeout")
 
 
@@ -56,6 +57,8 @@ def target_name(step: dict) -> str:
 def reason_title(reason, step: dict) -> str:
     if reason in ("targetNotFound", "healFailed"):
         return f"Couldn't find {target_name(step)}"
+    if step.get("action") == "emailWait" and reason == "timeout":
+        return "No email came in time"
     if reason == "unexpectedScreen":
         return "The screen didn't look as expected" if step.get("action") == "checkpoint" \
             else "The screen didn't look as expected after this step"
@@ -69,6 +72,9 @@ def reason_title(reason, step: dict) -> str:
         "fileMissing": "The file to upload isn't in the tests folder",
         "callFailed": "The value from the call couldn't be typed" if step.get("action") == "write"
         else "The call to your API didn't work",
+        "actionUnavailable": "This step needs Breakpatch Team",
+        "emailFailed": "The test inbox couldn't be read" if step.get("action") == "emailWait"
+        else "What the email had couldn't be used",
     }.get(reason or "", "This step failed")
 
 
@@ -88,6 +94,8 @@ def reason_text(reason, step: dict, r: dict | None = None) -> str:
     if reason == "noChange":
         return "The step was done, but nothing changed on the page the way it did when it was recorded. The run stopped here."
     if reason == "timeout":
+        if action == "emailWait":
+            return "No email this step waits for arrived in time. The run stopped here."
         if action == "waitUntil":
             return "What this step waits for never appeared. The run stopped here."
         return "The page didn't finish loading or settle in time. The run stopped here."
@@ -108,10 +116,19 @@ def reason_text(reason, step: dict, r: dict | None = None) -> str:
         if note:
             return f"{note}, which this step doesn't count as a pass. The run stopped here."
         return "It didn't get a reply this step counts as a pass. The run stopped here."
+    if reason == "actionUnavailable":
+        return "It's part of Breakpatch Team, so it couldn't run here, and it never passes without it. The run stopped here."
+    if reason == "emailFailed":
+        if action == "emailWait":
+            return "The inbox couldn't be read, or the email didn't have what this step picks out. The run stopped here."
+        return "No Wait for an email step before it picked this out, or the page wasn't one of the app's own. The run stopped here."
     return "The run stopped here."
 
 
-def reason_advice(reason) -> str:
+def reason_advice(reason, step: dict | None = None) -> str:
+    if reason == "timeout" and (step or {}).get("action") == "emailWait":
+        return ("Check that the app sends the email, to the address this step waits for. If emails take long, "
+                "let the step wait longer, then run again.")
     return {
         "secretMissing": "Saved secrets stay on each Mac. Add it here once and every test that uses it can run.",
         "healingUnavailable": "Without the AI assistant, a moved button fails the run. Re-record the step, or download the assistant.",
@@ -119,6 +136,8 @@ def reason_advice(reason) -> str:
         "callFailed": "Check that the address works and that the app is running: the step's Try it shows what it replies now. Then run again.",
         "timeout": "If the app was slow this time, run again. If it always takes longer now, re-record this step.",
         "stopped": "Run again to go through every step.",
+        "actionUnavailable": "Run it with Breakpatch Team, or remove this step.",
+        "emailFailed": "Check the test inbox in Settings, Test inbox, and what this step picks out, then run again.",
     }.get(reason or "", "If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer.")
 
 
@@ -127,7 +146,25 @@ def pass_note(r: dict) -> str:
         return "Passed: the dialog closed. The page behind it looked different from when it was recorded."
     if r.get("passedBy") == "note":
         return r["why"] if r.get("why") is not None else "Passed: the step did what its note says."
-    return reply_note(r.get("reply"))
+    return reply_note(r.get("reply")) or email_note(r.get("email"))
+
+
+def email_note(got) -> str:
+    """What a Wait for an email step got: "Got a 6-digit code in 4.2 s", "Got a link to app.acme.com
+    in 3.1 s", never the code or the link itself (the app's runWords.ts emailNote)."""
+    if not isinstance(got, dict) or got.get("got") not in ("code", "link", "email"):
+        return ""
+    ms = got.get("ms")
+    took = f" in {short_time(ms)}" if isinstance(ms, (int, float)) and not isinstance(ms, bool) else ""
+    if got["got"] == "code":
+        n = got.get("chars")
+        if isinstance(n, int) and not isinstance(n, bool) and got.get("digits") is True:
+            return f"Got a {n}-digit code{took}"
+        return f"Got a code{took}"
+    if got["got"] == "link":
+        site = got.get("site")
+        return f"Got a link to {site}{took}" if isinstance(site, str) and site else f"Got a link{took}"
+    return f"The email came{took}"
 
 
 def reply_note(reply) -> str:
@@ -316,7 +353,7 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
     reason = (r or {}).get("reason")
     if not quiet:
         if state == "failed":
-            headline, body, advice = reason_title(reason, step), reason_text(reason, step, r), reason_advice(reason)
+            headline, body, advice = reason_title(reason, step), reason_text(reason, step, r), reason_advice(reason, step)
         elif state == "stopped":
             headline, body = reason_title("stopped", step), reason_text("stopped", step)
         elif state == "fixed":

@@ -16,10 +16,12 @@ which try passed, and every earlier try's failure stays on its step (`retried`, 
   won't change.
 
 Never retried: a missing or refused saved secret, a set-up call that didn't succeed, a Call step's
-call that didn't pass (or a Write of a value it should have kept), a run that was stopped, the AI
+call that didn't pass (or a Write of a value it should have kept), a step that needs Breakpatch Team,
+a test inbox that couldn't be read (an email that came in time is `timeout`, which is), a run that was stopped, the AI
 assistant missing or finding the wrong thing, a file that isn't in the tests folder, and anything
 that went wrong inside the engine. A try that is retried for another reason makes its Call steps'
-calls again, and starts with no kept values (runner.py `_execute`).
+calls again, and starts with no kept values and a new `{email}` address, so it waits for a new email,
+never one an earlier try was sent or used (runner.py `_execute`).
 
 Bounded twice: at most MAX_RETRIES retries (the run's `settings.retries`, 0 to 2), and no retry
 starts once the run has taken `Timings.retry_budget` seconds (5 minutes, longer on a slow machine:
@@ -38,8 +40,10 @@ NEAR = 4
 # Failures another try can't fix, whatever their numbers.
 # A Call step's call that didn't pass (`callFailed`, a Write of a kept value too) is the API's answer,
 # not the page being slow; the call may also have changed something that another call would repeat.
+# A step that needs Breakpatch Team (`actionUnavailable`) won't find it on another try, and an inbox that
+# couldn't be read or an email without what the step picks out (`emailFailed`) is the mailbox's answer.
 NEVER = frozenset({"secretMissing", "setUpFailed", "stopped", "healingUnavailable", "healFailed", "fileMissing",
-                   "callFailed"})
+                   "callFailed", "actionUnavailable", "emailFailed"})
 # Failures that may be timing, some only when their check was close (why_retry).
 RETRIED = frozenset({"timeout", "noChange", "targetNotFound", "unexpectedScreen"})
 

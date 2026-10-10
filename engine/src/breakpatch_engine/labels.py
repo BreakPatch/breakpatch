@@ -8,7 +8,7 @@ VERBS = {
     "hover": "Hover over", "swipe": "Swipe", "scroll": "Scroll", "drag": "Drag", "write": "Write",
     "waitUntil": "Wait until", "waitFor": "Wait", "navigate": "Go to", "switchTab": "Switch to",
     "upload": "Upload", "downloadCheck": "Check download", "checkpoint": "Check", "loop": "Repeat",
-    "group": "Shared steps", "call": "Call",
+    "group": "Shared steps", "call": "Call", "emailWait": "Wait for an email",
 }
 SAMPLES = {"docx": "Word document", "pdf": "PDF", "jpeg": "JPEG image", "mp4": "MP4 video",
            "xlsx": "Excel sheet", "csv": "CSV file"}
@@ -28,6 +28,8 @@ def default_label(action: str, p: dict, name: str | None = None) -> str:
         return f'Write "{p.get("text") or ""}"'
     if action == "call":
         return call_label(p.get("call"))
+    if action == "emailWait":
+        return email_label(p.get("email"))
     if action == "waitFor":
         return f"Wait {max(1, round((p.get('durationMs') or 1000) / 1000))} seconds"
     if action == "navigate":
@@ -68,6 +70,13 @@ def call_label(call) -> str:
     if len(where) > 60:
         where = where[:59] + "\u2026"
     return f"Call {method} {where}" if where else "Call your API"
+
+
+def email_label(email) -> str:
+    """"Wait for an email with a code": what a Wait for an email step picks out. Mirrors the app's
+    stepText.ts emailLabel."""
+    pick = email.get("pick") if isinstance(email, dict) else None
+    return {"code": "Wait for an email with a code", "link": "Wait for an email with a link"}.get(pick, "Wait for an email")
 
 
 # A phone or tablet test is tapped, not clicked (BrowserSession.touch): the words its steps get.

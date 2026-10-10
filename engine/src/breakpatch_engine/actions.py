@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import re
 import datetime as dt
+import secrets as pysecrets
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +22,17 @@ SAMPLES_DIR = Path(__file__).parent / "samples"
 SAMPLE_KINDS = ("docx", "pdf", "jpeg", "mp4", "xlsx", "csv")
 POINTER_ACTIONS = {"click", "doubleClick", "longClick", "rightClick", "hover", "swipe", "scroll", "drag"}
 DIRECTIONS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
+# The actions this engine performs itself (and the runner's own: checkpoints, loops, shared steps, calls).
+BUILT_IN_ACTIONS = POINTER_ACTIONS | {"write", "waitUntil", "waitFor", "navigate", "switchTab", "upload", "downloadCheck",
+                                      "checkpoint", "loop", "group", "call"}
+# Steps the Team engine performs (plugins.register_action), with what they are in a sentence. Without
+# it (Community, or an older Team engine) they fail with `actionUnavailable`, never pass.
+TEAM_ACTIONS = {"emailWait": "Waiting for an email"}
+# What a Wait for an email step keeps (issue #12), typed with `{emailCode}` and `{emailLink}` or a
+# Write step's `valueRef`, under a kept value's guard (value_allowed).
+EMAIL_VALUES = ("emailCode", "emailLink")
+_KEPT_TOKEN = re.compile(r"\{(emailCode|emailLink)\}")
+_ADDRESS = re.compile(r"([^@\s+]+)(?:\+[^@\s]*)?@((?:[A-Za-z0-9-]+\.)+[A-Za-z0-9-]+|localhost)")
 
 
 class ActionFailed(Exception):
@@ -93,6 +105,16 @@ def secret_for(name: str, ctx: "Context") -> Secret:
 
 
 @dataclass
+class EmailSession:
+    """`{email}` for a try of a run, or for a recording: its own tag (so its own address), the time
+    from which an email counts for it, and the emails already used, by id (shared by every try of
+    a run: a retry never takes an email an earlier try used)."""
+    tag: str = field(default_factory=lambda: new_email_tag())
+    since: float = field(default_factory=time.time)
+    used: set = field(default_factory=set)
+
+
+@dataclass
 class Context:
     timings: Timings
     secrets: dict[str, Secret] = field(default_factory=dict)
@@ -105,6 +127,14 @@ class Context:
     # by a Write step's `valueRef`, only on the app's pages; never logged or sent to the app.
     values: dict[str, tuple[str, str | None]] = field(default_factory=dict)
     app_url: str | None = None                  # the app's base address: where a kept value may be typed
+    # Wait for an email (issue #12, Breakpatch Team): the run's test inbox (`inbox`, as sent), this
+    # try's `{email}` address (None when there's none: `{email}` then fails plainly), the time
+    # (epoch seconds) from which an email counts, and the emails already used in this run, by id
+    # and across tries, so a retry never takes an older one.
+    inbox: dict | None = None
+    email: str | None = None
+    email_since: float = 0.0
+    email_used: set = field(default_factory=set)
 
     def __post_init__(self):
         # Bare values (in-process callers) become Secrets allowed nowhere: typing them fails plainly.
@@ -142,6 +172,56 @@ def substitute(text: str, i: int, now: dt.datetime | None = None) -> str:
             .replace("{date}", now.strftime("%Y-%m-%d")).replace("{timestamp}", now.strftime("%Y%m%d%H%M%S")))
 
 
+def email_address(base: str | None, tag: str) -> str | None:
+    """The address `{email}` stands for: the inbox's address with `+bp-<tag>` added (plus
+    addressing), so each run, and each try of it, has its own: `qa@acme.com` → `qa+bp-k3j9x2ma@acme.com`.
+    A `+…` already in the address is replaced. None when `base` isn't an address."""
+    m = _ADDRESS.fullmatch(str(base or "").strip())
+    if not m or not re.fullmatch(r"[a-z0-9]{1,20}", tag or ""):
+        return None
+    return f"{m.group(1)}+bp-{tag}@{m.group(2).lower()}"
+
+
+def new_email_tag() -> str:
+    """Eight random letters and digits: a try's own part of its `{email}` address."""
+    return "".join(pysecrets.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(8))
+
+
+def no_email(what: str = "{email}") -> ActionFailed:
+    """Why `{email}` (or a Wait for an email step's inbox) can't be used in this run."""
+    from . import plugins
+    if plugins.action("emailWait") is None:
+        return ActionFailed("actionUnavailable", f"{what} needs Breakpatch Team.")
+    return ActionFailed("emailFailed", f"{what} needs a test inbox. An admin sets one up in Settings, Test inbox.")
+
+
+def fill_email(text: str, ctx: "Context") -> str:
+    """`{email}` filled in with this try's address. Raises ActionFailed when there's none."""
+    if "{email}" not in text:
+        return text
+    if not ctx.email:
+        raise no_email()
+    return text.replace("{email}", ctx.email)
+
+
+def uses_kept(text: str | None) -> bool:
+    """Text that types what a Wait for an email step kept: `{emailCode}`, `{emailLink}`."""
+    return bool(text) and _KEPT_TOKEN.search(text) is not None
+
+
+def kept_value(name: str, ctx: "Context") -> str:
+    """A value a Wait for an email step kept. Raises ActionFailed when no step before kept it."""
+    got = ctx.values.get(name)
+    if got is None:
+        what = "a code" if name == "emailCode" else "a link"
+        raise ActionFailed("emailFailed", f"No Wait for an email step before this one picked out {what}.")
+    return got[0]
+
+
+def fill_kept(text: str, ctx: "Context") -> str:
+    return _KEPT_TOKEN.sub(lambda m: kept_value(m.group(1), ctx), text)
+
+
 def resolve_text(step: dict, ctx: Context, now: dt.datetime | None = None) -> str:
     now = now or dt.datetime.now()
     if step.get("secretRef"):
@@ -155,7 +235,7 @@ def resolve_text(step: dict, ctx: Context, now: dt.datetime | None = None) -> st
         return now.strftime("%Y-%m-%d")
     if gen == "repeatNumber":
         return str(ctx.i)
-    return substitute(step.get("text") or "", ctx.i, now)
+    return substitute(fill_email(step.get("text") or "", ctx), ctx.i, now)
 
 
 def secret_refs(steps: Sequence[dict]) -> list[tuple[dict, str]]:
@@ -227,9 +307,12 @@ async def perform(b: BrowserSession, step: dict, ctx: Context, at: Sequence[floa
         await write_value(b, str(step["valueRef"]), ctx, at)
     elif a == "write":
         text = resolve_text(step, ctx)
-        if at is not None:
-            await b.click(at)
-        await b.type_text(text)
+        if uses_kept(text):
+            await write_kept(b, text, ctx, at)
+        else:
+            if at is not None:
+                await b.click(at)
+            await b.type_text(text)
     elif a == "waitFor":
         if not await interruptible_sleep((step.get("durationMs") or 1000) / 1000, ctx.stop):
             raise ActionFailed("stopped", "The run was stopped.")
@@ -237,10 +320,15 @@ async def perform(b: BrowserSession, step: dict, ctx: Context, at: Sequence[floa
         await wait_until(b, step, ctx)
     elif a == "navigate":
         nav = step.get("nav") or ("url" if step.get("url") else "reload")
-        url = substitute(step["url"], ctx.i) if step.get("url") else None
+        url = substitute(fill_email(step["url"], ctx), ctx.i) if step.get("url") else None
+        from_email = uses_kept(url)
+        if from_email:
+            url = kept_address(url, ctx)
         try:
             await b.navigate(nav, url)
         except Exception as e:  # noqa: BLE001
+            if from_email:          # its address may hold a one-time token: never in a message
+                raise ActionFailed("timeout", "The link from the email didn't load.") from e
             raise ActionFailed("timeout", getattr(e, "message", None) or "The page didn't load.") from e
     elif a == "switchTab":
         if not await b.switch_tab(t.popup_timeout):
@@ -252,7 +340,7 @@ async def perform(b: BrowserSession, step: dict, ctx: Context, at: Sequence[floa
             raise ActionFailed("timeout", "Clicking there didn't open a file picker.")
     elif a == "downloadCheck":
         await download_check(b, step, ctx, at)
-    elif a in ("checkpoint", "loop", "group", "call"):
+    elif a in ("checkpoint", "loop", "group", "call") or a in TEAM_ACTIONS:
         pass  # handled by the caller
     else:
         raise ActionFailed("unexpectedScreen", f"The engine doesn't know the action {a!r}.")
@@ -291,8 +379,12 @@ def value_allowed(origin: str | None, ctx: Context, call_origin: str | None) -> 
 
 
 async def write_value(b: BrowserSession, name: str, ctx: Context, at: Sequence[float] | None) -> None:
-    """Types a value a Call step kept from its reply, only into the app's pages (checked like a
-    saved secret: after the click and before every key)."""
+    """Types a value a Call step kept from its reply (or a Wait for an email step: `emailCode`,
+    `emailLink`), only into the app's pages (checked like a saved secret: after the click and before
+    every key)."""
+    if name in EMAIL_VALUES:
+        await write_kept(b, "{" + name + "}", ctx, at)
+        return
     got = ctx.values.get(name)
     if got is None:
         raise ActionFailed("callFailed", f"No Call step before this one kept a value named {name}.")
@@ -303,6 +395,32 @@ async def write_value(b: BrowserSession, name: str, ctx: Context, at: Sequence[f
     if blocked is not None:
         raise ActionFailed("callFailed", f"The value {name} is only typed into the app's own pages, "
                                          f"not {site_name(blocked or None)}.")
+
+
+async def write_kept(b: BrowserSession, text: str, ctx: Context, at: Sequence[float] | None) -> None:
+    """Types text with `{emailCode}` or `{emailLink}` in it, filled in with what a Wait for an email
+    step kept, under a kept value's guard: only into the app's own pages, checked after the click
+    and before every key."""
+    full = fill_kept(text, ctx)
+    if at is not None:
+        await b.click(at)
+    blocked = await b.type_guarded(full, lambda o: value_allowed(o, ctx, None))
+    if blocked is not None:
+        raise ActionFailed("emailFailed", "What the email had is only typed into the app's own pages, "
+                                          f"not {site_name(blocked or None)}.")
+
+
+def kept_address(url: str, ctx: Context) -> str:
+    """A Go to address with `{emailLink}` (or `{emailCode}`) filled in. It's opened only when it's a
+    page of the app (as a kept value is typed only there): a link to anywhere else fails plainly,
+    naming the site and never the address (it may hold a one-time token)."""
+    full = fill_kept(url, ctx)
+    origin = origin_of(full)
+    if not value_allowed(origin, ctx, None):
+        where = site_name(origin) if origin else "an address that isn't a web page"
+        raise ActionFailed("emailFailed", f"The link from the email goes to {where}, which isn't part of the app, "
+                                          "so it wasn't opened.")
+    return full
 
 
 async def wait_until(b: BrowserSession, step: dict, ctx: Context) -> None:

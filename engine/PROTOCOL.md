@@ -191,7 +191,7 @@ A device name the engine doesn't know (a test from a newer Breakpatch) fails wit
 ### Recording
 | Method | Params | Result |
 |---|---|---|
-| `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame?, valueRef?, call?, appUrl?, passStatus?, keep? }` | `{ step: Step }` |
+| `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame?, valueRef?, call?, appUrl?, passStatus?, keep?, email?, inbox? }` | `{ step: Step }` |
 | `record.locate` | `{ description, absence?, near?, shows? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below). `shows: true`: what to find may be text on the screen, not a control (a checkpoint, a Wait until; below) |
 | `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell. An empty sentence is `bad_request`; only its first 300 characters are read |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
@@ -411,9 +411,10 @@ saves.
 ### Replay
 | Method | Params | Result |
 |---|---|---|
-| `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix, allowSystemDifferences?, retries? }, secrets: {NAME: Secret}, runner?, recordedOn?: RecordedOn }` | `{}` — returns at once, then events |
+| `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix, allowSystemDifferences?, retries? }, secrets: {NAME: Secret}, runner?, recordedOn?: RecordedOn, inbox?: Inbox }` | `{}` — returns at once, then events |
 | `run.stop` | `{ runId }` | `{}` — stops after the current step |
 | `call.try` | `{ call: Call, appUrl, secrets?, passStatus?, timeoutMs?, keep? }` | `{ ok, status?, ms?, error?, message?, kept? }` — "Try it": one request under the same rules as a run (a Call step's `passStatus`, `timeoutMs` and `keep` too; `kept: true` when the value was found, never the value) |
+| `email.check` | `{ inbox: Inbox, secrets? }` | `{ ok, message? }` — Settings → Test inbox, "Check the inbox": signs in to the inbox as a run would and counts its emails, nothing else (Breakpatch Team, see Wait for an email below; Community: `not_ready`) |
 | `run.explain` | `{ step: Step, stepRun: StepRun, viewport? }` | `{ explanation: Explanation \| null }` — "Why did this fail?" for one failed step of a finished run (Breakpatch Team, see below) |
 | `report.images` | `{ items: [{ path, size: "full"\|"small" }], viewportWidth? }` | `{ images: [{ src, width, height, bytes } \| null] }` — screenshots for an exported report, as WebP `data:` URIs (see Export a report) |
 
@@ -450,7 +451,8 @@ A `waitFor`/`waitUntil` in progress is cut short by `run.stop`.
 Events: `run.step` `{ runId, index, stepId, state: "running"|"looking"|"passed"|"healed"|"failed", reason?, preDistance?, postDistance?, oldAt?, newAt?, screenshot?, iteration?, message?, details?, reply? }`
 (`looking` = AI assistant is finding a moved target; `screenshot` is a local file path, only on failure or heal;
 `iteration` is the 1-based repeat number inside a loop; `message` is a plain sentence on failure;
-`reply` `{ status?, ms? }` is a Call step's, also in its `StepRun`: see Call steps below)
+`reply` `{ status?, ms? }` is a Call step's, also in its `StepRun`: see Call steps below; `email` `{ got, chars?,
+digits?, site?, ms? }` is a Wait for an email step's, also in its `StepRun`: see Wait for an email below)
 and `run.ended` `{ runId, result: "pass"|"fail", durationMs, steps: StepRun[], message?, details?, cleanUpFailed?, ranOn?, systemMismatch?, attempts? }`
 (`ranOn` and `systemMismatch`: see Where a test was recorded; `attempts`: see Retries).
 
@@ -474,7 +476,10 @@ nothing), `unexpectedScreen` (post-check or checkpoint mismatch, wrong download 
 didn't load, no popup/file picker/download), `healFailed` (the AI assistant's spot doesn't match
 the stored hash), `healingUnavailable` (`autoFix` on, healing installed, but no model), `secretMissing`,
 `setUpFailed`, `stopped`, `fileMissing`, `callFailed` (a Call step's call didn't pass, or a Write step's
-kept value isn't there or may not be typed on that page). `failOnFix` makes a run with a healed step end with `result: "fail"`
+kept value isn't there or may not be typed on that page), `actionUnavailable` (a step the Team engine
+performs, without it or without its licence feature: never a pass), `emailFailed` (the test inbox
+couldn't be read, the email didn't have what the step picks out, or a Write or Go to step's `{emailCode}`
+or `{emailLink}` isn't there or may not be used on that page). `failOnFix` makes a run with a healed step end with `result: "fail"`
 (the step stays `healed`).
 
 **Retries** (roadmap #14, `retry.py`). `settings.retries` (0, 1 or 2; missing, anything else or
@@ -490,12 +495,14 @@ like timing:
   their 2 bits as usual). Further off, the page really is different, and isn't retried.
 
 Never: `secretMissing`, `setUpFailed`, `stopped`, `healingUnavailable`, `healFailed`,
-`fileMissing`, `callFailed` (a Call step's call didn't pass: the API answered), a failure with no distance (something went wrong inside the engine), `failOnFix`,
+`fileMissing`, `callFailed` (a Call step's call didn't pass: the API answered), `actionUnavailable`,
+`emailFailed` (the inbox answered; no email in time is `timeout`, which is retried), a failure with no distance (something went wrong inside the engine), `failOnFix`,
 or a run the client stopped. No retry starts once the run has taken 5 minutes (`retry_budget`,
 stretched by `BP_TIMINGS_SCALE` and breakpatch-ci's tier like the other long waits); the next try
 starts 1 s after the last. The recorder's own runs (`keepOpen`, `fromStepId`) are never retried.
 A retried try makes its Call steps' calls again and starts with no kept values: a Write step of a
-kept value types what this try's call replied.
+kept value types what this try's call replied. It also gets a new `{email}` address, and only emails
+that came after it started count, never one an earlier try used: a Wait for an email step waits for a new email.
 
 Before each retry the engine sends `run.retry` `{ runId, attempt, of, stepId, reason, why, message }`
 (`attempt`: the try starting now, 2 or 3; `of`: the most there can be; `why`: a short phrase for
@@ -520,6 +527,8 @@ Loops and shared steps are nested, as stored (spec §12.1): a `loop` step carrie
 `count` and child `steps`; a `group` step carries `groupId`, `groupVersion` and the child
 `steps` the UI resolved from that version before starting. The engine runs children in order.
 `{i}` in `text` (and `url`) is the 1-based repeat number; `{time}` is HH:MM and `{date}` is YYYY-MM-DD at run time.
+`{email}` is the try's own address in the test inbox, and `{emailCode}` and `{emailLink}` what a Wait for
+an email step before picked out (Breakpatch Team: see Wait for an email).
 
 **Why did this fail? (`run.explain`).** Breakpatch Team explains a failed step in plain words,
 when the report asks (roadmap #7). Nothing about it happens during the steps of a run, and
@@ -725,6 +734,65 @@ order as paid, turn on a feature flag, ask a test API for a one-time code.
   steps recorded after it (`record.point` with `valueRef`; `not_found` when it has nothing by that
   name yet: play the Call step first), and so does a run with `keepOpen`; Play this step
   (`fromStepId`) uses what the recorder has. A failed Call step keeps no screenshot.
+
+### Wait for an email
+
+A **Wait for an email** step (issue #12, Breakpatch Team) waits for a message in the workspace's test
+inbox and picks out a code or a link from it, for the steps after it. Sign-up, password reset and
+log-in with a code then run end to end. The open engine knows the step and its placeholders; the
+Team engine performs it (`plugins.register_action("emailWait", …)`), behind the licence feature
+`email`. Without the Team engine, or without that feature, the step fails with `actionUnavailable`
+("Waiting for an email needs Breakpatch Team.") and never passes; so does `{email}`.
+
+```jsonc
+{ "id": "e1", "action": "emailWait", "label": "Wait for an email with a code",
+  "email": { "to": "{email}",                 // optional: the address it waits for, {email} by default
+             "from": "no-reply@acme.com",     // optional: the sender contains this
+             "subjectContains": "Your code",  // optional
+             "pick": "code",                  // "code", "link", or absent (only that it came)
+             "codePattern": "\\b\\d{6}\\b",     // optional: a regular expression; 6 digits by default
+             "linkContains": "/verify" },     // optional: the first link (http or https) containing this
+  "timeoutMs": 60000 }                        // optional: 5 s to 300 s, 60 s by default
+```
+
+`Inbox` (`inbox` in `run.start`, `record.point` and `email.check`; set once per workspace, in
+Settings → Test inbox):
+`{ kind: "mailpit" | "imap", server, port?, user?, passwordRef?, address, folder? }`. Mailpit:
+`server` is its web address (`https://mailpit.staging.acme.com`; plain `http://` only to an address on
+this computer's network), read through its API. IMAP: `server` is the host (`imap.acme.com`), `port`
+993 by default, over TLS (plain only to this computer itself), read only (nothing is marked read),
+`folder` INBOX by default. `passwordRef` is a saved secret's name (it goes in `secrets` like any other,
+and must be allowed on the inbox's site: Mailpit's address, or `https://<IMAP server>`); a missing one
+fails the first Wait for an email step before the run starts (`secretMissing`). `address` is what
+`{email}` builds on. Cloud metadata addresses are never reached. Mail services with an API of their own
+(Mailosaur, MailSlurp) don't need this: a Call step to their "wait for a message" address with `keep`
+does the same.
+
+- `{email}` (Write text, Go to address, a Call step's address and body, the step's `to`) is the try's
+  own address: the inbox's `address` with `+bp-<8 letters and digits>` (plus addressing):
+  `qa@acme.com` → `qa+bp-k3j9x2ma@acme.com`. Every try of a run, and every recording (each
+  `browser.open`), has its own. Without an inbox (or the Team engine) it fails with `emailFailed` (or
+  `actionUnavailable`) and nothing is typed.
+- The step looks every 2 s until `timeoutMs` for the newest email to `to` that matches `from` and
+  `subjectContains`, that no step of this run used yet, and, unless `to` is the try's own `{email}`,
+  that came after the try started (30 s of leeway for the inbox's clock). No such email: `timeout`
+  ("No email to qa+bp-k3j9x2ma@acme.com arrived within 60 s."), retried like any timeout. An email that
+  came without what the step picks out: `emailFailed` at the end of the wait. An inbox that can't be
+  read (refused password, unknown server): `emailFailed` at once.
+- What it picks out is kept for the rest of the run only, like a Call step's value: `emailCode` or
+  `emailLink`. A Write step types it with `{emailCode}` or `{emailLink}` in its text (or `valueRef`),
+  and a Go to address opens `{emailLink}`, only on the app's own pages (as a kept value is typed): a
+  link to another site isn't opened (`emailFailed`, naming the site, never the address). The message
+  itself is never kept: its subject, text and addresses are read to match and pick, then dropped.
+- Nothing on the page is checked. The `StepRun` and its `run.step` events carry `email`: `{ got:
+  "code", chars, digits, ms }`, `{ got: "link", site, ms }` or `{ got: "email", ms }`, never the
+  code or the link. A failed step keeps no screenshot.
+- `record.point` with `action: "emailWait"` takes `email`, `timeoutMs`, `inbox` and `secrets`, and
+  waits now, as a run would, so the steps recorded after it can type what it kept; one that doesn't
+  get its email isn't recorded (`not_found` for no email in time or a missing secret, `network` when the
+  inbox couldn't be read, `not_ready` without Team). A Write step recorded with `{emailCode}` before
+  any email has given one fails with `not_found` ("…Play the Wait for an email step…"). The recorder
+  keeps what a run with `keepOpen` kept, and its `{email}`.
 
 ## Environment
 
