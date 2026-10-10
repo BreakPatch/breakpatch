@@ -479,8 +479,10 @@ kept value isn't there or may not be typed on that page). `failOnFix` makes a ru
 
 **Retries** (roadmap #14, `retry.py`). `settings.retries` (0, 1 or 2; missing, anything else or
 more is 0, 2 at most) lets a failed run try again: the whole test from the start, in a new browser,
-with its set-up call and clean-up call, as the first try did. A single step is never done again on
-its own: its action may already have changed the page. A try is retried only when its failure looks
+with its set-up call and clean-up call, as the first try did. Before another try the clean-up call
+is made even without `alsoOnFailure` (when the try got as far as the set-up call), so the next
+set-up starts clean. A single step is never done again on its own: its action may already have
+changed the page. A try is retried only when its failure looks
 like timing:
 
 - `timeout` (the screen didn't settle, the start page didn't load, no popup, file picker or download);

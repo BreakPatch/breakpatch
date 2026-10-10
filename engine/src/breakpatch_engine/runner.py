@@ -149,6 +149,10 @@ class Runner:
                 pass
             if stop.is_set():
                 break
+            # The next try starts clean: the clean-up call this try left out (it runs after a failure
+            # only with alsoOnFailure) runs now, so a set-up that adds things doesn't meet its own.
+            if self.clean_up_skipped and not await self._clean_up(req["cleanUp"]):
+                clean_up_failed = True
             self.attempt += 1
         self.clean_up_failed = clean_up_failed
         return self._ended(t0, ok, fail_on_fix, earlier)
@@ -194,6 +198,7 @@ class Runner:
         self.message: str | None = None
         self.details: str | None = None
         self.clean_up_failed = False
+        self.clean_up_skipped = False
         self.reached_set_up = False   # clean-up never runs for a run that stopped before set-up
         ok = False
         try:
@@ -203,17 +208,23 @@ class Runner:
                 ok = True
         finally:
             clean_up = None if self.keep_open else req.get("cleanUp")
-            if clean_up and self.reached_set_up and (ok or clean_up.get("alsoOnFailure")):
-                reply = await calls.make(clean_up, self.app_url, self.secrets, self.t.http_timeout)
-                log.info("clean-up call: %s", reply.info)
-                if not reply.ok:
-                    self.clean_up_failed = True
+            if clean_up and self.reached_set_up:
+                if ok or clean_up.get("alsoOnFailure"):
+                    self.clean_up_failed = not await self._clean_up(clean_up)
+                else:
+                    self.clean_up_skipped = True   # run() makes it before another try
             if not self.keep_open:
                 try:
                     await self.b.close()
                 except Exception:  # noqa: BLE001
                     pass
         return ok
+
+    async def _clean_up(self, clean_up: dict) -> bool:
+        """The clean-up call: True when it went through."""
+        reply = await calls.make(clean_up, self.app_url, self.secrets, self.t.http_timeout)
+        log.info("clean-up call: %s", reply.info)
+        return reply.ok
 
     async def _execute(self, req: dict, steps: list[dict], order: list[dict], secrets: dict[str, Secret],
                        stop: asyncio.Event) -> bool:
