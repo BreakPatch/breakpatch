@@ -605,6 +605,7 @@ What the folder gets:
 
 - **Each app**, with its address, icon and screen size, its **tests** at their latest version (with the version's number, its steps and where it was recorded), its **shared steps** at their latest version, and **each test's last run**. File names come from the names, as in any tests folder: *Log in* becomes `log-in.json`.
 - **Suites**, with their tests in order, their schedules and retries.
+- **Who made, changed and ran each test**, by name. Email addresses stay out of the folder, which often ends up in Git.
 - **Encrypted content opened.** In an [encrypted workspace](#encryption-and-the-recovery-code), Breakpatch opens the tests on your Mac with the workspace's key, so the folder is plain files. A Mac without the key can't export: Breakpatch says how to get it first.
 - **The folder format the tests need.** With [Call steps](#call-your-api) or [phone and tablet tests](#phones-and-tablets) in it, the folder needs a Breakpatch that knows them, as a folder you make yourself does (see [Git tips](#git-tips)). The preview says so.
 
