@@ -71,14 +71,18 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
   if (opts.abandoned?.()) return null;
   const startedAt = Date.now();
   opts.onStart?.(startedAt);
-  const shots: Record<string, string> = {};
+  // The last try's screenshots, by step. Another try starts afresh: an earlier try's are in its
+  // run.ended `retried`, and would otherwise land on a step that passed this time.
+  let shots: Record<string, string> = {};
   const ended = await new Promise<RunEnded>((resolve, reject) => {
     const offStep = engine.on('run.step', ev => {
       if (ev.runId !== runId) return;
       if (ev.screenshot) shots[ev.stepId] = ev.screenshot;
       opts.onStep?.(ev);
     });
-    const offEnd = engine.on('run.ended', ev => { if (ev.runId !== runId) return; offStep(); offEnd(); resolve(ev); });
+    const offRetry = engine.on('run.retry', ev => { if (ev.runId === runId) shots = {}; });
+    const off = () => { offStep(); offRetry(); offEnd(); };
+    const offEnd = engine.on('run.ended', ev => { if (ev.runId !== runId) return; off(); resolve(ev); });
     engine.startRun({
       runId, startUrl: opts.startUrl ?? t.startUrl, appUrl, viewport: t.viewport, steps, setUp: t.setUp, cleanUp: t.cleanUp,
       settings: {
@@ -89,7 +93,7 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
       ...(filesDir(backend.local?.path) ? { filesDir: filesDir(backend.local?.path) } : {}),
       ...(opts.keepOpen ? { keepOpen: true } : {}), ...(opts.upToStepId ? { upToStepId: opts.upToStepId } : {}),
       ...(opts.fromStepId ? { fromStepId: opts.fromStepId } : {}),
-    }).catch(err => { offStep(); offEnd(); reject(err); });
+    }).catch(err => { off(); reject(err); });
   });
   return { ended, startedAt, shots };
 }

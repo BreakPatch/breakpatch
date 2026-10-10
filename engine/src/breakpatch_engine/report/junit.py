@@ -30,15 +30,18 @@ def junit_xml(view: dict) -> str:
             out.append(head + "/>")
             continue
         out.append(head + ">")
+        # Earlier tries (engine/PROTOCOL.md "Retries"), as Maven Surefire writes reruns: <flakyFailure>
+        # for each in a test that passed in the end (Jenkins and others show it as flaky). In one that
+        # failed every try, <failure> is the first try's and <rerunFailure> each later one's, this
+        # last try's included. Readers that don't know them see the test's own result.
+        tag = "flakyFailure" if c["status"] == "passed" else "rerunFailure"
+        later = retries
         if c["status"] == "skipped":
             out.append(f'      <skipped message="{esc(c["message"])}"/>')
         elif c["status"] != "passed":
-            out.append(f'      <failure message="{esc(c["message"])}" type="{esc(c["type"])}">{esc(c["text"])}</failure>')
-        # Earlier tries (engine/PROTOCOL.md "Retries"), as Maven Surefire writes reruns: <flakyFailure>
-        # in a test that passed in the end (Jenkins and others show it as flaky), <rerunFailure> in
-        # one that didn't. Readers that don't know them see the test's own result.
-        tag = "flakyFailure" if c["status"] == "passed" else "rerunFailure"
-        for r in retries:
+            first, *later = [*retries, c]
+            out.append(f'      <failure message="{esc(first["message"])}" type="{esc(first["type"])}">{esc(first["text"])}</failure>')
+        for r in later:
             out.append(f'      <{tag} message="{esc(r["message"])}" type="{esc(r["type"])}">{esc(r["text"])}</{tag}>')
         out.append("    </testcase>")
     out += ["  </testsuite>", "</testsuites>", ""]

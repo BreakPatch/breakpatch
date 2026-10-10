@@ -132,6 +132,15 @@ class Ctx {
 interface Where { line: number; code: string }
 const cut = (s: string) => (s.length > CODE_MAX ? s.slice(0, CODE_MAX - 1) + '…' : s);
 const where = (s: { line: number; src: string }): Where => ({ line: s.line, code: cut(s.src) });
+/**
+ * `replace` on `s` up to its last `}`, the rest as it is: for a pattern whose match ends with `}`.
+ * Past the last one no match can end, and looking for one from every `{` there takes seconds on a
+ * long run of them.
+ */
+function toLastBrace(s: string, replace: (head: string) => string): string {
+  const end = s.lastIndexOf('}') + 1;
+  return replace(s.slice(0, end)) + s.slice(end);
+}
 
 /** What a value types: text, a saved secret it may be, or nothing known. */
 type Typed = { text: string; guessed?: boolean } | { secretHint: string } | { unknown: true };
@@ -149,11 +158,12 @@ function typed(v: Value | undefined, ctx: Ctx): Typed {
   if (v.kind === 'tmpl') {
     // `user-${Date.now()}@example.com`: a value made new on every run, like Breakpatch's {timestamp}.
     let guessed = false;
-    const text = v.raw.replace(/\$\{\s*([^}]*?)\s*\}/g, (m, expr: string) => {
+    const text = toLastBrace(v.raw, head => head.replace(/\$\{([^}]*)\}/g, (m, inside: string) => {
+      const expr = inside.trim();
       if (/^(Date\.now\(\)|new Date\(\)\.getTime\(\)|Date\.now\(\)\.toString\(\)|\+new Date\(\))$/.test(expr)) { guessed = true; return '{timestamp}'; }
       if (/^[\w$]+$/.test(expr) && ctx.consts.has(expr)) return ctx.consts.get(expr)!;
       return m;
-    });
+    }));
     if (!text.includes('${')) return { text, ...(guessed ? { guessed } : {}) };
   }
   return { unknown: true };
@@ -522,13 +532,13 @@ const CY_STRUCTURE = new Set(['parent', 'parents', 'parentsUntil', 'closest', 's
 /** Cypress typing: "hello{enter}" → "hello\n". Other {keys} can't be typed. */
 function cyText(raw: string): { text: string } | { key: string } {
   let bad: string | undefined;
-  const text = raw.replace(/\{([^}]*)\}/g, (_m, k: string) => {
+  const text = toLastBrace(raw, head => head.replace(/\{([^}]*)\}/g, (_m, k: string) => {
     const key = k.toLowerCase();
     if (key === 'enter') return '\n';
     if (key === '{') return '{';
     bad ??= k;
     return '';
-  });
+  }));
   return bad !== undefined ? { key: bad } : { text };
 }
 

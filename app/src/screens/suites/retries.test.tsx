@@ -7,7 +7,7 @@ import type { App, Step, Suite } from '../../data/types';
 import { DemoBackend } from '../../data/demo/demoBackend';
 import { useSession } from '../../state/session';
 import { getEngine, type EngineEvents, type RunStart } from '../../engine';
-import { DEFAULT_RETRIES, retriesOf } from '../../lib/retries';
+import { DEFAULT_RETRIES, MAX_RETRIES, retriesIn, retriesOf } from '../../lib/retries';
 import SuiteRunScreen from './SuiteRunScreen';
 import SuiteEditorScreen from './SuiteEditorScreen';
 
@@ -67,6 +67,8 @@ describe('retries in a suite run by hand', () => {
   it('a suite that says nothing retries once; the setting is 0 to 2', () => {
     expect(DEFAULT_RETRIES).toBe(1);
     expect([retriesOf({}), retriesOf({ retries: 0 }), retriesOf({ retries: 2 }), retriesOf({ retries: 7 }), retriesOf({ retries: 1.5 })]).toEqual([1, 0, 2, 1, 1]);
+    // A stored suite's (a suite file's, a workspace's): none when it isn't one.
+    expect([retriesIn(0), retriesIn(MAX_RETRIES), retriesIn(MAX_RETRIES + 1), retriesIn('1'), retriesIn(1.5)]).toEqual([0, MAX_RETRIES, undefined, undefined, undefined]);
   });
 
   it('passes the suite\'s retries to the engine, says which test passed on a retry, and counts it as flaky', async () => {

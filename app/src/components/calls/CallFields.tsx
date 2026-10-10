@@ -1,7 +1,7 @@
 // A call's fields: method and address, headers (typed or from a saved secret), a body when it takes
 // one, and Try it. Used by New test's set-up and clean-up calls and by a Call step's editor
 // (CallStepDialog), so both make the same request under the same rules (lib/calls.ts).
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { CallHeader, HttpCall } from '../../data/types';
 import { getEngine } from '../../engine';
 import type { CallStepOptions } from '../../engine/engine';
@@ -37,14 +37,21 @@ export function CallFields({ title, call, onChange, error, appUrl, otherHosts, s
   const [trying, setTrying] = useState(false);
   const headers = call.headers ?? [];
   const stepKey = JSON.stringify(step ?? null);
-  useEffect(() => { setReply(null); }, [call.url, call.method, call.headers, call.body, otherHosts, stepKey]);
+  // Which Try it is the latest: a reply to an earlier one, or to the call before an edit, is dropped.
+  const latest = useRef(0);
+  useEffect(() => { latest.current++; setReply(null); setTrying(false); }, [call.url, call.method, call.headers, call.body, otherHosts, stepKey]);
   const tryIt = async () => {
-    setTrying(true);
-    const c = cleanCall(call, otherHosts);
-    const names = (c.headers ?? []).map(h => h.secretRef).filter((n): n is string => !!n);
-    const { secrets: values, ...scope } = await secretsForRequest(names).catch(() => ({ secrets: {} }));
-    setReply(await tryCall(c, { engine: getEngine(), appUrl, secrets: values, scope, ...(step ? { step } : {}) }));
-    setTrying(false);
+    const mine = ++latest.current;
+    setTrying(true); setReply(null);
+    try {
+      const c = cleanCall(call, otherHosts);
+      const names = (c.headers ?? []).map(h => h.secretRef).filter((n): n is string => !!n);
+      const { secrets: values, ...scope } = await secretsForRequest(names).catch(() => ({ secrets: {} }));
+      const got = await tryCall(c, { engine: getEngine(), appUrl, secrets: values, scope, ...(step ? { step } : {}) });
+      if (mine === latest.current) setReply(got);
+    } finally {
+      if (mine === latest.current) setTrying(false);
+    }
   };
   const setHeader = (i: number, h: CallHeader) => onChange({ ...call, headers: headers.map((x, j) => (j === i ? h : x)) });
   const timeoutS = step?.timeoutMs ? Math.round(step.timeoutMs / 1000) : 15;
@@ -88,7 +95,7 @@ export function CallFields({ title, call, onChange, error, appUrl, otherHosts, s
           : reply && <span className={`app-reply ${reply.ok ? 'ok' : 'bad'}`}><Icon name={reply.ok ? 'check_circle' : 'error'} size={16} />{describeReply(reply, timeoutS)}</span>}
       </div>
       <Button kind="link" size="sm" icon="add" onClick={() => onChange({ ...call, headers: [...headers, { name: '', value: '' }] })}>Add header</Button>
-      <Button kind="link" size="sm" icon="send" disabled={!call.url.trim() || trying} onClick={tryIt}>Try it</Button>
+      <Button kind="link" size="sm" icon="send" disabled={!call.url.trim() || trying} onClick={() => void tryIt()}>Try it</Button>
     </div>
   </>);
 }

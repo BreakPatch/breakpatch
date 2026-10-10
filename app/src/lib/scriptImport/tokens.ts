@@ -70,6 +70,12 @@ export function tokenize(src: string): Token[] {
   let i = 0, line = 1, nl = false;
   const push = (t: Omit<Token, 'line' | 'nl'>, startLine: number) => { out.push({ ...t, line: startLine, nl }); nl = false; };
   const countLines = (from: number, to: number) => { for (let k = from; k < to; k++) if (src[k] === '\n') line++; };
+  // Where a look for a regular expression's closing `/` has been: for each character, bit 1 when a
+  // look got there outside a [class], bit 2 inside one. The look is the same from there on, so a
+  // later one that gets to a marked place in the same state can't close either and stops. Without
+  // this, a line like `/[/[/[…` is read to its end once for every `/` in it. (A look that closes
+  // marks places only inside the regex it reads, which no later look goes back to.)
+  let looked: Uint8Array | undefined;
 
   while (i < src.length) {
     const c = src[i];
@@ -150,7 +156,11 @@ export function tokenize(src: string): Token[] {
       const valueStarts = !prev || (prev.kind === 'punct' && !/^[)\]}]$/.test(prev.value)) || (prev.kind === 'id' && BEFORE_REGEX.has(prev.value));
       if (valueStarts) {
         let k = i + 1, cls = false, ok = false;
+        looked ??= new Uint8Array(src.length);
         for (; k < src.length && src[k] !== '\n'; k++) {
+          const bit = cls ? 2 : 1;
+          if (looked[k] & bit) break;
+          looked[k] |= bit;
           if (src[k] === '\\') { k++; continue; }
           if (src[k] === '[') cls = true;
           else if (src[k] === ']') cls = false;

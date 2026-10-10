@@ -189,7 +189,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
           </div>
         )}
         {o.writeSource === 'secret' && <span className="faint">{osText("The value stays in this Mac's Keychain and is never shown.")}</span>}
-        {o.writeSource === 'value' && <span className="faint">Types what the Call step kept, only on the app's own pages. It's never shown or saved.</span>}
+        {o.writeSource === 'value' && <span className="faint">Types what the Call step kept, only on the app's own pages. It isn't saved with the test or logged, but in a field you can see, it can show in a screenshot.</span>}
       </div>
     );
     // Drawn or clicked on the page: their options are in the bar, not floating over where you draw.

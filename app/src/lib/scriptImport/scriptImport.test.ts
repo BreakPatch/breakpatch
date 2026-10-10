@@ -79,10 +79,59 @@ describe('parse', () => {
     expect(a.kind === 'decl' && a.init?.kind).toBe('other');
     expect(d.kind === 'decl' && d.init?.kind).toBe('other');
     expect(e.kind === 'decl' && e.init).toEqual({ kind: 'str', v: 'f' });
+    // A ternary's `:` after an object in it, and nested ternaries: one value each, up to the `;`.
+    const q = new Parser("const g = x ? { a: 1 } : 2; const h = a ? b ? 1 : 2 : 3; i()");
+    const [g, h, i] = q.statements(0, q.t.length);
+    expect(g.kind === 'decl' && g.init).toEqual({ kind: 'other', text: 'x ? { a: 1 } : 2' });
+    expect(h.kind === 'decl' && h.init).toEqual({ kind: 'other', text: 'a ? b ? 1 : 2 : 3' });
+    expect(i.kind).toBe('expr');
+  });
+  it('puts a statement over several lines on one, keeping the spaces within a line', () => {
+    const p = new Parser("foo('a  b',\n   \n\t  c)");
+    expect(p.statements(0, p.t.length)[0].src).toBe("foo('a  b', c)");
   });
   it('steps over if, for and try blocks as one statement each', () => {
     const p = new Parser('if (a) { b() } else if (c) d(); else { e() }\nfor (const x of y) { z(x) }\ntry { f() } catch (err) { g() } finally { h() }\ndone()');
     expect(p.statements(0, p.t.length).map(s => s.kind)).toEqual(['block', 'block', 'block', 'expr']);
+  });
+  it('steps over a chain of thousands of else ifs without running out of stack', () => {
+    for (const branch of ['else if (a) { b() } ', 'else if (a) b(); ']) {
+      const p = new Parser(`if (a) { b() } ${branch.repeat(30_000)}else { c() }\ndone()`);
+      expect(p.statements(0, p.t.length).map(s => s.kind)).toEqual(['block', 'expr']);
+    }
+  });
+});
+
+describe('hostile scripts', () => {
+  // Each of these took seconds to minutes at this size when the parser looked back over what it
+  // had read (the dialog froze meanwhile). Now each is read in one pass.
+  const K = 160_000;
+  const shapes: Record<string, string> = {
+    'a long run of spaces in a statement': "test('a', () => { a" + ' '.repeat(K) + 'b })',
+    'nested ternaries': "test('a', async () => { const x = " + 'a?'.repeat(K / 4) + 'a:'.repeat(K / 4) + 'a })',
+    'ternaries in a list': '[' + 'a?a:'.repeat(K / 4) + ']',
+    'slashes that never close a regular expression': '/['.repeat(K / 2),
+    'arrow-like return types in a list': '[' + '(0):a,'.repeat(K / 6) + ']',
+    'a Cypress type() with braces that never close': "it('a', () => { cy.get('#a').type('" + '{'.repeat(K) + "') })",
+    'a template with spaces in ${…}': "test('a', async ({ page }) => { await page.getByLabel('a').fill(`${a" + ' '.repeat(K) + 'b}`) })',
+    'an else if chain': 'if (a) {} ' + 'else if (a) {} '.repeat(K / 16),
+  };
+  for (const [name, src] of Object.entries(shapes)) {
+    it(`reads ${name} quickly`, () => {
+      const t0 = performance.now();
+      expect(() => importScript(src, 'a.spec.ts')).not.toThrow();
+      expect(performance.now() - t0).toBeLessThan(1000);
+    });
+  }
+  it('still reads a regular expression after a slash that started none', () => {
+    // From the first `/` the look ends inside [/x/]; from the second it closes after `x`.
+    expect(tokenize('a = /[/x/').map(k => `${k.kind}:${k.value}`)).toEqual(['id:a', 'punct:=', 'punct:/', 'punct:[', 'regex:x']);
+  });
+  it('reads Cypress keys and template values as before', () => {
+    const cy = importScript("it('a', () => { cy.visit('/a'); cy.get('#q').type('{{}x}{enter}') })", 'a.cy.ts').tests[0];
+    expect(cy.steps.map(s => s.text)).toEqual(['{x}\n']);
+    const pw = importScript("const id = 'u1';\ntest('a', async ({ page }) => { await page.goto('/a'); await page.getByLabel('n').fill(`n-${ id }-${Date.now()}`) })", 'a.spec.ts').tests[0];
+    expect(pw.steps.map(s => s.text)).toEqual(['n-u1-{timestamp}']);
   });
 });
 

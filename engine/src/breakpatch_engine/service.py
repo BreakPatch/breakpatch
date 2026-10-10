@@ -148,6 +148,8 @@ class Engine:
         await self.browser_hand({"on": False})
         async with self._browser_lock:
             await self.browser.open(p.get("url") or "", p.get("viewport") or {})
+        # A new recording session: nothing a Call step kept in an earlier one carries over.
+        self.recorder.values = {}
         return {}
 
     async def browser_close(self, p: dict) -> dict:
@@ -155,6 +157,7 @@ class Engine:
         await self.browser_hand({"on": False})
         async with self._browser_lock:
             await self.browser.close()
+        self.recorder.values = {}       # kept values live only as long as the recording's browser
         return {}
 
     async def browser_navigate(self, p: dict) -> dict:

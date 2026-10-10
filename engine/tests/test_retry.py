@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from breakpatch_engine import config, retry
+from breakpatch_engine import calls, config, retry
 from breakpatch_engine.runner import MESSAGES, Runner, StepFailed
 
 ALL_REASONS = ["targetNotFound", "unexpectedScreen", "noChange", "timeout", "healFailed", "healingUnavailable",
@@ -281,3 +281,68 @@ def test_screenshots_of_later_tries_dont_overwrite_the_first(tmp_path):
     r.attempt = 2
     two = asyncio.run(r._keep_screenshot(STEPS[0]))
     assert one.endswith("001-a.png") and two.endswith("001-a-try2.png")
+
+
+class WithSetUp(Scripted):
+    """A Scripted runner that makes its set-up call first, as the real one does."""
+
+    async def _execute(self, req, steps, order, secrets, stop):
+        self.reached_set_up = True
+        reply = await calls.make(req["setUp"], self.app_url, secrets, 1)
+        if not reply.ok:
+            self.ran += 1
+            self._fail(order[0], StepFailed("setUpFailed", reply.message))
+            return False
+        return await super()._execute(req, steps, order, secrets, stop)
+
+
+@pytest.fixture
+def api(monkeypatch):
+    """A fake app API whose set-up isn't idempotent: it adds a user, and refuses while one is there."""
+    made, users = [], []
+
+    async def make(call, app_url, secrets, timeout, *a, **kw):
+        made.append(call["url"])
+        if call["url"].endswith("/seed"):
+            if users:
+                return calls.Reply(False, 409, error="status", message="It replied 409.")
+            users.append("ada")
+        elif call["url"].endswith("/cleanup"):
+            if call.get("broken"):
+                return calls.Reply(False, 500, error="status", message="It replied 500.")
+            users.clear()
+        return calls.Reply(True, 200)
+    monkeypatch.setattr(calls, "make", make)
+    return made
+
+
+SEED = {"method": "POST", "url": "https://app.example.com/seed"}
+CLEAN = {"method": "POST", "url": "https://app.example.com/cleanup"}
+
+
+def test_a_retry_cleans_up_first_even_without_also_on_failure(api):
+    r = WithSetUp([{"c": StepFailed("timeout")}, {}])
+    ended = run(r, setUp=SEED, cleanUp=CLEAN)
+    assert ended["result"] == "pass" and ended["attempts"] == 2, ended
+    assert [u.rsplit("/", 1)[1] for u in api] == ["seed", "cleanup", "seed", "cleanup"]
+    assert "cleanUpFailed" not in ended
+
+
+def test_with_also_on_failure_a_retry_cleans_up_once(api):
+    r = WithSetUp([{"c": StepFailed("timeout")}, {}])
+    ended = run(r, setUp=SEED, cleanUp={**CLEAN, "alsoOnFailure": True})
+    assert ended["result"] == "pass" and [u.rsplit("/", 1)[1] for u in api] == ["seed", "cleanup", "seed", "cleanup"]
+
+
+def test_no_extra_clean_up_without_a_retry(api):
+    r = WithSetUp([{"c": StepFailed("timeout")}])
+    ended = run(r, retries=0, setUp=SEED, cleanUp=CLEAN)
+    assert ended["result"] == "fail" and [u.rsplit("/", 1)[1] for u in api] == ["seed"]
+
+
+def test_a_clean_up_before_a_retry_that_fails_is_reported(api):
+    r = WithSetUp([{"c": StepFailed("timeout")}, {}])
+    ended = run(r, setUp=SEED, cleanUp={**CLEAN, "broken": True})
+    # The leftover user makes the second set-up fail: the run says so, and that the clean-up failed.
+    assert ended["result"] == "fail" and ended["steps"][0]["reason"] == "setUpFailed"
+    assert ended["cleanUpFailed"] is True

@@ -78,6 +78,10 @@ def test_where_a_value_is_in_the_reply():
     with pytest.raises(CallRefused) as e:
         pick(b"<html>secret-token</html>", "$.code")
     assert "isn't JSON" in e.value.message and "secret-token" not in e.value.message
+    for deep in (b"[" * 5000 + b"]" * 5000, b'{"code":' * 5000 + b'"1"' + b"}" * 5000):
+        with pytest.raises(CallRefused) as e:
+            pick(deep, "$.code")
+        assert "nested too deeply" in e.value.message and e.value.kind == "keep"
 
 
 def test_a_body_is_sent_with_a_content_type_and_never_with_get():
@@ -146,6 +150,13 @@ def test_a_kept_value_is_typed_only_into_the_apps_pages():
         assert not value_allowed(origin or None, ctx, None), origin
     # The call's own site, when it was another host (Allow other hosts).
     assert value_allowed("https://evil.example", ctx, "https://evil.example")
+    # The app's port: another one on the same host is another site.
+    local = Context(Timings.fast(), app_url="http://localhost:3000/")
+    assert value_allowed("http://localhost:3000", local, None) and value_allowed("https://localhost:3000", local, None)
+    for origin in ("http://localhost:8080", "http://localhost", "https://localhost"):
+        assert not value_allowed(origin, local, None), origin
+    assert not value_allowed("https://app.acme.com:8443", ctx, None)
+    assert value_allowed("https://app.acme.com:8443", Context(Timings.fast(), app_url="https://app.acme.com:8443"), None)
 
 
 # ---------------------------------------------------------------- against a local API
@@ -319,6 +330,44 @@ async def test_a_call_step_that_fails_stops_the_run_with_its_reason(api):
     assert Api.seen == []
 
 
+async def test_stop_doesnt_wait_for_a_call_step_s_reply(monkeypatch):
+    from breakpatch_engine.runner import Runner, StepFailed
+    waiting = []
+
+    async def no_reply(*a, **kw):
+        waiting.append(asyncio.current_task())
+        await asyncio.sleep(30)
+    monkeypatch.setattr(calls, "make", no_reply)
+    runner = Runner(None, lambda: None, Timings.fast(), lambda *a: None)
+    runner.app_url = APP
+    stop = asyncio.Event()
+    ctx = Context(Timings.fast(), stop=stop)
+    asyncio.get_running_loop().call_later(0.1, stop.set)
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    with pytest.raises(StepFailed) as e:
+        await runner._call_step(call_step(APP, "/slow", timeoutMs=30000), ctx, {}, lambda name: None)
+    assert e.value.reason == "stopped" and loop.time() - t0 < 1
+    await asyncio.sleep(0)
+    assert waiting[0].cancelled()                  # the call is let go, its reply dropped
+
+
+@needs_browser
+async def test_stop_ends_a_run_waiting_on_a_call_step(api):
+    hx = Harness()
+    task = asyncio.create_task(hx.run([call_step(api, "/slow", timeoutMs=30000)], api + "/index.html"))
+    for _ in range(500):
+        if any(d["stepId"] == "c1" and d["state"] == "running" for d in hx.of("run.step")):
+            break
+        await asyncio.sleep(0.01)
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    await hx.h["run.stop"]({"runId": "r1"})
+    ended = await task
+    assert loop.time() - t0 < 1.5                  # /slow answers after 2 s
+    assert ended["result"] == "fail" and ended["steps"][0]["reason"] == "stopped"
+
+
 @needs_browser
 async def test_a_missing_secret_for_a_call_step_fails_it_before_the_run_starts(api):
     hx = Harness()
@@ -353,19 +402,33 @@ async def test_a_kept_value_is_typed_by_a_later_write_step(api, caplog):
         assert await hx.engine.browser.page.input_value("#name") == "424242"
     finally:
         await hx.h["browser.close"]({})
-    # A new recording session has kept nothing yet: it says to play the Call step first.
-    hx2 = Harness()
-    await hx2.h["browser.open"]({"url": api + "/index.html", "viewport": VIEWPORT})
-    try:
-        with pytest.raises(EngineError) as e:
-            await hx2.h["record.point"]({"action": "write", "at": FIELD_AT, "valueRef": "CODE", "appUrl": api})
-        assert e.value.code == "not_found" and "Play the Call step that keeps it" in e.value.message
-    finally:
-        await hx2.h["browser.close"]({})
+    # A new recording session, in this engine or another, has kept nothing yet: it says to play
+    # the Call step first.
+    for again in (hx, Harness()):
+        await again.h["browser.open"]({"url": api + "/index.html", "viewport": VIEWPORT})
+        try:
+            with pytest.raises(EngineError) as e:
+                await again.h["record.point"]({"action": "write", "at": FIELD_AT, "valueRef": "CODE", "appUrl": api})
+            assert e.value.code == "not_found" and "Play the Call step that keeps it" in e.value.message
+        finally:
+            await again.h["browser.close"]({})
     # Without a Call step before it that kept the value, the Write step fails plainly.
     ended = await hx.run([write], api + "/index.html")
     assert ended["steps"][0]["reason"] == "callFailed"
     assert ended["message"] == "No Call step before this one kept a value named CODE."
+
+
+async def test_kept_values_end_with_the_recording_s_browser(monkeypatch):
+    hx = Harness()
+
+    async def nothing(*a, **kw):
+        return None
+    monkeypatch.setattr(hx.engine.browser, "open", nothing)
+    monkeypatch.setattr(hx.engine.browser, "close", nothing)
+    for handler in ("browser.open", "browser.close"):
+        hx.engine.recorder.values = {"CODE": ("424242", "https://app.acme.com")}
+        await hx.h[handler]({"url": APP, "viewport": VIEWPORT})
+        assert hx.engine.recorder.values == {}, handler
 
 
 @needs_browser

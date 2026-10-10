@@ -147,6 +147,16 @@ describe('JUnit XML', () => {
     expect([...doc.querySelectorAll('testcase')].map(c => c.getAttribute('name'))).toEqual(['Sign in', 'Invite a teammate', 'Pay an invoice', 'Refund']);
   });
 
+  it("puts a test's first failed try in <failure> and the later ones in <rerunFailure>, as Surefire does", () => {
+    const doc = new DOMParser().parseFromString(junitXml(buildView(INPUT.suite)), 'application/xml');
+    const [signIn, , pay] = doc.querySelectorAll('testcase');
+    expect(signIn.querySelector('failure')).toBeNull();
+    expect(signIn.querySelectorAll('flakyFailure')).toHaveLength(1);
+    expect(pay.querySelectorAll('failure')).toHaveLength(1);
+    expect(pay.querySelector('failure')!.getAttribute('message')).toMatch(/^Try 1, step 2/);
+    expect([...pay.querySelectorAll('rerunFailure')].map(r => r.getAttribute('message'))).toEqual(['Step 2: Wait for the receipt: Waited too long for the page']);
+  });
+
   it('says a stopped run was skipped', () => {
     const stopped = structuredClone(INPUT.run);
     stopped.tests[0].run!.steps.at(-1)!.reason = 'stopped';

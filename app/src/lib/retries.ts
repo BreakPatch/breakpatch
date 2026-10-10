@@ -8,10 +8,14 @@ export const MAX_RETRIES = 2;
 /** A suite that doesn't say: retried once, on this Mac and on the local runner. breakpatch-ci only retries with --retries. */
 export const DEFAULT_RETRIES = 1;
 
+/** A stored suite's `retries` (a suite file's, a workspace's): 0 to MAX_RETRIES, else none (the default). */
+export function retriesIn(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_RETRIES ? v : undefined;
+}
+
 /** A suite's retries, 0 to MAX_RETRIES: its own, or DEFAULT_RETRIES when it has none (or a value that isn't one). */
 export function retriesOf(suite: Pick<Suite, 'retries'> | null | undefined): number {
-  const n = suite?.retries;
-  return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= MAX_RETRIES ? n : DEFAULT_RETRIES;
+  return retriesIn(suite?.retries) ?? DEFAULT_RETRIES;
 }
 
 /** The suite editor's choices. */

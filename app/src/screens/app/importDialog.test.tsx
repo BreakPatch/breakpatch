@@ -13,7 +13,7 @@ import * as platform from '../../platform';
 import AppScreen from './AppScreen';
 import RecorderScreen from '../recorder/RecorderScreen';
 import { ImportDialog } from './ImportDialog';
-import { leftOutNote, NOTHING_FOUND } from '../../lib/scriptImport';
+import { leftOutNote, MAX_SCRIPT_BYTES, NOTHING_FOUND } from '../../lib/scriptImport';
 import { hasImport, takeImport } from '../../lib/scriptImport/pending';
 import codegen from '../../lib/scriptImport/fixtures/codegen-todo.spec.ts.txt?raw';
 
@@ -132,6 +132,13 @@ describe('the Import dialog', () => {
     vi.mocked(platform.openNamedTextFile).mockRejectedValueOnce(new Error('This file is too big to be a test script.'));
     fireEvent.click(screen.getByRole('button', { name: 'Choose a script…' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('too big'));
+  });
+
+  it('says when pasted text is too big, as for a file, without reading it', () => {
+    dialog();
+    paste(`// ${'é'.repeat(MAX_SCRIPT_BYTES / 2)}\n${LOGIN}`);   // under the limit in characters, over it in bytes
+    expect(screen.getByRole('alert')).toHaveTextContent('This is too big to be a test script.');
+    expect(screen.queryByLabelText('Name')).toBeNull();
   });
 
   it("won't create a test with no steps", async () => {
