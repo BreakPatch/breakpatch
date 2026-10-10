@@ -32,7 +32,7 @@ import { usesCallSteps } from '../../lib/calls';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
 import { osText } from '../../lib/osWords';
 import { deviceOf } from '../devices';
-import { MAX_RETRIES } from '../../lib/retries';
+import { retriesIn } from '../../lib/retries';
 
 /** Stands for a file over 5 MB in the texts read from the folder: it's skipped, never parsed. */
 const TOO_BIG = '\u0000breakpatch: file too big\u0000';
@@ -179,11 +179,6 @@ export function notifyIn(v: unknown): SuiteNotify | undefined {
   if (!isObj(v) || !['webhook', 'slack', 'teams'].includes(v.kind as string)) return undefined;
   const when = ['every', 'failures', 'changes'].includes(v.when as string) ? v.when as SuiteNotify['when'] : 'every';
   return { kind: v.kind as SuiteNotify['kind'], when, ...(v.screenshot === true ? { screenshot: true } : {}) };
-}
-
-/** A suite file's `retries` (lib/retries.ts): 0, 1 or 2, else none (the default). */
-export function retriesIn(v: unknown): number | undefined {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= MAX_RETRIES ? v : undefined;
 }
 
 /** Steps as saved: no UI-only markers, no undefined fields, children cleaned too. */
