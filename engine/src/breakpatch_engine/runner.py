@@ -610,9 +610,23 @@ class Runner:
         if keep and not calls.VALUE_NAME.match(name):
             raise StepFailed("callFailed", "The name this step keeps the value as uses letters, numbers and _ only.")
         call = calls.with_run_values(call, ctx.i)
-        reply = await calls.make(call, self.app_url, ctx.secrets,
-                                 calls.step_timeout(step.get("timeoutMs"), self.t.http_timeout),
-                                 pass_status=step.get("passStatus"), keep=str(keep.get("path") or "") if keep else None)
+        made = asyncio.ensure_future(calls.make(
+            call, self.app_url, ctx.secrets, calls.step_timeout(step.get("timeoutMs"), self.t.http_timeout),
+            pass_status=step.get("passStatus"), keep=str(keep.get("path") or "") if keep else None))
+        if ctx.stop is not None:
+            # Stop doesn't wait for the reply (up to the step's timeout): the call is left to finish
+            # on its own and its reply is dropped.
+            stopped = asyncio.ensure_future(ctx.stop.wait())
+            try:
+                await asyncio.wait({made, stopped}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                stopped.cancel()
+                let_go = not made.done()       # stopped, or the run itself was cancelled
+                if let_go:
+                    made.cancel()
+            if let_go:
+                raise StepFailed("stopped")
+        reply = await made
         lap("actionMs")
         log.info("call step %s: %s", step.get("id"), reply.info)
         rec["reply"] = reply.shown()

@@ -445,7 +445,7 @@ runner (see Saved secrets).
 
 `run.start` fails with `busy` when a run or recording is going, and `not_ready` when the browser
 isn't installed. The run opens its own browser (closing the live view's) and closes it at the end.
-A `waitFor`/`waitUntil` in progress is cut short by `run.stop`.
+A `waitFor`/`waitUntil` in progress is cut short by `run.stop`, and so is a Call step waiting for its reply (the step fails with `stopped`; the reply, when it comes, is dropped).
 
 Events: `run.step` `{ runId, index, stepId, state: "running"|"looking"|"passed"|"healed"|"failed", reason?, preDistance?, postDistance?, oldAt?, newAt?, screenshot?, iteration?, message?, details?, reply? }`
 (`looking` = AI assistant is finding a moved target; `screenshot` is a local file path, only on failure or heal;

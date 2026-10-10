@@ -323,6 +323,44 @@ async def test_a_call_step_that_fails_stops_the_run_with_its_reason(api):
     assert Api.seen == []
 
 
+async def test_stop_doesnt_wait_for_a_call_step_s_reply(monkeypatch):
+    from breakpatch_engine.runner import Runner, StepFailed
+    waiting = []
+
+    async def no_reply(*a, **kw):
+        waiting.append(asyncio.current_task())
+        await asyncio.sleep(30)
+    monkeypatch.setattr(calls, "make", no_reply)
+    runner = Runner(None, lambda: None, Timings.fast(), lambda *a: None)
+    runner.app_url = APP
+    stop = asyncio.Event()
+    ctx = Context(Timings.fast(), stop=stop)
+    asyncio.get_running_loop().call_later(0.1, stop.set)
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    with pytest.raises(StepFailed) as e:
+        await runner._call_step(call_step(APP, "/slow", timeoutMs=30000), ctx, {}, lambda name: None)
+    assert e.value.reason == "stopped" and loop.time() - t0 < 1
+    await asyncio.sleep(0)
+    assert waiting[0].cancelled()                  # the call is let go, its reply dropped
+
+
+@needs_browser
+async def test_stop_ends_a_run_waiting_on_a_call_step(api):
+    hx = Harness()
+    task = asyncio.create_task(hx.run([call_step(api, "/slow", timeoutMs=30000)], api + "/index.html"))
+    for _ in range(500):
+        if any(d["stepId"] == "c1" and d["state"] == "running" for d in hx.of("run.step")):
+            break
+        await asyncio.sleep(0.01)
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
+    await hx.h["run.stop"]({"runId": "r1"})
+    ended = await task
+    assert loop.time() - t0 < 1.5                  # /slow answers after 2 s
+    assert ended["result"] == "fail" and ended["steps"][0]["reason"] == "stopped"
+
+
 @needs_browser
 async def test_a_missing_secret_for_a_call_step_fails_it_before_the_run_starts(api):
     hx = Harness()
