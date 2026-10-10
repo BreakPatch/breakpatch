@@ -3,7 +3,8 @@
 // and the secrets a run reads. The tests folder's format: data/local/callFormat.test.ts.
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Step } from '../../data/types';
+import { useState } from 'react';
+import type { HttpCall, Step } from '../../data/types';
 import { EngineError, getEngine, type CallReply, type Engine } from '../../engine';
 import { callLabel } from '../../engine/labels';
 import {
@@ -15,6 +16,7 @@ import { DEMO_WORKSPACE } from '../../data/demo/demoBackend';
 import { defaultLabel, stepIcon, stepNote } from '../steps/stepText';
 import { StepsPanel } from '../steps';
 import { CallStepDialog } from './CallStepDialog';
+import { CallFields } from './CallFields';
 import { useRecorder } from '../../screens/recorder/useRecorder';
 import { secretNames } from '../../screens/run/resolve';
 import { INITIAL_RUN, runReducer } from '../../screens/run/runState';
@@ -74,6 +76,33 @@ describe('the rules a Call step is checked against before it is saved', () => {
     expect(seen[0][4]).toEqual({ passStatus: '200', keep: { path: '$.code', name: 'CODE' }, timeoutMs: 5000 });
     expect(describeReply({ ok: false, error: 'timeout' }, 30)).toBe('No reply after 30 s');
     expect(describeReply({ ok: false, status: 200, ms: 10, error: 'keep', message: 'The reply has nothing at $.code.' })).toBe('The reply has nothing at $.code.');
+  });
+});
+
+describe('Try it', () => {
+  function Fields() {
+    const [c, setC] = useState<HttpCall>({ method: 'POST', url: 'https://api.acme.com/a' });
+    return <CallFields title="Call" call={c} onChange={setC} appUrl={APP} otherHosts={false} secretNames={[]} />;
+  }
+
+  it("shows the latest call's reply only, never one to the call before an edit", async () => {
+    const pending: ((r: CallReply) => void)[] = [];
+    vi.spyOn(getEngine(), 'tryCall').mockImplementation(() => new Promise<CallReply>(r => { pending.push(r); }));
+    render(<Fields />);
+    fireEvent.click(screen.getByRole('button', { name: 'Try it' }));
+    await waitFor(() => expect(pending).toHaveLength(1));
+    expect(screen.getByText('Calling…')).toBeInTheDocument();
+    // Edited while the first call waits: Try it is free again, for the new address.
+    fireEvent.change(screen.getByLabelText('Call: address'), { target: { value: 'https://api.acme.com/b' } });
+    expect(screen.queryByText('Calling…')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Try it' }));
+    await waitFor(() => expect(pending).toHaveLength(2));
+    await act(async () => { pending[0]({ ok: false, status: 500, ms: 10 }); });
+    expect(screen.queryByText(/500/)).toBeNull();
+    expect(screen.getByText('Calling…')).toBeInTheDocument();
+    await act(async () => { pending[1]({ ok: true, status: 200, ms: 300 }); });
+    expect(screen.getByText('Replied 200 in 0.3 s')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try it' })).toBeEnabled();
   });
 });
 
