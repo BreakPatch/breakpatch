@@ -43,7 +43,7 @@ def fake_wait(monkeypatch):
 
     async def wait(step, ctx):
         seen.append({"email": ctx.email, "since": ctx.email_since, "used": set(ctx.email_used),
-                     "values": dict(ctx.values), "inbox": ctx.inbox})
+                     "values": dict(ctx.values), "inbox": ctx.inbox, "timeoutMs": step.get("timeoutMs")})
         if step.get("email", {}).get("fail") == "timeout":
             raise ActionFailed("timeout", f"No email to {ctx.email} arrived within 5 s.")
         ctx.email_used.add(f"m{len(seen)}")
@@ -305,9 +305,10 @@ async def test_recording_waits_for_the_email_and_later_steps_type_what_it_kept(s
             await hx.h["record.point"]({"action": "write", "at": FIELD_AT, "text": "{emailCode}", "inbox": INBOX})
         assert e.value.code == "not_found" and "Play the Wait for an email step" in e.value.message
         step = (await hx.h["record.point"]({"action": "emailWait", "email": {"to": "{email}", "pick": "code"},
-                                             "timeoutMs": 30000, "inbox": INBOX, "secrets": {}}))["step"]
+                                             "timeoutMs": 300000, "inbox": INBOX, "secrets": {}}))["step"]
         assert step["action"] == "emailWait" and step["label"] == "Wait for an email with a code"
-        assert step["email"] == {"to": "{email}", "pick": "code"} and step["timeoutMs"] == 30000
+        assert step["email"] == {"to": "{email}", "pick": "code"} and step["timeoutMs"] == 300000
+        assert fake_wait[-1]["timeoutMs"] == 150000            # while recording, under the app's 180 s for the request
         assert "pre" not in step and "post" not in step and "inbox" not in step
         assert fake_wait[-1]["email"] == address and fake_wait[-1]["since"] == before.since
         got = (await hx.h["record.point"]({"action": "write", "at": FIELD_AT, "text": "{emailCode}", "inbox": INBOX}))["step"]

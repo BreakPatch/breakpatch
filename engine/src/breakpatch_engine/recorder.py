@@ -29,6 +29,7 @@ ROLE_WORDS = {"button": "button", "link": "link", "textbox": "field", "searchbox
               "radio": "option", "combobox": "list", "menuitem": "menu item", "tab": "tab", "switch": "switch",
               "img": "image", "heading": "heading"}
 CLICKY = {"click", "doubleClick", "longClick", "rightClick"}   # what can open a page's file picker
+RECORD_WAIT_MS = 150_000      # a Team step's wait while recording (Wait for an email), at most
 
 
 def varies_each_run(step: dict) -> bool:
@@ -115,8 +116,13 @@ class Recorder:
             raise EngineError("not_ready", f"{TEAM_ACTIONS[action]} needs Breakpatch Team.")
         step["label"] = p.get("label") or labels.default_label(action, step)
         phase("acting")
+        # The app gives record.point 180 s (the shell's engine.rs): while recording, a wait stops
+        # at RECORD_WAIT_MS whatever the step says; the step keeps its own for runs.
+        now = dict(step)
+        if isinstance(step.get("timeoutMs"), (int, float)) and not isinstance(step.get("timeoutMs"), bool):
+            now["timeoutMs"] = min(step["timeoutMs"], RECORD_WAIT_MS)
         try:
-            await do(step, self.context(p))
+            await do(now, self.context(p))
         except ActionFailed as e:
             code = {"actionUnavailable": "not_ready", "secretMissing": "not_found", "timeout": "not_found",
                     "stopped": "bad_request"}.get(e.reason, "network" if e.reason == "emailFailed" else "bad_request")

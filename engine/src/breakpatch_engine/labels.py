@@ -22,7 +22,9 @@ def default_label(action: str, p: dict, name: str | None = None) -> str:
         if p.get("secretRef"):
             return f"Write saved secret {p['secretRef']}"
         if p.get("valueRef"):
-            return f"Write the value {p['valueRef']}"
+            what = {"emailCode": "the code from the email", "emailLink": "the link from the email"}.get(
+                p["valueRef"], f"the value {p['valueRef']}")
+            return f"Write {what}"
         if p.get("generated"):
             return f"Write {GENERATED.get(p['generated'], p['generated'])}"
         return f'Write "{p.get("text") or ""}"'

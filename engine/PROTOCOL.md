@@ -628,7 +628,7 @@ changed. `RecordedOn` says where a test's steps were recorded
 A secret travels as `{ value, origins, runnerCanUse }`: `origins` are the sites it may be typed
 on (`https://app.example.com`, scheme, host and port), and `runnerCanUse` whether the local runner
 may use it (off by default). The Tauri shell fills `origins` and `runnerCanUse` itself, from the
-Keychain index (app/src-tauri/src/secrets.rs), for every `run.start`, `record.point` and `call.try`
+Keychain index (app/src-tauri/src/secrets.rs), for every `run.start`, `record.point`, `call.try` and `email.check`
 that goes through `engine_request`: whatever the UI put there is replaced, so the UI (or the Team
 runner) can keep sending `{NAME: value}`. A bare value from any other client (`breakpatch-ci`, the
 tests) counts as allowed on the start page's site only (`startUrl`, or the page `browser.open`
