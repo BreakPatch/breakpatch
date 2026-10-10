@@ -1323,7 +1323,7 @@ If the address doesn't answer, the runner tries 3 times over 5 minutes. If Slack
 
 ### Set up Slack
 
-The result goes to a Slack channel through an *incoming webhook*: a Slack app of your own that can post to that channel. Slack's [guide to incoming webhooks](https://api.slack.com/messaging/webhooks) has the details.
+The result goes to a Slack channel through an *incoming webhook*: a Slack app of your own that can post to that channel. Slack's [guide to incoming webhooks](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/) has the details.
 
 1. In Slack's app settings ([api.slack.com/apps](https://api.slack.com/apps)), create a new app **from scratch** and pick your workspace. If your workspace lets only admins add apps, ask one to do this part.
 2. In the app's settings, turn on **Incoming Webhooks**.
