@@ -395,19 +395,33 @@ async def test_a_kept_value_is_typed_by_a_later_write_step(api, caplog):
         assert await hx.engine.browser.page.input_value("#name") == "424242"
     finally:
         await hx.h["browser.close"]({})
-    # A new recording session has kept nothing yet: it says to play the Call step first.
-    hx2 = Harness()
-    await hx2.h["browser.open"]({"url": api + "/index.html", "viewport": VIEWPORT})
-    try:
-        with pytest.raises(EngineError) as e:
-            await hx2.h["record.point"]({"action": "write", "at": FIELD_AT, "valueRef": "CODE", "appUrl": api})
-        assert e.value.code == "not_found" and "Play the Call step that keeps it" in e.value.message
-    finally:
-        await hx2.h["browser.close"]({})
+    # A new recording session, in this engine or another, has kept nothing yet: it says to play
+    # the Call step first.
+    for again in (hx, Harness()):
+        await again.h["browser.open"]({"url": api + "/index.html", "viewport": VIEWPORT})
+        try:
+            with pytest.raises(EngineError) as e:
+                await again.h["record.point"]({"action": "write", "at": FIELD_AT, "valueRef": "CODE", "appUrl": api})
+            assert e.value.code == "not_found" and "Play the Call step that keeps it" in e.value.message
+        finally:
+            await again.h["browser.close"]({})
     # Without a Call step before it that kept the value, the Write step fails plainly.
     ended = await hx.run([write], api + "/index.html")
     assert ended["steps"][0]["reason"] == "callFailed"
     assert ended["message"] == "No Call step before this one kept a value named CODE."
+
+
+async def test_kept_values_end_with_the_recording_s_browser(monkeypatch):
+    hx = Harness()
+
+    async def nothing(*a, **kw):
+        return None
+    monkeypatch.setattr(hx.engine.browser, "open", nothing)
+    monkeypatch.setattr(hx.engine.browser, "close", nothing)
+    for handler in ("browser.open", "browser.close"):
+        hx.engine.recorder.values = {"CODE": ("424242", "https://app.acme.com")}
+        await hx.h[handler]({"url": APP, "viewport": VIEWPORT})
+        assert hx.engine.recorder.values == {}, handler
 
 
 @needs_browser
