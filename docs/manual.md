@@ -1301,23 +1301,63 @@ The service passes the licence key, the CI account's password and saved secrets 
 
 After each run, the local runner can send the suite's result where your team talks: **Slack**, **Microsoft Teams**, or any **web address** that takes a message. Set it in the suite (*After each run, send the result to*). Only admins can set or see it.
 
+Pick where it goes, and the suite shows the steps for getting its address, numbered, with the address box and **Send a test message** as the last two. The same steps are below: [Slack](#set-up-slack), [Microsoft Teams](#set-up-microsoft-teams), [a web address](#set-up-a-web-address).
+
 **When.** *After every run*, *Only when it fails*, or *When it starts failing, and when it passes again*: the first failed run after a pass, then the first pass after that. A run that was replaced by a newer request is only sent with *After every run*.
 
-**Slack.** Make an [incoming webhook](https://api.slack.com/messaging/webhooks) for the channel (a Slack app with *Incoming Webhooks* turned on) and paste its address, `https://hooks.slack.com/services/…`. The message has the result and the counts with an **Open the report** button beside them, then one line per failed test with the step and why (the AI assistant's sentence, when there is one, is marked as the AI assistant's), and the screenshot, if you include it, right after the failure it shows. Tests that passed only on a [retry](#retries) come last, under *Passed on a retry, so may be flaky*, each with the step that failed first and why. The notification says how many tests failed and which.
+**The address box checks what you paste.** It says what it recognised (*A Slack incoming webhook*, *A Microsoft Teams workflow address*), or plainly what's wrong: a Slack address with Microsoft Teams picked, say, a link to a Slack channel or a Teams channel instead of the address, the workflow's page instead of the address it listens on, or a Slack address cut short. Pasting a Slack or Teams address picks Slack or Microsoft Teams for you.
 
-**Microsoft Teams.** In the channel, add the Workflows template **Send webhook alerts to a channel** (or a workflow that starts with *When a Teams webhook request is received*), and paste its address. It ends in `environment.api.powerplatform.com`. The message is an Adaptive Card with the same things, and the same line as its notification preview. Microsoft turned off the old Office 365 connector addresses (`….webhook.office.com`) in Teams, so Breakpatch doesn't take them. If Teams says it wants a sign-in, set *Who can trigger the flow* to *Anyone* in the workflow's first step. Older Workflows addresses on `logic.azure.com` are being replaced by Microsoft: if the test message fails, copy the workflow's address again.
+**Send a test message** posts a sample result to the address before you rely on it. It says at the top, and in the notification, that it's a *Test message from Breakpatch* and that no tests were run. Breakpatch then shows what Slack or Teams answered: for example *Sent, and Slack answered "ok"*, or in plain words why not, like "Slack doesn't know this webhook any more".
 
-**Include the failed step's screenshot** (Slack and Teams, off by default). Slack and Teams can only show a picture from a web address, so the runner puts the screenshot of the step that failed in your workspace's own Firebase Storage, at a random address. Anyone who has the message can open the picture. It needs Storage turned on in your Firebase project (new projects need the pay-as-you-go plan for it) and its rules published: Settings → Workspace → **Copy storage rules**, then Firebase console → Storage → Rules → Publish. The first time, the console asks whether Storage may read Firestore: allow it, because the rules check that whoever adds a picture is one of the workspace's people, its runner or its CI account. Update the runner Mac before you publish these rules: older apps put pictures where the new rules don't allow. Without the rules, the message goes without the picture. Pictures aren't deleted for you: to keep Storage small, add a lifecycle rule in the Google Cloud console (Cloud Storage → your bucket → Lifecycle → delete objects older than 90 days).
-
-**The address is a secret.** Anyone who has it can post to your channel. So it isn't stored with the suite: only admins and the runner can read it, not members or the CI account. Once saved it shows masked, like `hooks.slack.com/services/•••••`; press **Change** to paste a new one. It never goes in a message, a warning or the log.
-
-**Send a test message** posts a sample result to the address before you rely on it, and shows what Slack or Teams answered, for example "Slack doesn't know this webhook any more".
+**The address is a secret.** Anyone who has it can post to your channel. So it isn't stored with the suite: only admins and the runner can read it, not members or the CI account. Once saved it shows masked, like `hooks.slack.com/services/•••••`; press **Change** to paste a new one. It never goes in a message, a warning or the log. With an address saved, the steps are folded away: **How to get a Slack address** (or Teams, or web) shows them again.
 
 If the address doesn't answer, the runner tries 3 times over 5 minutes. If Slack or Teams refuses the message (a removed webhook, say), it stops at once. Either way the runner's status says so.
 
 **The report link.** **Open the report** goes to `https://breakpatch.dev/report#r=…`, which opens the run's report in Breakpatch on a Mac, and on a phone says to open it on a Mac. The part after `#` never reaches a server.
 
-**A web address** gets the result as JSON, in a `POST`:
+**Include the failed step's screenshot** (Slack and Teams, off by default). Slack and Teams can only show a picture from a web address, so the runner puts the screenshot of the step that failed in your workspace's own Firebase Storage, at a random address. Anyone who has the message can open the picture. It needs Storage turned on in your Firebase project (new projects need the pay-as-you-go plan for it) and its rules published: Settings → Workspace → **Copy storage rules**, then Firebase console → Storage → Rules → Publish. The first time, the console asks whether Storage may read Firestore: allow it, because the rules check that whoever adds a picture is one of the workspace's people, its runner or its CI account. Update the runner Mac before you publish these rules: older apps put pictures where the new rules don't allow. Without the rules, the message goes without the picture. Pictures aren't deleted for you: to keep Storage small, add a lifecycle rule in the Google Cloud console (Cloud Storage → your bucket → Lifecycle → delete objects older than 90 days).
+
+[breakpatch-ci](#from-ci-with-breakpatch-ci) sends the same messages with `--notify-url`.
+
+**Updating.** Result addresses saved by an earlier Breakpatch were kept with the suite, where the CI account could read them. When an admin opens the updated app, it moves them to where only admins and the runner can read them. Update the runner Mac first, then publish the new [security rules](#security-rules). Older apps can't save in a workspace once the updated app has saved there (they say to update).
+
+### Set up Slack
+
+The result goes to a Slack channel through an *incoming webhook*: a Slack app of your own that can post to that channel. Slack's [guide to incoming webhooks](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/) has the details.
+
+1. In Slack's app settings ([api.slack.com/apps](https://api.slack.com/apps)), create a new app **from scratch** and pick your workspace. If your workspace lets only admins add apps, ask one to do this part.
+2. In the app's settings, turn on **Incoming Webhooks**.
+3. Add a new webhook to the workspace, pick the channel for the results, and allow it.
+4. Copy the webhook's address and paste it in the suite. It starts with `https://hooks.slack.com/services/`.
+5. Press **Send a test message**. A good answer: Slack says "ok", and the test message shows in the channel.
+
+The message has the result and the counts with an **Open the report** button beside them, then one line per failed test with the step and why (the AI assistant's sentence, when there is one, is marked as the AI assistant's), and the screenshot, if you include it, right after the failure it shows. Tests that passed only on a [retry](#retries) come last, under *Passed on a retry, so may be flaky*, each with the step that failed first and why. The notification says how many tests failed and which.
+
+A Slack Workflow Builder address (`https://hooks.slack.com/triggers/…`) isn't an incoming webhook, so Breakpatch doesn't take it.
+
+### Set up Microsoft Teams
+
+The result goes to a Teams channel through a workflow (Teams' Workflows app) that posts what it receives. Microsoft's [guide to webhooks with Workflows](https://support.microsoft.com/office/create-incoming-webhooks-with-workflows-for-microsoft-teams-8ae491c7-0394-4861-ba59-055e33f75498) has the details.
+
+1. In Teams, go to the channel for the results and open **Workflows** from the channel's menu.
+2. Pick the template **Send webhook alerts to a channel**. Older Teams call it **Post to a channel when a webhook request is received**. Teams may ask you to sign in to Workflows first.
+3. Name the workflow, check the team and channel, and add it.
+4. Copy the address Teams shows and paste it in the suite. Its server ends in `environment.api.powerplatform.com`. It's also in the workflow's first step, **When a Teams webhook request is received**.
+5. Press **Send a test message**. A good answer: Teams accepts it (202), and the card shows in the channel shortly. If it doesn't, open the workflow in Teams and look at its latest run.
+
+The message is an Adaptive Card with the same things as in Slack, and the same line as its notification preview.
+
+If Teams says it wants a sign-in, set *Who can trigger the flow* to *Anyone* in the workflow's first step. Microsoft turned off the old Office 365 connector addresses (`….webhook.office.com`) in Teams, so Breakpatch doesn't take them. Older Workflows addresses on `logic.azure.com` are being replaced by Microsoft: if the test message fails, copy the workflow's address again.
+
+### Set up a web address
+
+Any web address that takes a `POST` with JSON can have the result: your own server, or a webhook in an automation tool such as n8n or Zapier.
+
+1. Set up the address.
+2. Paste it in the suite. It must start with `https://`.
+3. Press **Send a test message**. A good answer is any status from 200 to 299.
+
+The address gets the result as JSON:
 
 ```json
 {
@@ -1341,11 +1381,7 @@ If the address doesn't answer, the runner tries 3 times over 5 minutes. If Slack
 }
 ```
 
-`result` is one of `passed`, `passed_with_fixes`, `failed` or `replaced`. A test that passed only on a [retry](#retries) counts as passed, so it doesn't change `result`: `counts.flaky` says how many did (it's left out when none did), and `flaky` names them, with the step that failed first and why (also left out when none did). `reportLink` opens the report in Breakpatch on a Mac, and `reportUrl` does the same from anywhere (both are empty when there's no run to open). A failure can also have `explanation`, the AI assistant's sentence on why, and the message `imageUrl`, the screenshot, when the suite includes one, and `htmlReportUrl`, the runner's saved [HTML report](#the-local-runner), when its folder has a web address. Use `text` as it is, or build your own message. Any relay works: n8n, Zapier, an email service. Discord and Google Chat take it through such a relay.
-
-[breakpatch-ci](#from-ci-with-breakpatch-ci) sends the same messages with `--notify-url`.
-
-**Updating.** Result addresses saved by an earlier Breakpatch were kept with the suite, where the CI account could read them. When an admin opens the updated app, it moves them to where only admins and the runner can read them. Update the runner Mac first, then publish the new [security rules](#security-rules). Older apps can't save in a workspace once the updated app has saved there (they say to update).
+`result` is one of `passed`, `passed_with_fixes`, `failed` or `replaced`. A test that passed only on a [retry](#retries) counts as passed, so it doesn't change `result`: `counts.flaky` says how many did (it's left out when none did), and `flaky` names them, with the step that failed first and why (also left out when none did). `reportLink` opens the report in Breakpatch on a Mac, and `reportUrl` does the same from anywhere (both are empty when there's no run to open). A failure can also have `explanation`, the AI assistant's sentence on why, and the message `imageUrl`, the screenshot, when the suite includes one, and `htmlReportUrl`, the runner's saved [HTML report](#the-local-runner), when its folder has a web address. Use `text` as it is, or build your own message. Any relay works: n8n, Zapier, an email service. Discord and Google Chat take it through such a relay. A test message has `"test": true`.
 
 ## Create an issue
 
