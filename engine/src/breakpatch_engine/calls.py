@@ -287,6 +287,8 @@ def pick(body: bytes, path: str) -> str:
         data = json.loads(body.decode("utf-8-sig"))
     except (UnicodeDecodeError, ValueError):
         raise CallRefused(f"The reply isn't JSON, so {path} couldn't be read from it.", "keep") from None
+    except RecursionError:   # nested thousands deep: json gives up rather than run out of stack
+        raise CallRefused(f"The reply is nested too deeply to read {path} from it.", "keep") from None
     for part in parts:
         if isinstance(part, int) and isinstance(data, list) and part < len(data):
             data = data[part]

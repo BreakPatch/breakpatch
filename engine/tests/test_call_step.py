@@ -78,6 +78,10 @@ def test_where_a_value_is_in_the_reply():
     with pytest.raises(CallRefused) as e:
         pick(b"<html>secret-token</html>", "$.code")
     assert "isn't JSON" in e.value.message and "secret-token" not in e.value.message
+    for deep in (b"[" * 5000 + b"]" * 5000, b'{"code":' * 5000 + b'"1"' + b"}" * 5000):
+        with pytest.raises(CallRefused) as e:
+            pick(deep, "$.code")
+        assert "nested too deeply" in e.value.message and e.value.kind == "keep"
 
 
 def test_a_body_is_sent_with_a_content_type_and_never_with_get():
