@@ -150,6 +150,13 @@ def test_a_kept_value_is_typed_only_into_the_apps_pages():
         assert not value_allowed(origin or None, ctx, None), origin
     # The call's own site, when it was another host (Allow other hosts).
     assert value_allowed("https://evil.example", ctx, "https://evil.example")
+    # The app's port: another one on the same host is another site.
+    local = Context(Timings.fast(), app_url="http://localhost:3000/")
+    assert value_allowed("http://localhost:3000", local, None) and value_allowed("https://localhost:3000", local, None)
+    for origin in ("http://localhost:8080", "http://localhost", "https://localhost"):
+        assert not value_allowed(origin, local, None), origin
+    assert not value_allowed("https://app.acme.com:8443", ctx, None)
+    assert value_allowed("https://app.acme.com:8443", Context(Timings.fast(), app_url="https://app.acme.com:8443"), None)
 
 
 # ---------------------------------------------------------------- against a local API

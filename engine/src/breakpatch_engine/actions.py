@@ -274,7 +274,7 @@ async def write_secret(b: BrowserSession, name: str, ctx: Context, at: Sequence[
 
 def value_allowed(origin: str | None, ctx: Context, call_origin: str | None) -> bool:
     """Where a kept value may be typed: a page of the app (its host, or one under the same domain,
-    as calls may reach), or the site of the call it came from."""
+    as calls may reach, on the app's port), or the site of the call it came from."""
     from .calls import host_allowed
     from urllib.parse import urlsplit
     if origin is None:
@@ -286,6 +286,10 @@ def value_allowed(origin: str | None, ctx: Context, call_origin: str | None) -> 
         return False
     a, o = urlsplit(app), urlsplit(origin)
     if a.scheme != o.scheme and not (a.scheme == "http" and o.scheme == "https"):
+        return False
+    # Another port on the same host is another site (localhost:3000 and localhost:8080). origin_of
+    # drops a default port, so http to https on the default ports still matches.
+    if a.port != o.port:
         return False
     return host_allowed(o.hostname or "", a.hostname or "")
 
