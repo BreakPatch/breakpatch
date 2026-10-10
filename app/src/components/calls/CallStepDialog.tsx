@@ -89,7 +89,7 @@ export function CallStepDialog({ open, step, appUrl, takenNames = [], onSave, on
           </div>
           <label className="app-hooks-switch">
             <Switch checked={keepOn} onChange={setKeepOn} label="Keep a value from the reply" />
-            <span>Keep a value from the reply<span className="app-hooks-hint">A Write step after this one can type it, for example a one-time code. It's never shown or saved.</span></span>
+            <span>Keep a value from the reply<span className="app-hooks-hint">A Write step after this one can type it, for example a one-time code. It isn't saved with the test or logged, but typed into a field you can see, it can show in a screenshot.</span></span>
           </label>
           {keepOn && (
             <Field>
