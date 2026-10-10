@@ -6,11 +6,11 @@
     </testcase>
     <testcase name="Invite a teammate" classname="Web app" time="64.000"/>
     <testcase name="Pay an invoice" classname="Billing" time="45.000">
-      <failure message="Step 2: Wait for the receipt: Waited too long for the page" type="timeout">Step 2: Wait for the receipt
+      <failure message="Try 1, step 2: Wait for the receipt: Waited too long for the page" type="timeout">Try 1 failed at step 2, Wait for the receipt: Waited too long for the page.</failure>
+      <rerunFailure message="Step 2: Wait for the receipt: Waited too long for the page" type="timeout">Step 2: Wait for the receipt
 Waited too long for the page
 What this step waits for never appeared. The run stopped here.
-What to try: If the app was slow this time, run again. If it always takes longer now, re-record this step.</failure>
-      <rerunFailure message="Try 1, step 2: Wait for the receipt: Waited too long for the page" type="timeout">Try 1 failed at step 2, Wait for the receipt: Waited too long for the page.</rerunFailure>
+What to try: If the app was slow this time, run again. If it always takes longer now, re-record this step.</rerunFailure>
     </testcase>
     <testcase name="Refund" classname="Billing" time="0.000">
       <failure message="Couldn&apos;t run: it was deleted" type="notRun">Couldn&apos;t run: it was deleted</failure>

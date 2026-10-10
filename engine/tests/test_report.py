@@ -179,7 +179,9 @@ def test_earlier_tries_are_in_the_report_and_the_junit_xml():
     cases = root.findall("./testsuite/testcase")
     flaky = cases[0].find("flakyFailure")
     assert flaky is not None and flaky.get("type") == "timeout" and cases[0].find("failure") is None
-    assert cases[2].find("failure") is not None and cases[2].find("rerunFailure").get("message").startswith("Try 1, step 2")
+    # Failed every try: <failure> is the first try's, <rerunFailure> the later ones' (Surefire).
+    assert cases[2].find("failure").get("message").startswith("Try 1, step 2")
+    assert [r.get("message") for r in cases[2].findall("rerunFailure")] == ["Step 2: Wait for the receipt: Waited too long for the page"]
     assert root.get("failures") == "2"                       # a flaky test still counts as passed
     one = report.build(INPUT["run"])
     assert one["tests"][0]["retryNote"] == "" and one["tests"][0]["junit"]["retries"] == []

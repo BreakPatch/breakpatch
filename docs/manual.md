@@ -315,7 +315,7 @@ In Team, a failed step also has **Why did this fail?**: the AI assistant says in
 
 - **Web page (HTML).** One file that opens in any browser, offline, without Breakpatch or a sign-in. Attach it to a ticket or an email, or drop it in a chat. It has the summary (with the device, for a phone or tablet test), every step with its result, the reason and where the time went, and the AI assistant's explanation when there is one. Steps open and close with a click, the one that failed is open, and it follows the reader's light or dark setting (**Theme** switches it). It never loads anything from the internet.
 - **PDF.** Opens the print dialog with the same report, every step open. Choose **PDF → Save as PDF**. A saved web page prints the same way from any browser.
-- **JUnit XML.** For CI dashboards: GitHub, GitLab and Jenkins read it. One test case per test, with the failed step and why. A test that passed on a [retry](#retries) passes, with a `flakyFailure` for each earlier try, as Maven Surefire writes it (Jenkins and others show it as flaky); one that failed every try has a `rerunFailure` for each earlier try. It has no screenshots.
+- **JUnit XML.** For CI dashboards: GitHub, GitLab and Jenkins read it. One test case per test, with the failed step and why. A test that passed on a [retry](#retries) passes, with a `flakyFailure` for each earlier try, as Maven Surefire writes it (Jenkins and others show it as flaky); one that failed every try has the first try's failure as its `failure` and a `rerunFailure` for each later try, as Surefire writes it too. It has no screenshots.
 
 A suite's report starts with the tests that didn't pass, each a link to it; tests that passed start closed (**Open all steps** opens everything).
 
