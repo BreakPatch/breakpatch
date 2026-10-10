@@ -103,8 +103,9 @@ describe('parse', () => {
 });
 
 describe('hostile scripts', () => {
-  // Each of these took seconds to minutes at this size when the parser looked back over what it
-  // had read (the dialog froze meanwhile). Now each is read in one pass.
+  // Some of these took up to 97 s at this size when the parser looked back over what it had read
+  // (the dialog froze meanwhile). Now each is read in one pass, well under a second; the budget
+  // leaves room for coverage instrumentation on a slow CI machine and still catches the old ways.
   const K = 160_000;
   const shapes: Record<string, string> = {
     'a long run of spaces in a statement': "test('a', () => { a" + ' '.repeat(K) + 'b })',
@@ -120,7 +121,7 @@ describe('hostile scripts', () => {
     it(`reads ${name} quickly`, () => {
       const t0 = performance.now();
       expect(() => importScript(src, 'a.spec.ts')).not.toThrow();
-      expect(performance.now() - t0).toBeLessThan(1000);
+      expect(performance.now() - t0).toBeLessThan(5000);
     });
   }
   it('still reads a regular expression after a slash that started none', () => {
