@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KEEP_DELETED_MS, type Backend, type DeletedItem } from '../backend';
 import type { Person, Run, Step, Test } from '../types';
-import { NEWEST_READ_SCHEMA_VERSION, fromFileText, slugify, toFileText, uniqueSlug } from './format';
-import { checkWritable, firstNameOf, initFolder, inspectFolder } from './folder';
-import { FolderError, LocalBackend, NEWER_MESSAGE } from './localBackend';
+import { CALL_SCHEMA_VERSION, DEVICE_SCHEMA_VERSION, NEWEST_READ_SCHEMA_VERSION, SCHEMA_VERSION, fromFileText, isFolderId, slugify, toFileText, uniqueSlug } from './format';
+import { checkWritable, firstNameOf, initFolder, inspectFolder, readFolderId } from './folder';
+import { FolderError, LocalBackend, NEWER_MESSAGE, folderFormatFor, parseMeta } from './localBackend';
 import { baseName, isTempName, MemoryStorage } from './storage';
 
 const ROOT = '/Users/ana/web-app/tests';
@@ -66,7 +66,8 @@ describe('choosing a folder', () => {
     expect(await inspectFolder(st, '/a')).toBe('other');
     await initFolder(st, '/a');
     expect(await inspectFolder(st, '/a')).toBe('breakpatch');
-    expect(await st.read('/a/breakpatch.json')).toBe('{\n  "format": "breakpatch",\n  "schemaVersion": 1,\n  "name": "a"\n}\n');
+    // With the folder's own id, for links to its tests (lib/openLinks.ts).
+    expect(await st.read('/a/breakpatch.json')).toMatch(/^\{\n  "format": "breakpatch",\n  "schemaVersion": 1,\n  "id": "[0-9a-f]{20}",\n  "name": "a"\n\}\n$/);
     expect(await st.exists('/a/apps')).toBe(true);
   });
   it('refuses a newer format, a broken breakpatch.json and a missing folder', async () => {
@@ -700,5 +701,60 @@ describe('file size limit', () => {
     await expect(new TauriStorage().read('/x/huge.json')).rejects.toThrow('bigger than 5 MB');
     expect(calls).toEqual(['stat']);
     vi.doUnmock('@tauri-apps/plugin-fs');
+  });
+});
+
+describe("the folder's own id (links to its tests)", () => {
+  it('is made when the folder is set up, and read without opening the folder', async () => {
+    const { st, b } = await setup();
+    const id = fromFileText<{ id: string }>((await read(st, 'breakpatch.json'))!).id;
+    expect(isFolderId(id)).toBe(true);
+    expect(await b.folderId()).toBe(id);
+    expect(await readFolderId(ROOT, st)).toBe(id);
+    expect(await readFolderId(`${ROOT}/`, st)).toBe(id);
+    // Two folders never share one.
+    const other = new MemoryStorage(); await other.mkdir('/b'); await initFolder(other, '/b');
+    expect(await readFolderId('/b', other)).not.toBe(id);
+  });
+
+  it('is added to a folder from before it the first time, keeping the rest of breakpatch.json', async () => {
+    const { st, b } = await setup();
+    st.poke(`${ROOT}/breakpatch.json`, toFileText({ format: 'breakpatch', schemaVersion: 2, name: 'web tests', note: 'kept' }));
+    await b.reload();
+    expect(await readFolderId(ROOT, st)).toBeNull();
+    const id = await b.folderId();
+    expect(isFolderId(id)).toBe(true);
+    expect(fromFileText(await read(st, 'breakpatch.json') ?? '')).toEqual({ format: 'breakpatch', schemaVersion: 2, id, name: 'web tests', note: 'kept' });
+    // Asked again: the same one, nothing written.
+    const write = vi.spyOn(st, 'write');
+    expect(await b.folderId()).toBe(id);
+    expect(write).not.toHaveBeenCalled();
+    expect(await readFolderId(ROOT, st)).toBe(id);
+  });
+
+  it("isn't read from anything that isn't one", async () => {
+    const st = new MemoryStorage();
+    st.poke('/x/breakpatch.json', JSON.stringify({ format: 'breakpatch', id: '../../etc' }));
+    st.poke('/y/breakpatch.json', JSON.stringify({ format: 'other', id: 'abcdef0123' }));
+    st.poke('/z/breakpatch.json', '{ broken');
+    // A folder saved by a newer app still names itself.
+    st.poke('/n/breakpatch.json', JSON.stringify({ format: 'breakpatch', schemaVersion: NEWEST_READ_SCHEMA_VERSION + 1, id: 'abcdef0123' }));
+    expect(await Promise.all(['/x', '/y', '/z', '/nowhere'].map(p => readFolderId(p, st)))).toEqual([null, null, null, null]);
+    expect(await readFolderId('/n', st)).toBe('abcdef0123');
+    expect(parseMeta(JSON.stringify({ format: 'breakpatch', id: 'NOT VALID' })).id).toBeUndefined();
+  });
+});
+
+describe('the folder format a file needs', () => {
+  it('is the one this backend raises the folder to', () => {
+    const call = [{ id: 's1', action: 'call', label: 'Call', call: { method: 'GET', url: 'https://x' } }];
+    const phone = { width: 390, height: 844, dpr: 1, device: 'iphone-15' };
+    expect(folderFormatFor('apps/a/tests/t.json', { steps: call })).toBe(CALL_SCHEMA_VERSION);
+    expect(folderFormatFor('apps/a/shared/g.json', { steps: [{ id: 'l', action: 'loop', label: 'x', steps: call }] })).toBe(CALL_SCHEMA_VERSION);
+    expect(folderFormatFor('apps/a/tests/t.json', { viewport: phone, steps: [] })).toBe(DEVICE_SCHEMA_VERSION);
+    expect(folderFormatFor('apps/a/app.json', { defaultViewport: phone })).toBe(DEVICE_SCHEMA_VERSION);
+    expect(folderFormatFor('apps/a/tests/t.json', { viewport: VP, steps: [] })).toBe(SCHEMA_VERSION);
+    // Only tests and shared steps count: a run that mentions a Call step doesn't.
+    expect(folderFormatFor('apps/a/runs/t.json', { steps: call })).toBe(SCHEMA_VERSION);
   });
 });

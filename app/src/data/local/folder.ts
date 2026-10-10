@@ -1,6 +1,6 @@
 // Choosing a tests folder: what's in it, setting it up, and opening it.
 import type { Person } from '../types';
-import { FORMAT, SCHEMA_VERSION, toFileText } from './format';
+import { FORMAT, SCHEMA_VERSION, fromFileText, isFolderId, newFolderId, toFileText } from './format';
 import { FolderError, LocalBackend, parseMeta, readMeta, type AddressStore, type FolderSnapshot } from './localBackend';
 import { baseName, isTempName, join, MemoryStorage, tempName, type FolderStorage } from './storage';
 
@@ -20,13 +20,13 @@ export async function inspectFolder(st: FolderStorage, path: string): Promise<Fo
   return entries.length ? 'other' : 'empty';
 }
 
-/** Adds breakpatch.json and the apps folder. Throws FolderError('notWritable') when it can't write there. */
+/** Adds breakpatch.json (with the folder's own id, format.ts newFolderId) and the apps folder. Throws FolderError('notWritable') when it can't write there. */
 export async function initFolder(st: FolderStorage, path: string): Promise<void> {
   const file = join(path, 'breakpatch.json');
   try {
     await st.mkdir(join(path, 'apps'));
     const tmp = join(path, tempName('breakpatch.json'));
-    await st.write(tmp, toFileText({ format: FORMAT, schemaVersion: SCHEMA_VERSION, name: baseName(path) }));
+    await st.write(tmp, toFileText({ format: FORMAT, schemaVersion: SCHEMA_VERSION, id: newFolderId(), name: baseName(path) }));
     await st.rename(tmp, file);
   } catch {
     throw new FolderError('notWritable', "Breakpatch can't save files in this folder. Choose a folder you can write to.");
@@ -95,6 +95,19 @@ export async function readLocalFolder(path: string): Promise<FolderSnapshot> {
   const [storage, person] = await Promise.all([folderStorage(), localPerson()]);
   if (!(await storage.exists(path))) throw new FolderError('missing', "This folder isn't there any more. It may have been moved or deleted.");
   return LocalBackend.read({ storage, path, person });
+}
+
+/**
+ * A tests folder's own id (breakpatch.json `id`, format.ts newFolderId), read without opening it,
+ * or null: it has none yet, or it isn't there or isn't a Breakpatch folder. One file is read.
+ */
+export async function readFolderId(path: string, st?: FolderStorage): Promise<string | null> {
+  try {
+    const text = await readMeta(st ?? await folderStorage(), path.replace(/\/+$/, '') || '/');
+    // Not parseMeta: a folder saved by a newer app still names itself.
+    const v = text === null ? null : fromFileText<Record<string, unknown> | null>(text);
+    return v && typeof v === 'object' && v.format === FORMAT && isFolderId(v.id) ? v.id : null;
+  } catch { return null; }
 }
 
 /** First name for greetings; '' for the "You" fallback, so nobody is greeted as "You". */
