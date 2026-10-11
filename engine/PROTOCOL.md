@@ -753,7 +753,7 @@ Team engine performs it (`plugins.register_action("emailWait", …)`), behind th
              "from": "no-reply@acme.com",     // optional: the sender contains this
              "subjectContains": "Your code",  // optional
              "pick": "code",                  // "code", "link", or absent (only that it came)
-             "codePattern": "\\b\\d{6}\\b",     // optional: a regular expression; 6 digits by default
+             "codePattern": "\\b\\d{6}\\b",     // optional: a regular expression (Python's), 6 digits by default
              "linkContains": "/verify" },     // optional: the first link (http or https) containing this
   "timeoutMs": 60000 }                        // optional: 5 s to 300 s, 60 s by default
 ```
@@ -779,7 +779,10 @@ does the same.
 - The step looks every 2 s until `timeoutMs` for the newest email to `to` that matches `from` and
   `subjectContains`, that no step of this run used yet, and, unless `to` is the try's own `{email}`,
   that came after the try started (30 s of leeway for the inbox's clock). No such email: `timeout`
-  ("No email to qa+bp-k3j9x2ma@acme.com arrived within 60 s."), retried like any timeout. An email that
+  ("No email to qa+bp-k3j9x2ma@acme.com arrived within 60 s."), retried like any timeout. A code is
+  looked for in the first 20,000 characters of the email's text; a `codePattern` is searched with a
+  time limit (textsearch.py), and one that takes too long fails the step with `emailFailed` ("The code
+  pattern took too long. Make it simpler."), as does one that repeats a repeat, like `(a+)+`. An email that
   came without what the step picks out: `emailFailed` at the end of the wait. An inbox that can't be
   read (refused password, unknown server): `emailFailed` at once.
 - What it picks out is kept for the rest of the run only, like a Call step's value: `emailCode` or
