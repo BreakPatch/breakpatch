@@ -1,7 +1,10 @@
 """A pattern the engine didn't write is searched in a child process with a time limit (textsearch.py):
 one that backtracks without end is stopped, and the engine's event loop keeps going meanwhile."""
 import asyncio
+import json
 import os
+import signal
+import subprocess
 import sys
 import time
 
@@ -53,3 +56,66 @@ def test_a_search_runs_in_a_nuitka_build_where_sys_executable_isnt_there(monkeyp
     monkeypatch.setattr(sys, "argv", [str(program), "serve"])
     assert not os.path.exists(sys.executable)
     assert textsearch.search(r"code: (\w+)", "Your code: AB12.") == ("code: AB12", "AB12")
+
+
+def gone(pid: int, within: float = 3.0) -> bool:
+    """Whether process `pid` has ended (a zombie waiting to be reaped counts as ended)."""
+    end = time.monotonic() + within
+    while True:
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                if f.read().rsplit(")", 1)[1].split()[0] in ("Z", "X"):
+                    return True
+        except FileNotFoundError:
+            return True
+        except OSError:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return True
+        if time.monotonic() > end:
+            return False
+        time.sleep(0.05)
+
+
+WRAPPER = """
+import subprocess, sys
+# As a onefile launcher does: the real program runs as a child of this one, on the same pipes.
+child = subprocess.Popen([sys.executable, "-m", "breakpatch_engine", "_search"])
+open(sys.argv[1], "w").write(str(child.pid))
+sys.exit(child.wait())
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="reads processes through os.kill and /proc")
+def test_a_launchers_child_is_killed_with_it(monkeypatch, tmp_path):
+    """The search runs in a grandchild (a onefile launcher's program): after TooSlow it's gone too,
+    not left matching. The child's own timer is pushed out of the way, so only the kill can stop it."""
+    wrapper, pid_file = tmp_path / "launcher.py", tmp_path / "pid"
+    wrapper.write_text(WRAPPER)
+    monkeypatch.setattr(install, "self_command", lambda: [sys.executable, str(wrapper), str(pid_file)])
+    monkeypatch.setattr(textsearch, "SELF_STOP_S", 50.0)
+    with pytest.raises(textsearch.TooSlow):
+        textsearch.search(r"(a|a)*b", "a" * 40 + "c", 0.5)
+    grandchild = int(pid_file.read_text())
+    assert gone(grandchild, within=1.0)
+    # A search through the launcher still answers.
+    assert textsearch.search(r"code: (\w+)", "Your code: AB12.") == ("code: AB12", "AB12")
+
+
+@pytest.mark.skipif(not hasattr(signal, "setitimer"), reason="no interval timers on Windows")
+def test_the_child_stops_itself_when_nobody_kills_it():
+    """As if the engine died mid-search: nobody kills the child, and it stops itself at the limit
+    it was given (exit status 3, nothing written)."""
+    proc = subprocess.Popen(install.self_command() + ["_search"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    try:
+        assert proc.stdout.readline().strip() == b"ready"
+        t0 = time.monotonic()
+        out, _ = proc.communicate(json.dumps({"pattern": r"(a|a)*b", "text": "a" * 40 + "c", "limit": 0.5}).encode(),
+                                  timeout=20)
+        took = time.monotonic() - t0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    assert proc.returncode == 3 and out == b"" and took < 5, took
