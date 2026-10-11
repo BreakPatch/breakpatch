@@ -420,9 +420,8 @@ class Runner:
             self._event(step, rec["result"], iteration, preDistance=rec.get("preDistance"),
                         postDistance=rec.get("postDistance"), oldAt=rec.get("oldAt"), newAt=rec.get("newAt"),
                         fixedBy=rec.get("fixedBy"), screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"),
-                        why=rec.get("why"),
-                        timings=rec.get("timings"), unchecked=rec.get("unchecked"), reply=rec.get("reply"),
-                        email=rec.get("email"))
+                        why=rec.get("why"), timings=rec.get("timings"), unchecked=rec.get("unchecked"),
+                        reply=rec.get("reply"), email=rec.get("email"))
             self._stop_if_reached(step)
         return True
 
