@@ -21,7 +21,7 @@ import { useRecorder } from '../screens/recorder/useRecorder';
 import { INITIAL_RUN, runReducer } from '../screens/run/runState';
 import { detailText, showsScreens } from '../screens/report/reportData';
 import { keptNames } from './calls';
-import { inboxSecretNames, keptChoiceLabel, keptValueLabel, readInbox } from './email';
+import { INBOX_READ_MS, inboxSecretNames, keptChoiceLabel, keptValueLabel, readInbox } from './email';
 import { gotNote, passNote, reasonAdvice, reasonText, reasonTitle } from './runWords';
 
 Element.prototype.scrollIntoView ??= () => undefined;   // not in jsdom
@@ -197,6 +197,25 @@ describe('a run with a Wait for an email step', () => {
     await backend.inbox.save(null);
     expect(await readInbox(backend)).toBeNull();
     expect(await readInbox({ ...backend, inbox: undefined } as unknown as DemoBackend)).toBeNull();
+  });
+
+  it('leaves no timer behind once the store answered, and gives up on one that never does', async () => {
+    vi.useFakeTimers();
+    try {
+      const off = vi.fn();
+      const answers = { inbox: { settings: (l: (v: InboxSettings | null) => void) => { queueMicrotask(() => l(INBOX)); return off; } } } as unknown as DemoBackend;
+      expect(await readInbox(answers)).toEqual(INBOX);
+      expect(off).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+      const silent = { inbox: { settings: () => off } } as unknown as DemoBackend;
+      const got = readInbox(silent);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(INBOX_READ_MS);
+      expect(await got).toBeNull();
+      expect(off).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('fails in the preview without the feature, and passes with what came when it has it', async () => {

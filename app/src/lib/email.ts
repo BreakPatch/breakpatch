@@ -29,6 +29,9 @@ export function inboxSecretNames(steps: Step[], inbox: InboxSettings | null | un
   return inbox?.passwordRef && usesEmailSteps(steps) ? [inbox.passwordRef] : [];
 }
 
+/** How long readInbox waits for the inbox's store to answer. */
+export const INBOX_READ_MS = 5000;
+
 /** The open workspace's test inbox, once (null: none, or a backend without one, like a tests folder). */
 export function readInbox(backend: Backend): Promise<InboxSettings | null> {
   const store = backend.inbox;
@@ -36,15 +39,18 @@ export function readInbox(backend: Backend): Promise<InboxSettings | null> {
   return new Promise(resolve => {
     let done = false;
     let off: (() => void) | undefined;
-    off = store.settings(v => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (v: InboxSettings | null) => {
       if (done) return;
       done = true;
+      if (timer !== undefined) clearTimeout(timer);
+      off?.();
       resolve(v);
-      if (off) off();
-    });
+    };
+    off = store.settings(finish);
     if (done) off();
     // A store that never answers (offline, no access): the run goes on without one.
-    setTimeout(() => { if (!done) { done = true; off?.(); resolve(null); } }, 5000);
+    else timer = setTimeout(() => finish(null), INBOX_READ_MS);
   });
 }
 
