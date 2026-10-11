@@ -1350,16 +1350,21 @@ async fn a_runner_or_ci_token_typed_as_a_licence_key_says_which_it_is_and_is_nev
     assert!(f.message.starts_with(&*os_text("That's a CI token (BPC1-…), for breakpatch-ci. It isn't a licence key: the runner Mac takes its seat with its machine pass, which starts with BPM1-")), "{}", f.message);
     let f = l.activate(person(&token("BPM1"), "bo@acme.com")).await.unwrap_err();
     assert!(f.message.starts_with("That's a runner token (BPM1-…)"), "{}", f.message);
+    // A run-queue token (BPQ1-): named, and never sent.
+    let f = l.activate(person(&token("BPQ1"), "bo@acme.com")).await.unwrap_err();
+    assert_eq!(f.code, "bad_request");
+    assert!(f.message.starts_with("That's a run-queue token (BPQ1-…): it only adds suite runs"), "{}", f.message);
     // Told apart however much of the paste a field kept; the pass itself goes through.
     assert_eq!(machine_secret(&token("BPC1")[..30]), Some(MachineSecret::CiToken));
     assert_eq!(machine_secret(&token("BPM1")[..30]), Some(MachineSecret::RunnerToken));
+    assert_eq!(machine_secret(&token("BPQ1")[..30].to_lowercase()), Some(MachineSecret::QueueToken));
     assert_eq!(machine_secret(&pass[..30]), Some(MachineSecret::MachinePass));
     assert_eq!(machine_secret(&pass.to_lowercase()), Some(MachineSecret::MachinePass));
     assert_eq!(machine_secret("BP-2HC6-FWG8-CR0K-VBDB"), None);
     assert_eq!(not_a_licence_key(&pass), None);
 }
 
-/// The BPM1-/BPC1- cases the Team app (lib/secretShapes.ts) and breakpatch-ci (secret_shapes.py)
+/// The BPM1-/BPC1-/BPQ1- cases the Team app (lib/secretShapes.ts) and breakpatch-ci (secret_shapes.py)
 /// check too, from a copy of this file in the Team repo (fixtures/secret-shapes-v1.json).
 #[test]
 fn machine_secrets_are_told_apart_as_the_team_app_and_breakpatch_ci_do() {
@@ -1371,6 +1376,7 @@ fn machine_secrets_are_told_apart_as_the_team_app_and_breakpatch_ci_do() {
             "machinePass" => MachineSecret::MachinePass,
             "machineToken" => MachineSecret::RunnerToken,
             "ciToken" => MachineSecret::CiToken,
+            "queueToken" => MachineSecret::QueueToken,
             other => panic!("unknown shape {other}"),
         };
         assert_eq!(machine_secret(c["text"].as_str().unwrap()), Some(want), "{}", c["why"]);

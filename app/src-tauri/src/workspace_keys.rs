@@ -560,6 +560,9 @@ pub fn parse_recovery_code(text: &str) -> Result<[u8; 16], String> {
         Some(crate::licence::MachineSecret::RunnerToken) => {
             return Err("That's a runner token (BPM1-…), not the recovery code. The recovery code starts with BPR1-.".into());
         }
+        Some(crate::licence::MachineSecret::QueueToken) => {
+            return Err("That's a run-queue token (BPQ1-…), not the recovery code. The recovery code starts with BPR1-.".into());
+        }
         Some(crate::licence::MachineSecret::MachinePass) => {
             return Err("That's the runner's machine pass, not the recovery code. The recovery code starts with BPR1-.".into());
         }
