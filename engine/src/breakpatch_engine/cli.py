@@ -36,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--revision", default="main")
     d.add_argument("--dir", required=True)
     d.add_argument("--files", default="{}")     # the allowlist from models.py: name -> SHA-256
+    sub.add_parser("_search")  # internal: one search with a time limit, for textsearch.py
 
     raw = sys.argv[1:] if argv is None else argv
     if raw[:1] == ["run"]:
@@ -45,6 +46,9 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.cmd in (None, "serve"):
         return serve()
+    if args.cmd == "_search":
+        from .textsearch import child_main
+        return child_main()
     _logging()
     if args.cmd == "info":
         from .install import system_info

@@ -75,7 +75,7 @@ venv instead.
 
 ```
 src/breakpatch_engine/
-  cli.py        serve / info, and the internal `_download` child process
+  cli.py        serve / info, and the internal `_download` and `_search` child processes
   plugins.py    finds the Breakpatch Team engine when it's installed and takes its healer and licence
   protocol.py   JSON Lines server: one response per id, events, plain errors, stdout guarded
   service.py    request handlers (PROTOCOL.md) wired to the parts below
@@ -85,6 +85,7 @@ src/breakpatch_engine/
                 saved secrets with the sites they may be typed on
   sites.py      web origins (for secrets and calls)
   calls.py      set-up and clean-up calls and "Try it": https, the app's hosts, no private addresses
+  textsearch.py a regular expression a test gives, searched in a child process with a time limit
   imaging.py    region pHash with ignore zones blanked, Hamming distance, diffs, blast radius, noise
   checks.py     noise watch and settle detection over a stream of screenshots
   recorder.py   record.point / record.checkpoint / record.locate / record.intent (spec §10)
