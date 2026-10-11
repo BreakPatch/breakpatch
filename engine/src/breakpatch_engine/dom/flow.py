@@ -114,7 +114,9 @@ class LocateFlow:
             try:
                 if self._ex is None or self._ex_key != key or self._ex.stale():
                     await self.close()
-                    self._ex = await Extractor(self.b.page, (self.b.width, self.b.height)).open()
+                    # Kept before it opens, so close() detaches what a failed open() had opened.
+                    self._ex = Extractor(self.b.page, (self.b.width, self.b.height))
+                    await self._ex.open()
                     self._ex_key = key
                 return await self._ex.extract(texts)
             except Exception as e:  # noqa: BLE001 - a frame went away mid-read: open again once

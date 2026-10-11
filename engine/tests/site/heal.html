@@ -10,7 +10,10 @@
 </style></head>
 <body>
   <!-- Structure healing (dom/same.py, roadmap #41): a "Save" button that moves, with the query
-       saying how. moved: to the right. twice: and another Save button. renamed: it reads "Store".
+       saying how. moved: to the right. twice: and another Save button. below: and another one
+       below the fold. scrolled: and another one in an inner box, scrolled out of sight (neither is
+       on screen, so only counting the whole page finds them). framed: and another one in a
+       same-site iframe below the fold. renamed: it reads "Store".
        restyled: and it's light now. gone: no Save button. off: disabled. elsewhere: no Save here,
        but one where it moved to, in an iframe from another site (localhost and 127.0.0.1 are
        different origins). flutter: a Flutter host element on the page. canvas: a big canvas
@@ -33,6 +36,24 @@
     if (q.get('twice')) {
       var other = save.cloneNode(true); other.id = 'save2'; other.style.left = '420px'; other.style.top = '120px';
       document.body.appendChild(other);
+    }
+    if (q.get('below')) {
+      var low = save.cloneNode(true); low.id = 'save3'; low.style.left = '100px'; low.style.top = '1400px';
+      document.body.appendChild(low);
+    }
+    if (q.get('scrolled')) {
+      var inner = document.createElement('div'); inner.className = 'abs';
+      inner.style.cssText = 'left:40px;top:300px;width:200px;height:80px;overflow:auto;background:#fff';
+      inner.innerHTML = '<p style="margin:0;height:300px">Recent changes</p>';
+      var hid = save.cloneNode(true); hid.id = 'save4'; hid.className = ''; hid.style.cssText = 'width:140px;height:44px';
+      inner.appendChild(hid);
+      document.body.appendChild(inner);
+    }
+    if (q.get('framed')) {
+      var lowf = document.createElement('iframe'); lowf.className = 'abs';
+      lowf.style.cssText = 'left:100px;top:1200px;width:200px;height:90px';
+      lowf.src = location.pathname + '?inner=1';
+      document.body.appendChild(lowf);
     }
     if (q.get('renamed')) save.textContent = 'Store';
     if (q.get('restyled')) { save.style.background = '#fff'; save.style.color = '#2d5fa8'; }

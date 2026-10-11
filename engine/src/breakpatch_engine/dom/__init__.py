@@ -10,7 +10,8 @@
   only when S0 is unsure; Visual pages use the model alone.
 - `same.py` finds a recorded element again by its role and name, for "Fixed automatically"
   (Breakpatch Team) before it asks the AI assistant: on Fast pages only, never on another site,
-  and never when two controls share that role and name. Off until config.HEAL_FROM_STRUCTURE is on.
+  and never when two controls in the whole page share that role and name (or did when the step was
+  recorded). Off until config.HEAL_FROM_STRUCTURE is on.
 
 Page structure only helps find a target. Nothing is clicked by selector: the answer is a point on
 the screen, and every step is still checked on the screen.

@@ -210,18 +210,22 @@ async def test_community_fails_a_moved_target_whatever_the_structure_switch_says
     assert ended["steps"][0]["reason"] == "targetNotFound" and "fixedBy" not in ended["steps"][0]
 
 
-def moved_by(fixed_by):
-    """A healer that finds the button where ?moved=1 puts it and says how (runner.fixed_by), or not."""
+def moved_by(fixed_by, returned=True):
+    """A healer that finds the button where ?moved=1 puts it and says how, or not: in what it
+    returns, or (`returned` false: Team engines from before that) in runner.fixed_by."""
     async def heal(runner, step, pre, ignore, iteration, old_dist):
+        if returned:
+            return [490.0, 222.0], None, 0, fixed_by
         if fixed_by is not None:
             runner.fixed_by = fixed_by
         return [490.0, 222.0], None, 0
     return heal
 
 
+@pytest.mark.parametrize("returned", [True, False])
 @pytest.mark.parametrize("fixed_by", ["structure", "ai", None, "guess"])
-async def test_a_healer_says_how_it_found_the_target(site, recorded, fixed_by):
-    hx = Harness(healer=moved_by(fixed_by))
+async def test_a_healer_says_how_it_found_the_target(site, recorded, fixed_by, returned):
+    hx = Harness(healer=moved_by(fixed_by, returned))
     ended = await hx.run(recorded["steps"][:1], site + "/index.html?moved=1", autoFix=True)
     step = ended["steps"][0]
     assert ended["result"] == "pass" and step["result"] == "healed"
@@ -230,6 +234,15 @@ async def test_a_healer_says_how_it_found_the_target(site, recorded, fixed_by):
         assert step["fixedBy"] == fixed_by and healed["fixedBy"] == fixed_by
     else:     # a healer that doesn't say (as before it existed), or says something else: nothing
         assert "fixedBy" not in step and "fixedBy" not in healed
+
+
+async def test_what_a_healer_returns_wins_over_the_attribute(site, recorded):
+    """A healer that returns how it found the spot is believed, whatever runner.fixed_by holds."""
+    async def heal(runner, step, pre, ignore, iteration, old_dist):
+        runner.fixed_by = "structure"
+        return [490.0, 222.0], None, 0, None
+    ended = await Harness(healer=heal).run(recorded["steps"][:1], site + "/index.html?moved=1", autoFix=True)
+    assert ended["steps"][0]["result"] == "healed" and "fixedBy" not in ended["steps"][0]
 
 
 @pytest.mark.parametrize("fixed_by, message", [

@@ -205,6 +205,9 @@ class Extractor:
         return tuple((f, f.url) for f in self.page.frames)
 
     async def open(self) -> "Extractor":
+        """Opens the sessions. Each one is in `procs` as soon as it exists, so `close()` detaches
+        every one of them even when this is cancelled halfway (a timeout around it): open and use
+        an Extractor inside one try, with close() in its finally."""
         ctx = self.page.context
         self.procs = [_Proc(await ctx.new_cdp_session(self.page))]
         self._frames = self._frame_key()
@@ -213,20 +216,23 @@ class Extractor:
                 s = await ctx.new_cdp_session(f)
             except Exception:  # noqa: BLE001 - a same-process frame: the parent's snapshot has it
                 continue
+            proc = _Proc(s)
+            self.procs.append(proc)
             try:
                 fid = (await s.send("Target.getTargetInfo"))["targetInfo"]["targetId"]
             except Exception:  # noqa: BLE001 - it went away meanwhile
+                self.procs.remove(proc)
                 await _detach(s)
                 continue
             owner = None
-            for pi, p in enumerate(self.procs):
+            for pi, p in enumerate(self.procs[:-1]):
                 try:
                     o = await p.s.send("DOM.getFrameOwner", {"frameId": fid})
                     owner = (pi, o["backendNodeId"])
                     break
                 except Exception:  # noqa: BLE001
                     continue
-            self.procs.append(_Proc(s, fid, owner))
+            proc.frame_id, proc.owner = fid, owner
         return self
 
     def stale(self) -> bool:
@@ -586,8 +592,9 @@ async def _detach(session) -> None:
 
 async def extract(page, viewport: tuple[int, int], texts: bool = False) -> Extraction:
     """One look, opening and closing its own sessions (Extractor reuses them)."""
-    ex = await Extractor(page, viewport).open()
+    ex = Extractor(page, viewport)
     try:
+        await ex.open()
         return await ex.extract(texts)
     finally:
         await ex.close()

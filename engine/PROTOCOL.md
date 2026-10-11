@@ -272,10 +272,14 @@ the page reacts, so it never delays the click.
 
 With structure healing switched on (`HEAL_FROM_STRUCTURE` in `config.py`, off for now; roadmap #41),
 a step with a pre-check also keeps the control it acts on, as the page names it, read before the
-action: `element` `{ role, name, origin, offset }` (`dom/same.py`). `role` and `name` are its
+action: `element` `{ role, name, origin, offset, unique }` (`dom/same.py`). `role` and `name` are its
 accessible role and name (a control: a button, link, field, checkbox and the like; a named dialog
-or heading isn't kept), `origin` the page's scheme, host and port, and `offset` where in the
-control the step acted, in px from its centre. A spot with no named control keeps none. With the
+or heading isn't kept), `origin` the page's scheme, host and port, `offset` where in the
+control the step acted, in px from its centre, and `unique` whether it was the only control with
+that role and name in the whole page (off screen, scrolled away in an inner box and in every frame
+counted too; `false` when another had them, or the page couldn't be read in 2 s). A spot with no
+named control keeps none. Elements kept before `unique` existed have none, and are treated as
+`false`. With the
 switch off no step has `element`, and a step that has one replays exactly as one without it, except
 for healing (Replay below). Apps keep it as it is: it isn't a format change.
 
@@ -590,9 +594,11 @@ and `healingUnavailable` never occur.
 **From the page's structure first** (roadmap #41; only while `HEAL_FROM_STRUCTURE` is on, off for
 now). A step that kept its `element` (Recording above) is looked for before the model: the page's
 controls are read as `record.locate` reads them, and exactly one with that role and name (case and
-runs of spaces aside) is taken, at the same `offset` from its centre. Never on a page `record.locate`
-calls Visual (a Flutter app, a canvas over a quarter of the viewport, fewer than 3 controls), never
-when two or more controls have that role and name, never when the page isn't on the step's `origin`
+runs of spaces aside) is taken, at the same `offset` from its centre. Never for a step whose
+`element.unique` isn't `true`, never on a page `record.locate` calls Visual (a Flutter app, a canvas
+over a quarter of the viewport, fewer than 3 controls), never when two or more controls have that
+role and name, on screen or anywhere else in the page (off screen, scrolled away, in any frame: the
+screen check can't tell identical controls apart), never when the page isn't on the step's `origin`
 or the control is in another site's iframe, never a disabled one, and not when the page can't be
 read in 2 s. The pre-check is then repeated there, as for the AI assistant's spot. In every other
 case, or when that check doesn't pass, the AI assistant looks as before: so a target that is really
