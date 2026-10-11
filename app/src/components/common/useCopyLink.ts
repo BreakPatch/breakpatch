@@ -3,6 +3,7 @@
 import { useCallback } from 'react';
 import { useBackend } from '../../data/hooks';
 import { copyableLink, type LinkTarget } from '../../lib/openLinks';
+import { osFormat } from '../../lib/osWords';
 import { copyTextSoon } from '../../platform';
 import { useToast } from '../ui';
 
@@ -13,7 +14,7 @@ export function useCopyLink(): (t: LinkTarget, name: string) => Promise<void> {
     try {
       // Started within the click: the folder's id may need a file written first (copyTextSoon).
       await copyTextSoon(copyableLink(backend, t));
-      toast(backend.workspace ? `Link to ${name} copied. It opens for anyone with this workspace on their Mac.` : `Link to ${name} copied. It opens wherever this tests folder is open.`);
+      toast(backend.workspace ? osFormat`Link to ${name} copied. It opens for anyone with this workspace on their Mac.` : `Link to ${name} copied. It opens wherever this tests folder is open.`);
     } catch (e) {
       toast(e instanceof Error && e.message ? e.message : "Couldn't copy the link.", { error: true });
     }

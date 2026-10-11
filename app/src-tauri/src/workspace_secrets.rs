@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::os_words::os_format;
+use crate::os_words::{os_format, os_text};
 use crate::secrets::{normalize_origins, validate_name, validate_workspace, SecretStore, Secrets};
 use crate::workspace_keys::{Blob, WorkspaceKeys};
 
@@ -157,7 +157,7 @@ pub fn seal<S: SecretStore, L: SecretStore>(keys: &WorkspaceKeys<S>, mac: Option
     let value: Zeroizing<String> = match (save.value.as_deref(), save.from_mac, save.old.as_ref()) {
         (Some(v), _, _) if !v.is_empty() => Zeroizing::new(v.to_string()),
         (_, true, _) => {
-            let mut got = mac.ok_or("This Mac's saved secrets can't be read here.")?.resolve(std::slice::from_ref(&name))?;
+            let mut got = mac.ok_or_else(|| os_text("This Mac's saved secrets can't be read here.").into_owned())?.resolve(std::slice::from_ref(&name))?;
             Zeroizing::new(got.remove(&name).ok_or_else(|| os_format!("There's no saved secret {name} on this Mac.", name = name))?)
         }
         (_, _, Some(old)) => {

@@ -142,7 +142,7 @@ export async function resolveOpenLink(link: OpenLink, o: ResolveOptions): Promis
     const found = best(folders.filter((_, i) => ids[i] === want));
     if (found) return { connection: found };
     return { problem: {
-      title: "That tests folder isn't open on this Mac",
+      title: osText("That tests folder isn't open on this Mac"),
       reason: osText('The link is to a test in a tests folder this Mac hasn’t opened. Open the folder, or your copy of it from Git, in Breakpatch, then click the link again.'),
     } };
   }
@@ -152,7 +152,7 @@ export async function resolveOpenLink(link: OpenLink, o: ResolveOptions): Promis
     return { problem: { title: 'That test is in a Team workspace', reason: osText('Breakpatch Community opens tests from a folder on this Mac. Ask whoever sent the link for a copy of the test.') } };
   }
   return { problem: {
-    title: "That workspace isn't on this Mac",
+    title: osText("That workspace isn't on this Mac"),
     reason: osText('The link is to a test in a workspace this Mac isn’t connected to. Ask its admin for an invite, connect it, then click the link again.'),
   } };
 }

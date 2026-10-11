@@ -133,6 +133,11 @@ fn changing_the_sites_keeps_the_value_and_sharing_takes_it_from_the_keychain() {
     let mut missing = save("NOT_HERE", None, &["https://app.acme.com"]);
     missing.from_mac = true;
     assert!(seal(&k, Some(&mine), WS, None, &missing).unwrap_err().contains("There's no saved secret NOT_HERE"));
+    // Without this computer's saved secrets to read, in its own words ("this PC" off the Mac).
+    let unread = seal(&k, no_mac(), WS, None, &shared).unwrap_err();
+    assert_eq!(unread, crate::os_words::os_text("This Mac's saved secrets can't be read here."));
+    #[cfg(not(target_os = "macos"))]
+    assert!(unread.starts_with("This PC's"), "{unread}");
 }
 
 #[test]

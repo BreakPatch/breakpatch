@@ -3,6 +3,7 @@ import { folderConnection, workspaceConnection, type Connection } from '../state
 import type { Workspace } from '../data/types';
 import { isOpenLink, linkWorkspaceOf, openLinkFor, parseOpenLink, resolveOpenLink, routeOf, type ResolveOptions } from './openLinks';
 import type { Backend } from '../data/backend';
+import { setOsForTests } from './osWords';
 
 const ws: Workspace = { name: 'Acme', domain: 'acme.com', database: 'breakpatch', config: { apiKey: 'k', authDomain: 'a', projectId: 'acme-qa', appId: '1' } };
 const hosted: Workspace = { ...ws, name: 'Acme Cloud', domain: '', database: '(default)', tenant: 'k3v9x2m8q1w7e4r6t0y5u2i8o3p1', config: { ...ws.config, projectId: 'breakpatch-cloud' } };
@@ -100,5 +101,15 @@ describe('finding the workspace on this Mac', () => {
     // One this edition can't open counts as not here.
     const r4 = await resolveOpenLink(link('team:acme-qa/breakpatch'), opts({ canOpen: x => x.kind === 'local' }));
     expect('problem' in r4 && r4.problem.title).toBe("That workspace isn't on this Mac");
+  });
+
+  it('says "this PC" off the Mac, Linux included', async () => {
+    setOsForTests('linux');
+    try {
+      const r1 = await resolveOpenLink(link('folder:ffffffffffffffff'), opts());
+      expect('problem' in r1 && r1.problem.title).toBe("That tests folder isn't open on this PC");
+      const r2 = await resolveOpenLink(link('team:other-project/breakpatch'), opts());
+      expect('problem' in r2 && r2.problem.title).toBe("That workspace isn't on this PC");
+    } finally { setOsForTests(null); }
   });
 });
