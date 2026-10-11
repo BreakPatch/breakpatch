@@ -362,6 +362,15 @@ async def test_the_locator_asks_the_server_and_parses_as_on_the_mac(files, tmp_p
         files.set(reply='{"action": "hover", "target": "Menu"}')
         assert await loc.intent(Image.new("RGB", (1280, 800)), "point at the menu") == {
             "action": "hover", "repeat": 1, "target": "Menu"}
+        # A Team planner's own prompt (tests from a story): the reply as it is, at most max_tokens long.
+        files.set(reply="1. Click Sign in")
+        assert await loc.reply(Image.new("RGB", (1280, 800)), "Plan it", 600) == "1. Click Sign in"
+        body = files.requests[-1]["body"]
+        assert body["messages"][0]["content"][1]["text"] == "Plan it" and body["max_tokens"] == 600
+        await loc.reply(Image.new("RGB", (1280, 800)), "Plan it", 99999)
+        assert files.requests[-1]["body"]["max_tokens"] == 2048
+        await loc.locate(Image.new("RGB", (1280, 800)), "Next")
+        assert files.requests[-1]["body"]["max_tokens"] == llamacpp.MAX_TOKENS
         assert len(files.starts) == 1
     finally:
         loc.close()
