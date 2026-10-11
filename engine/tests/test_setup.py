@@ -196,3 +196,23 @@ def test_release_builds_ignore_the_hub_address_and_token(monkeypatch):
     assert "HF_ENDPOINT" not in rel and "HF_TOKEN" not in rel and "HUGGING_FACE_HUB_TOKEN" not in rel
     assert rel["HF_HUB_DISABLE_IMPLICIT_TOKEN"] == "1" and rel["PATH"] == "/bin"
     assert rel["HF_HOME"].endswith(".hf")
+
+
+def test_the_engine_starts_its_children_as_the_build_that_runs_it_needs(monkeypatch, tmp_path):
+    # From source: Python runs the package.
+    assert install.self_command() == [sys.executable, "-m", "breakpatch_engine"]
+    # The release sidecar (PyInstaller --onefile): sys.frozen, and sys.executable is the sidecar.
+    sidecar = "/Applications/Breakpatch.app/Contents/MacOS/breakpatch-engine"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", sidecar)
+    assert install.self_command() == [sidecar]
+    # Nuitka --onefile: no sys.frozen, `__compiled__` in the module, sys.executable a `python` in the
+    # unpack folder that isn't there, and sys.argv[0] the program (absolute, or made so here).
+    monkeypatch.delattr(sys, "frozen")
+    monkeypatch.setitem(vars(install), "__compiled__", object())
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "cache" / "breakpatch-engine" / "0.1.0" / "python"))
+    monkeypatch.setattr(sys, "argv", [sidecar, "serve"])
+    assert install.self_command() == [sidecar]
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["breakpatch-engine", "serve"])
+    assert install.self_command() == [str(tmp_path / "breakpatch-engine")]

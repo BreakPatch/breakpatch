@@ -302,6 +302,14 @@ def hub_env(base) -> dict:
 
 
 def self_command() -> list[str]:
+    """The command that starts this engine again, for its child processes (`_download`, textsearch's
+    `_search`). The release sidecar is PyInstaller --onefile (build_sidecar.sh): it sets `sys.frozen`,
+    `sys.executable` is the sidecar itself, and a child started with it reuses the folder the sidecar
+    unpacked into, so it doesn't unpack again. Nuitka (build_sidecar.sh --compiler nuitka) sets no
+    `sys.frozen`: its modules have `__compiled__`, as config.is_release reads, `sys.executable` names a
+    `python` in its unpack folder that isn't there, and `sys.argv[0]` is the program, made absolute."""
+    if "__compiled__" in globals():
+        return [os.path.abspath(sys.argv[0])]
     if getattr(sys, "frozen", False):
         return [sys.executable]
     return [sys.executable, "-m", "breakpatch_engine"]
