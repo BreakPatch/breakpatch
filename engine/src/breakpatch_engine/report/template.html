@@ -150,7 +150,8 @@ body.bpr-page { margin: 0; }
 <dl class="bpr-meta">{{#meta}}<div><dt>{{k}}</dt><dd>{{v}}</dd></div>{{/meta}}</dl>
 </div>
 {{/multi}}{{#testNote}}<p class="bpr-callout">{{testNote}}</p>
-{{/testNote}}{{#multi}}<details class="bpr-test-steps"{{#stepsOpen}} open{{/stepsOpen}}><summary>{{stepsText}}</summary>
+{{/testNote}}{{#retryNote}}<p class="bpr-callout">{{retryNote}}</p>
+{{/retryNote}}{{#multi}}<details class="bpr-test-steps"{{#stepsOpen}} open{{/stepsOpen}}><summary>{{stepsText}}</summary>
 {{/multi}}<ol class="bpr-steps">
 {{#steps}}<li class="bpr-step bpr-{{result}} bpr-d{{depth}}">{{#hasDetail}}<details{{#open}} open{{/open}}><summary><span class="bpr-no">{{number}}</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">{{label}}</span><span class="bpr-status">{{resultText}}</span>{{#took}}<span class="bpr-took">{{took}}</span>{{/took}}</summary>
 <div class="bpr-detail">

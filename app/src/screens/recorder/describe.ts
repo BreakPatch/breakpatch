@@ -1,4 +1,5 @@
 // Text for the Describe flow (README "Describe flow").
+import { GENERATED } from '../../engine/labels';
 import { REPEATABLE, type Intent } from './intent';
 
 const VERBS = /^(please\s+)?(double[\s-]?click|right[\s-]?click|long[\s-]?click|click on|click|press|tap|hit|select|choose|find|hover over|hover|open|check that|check|upload to|upload)\s+/i;
@@ -16,7 +17,7 @@ export const askText = (what: string) => `Is this ${what}?`;
  * The question for what was found: "Is this the Done button?", then what Confirm does when that
  * isn't one plain click ("Confirm to click it 2 times.", "Confirm to type "hello" into it.").
  */
-export function intentAskText(what: string, it: Pick<Intent, 'action' | 'repeat' | 'text' | 'direction'>): string {
+export function intentAskText(what: string, it: Pick<Intent, 'action' | 'repeat' | 'text' | 'direction' | 'secretRef' | 'generated'>): string {
   const q = askText(what);
   const times = it.repeat > 1 ? ` ${it.repeat} times` : '';
   const doing = ((): string | null => {
@@ -27,7 +28,8 @@ export function intentAskText(what: string, it: Pick<Intent, 'action' | 'repeat'
       case 'longClick': return 'long click it';
       case 'hover': return 'hover over it';
       case 'upload': return 'upload a file with it';
-      case 'write': return `type "${it.text ?? ''}" into it`;
+      case 'write': return it.secretRef ? `type the saved secret ${it.secretRef} into it`
+        : it.generated ? `type ${GENERATED[it.generated]} into it` : `type "${it.text ?? ''}" into it`;
       case 'scroll': case 'swipe': return `${it.action} ${it.direction ?? 'down'} from there`;
       case 'checkpoint': return 'check it shows';
       case 'waitUntil': return 'wait until it shows';
@@ -38,6 +40,8 @@ export function intentAskText(what: string, it: Pick<Intent, 'action' | 'repeat'
   return `${q} Confirm to ${doing}${REPEATABLE.has(it.action) ? times : ''}.`;
 }
 export const notFoundText = (what: string) => `Couldn't find "${what}" on this screen. Rephrase, or click it on the page.`;
+/** A story's step that isn't on the screen: the person can show it, change it or leave it out. */
+export const planNotFoundText = (what: string) => `Couldn't find "${what}" on this screen. Click it on the page, edit the step, or skip it.`;
 
 /** A checkpoint's label from what the user typed: "success message" → "Success message shows". */
 export function checkpointLabel(text: string): string {

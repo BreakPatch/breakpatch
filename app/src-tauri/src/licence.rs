@@ -1440,13 +1440,15 @@ fn host_name() -> Option<String> {
 }
 
 /// Which of a hosted workspace's machine secrets this is, by its shape (Team cloud machines.ts and
-/// the back office's seatPass.ts): a CI token (`BPC1-<ws>-<id>-<hex>`), a runner Mac's token
+/// the back office's seatPass.ts): a CI token (`BPC1-<ws>-<id>-<hex>`), a run-queue token
+/// (`BPQ1-<ws>-<id>-<hex>`, which only adds suite runs to the queue), a runner Mac's token
 /// (`BPM1-<ws>-<id>-<hex>`, or a CI token made before BPC1), or the runner's machine pass
 /// (`BPM1-<32 hex>-<64 hex>`). The pass is hex up to its first dash, 32 of it; a token's workspace
 /// is 28 letters and digits. A field that cut the paste short still tells them apart.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum MachineSecret {
     CiToken,
+    QueueToken,
     RunnerToken,
     MachinePass,
 }
@@ -1456,6 +1458,9 @@ pub fn machine_secret(k: &str) -> Option<MachineSecret> {
     if t.starts_with("BPC1-") {
         return Some(MachineSecret::CiToken);
     }
+    if t.starts_with("BPQ1-") {
+        return Some(MachineSecret::QueueToken);
+    }
     let rest = t.strip_prefix("BPM1-")?;
     let head = rest.split('-').next().unwrap_or("");
     let hex = !head.is_empty() && head.len() <= 32 && head.bytes().all(|c| c.is_ascii_hexdigit());
@@ -1464,8 +1469,8 @@ pub fn machine_secret(k: &str) -> Option<MachineSecret> {
 }
 
 /// What a secret that isn't a licence key, typed where one goes, is: the recovery code (`BPR1-…`,
-/// workspace_keys.rs), the machine key (`bpmk1_…`) and a hosted workspace's runner and CI tokens
-/// must never reach the licence service. The machine pass (`BPM1-<hex>…`) and seat pass (`BPS1-…`)
+/// workspace_keys.rs), the machine key (`bpmk1_…`) and a hosted workspace's runner, CI and
+/// run-queue tokens must never reach the licence service. The machine pass (`BPM1-<hex>…`) and seat pass (`BPS1-…`)
 /// are licence credentials and go through.
 pub fn not_a_licence_key(k: &str) -> Option<&'static str> {
     let t = k.trim();
@@ -1478,6 +1483,9 @@ pub fn not_a_licence_key(k: &str) -> Option<&'static str> {
         }
         Some(MachineSecret::RunnerToken) => {
             return Some("That's a runner token (BPM1-…), for the runner Mac's sign-in. It isn't a licence key: the runner takes its seat with its machine pass, which Breakpatch gives it.");
+        }
+        Some(MachineSecret::QueueToken) => {
+            return Some("That's a run-queue token (BPQ1-…): it only adds suite runs to a hosted workspace's queue, from CI or a tool like n8n. It isn't a licence key.");
         }
         _ => {}
     }

@@ -67,9 +67,9 @@ export function preorder(steps: Step[]): Step[] {
   return out;
 }
 
-/** Names of the saved secrets the steps use, so only those are read from the Keychain. */
+/** Names of the saved secrets the steps use (a Write step's, a Call step's headers'), so only those are read from the Keychain. */
 export function secretNames(steps: Step[]): string[] {
-  return [...new Set(preorder(steps).map(s => s.secretRef).filter((n): n is string => !!n))];
+  return [...new Set(preorder(steps).flatMap(s => [s.secretRef, ...(s.action === 'call' ? callSecretNames(s.call) : [])]).filter((n): n is string => !!n))];
 }
 
 /** Names of the saved secrets the set-up and clean-up calls' headers use. */

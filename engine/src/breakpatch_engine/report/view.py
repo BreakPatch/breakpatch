@@ -11,7 +11,9 @@ The input:
       tests: [{ appName, name, steps: Step[], run: Run | None, note? }] }
 
 `run` is a stored Run (engine run.ended plus who, where and when); a StepRun may carry `image`
-`{ src, width, height }`, the screenshot as a WebP data: URI (images.py).
+`{ src, width, height }`, the screenshot as a WebP data: URI (images.py). A run that took more than
+one try has `attempts`, and its steps the earlier tries' failures (`retried`, engine/PROTOCOL.md
+"Retries"); a suite's `counts` may have `flaky`, the tests that passed on a retry.
 """
 from __future__ import annotations
 
@@ -37,7 +39,8 @@ SUGGESTION_TEXT = {
 }
 _VERB = {"click": "click", "doubleClick": "double-click", "longClick": "press", "rightClick": "right-click", "hover": "point at",
          "write": "write in", "drag": "drag", "swipe": "swipe", "scroll": "scroll", "upload": "upload to"}
-_NO_SCREENS = ("secretMissing", "setUpFailed", "stopped", "healingUnavailable")
+_NO_SCREENS = ("secretMissing", "setUpFailed", "stopped", "healingUnavailable", "callFailed", "actionUnavailable",
+               "emailFailed")
 _SCREEN_CHECKS = ("targetNotFound", "unexpectedScreen", "healFailed", "timeout")
 
 
@@ -51,9 +54,25 @@ def target_name(step: dict) -> str:
     return "the field to write in" if step.get("action") == "write" else "what to click"
 
 
+def fixed_title(step: dict, r: dict | None) -> str:
+    """A fixed step's headline, by how it was found (`fixedBy`; runs from before it were the AI assistant's)."""
+    name = target_name(step)
+    by = "It was found by its name on the page." if (r or {}).get("fixedBy") == "structure" else "The AI assistant found it."
+    return f"{name[0].upper()}{name[1:]} had moved. {by}"
+
+
+FIXED_TEXT = "It was used in the new position and the screen afterwards looked right."
+
+
+def fixed_caption(r: dict | None) -> str:
+    return "Where it was found by its name" if (r or {}).get("fixedBy") == "structure" else "Where the AI assistant found it"
+
+
 def reason_title(reason, step: dict) -> str:
     if reason in ("targetNotFound", "healFailed"):
         return f"Couldn't find {target_name(step)}"
+    if step.get("action") == "emailWait" and reason == "timeout":
+        return "No email came in time"
     if reason == "unexpectedScreen":
         return "The screen didn't look as expected" if step.get("action") == "checkpoint" \
             else "The screen didn't look as expected after this step"
@@ -65,10 +84,15 @@ def reason_title(reason, step: dict) -> str:
         "setUpFailed": "The set-up call didn't work",
         "stopped": "You stopped the run",
         "fileMissing": "The file to upload isn't in the tests folder",
+        "callFailed": "The value from the call couldn't be typed" if step.get("action") == "write"
+        else "The call to your API didn't work",
+        "actionUnavailable": "This step needs Breakpatch Team",
+        "emailFailed": "The test inbox couldn't be read" if step.get("action") == "emailWait"
+        else "What the email had couldn't be used",
     }.get(reason or "", "This step failed")
 
 
-def reason_text(reason, step: dict) -> str:
+def reason_text(reason, step: dict, r: dict | None = None) -> str:
     verb = _VERB.get(step.get("action"), "use")
     action = step.get("action")
     if reason == "targetNotFound":
@@ -84,6 +108,8 @@ def reason_text(reason, step: dict) -> str:
     if reason == "noChange":
         return "The step was done, but nothing changed on the page the way it did when it was recorded. The run stopped here."
     if reason == "timeout":
+        if action == "emailWait":
+            return "No email this step waits for arrived in time. The run stopped here."
         if action == "waitUntil":
             return "What this step waits for never appeared. The run stopped here."
         return "The page didn't finish loading or settle in time. The run stopped here."
@@ -97,16 +123,35 @@ def reason_text(reason, step: dict) -> str:
         return "The steps from here on didn't run."
     if reason == "fileMissing":
         return f"{step.get('file') or 'The file'} isn't in the tests folder. Put it back in the files folder, or re-record the step."
+    if reason == "callFailed":
+        if action == "write":
+            return "No Call step before it kept this value, or the page wasn't one of the app's own. The run stopped here."
+        note = reply_note((r or {}).get("reply"))
+        if note:
+            return f"{note}, which this step doesn't count as a pass. The run stopped here."
+        return "It didn't get a reply this step counts as a pass. The run stopped here."
+    if reason == "actionUnavailable":
+        return "It's part of Breakpatch Team, so it couldn't run here, and it never passes without it. The run stopped here."
+    if reason == "emailFailed":
+        if action == "emailWait":
+            return "The inbox couldn't be read, or the email didn't have what this step picks out. The run stopped here."
+        return "No Wait for an email step before it picked this out, or the page wasn't one of the app's own. The run stopped here."
     return "The run stopped here."
 
 
-def reason_advice(reason) -> str:
+def reason_advice(reason, step: dict | None = None) -> str:
+    if reason == "timeout" and (step or {}).get("action") == "emailWait":
+        return ("Check that the app sends the email, to the address this step waits for. If emails take long, "
+                "let the step wait longer, then run again.")
     return {
         "secretMissing": "Saved secrets stay on each Mac. Add it here once and every test that uses it can run.",
         "healingUnavailable": "Without the AI assistant, a moved button fails the run. Re-record the step, or download the assistant.",
         "setUpFailed": "Check that the set-up address works and that the app is running, then run again.",
+        "callFailed": "Check that the address works and that the app is running: the step's Try it shows what it replies now. Then run again.",
         "timeout": "If the app was slow this time, run again. If it always takes longer now, re-record this step.",
         "stopped": "Run again to go through every step.",
+        "actionUnavailable": "Run it with Breakpatch Team, or remove this step.",
+        "emailFailed": "Check the test inbox in Settings, Test inbox, and what this step picks out, then run again.",
     }.get(reason or "", "If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer.")
 
 
@@ -115,7 +160,79 @@ def pass_note(r: dict) -> str:
         return "Passed: the dialog closed. The page behind it looked different from when it was recorded."
     if r.get("passedBy") == "note":
         return r["why"] if r.get("why") is not None else "Passed: the step did what its note says."
-    return ""
+    return reply_note(r.get("reply")) or email_note(r.get("email"))
+
+
+def email_note(got) -> str:
+    """What a Wait for an email step got: "Got a 6-digit code in 4.2 s", "Got a link to app.acme.com
+    in 3.1 s", never the code or the link itself (the app's runWords.ts emailNote)."""
+    if not isinstance(got, dict) or got.get("got") not in ("code", "link", "email"):
+        return ""
+    ms = got.get("ms")
+    took = f" in {short_time(ms)}" if isinstance(ms, (int, float)) and not isinstance(ms, bool) else ""
+    if got["got"] == "code":
+        n = got.get("chars")
+        if isinstance(n, int) and not isinstance(n, bool) and got.get("digits") is True:
+            return f"Got a {n}-digit code{took}"
+        return f"Got a code{took}"
+    if got["got"] == "link":
+        site = got.get("site")
+        return f"Got a link to {site}{took}" if isinstance(site, str) and site else f"Got a link{took}"
+    return f"The email came{took}"
+
+
+def reply_note(reply) -> str:
+    """A Call step's reply: "Replied 200 in 0.4 s" (its status and time, never its body)."""
+    if not isinstance(reply, dict) or not isinstance(reply.get("status"), int) or isinstance(reply.get("status"), bool):
+        return ""
+    ms = reply.get("ms")
+    if isinstance(ms, (int, float)) and not isinstance(ms, bool):
+        return f"Replied {reply['status']} in {short_time(ms)}"
+    return f"Replied {reply['status']}"
+
+
+def tries_text(attempts: list[int]) -> str:
+    """"try 1", "tries 1 and 2"."""
+    if len(attempts) == 1:
+        return f"try {attempts[0]}"
+    return f"tries {', '.join(str(a) for a in attempts[:-1])} and {attempts[-1]}"
+
+
+def _retried(r: dict | None) -> list[dict]:
+    """A step's failures on earlier tries (engine/PROTOCOL.md "Retries"), oldest first."""
+    out = [e for e in ((r or {}).get("retried") or []) if isinstance(e, dict) and isinstance(e.get("attempt"), int)]
+    return sorted(out, key=lambda e: e["attempt"])
+
+
+def retried_note(r: dict | None, step: dict, state: str) -> str:
+    """"Failed on try 1: Waited too long for the page. It passed on the next try." on a step that
+    failed on an earlier try (the screens' retriedNote in screens/run/reasons.ts)."""
+    tries = _retried(r)
+    if not tries:
+        return ""
+    titles = list(dict.fromkeys(reason_title(e.get("reason"), step) for e in tries))
+    said = f"Failed on {tries_text([e['attempt'] for e in tries])}: {'; '.join(titles)}."
+    if state in ("passed", "fixed"):
+        return f"{said} It passed on the next try."
+    if state == "failed":
+        return f"Also f{said[1:]}"
+    return f"{said} The last try stopped before this step."
+
+
+def attempts_of(run: dict | None) -> int:
+    n = (run or {}).get("attempts")
+    return n if isinstance(n, int) and not isinstance(n, bool) and n > 1 else 1
+
+
+def retry_note(run: dict | None) -> str:
+    """"Passed on retry 1." on a test that took more than one try (the report's retryText)."""
+    n = attempts_of(run)
+    if n <= 1:
+        return ""
+    if (run or {}).get("result") == "fail":
+        return "Failed on both tries." if n == 2 else f"Failed on all {n} tries."
+    first = "the first try" if n == 2 else f"the first {n - 1} tries"
+    return f"Passed on retry {n - 1}: {first} failed. A test that passes only on a retry may be flaky."
 
 
 # ---------------------------------------------------------------- numbers and times
@@ -250,16 +367,17 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
     reason = (r or {}).get("reason")
     if not quiet:
         if state == "failed":
-            headline, body, advice = reason_title(reason, step), reason_text(reason, step), reason_advice(reason)
+            headline, body, advice = reason_title(reason, step), reason_text(reason, step, r), reason_advice(reason, step)
         elif state == "stopped":
             headline, body = reason_title("stopped", step), reason_text("stopped", step)
         elif state == "fixed":
-            name = target_name(step)
-            headline = f"{name[0].upper()}{name[1:]} had moved. The AI assistant found it."
-            body = "It was used in the new position and the screen afterwards looked right."
+            headline, body = fixed_title(step, r), FIXED_TEXT
     note = ""
     if r and state == "passed":
         note = UNCHECKED_NOTE if r.get("unchecked") else pass_note(r)
+    again = retried_note(r, step, state)
+    if again:
+        note = f"{note} {again}".strip()
     took, where = phases((r or {}).get("timings"))
     image = None
     img = (r or {}).get("image") if screenshots and not container else None
@@ -269,7 +387,7 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
                      "size": "full" if state == "failed" else "small",
                      "alt": f"Screenshot: step {number}, {step.get('label') or ''}".rstrip(", "),
                      "caption": "What was on screen when the step failed" if state == "failed"
-                     else "Where the AI assistant found it" if state == "fixed" else "The screen at this step"}
+                     else fixed_caption(r) if state == "fixed" else "The screen at this step"}
     ex = explanation((r or {}).get("explanation")) if state == "failed" and not quiet else None
     system = system_note(run, r) if not quiet else ""
     v = {"number": number, "depth": depth, "label": str(step.get("label") or ""), "result": state,
@@ -331,9 +449,11 @@ def where_text(run: dict, recorded_on: object = None) -> str:
     return "Desktop app"
 
 
-def run_meta(run: dict, offset: int, recorded_on: object = None) -> list[dict]:
+def run_meta(run: dict, offset: int, recorded_on: object = None, device: object = None) -> list[dict]:
     meta = [{"k": "Took", "v": took_text(run.get("durationMs"))}, {"k": "Run by", "v": run_by(run)},
             {"k": "Where", "v": where_text(run, recorded_on)},
+            # A phone or tablet test: "iPhone 15 · 393 × 659" (the test input's `device`).
+            {"k": "Device", "v": device if isinstance(device, str) else ""},
             {"k": "Machine", "v": str(run.get("machine") or "")},
             # breakpatch-ci's tier on that machine (systems.Tier.summary): "Simple runner: 4 GB of memory, …"
             {"k": "Runner", "v": str(run.get("runner") or "")}, {"k": "When", "v": when_text(run.get("startedAt"), offset)}]
@@ -352,16 +472,34 @@ def test_view(t: dict, index: int, offset: int, screenshots: bool, multi: bool) 
     state = run_state(run, views)
     name = str(t.get("name") or (run or {}).get("testName") or "Test")
     j = _junit(state, views, t, run)
+    j["retries"] = _junit_retries(steps, run)
     for v in views:
         v.pop("_reason", None)
     return {
         "anchor": f"test-{index + 1}", "name": name, "appName": str(t.get("appName") or ""), "multi": multi,
-        "result": state, "resultText": RUN_TEXT[state] if run else "Couldn't run", "meta": run_meta(run, offset, t.get("recordedOn")) if run else [],
+        "result": state, "resultText": RUN_TEXT[state] if run else "Couldn't run", "meta": run_meta(run, offset, t.get("recordedOn"), t.get("device")) if run else [],
         "testNote": "" if run else str(t.get("note") or "It couldn't run."),
+        "retryNote": retry_note(run),
         "stepsText": plural(len(views), "step"), "steps": views, "junit": j,
         # In a suite, a test that passed starts closed: what didn't pass is what's read first.
         "stepsOpen": state not in ("passed", "fixed"),
     }
+
+
+def _junit_retries(steps: list[dict], run: dict | None) -> list[dict]:
+    """Each earlier try's failure, for JUnit's <flakyFailure> (a test that then passed) or
+    <rerunFailure> (one that failed every time), oldest first."""
+    if attempts_of(run) <= 1:
+        return []
+    by_id = {str(r.get("stepId")): r for r in (run or {}).get("steps") or [] if isinstance(r, dict)}
+    out = []
+    for s, number, _ in rows(steps):
+        for e in _retried(by_id.get(str(s.get("id")))):
+            title = reason_title(e.get("reason"), s)
+            out.append({"attempt": e["attempt"], "type": str(e.get("reason") or "failed"),
+                        "message": f"Try {e['attempt']}, step {number}: {s.get('label') or ''}: {title}",
+                        "text": f"Try {e['attempt']} failed at step {number}, {s.get('label') or ''}: {title}."})
+    return [{k: v for k, v in e.items() if k != "attempt"} for e in sorted(out, key=lambda e: e["attempt"])]
 
 
 def _junit(state: str, views: list[dict], t: dict, run: dict | None) -> dict:
@@ -394,9 +532,11 @@ def _junit(state: str, views: list[dict], t: dict, run: dict | None) -> dict:
 
 def counts_text(c: dict) -> str:
     total, passed, fixed, failed, not_run = (_int(c.get(k)) for k in ("total", "passed", "fixed", "failed", "notRun"))
+    flaky = _int(c.get("flaky"))
+    retried = f", {flaky} on a retry" if flaky else ""
     if not failed and not not_run:
-        return f"{passed + fixed} of {plural(total, 'test')} passed" + (f", {fixed} fixed automatically" if fixed else "")
-    out = f"{passed + fixed} of {plural(total, 'test')} passed"
+        return f"{passed + fixed} of {plural(total, 'test')} passed" + retried + (f", {fixed} fixed automatically" if fixed else "")
+    out = f"{passed + fixed} of {plural(total, 'test')} passed" + retried
     if failed:
         out += f", {failed} failed"
     if not_run:

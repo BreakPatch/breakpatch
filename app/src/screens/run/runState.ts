@@ -1,7 +1,7 @@
 // Live state of one test run (README "State (UI level)" → Run: status per step, current step,
 // running, ended, failed at, elapsed), fed by the engine's run.step / run.ended events.
 import type { FailReason, Point, Run, Step, StepRun } from '../../data/types';
-import type { RunEnded, RunStepEvent } from '../../engine';
+import type { RunEnded, RunRetryEvent, RunStepEvent } from '../../engine';
 import type { RowStatus } from '../../components/steps';
 
 export type StepState = 'waiting' | 'running' | 'looking' | 'passed' | 'fixed' | 'failed' | 'notRun';
@@ -19,8 +19,8 @@ export interface RunView {
   failedId?: string;
   fixes: Record<string, { oldAt?: Point; newAt?: Point }>;
   screenshots: Record<string, string>;
-  /** Steps that passed another way than matching the recording, and how (StepRun.passedBy). */
-  passes: Record<string, Pick<StepRun, 'passedBy' | 'why'>>;
+  /** Steps that passed another way than matching the recording, and how (StepRun.passedBy); a Call step's reply; what an email gave. */
+  passes: Record<string, Pick<StepRun, 'passedBy' | 'why' | 'reply' | 'email'>>;
   /** Where each step's time went. */
   timings: Record<string, NonNullable<StepRun['timings']>>;
   /** Steps whose checks covered nothing. */
@@ -30,6 +30,12 @@ export interface RunView {
   durationMs?: number;
   steps?: StepRun[];
   error?: string;
+  /** The try running now, after a retry (engine "Retries"): 2 or 3. Unset on the first. */
+  attempt?: number;
+  /** The most tries this run can take, once it has retried. */
+  of?: number;
+  /** The earlier tries' failures, oldest first: which step and why. */
+  retries: { attempt: number; stepId: string; reason?: FailReason }[];
 }
 
 export type RunAction =
@@ -37,9 +43,13 @@ export type RunAction =
   | { type: 'start'; runId: string; ids: string[]; at: number }
   | { type: 'step'; ev: RunStepEvent }
   | { type: 'ended'; ev: RunEnded }
+  | { type: 'retry'; ev: RunRetryEvent }
   | { type: 'error'; message: string };
 
-export const INITIAL_RUN: RunView = { phase: 'idle', ids: [], states: {}, reasons: {}, fixes: {}, screenshots: {}, passes: {}, timings: {}, unchecked: {} };
+export const INITIAL_RUN: RunView = { phase: 'idle', ids: [], states: {}, reasons: {}, fixes: {}, screenshots: {}, passes: {}, timings: {}, unchecked: {}, retries: [] };
+
+/** What a try shows, cleared when the next one starts. */
+const EMPTY_TRY = { reasons: {}, fixes: {}, screenshots: {}, passes: {}, timings: {}, unchecked: {}, currentId: undefined, failedId: undefined } satisfies Partial<RunView>;
 
 const FROM_RESULT: Record<StepRun['result'], StepState> = { passed: 'passed', healed: 'fixed', failed: 'failed', notRun: 'notRun' };
 
@@ -49,6 +59,15 @@ export function runReducer(s: RunView, a: RunAction): RunView {
     case 'start':
       return { ...INITIAL_RUN, phase: 'running', runId: a.runId, ids: a.ids, startedAt: a.at, states: Object.fromEntries(a.ids.map(id => [id, 'waiting' as StepState])) };
     case 'error': return { ...s, phase: 'error', error: a.message, currentId: undefined };
+    case 'retry': {
+      // The try that failed is kept in `retries`; the next starts from the first step again.
+      const ev = a.ev;
+      if (ev.runId !== s.runId || s.phase !== 'running') return s;
+      return {
+        ...s, ...EMPTY_TRY, states: Object.fromEntries(s.ids.map(id => [id, 'waiting' as StepState])),
+        attempt: ev.attempt, of: ev.of, retries: [...s.retries, { attempt: ev.attempt - 1, stepId: ev.stepId, ...(ev.reason ? { reason: ev.reason } : {}) }],
+      };
+    }
     case 'step': {
       const ev = a.ev;
       if (ev.runId !== s.runId || s.phase !== 'running') return s;
@@ -59,7 +78,7 @@ export function runReducer(s: RunView, a: RunAction): RunView {
       if (ev.screenshot) next.screenshots = { ...s.screenshots, [ev.stepId]: ev.screenshot };
       if (ev.timings) next.timings = { ...s.timings, [ev.stepId]: ev.timings };
       if (ev.unchecked?.length) next.unchecked = { ...s.unchecked, [ev.stepId]: ev.unchecked };
-      if (ev.passedBy) next.passes = { ...s.passes, [ev.stepId]: { passedBy: ev.passedBy, why: ev.why } };
+      if (ev.passedBy || ev.reply || ev.email) next.passes = { ...s.passes, [ev.stepId]: { passedBy: ev.passedBy, why: ev.why, reply: ev.reply, email: ev.email } };
       if (state === 'failed') {
         if (ev.reason) next.reasons = { ...s.reasons, [ev.stepId]: ev.reason };
         // A loop or card fails after its child: the child is the one to show.
@@ -76,7 +95,7 @@ export function runReducer(s: RunView, a: RunAction): RunView {
       const passes = { ...s.passes };
       for (const r of ev.steps) {
         states[r.stepId] = FROM_RESULT[r.result];
-        if (r.passedBy) passes[r.stepId] = { passedBy: r.passedBy, why: r.why };
+        if (r.passedBy || r.reply || r.email) passes[r.stepId] = { passedBy: r.passedBy, why: r.why, reply: r.reply, email: r.email };
         if (r.reason) reasons[r.stepId] = r.reason;
       }
       for (const id of s.ids) {

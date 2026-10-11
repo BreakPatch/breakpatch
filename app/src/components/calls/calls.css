@@ -1,0 +1,27 @@
+/* A call's fields (components/calls): the set-up and clean-up calls in New test, and a Call step's
+   editor in the steps panel and the recorder. */
+.app-call { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-input); }
+.app-call-head { display: flex; align-items: center; gap: 10px; }
+.app-call-disc { width: 32px; height: 32px; border-radius: 50%; background: var(--selected); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.app-call-title { font-size: 14px; font-weight: 600; }
+.app-call-sub { font-size: 12px; color: var(--text-muted); }
+.app-call-row { display: flex; gap: 8px; }
+.app-call-row > .input, .app-call-row > input { flex: 1; min-width: 0; }
+.app-call-row .input { padding-top: 8px; padding-bottom: 8px; }
+.app-call-method { width: 108px; flex: none; }
+.app-call-method .input { font-size: 14px; }
+.app-call-try { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+.app-call-header { display: grid; grid-template-columns: minmax(0, 1fr) 124px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.app-call-header .input { padding-top: 8px; padding-bottom: 8px; font-size: 13px; }
+.app-call-header .app-call-method { width: auto; }
+.app-reply { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.app-reply.ok { color: var(--passed); }
+.app-reply.bad { color: var(--failed); }
+.app-call-body { font-size: 13px; min-height: 64px; resize: vertical; }
+.app-call-opts { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 8px; }
+.app-call-keep { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.app-call-note { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+.app-call-step { display: flex; flex-direction: column; gap: 10px; }
+.app-call-step .field-label, .app-call-step label { font-size: 12px; }
+.app-hooks-hint { display: block; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.app-hooks-switch { display: flex; align-items: center; gap: 10px; font-size: 13px; border-top: 1px solid var(--line); padding-top: 10px; cursor: pointer; }

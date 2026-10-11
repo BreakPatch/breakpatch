@@ -5,9 +5,10 @@
 // imports Team code, only this contract.
 import type { ComponentType, LazyExoticComponent, ReactNode } from 'react';
 import type { Backend } from '../data/backend';
-import type { NotifyInput, Person, Run, Step, StepRun, Suite, Test, Workspace } from '../data/types';
+import type { ActionKind, NotifyInput, Person, Run, Step, StepRun, Suite, Test, Workspace } from '../data/types';
 import type { MenuItem } from '../components/ui';
 import type { Connection } from '../state/connections';
+import type { SealedSecret } from '../engine/engine';
 
 /**
  * What the edition allows. Community has all of these off. They can change while the app runs
@@ -31,11 +32,16 @@ export interface Features {
   explain: boolean;
   /** Create issue in GitHub, Linear or Jira from a failed run. */
   integrations: boolean;
+  /** "Write a test from a story": the AI assistant proposes the steps of a user story in the recorder (engine record.plan). */
+  aiTests: boolean;
+  /** "Wait for an email" steps and the workspace's test inbox (engine `emailWait`, issue #12). */
+  email: boolean;
 }
 
 export const NO_FEATURES: Features = {
   collaboration: false, versions: false, autoFix: false, calibration: false,
-  schedules: false, runner: false, ci: false, modelOverride: false, explain: false, integrations: false,
+  schedules: false, runner: false, ci: false, modelOverride: false, explain: false, integrations: false, aiTests: false,
+  email: false,
 };
 
 type Screen = ComponentType | LazyExoticComponent<ComponentType>;
@@ -136,16 +142,75 @@ export interface Slots {
   reportFailActions?: ComponentType<ReportFailProps>;
   /** Under the title bar, after the system banners, e.g. "Breakpatch Team needs a licence." */
   banner?: ComponentType;
+  /** Settings → Saved secrets, under this Mac's own: e.g. the workspace's secrets (Team, issue #45). */
+  secretsPanel?: ComponentType;
   /**
    * The workspace switcher (title bar): a hook giving why switching is off right now, in plain
    * words, or null (Team: on the local runner's Mac, which serves one workspace).
    */
   useSwitchLock?: () => string | null;
   /**
-   * The workspace switcher: extra entries at the end, e.g. "Connect a workspace". Called while
-   * rendering, with what the switcher shows (so it re-renders with it) and its router's navigate.
+   * The workspace switcher: extra entries at the end, e.g. "Add a workspace". Called while
+   * rendering, with what the switcher shows (so it re-renders with it), its router's navigate, and
+   * whether switching is locked now (useSwitchLock).
    */
-  switcherActions?: (o: { close(): void; navigate(path: string): void; workspace: Workspace | null; connections: readonly Connection[] }) => MenuItemEntry[];
+  switcherActions?: (o: { close(): void; navigate(path: string): void; workspace: Workspace | null; connections: readonly Connection[]; locked: boolean }) => MenuItemEntry[];
+  /**
+   * The workspace switcher: rendered beside its menu (in the title bar, inside the router), for what
+   * its actions open, e.g. a sheet or a folder picker's question.
+   */
+  switcherExtra?: ComponentType;
+  /** The workspace switcher: ⌘1 to ⌘9 open its first nine entries, and its menu shows them (Team). */
+  switcherShortcuts?: boolean;
+  /** The recorder's action list: actions the edition performs (Team: Wait for an email). */
+  recorderActions?: RecorderAction[];
+}
+
+/**
+ * What a recorder action's dialog gets (Slots.recorderActions): `step` when it edits one, else it
+ * adds one. `onSave` adds the step (the recorder has the engine do it, as for any step: it isn't
+ * added when that doesn't work, and the recorder says why) or saves the edit. It resolves false
+ * when the step wasn't added: the dialog then stays open; otherwise the dialog closes itself.
+ */
+export interface RecorderActionDialogProps {
+  open: boolean;
+  step?: Step;
+  /** The steps of the test so far (what the step can use, e.g. `{email}`). */
+  steps: Step[];
+  onSave(patch: Partial<Step>): void | boolean | Promise<boolean | void>;
+  onClose(): void;
+}
+
+/**
+ * An action the edition adds to the recorder's action list, with its own dialog for adding and
+ * editing the step (Team: Wait for an email, issue #12). Shown only while `feature` is on; a test
+ * that has such a step still lists and runs it without (the run fails it with `actionUnavailable`).
+ */
+export interface RecorderAction {
+  kind: ActionKind;
+  /** The menu's name ("Wait for an email") and icon. */
+  name: string;
+  icon: string;
+  /** The action list's group it goes in, after the open ones ("Email"). */
+  group: string;
+  feature?: keyof Features;
+  Dialog: ComponentType<RecorderActionDialogProps>;
+}
+
+/** A workspace secret as the screens may know it: its name and who may use it, never its value. */
+export interface WorkspaceSecretName { name: string; runnerCanUse: boolean }
+
+/**
+ * Saved secrets an admin keeps in the open workspace for everyone (Breakpatch Team, issue #45).
+ * Sealed in the workspace with its key, and opened only by the shell, for the engine
+ * (app/src-tauri/src/workspace_secrets.rs): the screens get names, and requests carry the sealed
+ * values (lib/secretScope.ts). A secret on this Mac of the same name wins.
+ */
+export interface WorkspaceSecrets {
+  /** The open workspace's secrets this person (or the runner) may use. [] when there are none, or none can be read. */
+  names(backend: Backend): Promise<WorkspaceSecretName[]>;
+  /** The sealed values of those of `names` the workspace has, for one request. */
+  sealed(backend: Backend, names: string[]): Promise<SealedSecret[]>;
 }
 
 /** An entry the edition adds to a menu: the ui Menu's own item. */
@@ -175,6 +240,8 @@ export interface Edition {
    * edition's Solo plan: the Keychain). Community has none, so its folder backend keeps none.
    */
   resultAddresses?: import('../data/local/localBackend').AddressStore;
+  /** The open workspace's own saved secrets (Team). Community has none: secrets are this Mac's only. */
+  workspaceSecrets?: WorkspaceSecrets;
   /** Opens a connected workspace. Community has none: it opens the demo and local tests folders. */
   openWorkspace?(ws: Workspace): Promise<Backend>;
   /** Wraps the app, e.g. for licence checks and workspace links. */

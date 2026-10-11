@@ -1,0 +1,33 @@
+/* Import a test (ImportDialog): the script picker, then the steps it maps to and the lines it leaves out. */
+.imp-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.imp-hint { font-size: 13px; color: var(--text-muted); line-height: 1.45; }
+.imp-paste { display: flex; flex-direction: column; gap: 10px; width: 100%; animation: bpIn 200ms ease-out both; }
+.imp-error { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--failed); line-height: 1.45; }
+.imp-error .icon { flex: none; }
+
+.imp-preview { display: flex; flex-direction: column; gap: 16px; }
+.imp-section { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.imp-h { margin: 0; font-size: 14px; font-weight: 600; }
+.imp-steps, .imp-skips { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.imp-step { display: flex; align-items: baseline; gap: 10px; padding: 6px 0; font-size: 13px; line-height: 1.45; border-bottom: 1px solid var(--line); }
+.imp-step:last-child { border-bottom: 0; }
+.imp-n { width: 22px; flex: none; text-align: right; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.imp-line { flex: none; font-size: 12px; color: var(--text-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.imp-check {
+  display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 100px; font-size: 11px; font-weight: 600; line-height: 18px;
+  color: var(--fixed); background: var(--fixed-tint); cursor: help;
+}
+.imp-note { display: block; font-size: 12px; color: var(--text-muted); }
+.imp-skip { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.imp-skip:last-child { border-bottom: 0; }
+.imp-skip-code { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.imp-skip-code code { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.imp-skip-why { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+.imp-toggle { display: flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 600; text-align: left; padding: 2px 0; border-radius: var(--r-row); }
+.imp-chev { color: var(--text-faint); transition: transform var(--t-fast) ease-out; }
+.imp-toggle[aria-expanded="true"] .imp-chev { transform: rotate(90deg); }
+.imp-next {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: var(--r-button); font-size: 13px; line-height: 1.45;
+  background: var(--selected); color: var(--text);
+}
+.imp-next .icon { flex: none; color: var(--accent); }

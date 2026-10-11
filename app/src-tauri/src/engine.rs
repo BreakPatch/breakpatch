@@ -169,8 +169,8 @@ pub fn encode_request(id: u64, method: &str, params: &Value) -> String {
 pub fn timeout_for(method: &str) -> Option<Duration> {
     match method {
         "setup.installBrowser" | "setup.downloadModel" => None,
-        "record.point" | "record.locate" | "record.intent" | "record.checkpoint" | "browser.open"
-        | "browser.navigate" => Some(Duration::from_secs(180)),
+        "record.point" | "record.locate" | "record.intent" | "record.plan" | "record.checkpoint"
+        | "browser.open" | "browser.navigate" => Some(Duration::from_secs(180)),
         _ => Some(Duration::from_secs(60)),
     }
 }
@@ -632,6 +632,8 @@ mod tests {
         assert_eq!(timeout_for("setup.downloadModel"), None);
         assert_eq!(timeout_for("system.info"), Some(Duration::from_secs(60)));
         assert_eq!(timeout_for("record.intent"), Some(Duration::from_secs(180)));
+        // A plan from a story: the engine gives up after 90 s; the shell waits longer than that.
+        assert_eq!(timeout_for("record.plan"), Some(Duration::from_secs(180)));
         assert_eq!(restart_delay(0), Duration::from_secs(1));
         assert_eq!(restart_delay(3), Duration::from_secs(8));
         assert_eq!(restart_delay(20), Duration::from_secs(30));

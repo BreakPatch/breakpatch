@@ -15,6 +15,9 @@
 
 - `near` (a stepper's "+" or "−" next to something, from the app's "add 2 people"): on Fast
   pages near.py instead of S0; when it finds nothing, the AI assistant with the description.
+- `shows` (what a checkpoint or a Wait until looks for, which is often plain text such as
+  "Account created", not a control): on Fast pages, when S0 is unsure, shown.py looks among the
+  short text runs on screen before the AI assistant is asked.
 
 S0's answers never touch the model: the locator isn't even fetched, so it can't load.
 One look at a time: looks share the page's CDP sessions, so overlapping calls wait their turn.
@@ -29,7 +32,7 @@ from typing import Callable
 
 from .. import config, imaging
 from ..protocol import EngineError
-from . import near as near_mod, s0
+from . import near as near_mod, s0, shown
 from .extract import Extraction, Extractor
 from .router import FAST, VISUAL, Route, route
 
@@ -124,19 +127,21 @@ class LocateFlow:
             ex, self._ex, self._ex_key = self._ex, None, None
             await ex.close()
 
-    async def locate(self, description: str, absence: bool = False, near: dict | None = None) -> Found:
-        """`near`: `{control: "increase"|"decrease", of}`, the "+" or "−" next to `of`."""
+    async def locate(self, description: str, absence: bool = False, near: dict | None = None,
+                     shows: bool = False) -> Found:
+        """`near`: `{control: "increase"|"decrease", of}`, the "+" or "−" next to `of`. `shows`:
+        what to find may be text on the screen rather than a control (shown.py)."""
         async with self._lock:
-            return await self._locate(description, absence, near)
+            return await self._locate(description, absence, near, shows)
 
-    async def _locate(self, description: str, absence: bool, near: dict | None = None) -> Found:
+    async def _locate(self, description: str, absence: bool, near: dict | None = None, shows: bool = False) -> Found:
         t0 = time.perf_counter()
         w, h = self.b.width, self.b.height
         ex = None
         r = self.route
         if r is None:
             key = self._page_key()          # before the read: a navigation meanwhile routes again
-            ex = await self._extract(texts=bool(near))
+            ex = await self._extract(texts=bool(near) or shows)
             r = route(ex) if ex is not None else Route(VISUAL, "no page structure", final=False)
             if r.final:
                 self._route, self._route_key = r, key
@@ -144,7 +149,7 @@ class LocateFlow:
         self.last_route = r
         found = Found(None, PATH_VISUAL)
         if r.mode == FAST and ex is None:
-            ex = await self._extract(texts=bool(near))
+            ex = await self._extract(texts=bool(near) or shows)
         # (A Fast page whose structure can't be read this time is looked at as a Visual one: an
         # empty list must never read as "not found".)
         if r.mode == FAST and ex is not None and near:
@@ -161,6 +166,9 @@ class LocateFlow:
             if ans.found:
                 c = next(c for c in ex.candidates if c["index"] == ans.choice)
                 vis = s0.visible_box(c["box"], (w, h))
+                found.box, found.at = imaging.clamp_box(vis, w, h), _centre(vis)
+            elif shows and (t := shown.find(description, ex.texts)) is not None:
+                vis = s0.visible_box(t["box"], (w, h))
                 found.box, found.at = imaging.clamp_box(vis, w, h), _centre(vis)
             elif not absence:
                 found.path = PATH_FALLBACK

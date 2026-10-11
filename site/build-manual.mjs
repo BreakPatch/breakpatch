@@ -12,8 +12,9 @@
 // A table right after a <!-- stack --> line becomes one card per row on a phone (site.css table.stack),
 // each cell named by its column, two side by side, like the home page's comparison; <!-- stack 3 -->
 // puts three side by side.
-// A paragraph that starts with <!-- prelaunch --> becomes the "Public release coming soon" note,
-// shown only while <html> has data-prelaunch (GitHub hides the comment and shows the text).
+// A paragraph that starts with <!-- prelaunch --> becomes a pre-launch note, shown only while <html>
+// has data-prelaunch (GitHub hides the comment and shows the text). Since the public release
+// (v0.1.0-beta.1) no page has data-prelaunch, so there are none.
 // One that starts with <!-- solo-soon --> becomes a Solo "Coming later" note, in the same style,
 // shown only while Solo isn't on sale (no <html data-solo>: assets/paddle-config.js asks the back office).
 // One that starts with <!-- soon --> is a note in the same style that always shows (Team and
@@ -184,8 +185,7 @@ export function build(md) {
   const leadHtml = lead.map((t, i) => `<p${i === 0 ? ' class="lead"' : ''}>${inline(t)}</p>`).join('\n');
 
   return `<!DOCTYPE html>
-<!-- data-prelaunch shows the pre-launch notes. Remove it on launch day (site/README.md, "Launch day"). -->
-<html lang="en-GB" data-prelaunch>
+<html lang="en-GB">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

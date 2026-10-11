@@ -5,7 +5,11 @@ export type Millis = number;
 
 export interface Person { uid: string; name: string; email: string }
 
-export interface Viewport { width: number; height: number; dpr: 1 }
+/**
+ * A test's screen, fixed when it's made. `device` names a phone or tablet preset (data/devices.ts):
+ * the page then has that device's size, user agent and a touch screen. None: a desktop test.
+ */
+export interface Viewport { width: number; height: number; dpr: 1; device?: string }
 
 export type Role = 'member' | 'admin' | 'runner' | 'ci';
 
@@ -59,14 +63,47 @@ export type TestStatus = 'draft' | 'published';   // UI: "Only you" / "In team s
 export interface CallHeader { name: string; value?: string; secretRef?: string }
 
 /**
- * A set-up or clean-up call (engine/PROTOCOL.md "Set-up and clean-up calls"): https to the app's
- * own hosts unless `allowOtherHosts` ("Allow other hosts"), no redirects, no private addresses.
+ * A set-up or clean-up call, or a Call step's (engine/PROTOCOL.md "Set-up and clean-up calls",
+ * "Call steps"): https to the app's own hosts unless `allowOtherHosts` ("Allow other hosts"), no
+ * redirects, no private addresses. `body`: a Call step's, sent as JSON when it reads as JSON.
  */
 export interface HttpCall {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   url: string;
   headers?: CallHeader[];
+  body?: string;
   allowOtherHosts?: boolean;
+}
+
+/** A value a Call step keeps from its JSON reply (`path`, like `$.code`) for later Write steps, by `name`. */
+export interface KeptValue { path: string; name: string }
+
+/**
+ * What a Wait for an email step waits for and picks out (Breakpatch Team, engine/PROTOCOL.md "Wait for
+ * an email"). `to`: `{email}` (the run's own address) unless set. `pick`: a code (`codePattern`, a
+ * 6-digit one by default) or a link (the first, or the first containing `linkContains`), typed or
+ * opened later as `{emailCode}` or `{emailLink}`; absent: only that the email came.
+ */
+export interface EmailMatch {
+  to?: string; from?: string; subjectContains?: string;
+  pick?: 'code' | 'link';
+  codePattern?: string; linkContains?: string;
+}
+
+/**
+ * The workspace's test inbox (Breakpatch Team, Settings → Test inbox): where Wait for an email
+ * steps look, and what `{email}` builds on (`address` plus `+bp-<tag>`). Mailpit: `server` is its
+ * web address; IMAP: the server's name, `port` 993 by default. The password is a saved secret's
+ * name (`passwordRef`), never the password.
+ */
+export interface InboxSettings {
+  kind: 'mailpit' | 'imap';
+  server: string;
+  port?: number;
+  user?: string;
+  passwordRef?: string;
+  address: string;
+  folder?: string;
 }
 
 export interface Test {
@@ -84,9 +121,18 @@ export interface Test {
   cleanUp?: HttpCall & { alsoOnFailure?: boolean };
   stepCount: number;
   lastRun?: RunSummary;
+  /** What someone said about the Flaky marker (lib/flaky.ts): known to be flaky, or not flaky. */
+  flakyMark?: FlakyMark;
   createdBy: Person; createdAt: Millis;
   updatedBy: Person; updatedAt: Millis;
 }
+
+/**
+ * Someone's answer to a test's Flaky marker (lib/flaky.ts), for the version it was given on: a new
+ * version starts again. `known`: yes, it's flaky, we know (the marker stays, quieter). `not`: it
+ * isn't flaky (the runs before `at` no longer count; a new flip after it shows the marker again).
+ */
+export interface FlakyMark { state: 'known' | 'not'; version: number; by: string; at: Millis }
 
 export type Box = [number, number, number, number];   // x1, y1, x2, y2 in viewport px at DPR 1
 export type Point = [number, number];
@@ -100,6 +146,8 @@ export type ActionKind =
   | 'waitUntil' | 'waitFor'
   | 'navigate' | 'switchTab' | 'upload' | 'downloadCheck'
   | 'checkpoint'
+  | 'call'
+  | 'emailWait'
   | 'loop' | 'group';
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
@@ -118,6 +166,12 @@ export interface Step {
   // action-specific
   from?: Point; to?: Point; direction?: Direction; distance?: number;
   text?: string; secretRef?: string; generated?: Generated;
+  /** Write: a value a Call step before it kept (`keep.name`), typed only on the app's own pages. */
+  valueRef?: string;
+  /** Call: the request, the statuses that pass ("2xx" when unset), and the value it keeps. `timeoutMs` is its wait for a reply. */
+  call?: HttpCall; passStatus?: string; keep?: KeptValue;
+  /** Wait for an email (Breakpatch Team): what it waits for and picks out. `timeoutMs` is its wait (60 s when unset). */
+  email?: EmailMatch;
   region?: Box; hash?: string; tolerance?: number; timeoutMs?: number;
   durationMs?: number;
   url?: string; nav?: 'url' | 'reload' | 'back' | 'forward';
@@ -130,6 +184,12 @@ export interface Step {
   expectNote?: string;
   /** An upload of one of the user's own files: "files/<name>", in the tests folder. */
   file?: string;
+  /**
+   * What the page called the element this step acts on, kept by the engine when it records the step
+   * with structure healing on (engine config HEAL_FROM_STRUCTURE): "Fixed automatically" first looks
+   * for it by its role and name (engine dom/same.py). Optional; apps from before keep it as it is.
+   */
+  element?: StepElement;
   fileType?: string; minBytes?: number;
   count?: number;                // loop
   groupId?: string; groupVersion?: number | 'latest';
@@ -179,9 +239,16 @@ export type Expect = 'newPage' | 'closes' | 'appears' | 'changes' | 'noChange';
 
 export type FailReason =
   | 'targetNotFound' | 'unexpectedScreen' | 'noChange' | 'timeout'
-  | 'healFailed' | 'healingUnavailable' | 'secretMissing' | 'setUpFailed' | 'stopped' | 'fileMissing';
+  | 'healFailed' | 'healingUnavailable' | 'secretMissing' | 'setUpFailed' | 'stopped' | 'fileMissing' | 'callFailed'
+  /** A step only Breakpatch Team performs (Wait for an email), run without it: never a pass. */
+  | 'actionUnavailable'
+  /** The test inbox couldn't be read, or the email (or a later step's use of it) didn't work out. */
+  | 'emailFailed';
 
 export type RunSource = 'desktop' | 'ci' | 'runner';
+
+/** Step.element: an accessible role and name, the page's origin, and where in the element the step acted (px from its centre). */
+export interface StepElement { role: string; name: string; origin: string; offset: Point }
 
 export interface StepRun {
   stepId: string;
@@ -194,13 +261,44 @@ export interface StepRun {
   passedBy?: 'gone' | 'note';
   /** With passedBy "note": the AI assistant's sentence. */
   why?: string;
+  /** A fixed step: how it was found, by its role and name in the page's structure or by the AI assistant. Absent from runs before it. */
+  fixedBy?: 'structure' | 'ai';
   /** Where the step's time went (engine run.step `timings`). */
   timings?: StepTimings;
   /** Checks that had nothing left to compare (their ignore zones cover them), so they were skipped. */
   unchecked?: string[];
   /** A failed step: the AI assistant's "Why did this fail?" (Team, engine run.explain), once asked. */
   explanation?: Explanation;
+  /** A Call step's reply: its status and how long it took (never its body). */
+  reply?: CallReplyInfo;
+  /** A Wait for an email step's: what came, never the code or the link itself. */
+  email?: EmailGot;
+  /**
+   * This step failed on earlier tries of a run that was retried (engine/PROTOCOL.md "Retries"),
+   * oldest first, whatever it did on the last try.
+   */
+  retried?: RetriedTry[];
 }
+
+/** One earlier try's failure, kept on the step it failed at (engine run.ended `steps[].retried`). */
+export interface RetriedTry {
+  /** Which try: 1 is the first. */
+  attempt: number;
+  reason?: FailReason;
+  message?: string;
+  durationMs?: number;
+  preDistance?: number; postDistance?: number;
+  screenshotPath?: string;       // local only
+}
+
+/** What a run keeps of a Call step's reply. */
+export interface CallReplyInfo { status?: number; ms?: number }
+
+/**
+ * What a Wait for an email step got: a code (`chars` long, `digits` when all digits), a link (to
+ * `site`, the host only) or just the email, and how long it took. Never the value.
+ */
+export interface EmailGot { got: 'code' | 'link' | 'email'; chars?: number; digits?: boolean; site?: string; ms?: number }
 
 /**
  * Why a step failed, in plain words, from the AI assistant (engine/PROTOCOL.md "Why did this
@@ -246,6 +344,12 @@ export interface Run {
   /** The issue made from this run with Create issue (Team), so the report offers Open issue next time. */
   issue?: RunIssue;
   /**
+   * How many tries the run took, when it was retried (engine run.ended `attempts`: 2 or 3); absent
+   * after one. A run that passed with this set passed on a retry: the test may be flaky. Each
+   * earlier try's failure is on its step (StepRun.retried).
+   */
+  attempts?: number;
+  /**
    * A plain note about how the run came about, shown in the report and the run history: a missed
    * schedule run late (Solo on a tests folder), "This 8:00 run was missed, so it ran when Breakpatch
    * opened at 9:14."
@@ -272,6 +376,11 @@ export interface Suite {
   resultUrl?: string;
   /** Where the runner sends the result (Team). The address itself is kept apart (see SuiteNotify). */
   notify?: SuiteNotify;
+  /**
+   * How many times a test that fails is tried again when its failure looks like timing (engine
+   * "Retries"): 0, 1 or 2. Unset: DEFAULT_RETRIES (lib/retries.ts).
+   */
+  retries?: number;
   lastRun?: { result: SuiteResult; at: Millis; by: string };
   createdBy: Person; createdAt: Millis;
   updatedBy: Person; updatedAt: Millis;
@@ -345,7 +454,8 @@ export interface SuiteRun {
   suiteId: string;
   suiteName: string;
   result: SuiteResult;
-  counts: { total: number; passed: number; fixed: number; failed: number; notRun: number };
+  /** `flaky`: of the tests that passed (or were fixed), how many passed only on a retry. Absent: none (or an older app). */
+  counts: { total: number; passed: number; fixed: number; failed: number; notRun: number; flaky?: number };
   testRunIds: string[];
   requestedBy: string;
   replacedBy?: string;
@@ -356,7 +466,17 @@ export interface SuiteRun {
 // ---------- Local-only ----------
 
 /** A saved secret in Settings: never its value. `origins` are the sites it may be typed on. */
-export interface SecretInfo { name: string; usedBy: number; present: boolean; origins: string[]; runnerCanUse: boolean }
+export interface SecretInfo {
+  name: string; usedBy: number; present: boolean; origins: string[]; runnerCanUse: boolean;
+  /** The workspaces and tests folders it's kept for, by connection id; empty or missing: every one (#33). */
+  workspaces?: string[];
+  /** Not on this Mac (or kept for other workspaces), and the open workspace has one of that name (#45). */
+  fromWorkspace?: boolean;
+}
 
 /** What the shell keeps next to each saved secret's name (app/src-tauri/src/secrets.rs). */
-export interface SecretPolicy { name: string; origins: string[]; runnerCanUse: boolean }
+export interface SecretPolicy {
+  name: string; origins: string[]; runnerCanUse: boolean;
+  /** The connection ids it may be used in; empty or missing: every workspace and tests folder (#33). */
+  workspaces?: string[];
+}

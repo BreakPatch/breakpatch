@@ -173,6 +173,9 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 .copytext li,.compare li{position:relative;padding-left:24px;color:var(--text2);font-size:1rem;line-height:1.45}
 .copytext li::before,.compare li::before{content:"";position:absolute;left:2px;top:.48em;width:9px;height:9px;background:var(--accent);border-radius:5px 1px 5px 5px;transform:rotate(-14deg)}
 .team-tag{display:inline-flex;align-items:center;font-size:0.75rem;font-weight:700;letter-spacing:.02em;color:var(--accent);border:1.5px solid var(--accent);border-radius:999px;padding:1px 10px;line-height:1.5}
+/* Community is a beta: a small outlined pill after its name (Home's and Pricing's cards) and at the start of the hero's requirements line. */
+.beta-tag{display:inline-flex;align-items:center;vertical-align:middle;margin-left:8px;font-size:0.75rem;font-weight:700;letter-spacing:.02em;color:var(--accent);border:1.5px solid var(--accent);border-radius:999px;padding:0 8px;line-height:1.5;position:relative;top:-2px}
+.reqs .beta-tag{margin:0 8px 0 0;top:-1px}
 .feature .more{font-weight:600;font-size:0.9688rem}
 .visual{position:relative;min-width:0}
 .term{position:relative;width:min(440px,78%);margin:-40px 0 0 auto;background:#0E0B09;color:#E9DFD6;border-radius:14px;box-shadow:0 30px 80px -30px rgba(0,0,0,.75),0 0 0 1px rgba(255,255,255,.08);font-family:var(--mono);font-size:0.8125rem;line-height:1.7;overflow:hidden}

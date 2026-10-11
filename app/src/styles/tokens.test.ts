@@ -17,8 +17,8 @@ function cssFiles(dir: string, out: string[] = []): string[] {
 }
 const files = cssFiles(src);
 const text = (end: string) => fs.readFileSync(files.find(f => f.endsWith(end))!, 'utf8');
-/** Set inline by the components (style={{ '--s': scale }}, or on <html> as UsageNotice does), not in a style sheet. */
-const INLINE = new Set(['--s', '--su-cols', '--rh-cols', '--usage-notice-room']);
+/** Set inline by the components (style={{ '--s': scale }}, LiveView's '--bezel', or on <html> as UsageNotice does), not in a style sheet. */
+const INLINE = new Set(['--s', '--bezel', '--su-cols', '--rh-cols', '--usage-notice-room']);
 
 describe('design tokens', () => {
   it('defines every CSS variable the style sheets use', () => {

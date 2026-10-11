@@ -1,6 +1,6 @@
 // Community's backend: tests saved as JSON files in a folder the person picked (docs/editions.md).
 //
-//   <folder>/breakpatch.json                     { format, schemaVersion, name }
+//   <folder>/breakpatch.json                     { format, schemaVersion, id, name } (id: format.ts newFolderId)
 //   <folder>/apps/<appId>/app.json
 //   <folder>/apps/<appId>/tests/<testId>.json    test fields + "recordedOn" + "steps" (latest only)
 //   <folder>/apps/<appId>/shared/<groupId>.json  shared steps + "steps"
@@ -24,12 +24,16 @@ import {
   type Backend, type DeletedItem, type DeletedKind, type DeletedRef, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type RecentlyDeleted, type TestDetails, type Unsubscribe,
 } from '../backend';
 import type {
-  App, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
+  App, FlakyMark, Member, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, RunSummary, Step, StepGroup, Suite, SuiteNotify, SuiteRun, Test, TestStatus, Version, Viewport, Weekday,
 } from '../types';
 import { folderConnectionId } from '../../state/connectionIds';
-import { FORMAT, SCHEMA_VERSION, fromFileText, toFileText, uniqueSlug } from './format';
+import { CALL_SCHEMA_VERSION, DEVICE_SCHEMA_VERSION, EMAIL_SCHEMA_VERSION, FORMAT, NEWEST_READ_SCHEMA_VERSION, SCHEMA_VERSION, fromFileText, isFolderId, newFolderId, toFileText, uniqueSlug } from './format';
+import { usesCallSteps } from '../../lib/calls';
+import { usesEmailSteps } from '../../lib/email';
 import { baseName, FileTooBig, join, tempName, type FolderStorage } from './storage';
 import { osText } from '../../lib/osWords';
+import { deviceOf } from '../devices';
+import { retriesIn } from '../../lib/retries';
 
 /** Stands for a file over 5 MB in the texts read from the folder: it's skipped, never parsed. */
 const TOO_BIG = '\u0000breakpatch: file too big\u0000';
@@ -45,7 +49,7 @@ export class FolderError extends Error {
 export const NEWER_MESSAGE = 'This folder was saved by a newer Breakpatch. Update to open it.';
 const NOT_HERE = 'Community runs tests and suites by hand on this Mac.';
 
-export interface FolderMeta { format: typeof FORMAT; schemaVersion: number; name: string }
+export interface FolderMeta { format: typeof FORMAT; schemaVersion: number; name: string; /** The folder's own id (format.ts newFolderId); none in a folder from before it. */ id?: string }
 
 /**
  * Everything in a tests folder at one moment, read the way the screens read it: each app with
@@ -127,12 +131,55 @@ const clone = <T>(v: T): T => structuredClone(v);
 /** Lists are in name order: files have no other order, and edits from outside keep it stable. */
 const byName = (a: { name: string; id: string }, b: { name: string; id: string }) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
 
+/**
+ * A viewport as a file has it. None: a desktop test, never the app's default screen (which may be a
+ * phone's, and would make an old test a touch test). A phone or tablet this app knows is at its own
+ * size, whatever the file says; one it doesn't know (a newer app's) is kept as it is.
+ */
+export function viewportIn(v: unknown): Viewport {
+  if (!isObj(v) || typeof v.width !== 'number' || typeof v.height !== 'number') return { ...DEFAULT_VIEWPORT };
+  const vp = v as unknown as Viewport;
+  const d = deviceOf(vp);
+  return d ? { ...vp, width: d.width, height: d.height } : vp;
+}
+
 /** A test file's `recordedOn` (engine/PROTOCOL.md "Where a test was recorded"): short strings only, else none. */
 export function recordedOnIn(v: unknown): RecordedOn | undefined {
   if (!isObj(v) || typeof v.os !== 'string' || !v.os) return undefined;
   const out: RecordedOn = { os: v.os.slice(0, 40) };
   for (const k of ['osVersion', 'arch', 'chromium'] as const) if (typeof v[k] === 'string' && v[k]) out[k] = (v[k] as string).slice(0, 40);
   return out;
+}
+
+/** A test file for a phone or tablet, or an app.json whose default screen is one: the folder needs DEVICE_SCHEMA_VERSION. */
+function needsDeviceFormat(rel: string, value: unknown): boolean {
+  if (!isObj(value)) return false;
+  const vp = /^apps\/[^/]+\/tests\/[^/]+\.json$/.test(rel) ? value.viewport : /^apps\/[^/]+\/app\.json$/.test(rel) ? value.defaultViewport : null;
+  return isObj(vp) && typeof vp.device === 'string' && vp.device !== '';
+}
+
+/** A test or shared steps file with a Call step in it: the folder needs CALL_SCHEMA_VERSION. */
+function needsCallFormat(rel: string, value: unknown): boolean {
+  return isObj(value) && /^apps\/[^/]+\/(tests|shared)\/[^/]+\.json$/.test(rel) && usesCallSteps(value.steps);
+}
+
+/** A test or shared steps file with a Wait for an email step: format 4 (format.ts EMAIL_SCHEMA_VERSION). */
+function needsEmailFormat(rel: string, value: unknown): boolean {
+  return isObj(value) && /^apps\/[^/]+\/(tests|shared)\/[^/]+\.json$/.test(rel) && usesEmailSteps(value.steps);
+}
+
+/**
+ * The folder format a file needs (format.ts), by its path in the folder: EMAIL_SCHEMA_VERSION for a
+ * test or shared steps with a Wait for an email step, CALL_SCHEMA_VERSION for one with a Call step,
+ * DEVICE_SCHEMA_VERSION for a phone or tablet test (or an app.json whose default screen is one),
+ * else SCHEMA_VERSION. A folder's breakpatch.json says the highest of its files' (this backend
+ * raises it as it writes them; an export writes it so).
+ */
+export function folderFormatFor(rel: string, value: unknown): number {
+  return needsEmailFormat(rel, value) ? EMAIL_SCHEMA_VERSION
+    : needsCallFormat(rel, value) ? CALL_SCHEMA_VERSION
+    : needsDeviceFormat(rel, value) ? DEVICE_SCHEMA_VERSION
+    : SCHEMA_VERSION;
 }
 
 const WEEKDAYS: Weekday[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -195,8 +242,8 @@ export function parseMeta(text: string | null): FolderMeta {
   try { v = fromFileText(text); } catch { throw new FolderError('unreadable', "This folder's breakpatch.json can't be read. Fix the file or choose another folder."); }
   if (!isObj(v) || v.format !== FORMAT) throw new FolderError('notBreakpatch', "This folder's breakpatch.json isn't a Breakpatch file.");
   const schemaVersion = num(v.schemaVersion, 1);
-  if (schemaVersion > SCHEMA_VERSION) throw new FolderError('newer', NEWER_MESSAGE);
-  return { format: FORMAT, schemaVersion, name: str(v.name) };
+  if (schemaVersion > NEWEST_READ_SCHEMA_VERSION) throw new FolderError('newer', NEWER_MESSAGE);
+  return { format: FORMAT, schemaVersion, name: str(v.name), ...(isFolderId(v.id) ? { id: v.id } : {}) };
 }
 
 export class LocalBackend implements Backend {
@@ -374,7 +421,7 @@ export class LocalBackend implements Backend {
           if (this.texts.get(rel) === '') { bad(`apps/${appId}`, 'no app.json, skipped'); continue; }
           const v = parse(rel); if (!v) continue;
           if (typeof v.name !== 'string') { bad(rel, 'the app has no name, skipped'); continue; }
-          const vp = isObj(v.defaultViewport) ? v.defaultViewport as unknown as Viewport : DEFAULT_VIEWPORT;
+          const vp = viewportIn(v.defaultViewport);
           apps.set(appId, { app: { id: appId, name: v.name, baseUrl: str(v.baseUrl), icon: typeof v.icon === 'string' ? v.icon : undefined, defaultViewport: vp, createdBy: who(v.createdBy), createdAt: num(v.createdAt) }, tests: new Map(), groups: new Map(), runs: new Map() });
           continue;
         }
@@ -390,7 +437,7 @@ export class LocalBackend implements Backend {
         const common = { ...rest, name: v.name, currentVersion: num(version), createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) };
         const list = (steps as Step[] | undefined) ?? [];
         if (kind === 'tests') {
-          app.tests.set(id, { test: { ...common, startUrl: str(v.startUrl, app.app.baseUrl), status: v.status === 'published' ? 'published' : 'draft', viewport: isObj(v.viewport) ? v.viewport as unknown as Viewport : app.app.defaultViewport } as TestRec['test'], steps: list, recordedOn: recordedOnIn(recordedOn) });
+          app.tests.set(id, { test: { ...common, startUrl: str(v.startUrl, app.app.baseUrl), status: v.status === 'published' ? 'published' : 'draft', viewport: viewportIn(v.viewport) } as TestRec['test'], steps: list, recordedOn: recordedOnIn(recordedOn) });
         } else {
           app.groups.set(id, { group: common as GroupRec['group'], steps: list });
         }
@@ -401,7 +448,8 @@ export class LocalBackend implements Backend {
         const v = parse(rel); if (!v) continue;
         if (typeof v.name !== 'string' || !Array.isArray(v.tests)) { bad(rel, 'not a suite, skipped'); continue; }
         const notify = notifyIn(v.notify);
-        suites.set(s[1], { id: s[1], name: v.name, tests: (v.tests as Suite['tests']).filter(t => isObj(t) && typeof t.appId === 'string' && typeof t.testId === 'string'), schedule: scheduleIn(v.schedule), ...(notify ? { notify } : {}), resultUrl: typeof v.resultUrl === 'string' ? v.resultUrl : undefined, createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) });
+        const retries = retriesIn(v.retries);
+        suites.set(s[1], { id: s[1], name: v.name, tests: (v.tests as Suite['tests']).filter(t => isObj(t) && typeof t.appId === 'string' && typeof t.testId === 'string'), schedule: scheduleIn(v.schedule), ...(notify ? { notify } : {}), ...(retries !== undefined ? { retries } : {}), resultUrl: typeof v.resultUrl === 'string' ? v.resultUrl : undefined, createdBy: who(v.createdBy), createdAt: num(v.createdAt), updatedBy: who(v.updatedBy), updatedAt: num(v.updatedAt) });
       }
     }
 
@@ -413,6 +461,8 @@ export class LocalBackend implements Backend {
 
   /** Writes a file (temp file, then rename) unless it already says exactly this. */
   private async put(rel: string, value: unknown) {
+    const needs = folderFormatFor(rel, value);
+    if (needs > SCHEMA_VERSION) await this.raiseFormat(needs);
     const text = toFileText(value);
     if (this.texts.get(rel) === text) return;
     const path = this.abs(rel);
@@ -423,6 +473,17 @@ export class LocalBackend implements Backend {
     try { await this.st.rename(tmp, path); }
     catch (e) { await this.st.remove(tmp).catch(() => {}); throw e; }
     this.texts.set(rel, text);
+  }
+  /**
+   * Raises breakpatch.json's schemaVersion to `to` when it's lower (format.ts), before the file that
+   * needs it is written, so an older app never sees that file in a folder it would save to.
+   */
+  private async raiseFormat(to: number) {
+    let v: unknown = null;
+    try { v = fromFileText(this.texts.get('breakpatch.json') ?? ''); } catch { /* rewritten below */ }
+    const meta = isObj(v) ? v : { format: FORMAT, name: this.name };
+    if (num(meta.schemaVersion, 1) >= to) return;
+    await this.put('breakpatch.json', { ...meta, format: FORMAT, schemaVersion: to });
   }
   private async drop(rel: string) {
     await this.st.remove(this.abs(rel));
@@ -478,6 +539,24 @@ export class LocalBackend implements Backend {
   onReadOnly(l: Listener<boolean>): Unsubscribe { this.roSubs.add(l); l(this.readOnly); return () => { this.roSubs.delete(l); }; }
   /** Folder name from breakpatch.json. */
   get name(): string { return this.model.meta?.name || baseName(this.root); }
+  /**
+   * The folder's own id (breakpatch.json `id`, format.ts newFolderId), which links to its tests
+   * name (lib/openLinks.ts). A folder from before it gets one now, saved in breakpatch.json (one
+   * line to commit, so the links work in teammates' copies too).
+   */
+  folderId(): Promise<string> {
+    const have = this.model.meta?.id;
+    if (have) return Promise.resolve(have);
+    return this.write(async () => {
+      let v: unknown = null;
+      try { v = fromFileText(this.texts.get('breakpatch.json') ?? ''); } catch { /* rewritten below */ }
+      const meta = isObj(v) ? v : { format: FORMAT, schemaVersion: SCHEMA_VERSION, name: this.name };
+      if (isFolderId(meta.id)) return meta.id;
+      const id = newFolderId();
+      await this.put('breakpatch.json', { ...meta, format: FORMAT, id });
+      return id;
+    });
+  }
   /** N apps · N tests for Settings. */
   counts(l: Listener<{ apps: number; tests: number }>): Unsubscribe {
     return this.watch(() => ({ apps: this.model.apps.size, tests: [...this.model.apps.values()].reduce((n, a) => n + a.tests.size, 0) }), l);
@@ -594,6 +673,14 @@ export class LocalBackend implements Backend {
     });
   }
   setTestStatus(appId: string, testId: string, status: TestStatus) { return this.patchTest(appId, testId, { status }); }
+  /** Kept in the test's file, so it goes to Git with it; not an edit, so the file's updatedAt stays. */
+  setFlakyMark(appId: string, testId: string, mark: FlakyMark | null) {
+    return this.write(async () => {
+      const r = this.testRec(appId, testId);
+      const { flakyMark: _old, ...test } = r.test;
+      await this.put(`apps/${appId}/tests/${testId}.json`, this.testFile({ ...r, test: { ...test, ...(mark ? { flakyMark: { ...mark } } : {}) } }));
+    });
+  }
   renameTest(appId: string, testId: string, name: string) { return this.patchTest(appId, testId, { name }); }
   /** Only the latest version is kept, so a new start address moves the version number on (like a save). */
   updateTestDetails(appId: string, testId: string, details: TestDetails) {
@@ -827,7 +914,8 @@ export class LocalBackend implements Backend {
       const schedule = scheduleIn(n.schedule);
       const notify = n.notify === null ? undefined : n.notify ? notifyIn(n.notify) : old?.notify;
       if (this.addresses && n.notify !== undefined && (n.notify === null || n.notify.url)) await this.addresses.set(this.connectionId, sid, n.notify?.url ?? null);
-      const file = { name: n.name, tests: n.tests.map(t => ({ appId: t.appId, testId: t.testId })), ...(schedule ? { schedule } : {}), ...(notify ? { notify } : {}), resultUrl: n.resultUrl || undefined, createdBy: old?.createdBy ?? this.me, createdAt: old?.createdAt ?? now };
+      const retries = n.retries !== undefined ? retriesIn(n.retries) : old?.retries;
+      const file = { name: n.name, tests: n.tests.map(t => ({ appId: t.appId, testId: t.testId })), ...(schedule ? { schedule } : {}), ...(notify ? { notify } : {}), ...(retries !== undefined ? { retries } : {}), resultUrl: n.resultUrl || undefined, createdBy: old?.createdBy ?? this.me, createdAt: old?.createdAt ?? now };
       // Saved again unchanged: keep the file (and its updatedAt) as it is.
       const same = !!old && this.texts.get(rel) === toFileText({ ...file, updatedBy: old.updatedBy, updatedAt: old.updatedAt });
       const stamped = same ? { ...file, updatedBy: old!.updatedBy, updatedAt: old!.updatedAt } : { ...file, updatedBy: this.me, updatedAt: now };

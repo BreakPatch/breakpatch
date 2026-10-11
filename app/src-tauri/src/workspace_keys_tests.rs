@@ -265,6 +265,7 @@ fn a_typo_in_the_recovery_code_is_caught() {
     let token = |p: &str| format!("{p}-{}-{}-{}", "k".repeat(28), "m".repeat(16), "c".repeat(64));
     assert!(parse_recovery_code(&token("BPC1")).unwrap_err().starts_with("That's a CI token (BPC1-…), not the recovery code"));
     assert!(parse_recovery_code(&token("BPM1")).unwrap_err().starts_with("That's a runner token (BPM1-…), not the recovery code"));
+    assert!(parse_recovery_code(&token("BPQ1")).unwrap_err().starts_with("That's a run-queue token (BPQ1-…), not the recovery code"));
     assert!(parse_recovery_code("BP-2HC6-FWG8-CR0K-VBDB").unwrap_err().contains("licence key"));
     assert!(parse_recovery_code("bpmk1_abc").unwrap_err().contains("machine key"));
     assert!(parse_recovery_code(&text.replacen("BPR1", "BPR2", 1)).is_err());
@@ -327,6 +328,31 @@ fn the_first_mac_makes_the_key_and_new_versions_keep_old_content_readable() {
     let b = WorkspaceKeys::new(MemStore::default());
     b.store.set(&format!("people:{WS}"), &text).unwrap();
     assert_eq!(b.open(WS, &[open_item("apps/a", "name", &old[0])]).unwrap(), vec![Some("\"Web\"".into())]);
+}
+
+/// Several workspaces on one Mac (the Team module's switcher): each has its own Keychain entries,
+/// keys, device key and trusted admins. One's content never opens as another's, and removing one
+/// from this Mac (forget) leaves the others as they were.
+#[test]
+fn several_workspaces_on_one_mac_keep_their_own_keys() {
+    const OTHER: &str = "hosted:k3v9x2m8q1w7e4r6t0y5u2i8o3p1";
+    let m = mac();
+    m.create(WS, None).unwrap();
+    m.create(OTHER, None).unwrap();
+    assert_ne!(m.device(WS).unwrap().id, m.device(OTHER).unwrap().id, "a device key per workspace");
+    let a = m.seal(WS, None, &[item("apps/a", "name", "\"Web\"")]).unwrap();
+    let b = m.seal(OTHER, None, &[item("apps/a", "name", "\"Shop\"")]).unwrap();
+    // The same place in two workspaces: each opens only its own.
+    assert_eq!(m.open(OTHER, &[open_item("apps/a", "name", &a[0])]).unwrap(), vec![None]);
+    assert_eq!(m.open(WS, &[open_item("apps/a", "name", &b[0])]).unwrap(), vec![None]);
+    assert_eq!(m.open(WS, &[open_item("apps/a", "name", &a[0])]).unwrap(), vec![Some("\"Web\"".into())]);
+    // Remove from this Mac: the other workspace keeps its key, entries and device.
+    let other_entries = (m.store.get(&format!("people:{OTHER}")).unwrap(), m.store.get(&format!("device:{OTHER}")).unwrap());
+    m.forget(WS).unwrap();
+    assert!(!m.status(WS).unwrap().has_key);
+    assert_eq!(m.store.get(&format!("people:{WS}")).unwrap(), None);
+    assert_eq!((m.store.get(&format!("people:{OTHER}")).unwrap(), m.store.get(&format!("device:{OTHER}")).unwrap()), other_entries);
+    assert_eq!(m.open(OTHER, &[open_item("apps/a", "name", &b[0])]).unwrap(), vec![Some("\"Shop\"".into())]);
 }
 
 #[test]

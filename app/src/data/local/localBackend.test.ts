@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KEEP_DELETED_MS, type Backend, type DeletedItem } from '../backend';
 import type { Person, Run, Step, Test } from '../types';
-import { fromFileText, slugify, toFileText, uniqueSlug } from './format';
-import { checkWritable, firstNameOf, initFolder, inspectFolder } from './folder';
-import { FolderError, LocalBackend, NEWER_MESSAGE } from './localBackend';
+import { CALL_SCHEMA_VERSION, DEVICE_SCHEMA_VERSION, NEWEST_READ_SCHEMA_VERSION, SCHEMA_VERSION, fromFileText, isFolderId, slugify, toFileText, uniqueSlug } from './format';
+import { checkWritable, firstNameOf, initFolder, inspectFolder, readFolderId } from './folder';
+import { FolderError, LocalBackend, NEWER_MESSAGE, folderFormatFor, parseMeta } from './localBackend';
 import { baseName, isTempName, MemoryStorage } from './storage';
 
 const ROOT = '/Users/ana/web-app/tests';
@@ -66,12 +66,13 @@ describe('choosing a folder', () => {
     expect(await inspectFolder(st, '/a')).toBe('other');
     await initFolder(st, '/a');
     expect(await inspectFolder(st, '/a')).toBe('breakpatch');
-    expect(await st.read('/a/breakpatch.json')).toBe('{\n  "format": "breakpatch",\n  "schemaVersion": 1,\n  "name": "a"\n}\n');
+    // With the folder's own id, for links to its tests (lib/openLinks.ts).
+    expect(await st.read('/a/breakpatch.json')).toMatch(/^\{\n  "format": "breakpatch",\n  "schemaVersion": 1,\n  "id": "[0-9a-f]{20}",\n  "name": "a"\n\}\n$/);
     expect(await st.exists('/a/apps')).toBe(true);
   });
   it('refuses a newer format, a broken breakpatch.json and a missing folder', async () => {
     const st = new MemoryStorage();
-    st.poke('/new/breakpatch.json', '{"format":"breakpatch","schemaVersion":2,"name":"x"}');
+    st.poke('/new/breakpatch.json', `{"format":"breakpatch","schemaVersion":${NEWEST_READ_SCHEMA_VERSION + 1},"name":"x"}`);
     await expect(inspectFolder(st, '/new')).rejects.toThrow(NEWER_MESSAGE);
     await expect(LocalBackend.open({ storage: st, path: '/new', person: ana, live: false })).rejects.toMatchObject({ code: 'newer' });
     st.poke('/bad/breakpatch.json', '{ nope');
@@ -300,6 +301,44 @@ describe('LocalBackend', () => {
     expect((await first<{ lastRun?: unknown }[]>(l => b.suites(l)))[0].lastRun).toEqual({ result: 'passed', at: 1, by: 'Ana Ruiz' });
     await b.deleteSuite('smoke');
     expect(await first(l => b.suites(l))).toEqual([]);
+  });
+
+  it('keeps a suite\'s retries, and keeps them when a save leaves them out (roadmap #14)', async () => {
+    const { st, b } = await setup();
+    const { app, test } = await appWithTest(b);
+    const tests = [{ appId: app.id, testId: test.id }];
+    await b.saveSuite(null, { name: 'Smoke', tests, schedule: null, retries: 2 });
+    expect(await read(st, 'suites/smoke.json')).toContain('"retries": 2');
+    await b.saveSuite('smoke', { name: 'Smoke', tests, schedule: null });
+    expect((await first<{ retries?: number }[]>(l => b.suites(l)))[0].retries).toBe(2);
+    await b.saveSuite('smoke', { name: 'Smoke', tests, schedule: null, retries: 0 });
+    expect((await first<{ retries?: number }[]>(l => b.suites(l)))[0].retries).toBe(0);
+    st.poke(`${ROOT}/suites/odd.json`, toFileText({ name: 'Odd', tests, retries: 9 }));
+    const reopened = await LocalBackend.open({ storage: st, path: ROOT, person: ana, live: false });
+    opened.push(reopened);
+    const suites = await first<{ id: string; retries?: number }[]>(l => reopened.suites(l));
+    expect(suites.find(x => x.id === 'odd')?.retries).toBeUndefined();     // not 0 to 2: the default
+    expect(suites.find(x => x.id === 'smoke')?.retries).toBe(0);
+  });
+
+  it('keeps a run\'s tries and each earlier try on its step, and the Flaky answer in the test file', async () => {
+    const { st, b } = await setup();
+    const { app, test } = await appWithTest(b);
+    await b.saveTest(app.id, test.id, steps);
+    await b.addRun({ appId: app.id, testId: test.id, testName: 'Log in', testVersion: 1, startedBy: ana, machine: 'This Mac', source: 'desktop', startedAt: 5, durationMs: 9000,
+      result: 'pass', healedCount: 0, attempts: 2, steps: [{ stepId: 's2', result: 'passed', retried: [{ attempt: 1, reason: 'timeout', durationMs: 4000 }] }] });
+    const [run] = await first<Run[]>(l => b.testRuns(app.id, test.id, l));
+    expect(run).toMatchObject({ attempts: 2, steps: [{ stepId: 's2', retried: [{ attempt: 1, reason: 'timeout' }] }] });
+    const before = await read(st, 'apps/web-app/tests/log-in.json');
+    const updatedAt = fromFileText<{ updatedAt: number }>(before!).updatedAt;
+    await b.setFlakyMark(app.id, test.id, { state: 'known', version: 1, by: 'Ana Ruiz', at: Date.UTC(2026, 9, 1) });
+    const text = (await read(st, 'apps/web-app/tests/log-in.json'))!;
+    expect(text).toContain('"flakyMark": {');
+    expect(text).toContain('"at": "2026-10-01T00:00:00.000Z"');
+    expect(fromFileText<{ updatedAt: number }>(text).updatedAt).toBe(updatedAt);          // not an edit
+    expect((await first<Test | null>(l => b.test(app.id, test.id, l)))?.flakyMark).toEqual({ state: 'known', version: 1, by: 'Ana Ruiz', at: Date.UTC(2026, 9, 1) });
+    await b.setFlakyMark(app.id, test.id, null);
+    expect(await read(st, 'apps/web-app/tests/log-in.json')).not.toContain('flakyMark');
   });
 
   it('keeps a schedule and where the result goes in the suite, and the address only on this Mac', async () => {
@@ -617,10 +656,10 @@ describe('reading a whole folder', () => {
       'apps/web-app/tests/ok.json': toFileText({ name: 'OK', version: 1, steps }),
       'apps/web-app/tests/broken.json': '{ "name": ',
     });
-    st.poke(`${ROOT}/breakpatch.json`, toFileText({ format: 'breakpatch', schemaVersion: 3, name: 'Later' }));
+    st.poke(`${ROOT}/breakpatch.json`, toFileText({ format: 'breakpatch', schemaVersion: NEWEST_READ_SCHEMA_VERSION + 1, name: 'Later' }));
     const snap = await LocalBackend.read({ storage: st, path: ROOT, person: ana });
     expect(snap.newer).toBe(true);
-    expect(snap.schemaVersion).toBe(3);
+    expect(snap.schemaVersion).toBe(NEWEST_READ_SCHEMA_VERSION + 1);
     expect(snap.apps[0].tests.map(t => t.test.id)).toEqual(['ok']);
     expect(snap.skipped).toEqual(['apps/web-app/tests/broken.json: not valid JSON, skipped']);
     // The texts it was read from come with it, broken ones included, so a copy can tell if the folder changed.
@@ -662,5 +701,60 @@ describe('file size limit', () => {
     await expect(new TauriStorage().read('/x/huge.json')).rejects.toThrow('bigger than 5 MB');
     expect(calls).toEqual(['stat']);
     vi.doUnmock('@tauri-apps/plugin-fs');
+  });
+});
+
+describe("the folder's own id (links to its tests)", () => {
+  it('is made when the folder is set up, and read without opening the folder', async () => {
+    const { st, b } = await setup();
+    const id = fromFileText<{ id: string }>((await read(st, 'breakpatch.json'))!).id;
+    expect(isFolderId(id)).toBe(true);
+    expect(await b.folderId()).toBe(id);
+    expect(await readFolderId(ROOT, st)).toBe(id);
+    expect(await readFolderId(`${ROOT}/`, st)).toBe(id);
+    // Two folders never share one.
+    const other = new MemoryStorage(); await other.mkdir('/b'); await initFolder(other, '/b');
+    expect(await readFolderId('/b', other)).not.toBe(id);
+  });
+
+  it('is added to a folder from before it the first time, keeping the rest of breakpatch.json', async () => {
+    const { st, b } = await setup();
+    st.poke(`${ROOT}/breakpatch.json`, toFileText({ format: 'breakpatch', schemaVersion: 2, name: 'web tests', note: 'kept' }));
+    await b.reload();
+    expect(await readFolderId(ROOT, st)).toBeNull();
+    const id = await b.folderId();
+    expect(isFolderId(id)).toBe(true);
+    expect(fromFileText(await read(st, 'breakpatch.json') ?? '')).toEqual({ format: 'breakpatch', schemaVersion: 2, id, name: 'web tests', note: 'kept' });
+    // Asked again: the same one, nothing written.
+    const write = vi.spyOn(st, 'write');
+    expect(await b.folderId()).toBe(id);
+    expect(write).not.toHaveBeenCalled();
+    expect(await readFolderId(ROOT, st)).toBe(id);
+  });
+
+  it("isn't read from anything that isn't one", async () => {
+    const st = new MemoryStorage();
+    st.poke('/x/breakpatch.json', JSON.stringify({ format: 'breakpatch', id: '../../etc' }));
+    st.poke('/y/breakpatch.json', JSON.stringify({ format: 'other', id: 'abcdef0123' }));
+    st.poke('/z/breakpatch.json', '{ broken');
+    // A folder saved by a newer app still names itself.
+    st.poke('/n/breakpatch.json', JSON.stringify({ format: 'breakpatch', schemaVersion: NEWEST_READ_SCHEMA_VERSION + 1, id: 'abcdef0123' }));
+    expect(await Promise.all(['/x', '/y', '/z', '/nowhere'].map(p => readFolderId(p, st)))).toEqual([null, null, null, null]);
+    expect(await readFolderId('/n', st)).toBe('abcdef0123');
+    expect(parseMeta(JSON.stringify({ format: 'breakpatch', id: 'NOT VALID' })).id).toBeUndefined();
+  });
+});
+
+describe('the folder format a file needs', () => {
+  it('is the one this backend raises the folder to', () => {
+    const call = [{ id: 's1', action: 'call', label: 'Call', call: { method: 'GET', url: 'https://x' } }];
+    const phone = { width: 390, height: 844, dpr: 1, device: 'iphone-15' };
+    expect(folderFormatFor('apps/a/tests/t.json', { steps: call })).toBe(CALL_SCHEMA_VERSION);
+    expect(folderFormatFor('apps/a/shared/g.json', { steps: [{ id: 'l', action: 'loop', label: 'x', steps: call }] })).toBe(CALL_SCHEMA_VERSION);
+    expect(folderFormatFor('apps/a/tests/t.json', { viewport: phone, steps: [] })).toBe(DEVICE_SCHEMA_VERSION);
+    expect(folderFormatFor('apps/a/app.json', { defaultViewport: phone })).toBe(DEVICE_SCHEMA_VERSION);
+    expect(folderFormatFor('apps/a/tests/t.json', { viewport: VP, steps: [] })).toBe(SCHEMA_VERSION);
+    // Only tests and shared steps count: a run that mentions a Call step doesn't.
+    expect(folderFormatFor('apps/a/runs/t.json', { steps: call })).toBe(SCHEMA_VERSION);
   });
 });

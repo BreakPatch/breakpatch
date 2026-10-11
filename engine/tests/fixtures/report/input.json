@@ -12,6 +12,7 @@
         "name": "Create a project",
         "steps": [
           { "id": "s1", "action": "navigate", "label": "Open the dashboard", "url": "https://app.example.com" },
+          { "id": "c1", "action": "call", "label": "Call POST api.example.com/test/orders/paid", "call": { "method": "POST", "url": "https://api.example.com/test/orders/paid?token=abc", "headers": [{ "name": "Authorization", "secretRef": "API_TOKEN" }], "body": "{\"paid\": true}" }, "keep": { "path": "$.code", "name": "CODE" } },
           { "id": "g1", "action": "group", "label": "Log in", "groupId": "login", "groupVersion": "latest", "steps": [
             { "id": "g1a", "action": "write", "label": "Write email", "target": "Email field" },
             { "id": "g1b", "action": "click", "label": "Click Next", "target": "Next button, bottom right" }
@@ -37,6 +38,7 @@
           },
           "steps": [
             { "stepId": "s1", "result": "passed", "timings": { "preMs": 0, "actionMs": 812, "settleMs": 1450, "postMs": 38, "settled": true } },
+            { "stepId": "c1", "result": "passed", "reply": { "status": 200, "ms": 1249 }, "timings": { "actionMs": 1249 } },
             { "stepId": "g1", "result": "passed" },
             { "stepId": "g1a", "result": "passed", "passedBy": "note", "why": "Passed: the email field shows the address, as the note says.", "timings": { "actionMs": 250 } },
             { "stepId": "g1b", "result": "healed", "oldAt": [1180, 812], "newAt": [1180, 760], "screenshotPath": "/tmp/shots/run_8f21c/004-g1b.png",
@@ -64,7 +66,7 @@
     "screenshots": false,
     "suite": {
       "result": "failed",
-      "counts": { "total": 4, "passed": 1, "fixed": 1, "failed": 2, "notRun": 0 },
+      "counts": { "total": 4, "passed": 1, "fixed": 1, "failed": 2, "notRun": 0, "flaky": 1 },
       "requestedBy": "Schedule",
       "startedAt": 1790258400000,
       "finishedAt": 1790258692000,
@@ -82,17 +84,19 @@
         "run": {
           "id": "rn-1", "testName": "Sign in", "testVersion": 2, "startedBy": { "serviceAccount": "QA Mac mini" }, "machine": "QA Mac mini",
           "runner": "Full runner: 16 GB of memory and a processor 6.2× as fast as a Raspberry Pi 4",
-          "source": "runner", "startedAt": 1790258400000, "durationMs": 21400, "result": "pass", "healedCount": 0,
+          "source": "runner", "startedAt": 1790258400000, "durationMs": 21400, "result": "pass", "healedCount": 0, "attempts": 2,
           "steps": [
             { "stepId": "a1", "result": "passed", "timings": { "preMs": 120, "actionMs": 300, "settleMs": 450, "postMs": 30 } },
             { "stepId": "a2", "result": "passed", "timings": { "preMs": 60, "actionMs": 280, "settleMs": 200, "postMs": 25 } },
-            { "stepId": "a3", "result": "passed", "timings": { "preMs": 45, "actionMs": 90, "settleMs": 1804, "postMs": 31 } }
+            { "stepId": "a3", "result": "passed", "timings": { "preMs": 45, "actionMs": 90, "settleMs": 1804, "postMs": 31 },
+              "retried": [{ "attempt": 1, "reason": "timeout", "message": "The screen didn't settle in time.", "durationMs": 9600 }] }
           ]
         }
       },
       {
         "appName": "Web app",
         "name": "Invite a teammate",
+        "device": "iPhone 15 · 393 × 659",
         "steps": [
           { "id": "b1", "action": "click", "label": "Click Invite", "target": "Invite button" },
           { "id": "b2", "action": "write", "label": "Write address", "target": "Email field" }
@@ -101,7 +105,7 @@
           "id": "rn-2", "testName": "Invite a teammate", "testVersion": 7, "startedBy": { "serviceAccount": "QA Mac mini" }, "machine": "QA Mac mini",
           "source": "runner", "startedAt": 1790258421400, "durationMs": 64000, "result": "pass", "healedCount": 1,
           "steps": [
-            { "stepId": "b1", "result": "healed", "oldAt": [900, 40], "newAt": [860, 40], "screenshotPath": "/tmp/shots/rn-2/001-b1.png",
+            { "stepId": "b1", "result": "healed", "fixedBy": "structure", "oldAt": [900, 40], "newAt": [860, 40], "screenshotPath": "/tmp/shots/rn-2/001-b1.png",
               "image": { "src": "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAQAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA=", "width": 480, "height": 300 } },
             { "stepId": "b2", "result": "passed" }
           ]
@@ -116,10 +120,11 @@
         ],
         "run": {
           "id": "rn-3", "testName": "Pay an invoice", "testVersion": 1, "startedBy": { "serviceAccount": "QA Mac mini" }, "machine": "QA Mac mini",
-          "source": "runner", "startedAt": 1790258485400, "durationMs": 45000, "result": "fail", "healedCount": 0,
+          "source": "runner", "startedAt": 1790258485400, "durationMs": 45000, "result": "fail", "healedCount": 0, "attempts": 2,
           "steps": [
             { "stepId": "c1", "result": "passed" },
-            { "stepId": "c2", "result": "failed", "reason": "timeout", "screenshotPath": "/tmp/shots/rn-3/002-c2.png",
+            { "stepId": "c2", "result": "failed", "reason": "timeout", "screenshotPath": "/tmp/shots/rn-3/002-c2-try2.png",
+              "retried": [{ "attempt": 1, "reason": "timeout", "durationMs": 21000, "screenshotPath": "/tmp/shots/rn-3/002-c2.png" }],
               "image": { "src": "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAQAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA=", "width": 1440, "height": 900 } }
           ]
         }

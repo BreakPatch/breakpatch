@@ -105,3 +105,14 @@ open results/explain.html
 ```
 
 It passes with at least 80 % right, nothing made up for a target that is visible where it was, and every answer within 10 seconds. Include at least one of each: moved, renamed, removed, covered by a dialog, and the page didn't change.
+
+## Tests from a story
+
+`plan_test.py` scores the Team engine's planner, which turns a user story into proposed steps (roadmap #10), with the real model. Put a screenshot of the page each story starts on in `screenshots/` (and, if you have it, the page read next to it as `<file>.page.json`), one row each in `plan_cases.csv` (the address, the story, the saved secret names it may type, and the steps you expect), then, with the Breakpatch Team engine installed and a licence token that includes `aiTests`:
+
+```sh
+BP_LICENCE_TOKEN=… PYTHONPATH=../../engine/src python plan_test.py --model <the model folder>
+open results/plan.html
+```
+
+A story is right when a person would correct at most one step (wrong, missing or extra). It passes with at least 80 % of stories right, nothing typed that the story didn't say, and every plan within 90 seconds. Include at least a sign-up, a log-in and a create-item flow. Planning asks more of the model than finding a button: run it with both the Standard and the Larger assistant.

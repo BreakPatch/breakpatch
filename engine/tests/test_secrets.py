@@ -64,6 +64,21 @@ def test_what_stops_a_secret_before_the_run():
     assert secret_problem("PW", Secret("v", ("https://a.example",), True), as_runner=True) is None
 
 
+def test_a_secret_the_shell_refused_carries_only_its_reason():
+    """The shell sends `{refused}` for a secret on this Mac kept for other workspaces (issue #33)."""
+    why = "PW is kept for other workspaces on this Mac, so it isn't used here."
+    got = parse_secrets({"PW": {"refused": why, "value": "leaked?"}, "BLANK": {"refused": "  "}})
+    assert got["PW"] == Secret("", (), False, why)
+    assert not got["PW"].allows("https://a.example")
+    assert "BLANK" not in got                                         # no reason and no value: as if missing
+    assert secret_problem("PW", got["PW"], as_runner=False) == why
+    assert secret_problem("PW", got["PW"], as_runner=True) == why
+    with pytest.raises(Exception) as e:
+        from breakpatch_engine.actions import Context, secret_for
+        secret_for("PW", Context(Timings.fast(), secrets=got))
+    assert getattr(e.value, "reason", None) == "secretMissing" and str(why) in str(e.value)
+
+
 # ---------------------------------------------------------------- in the browser
 
 class Quiet(http.server.SimpleHTTPRequestHandler):
@@ -146,6 +161,24 @@ async def test_another_site_gets_nothing(sites):
         with pytest.raises(EngineError) as e:
             await hx.engine.handlers()["record.point"]({"action": "write", "secretRef": "PW", "secrets": pw(app)})
         assert e.value.code == "not_found" and e.value.message == f"PW isn't allowed on {host}."
+        assert await hx.engine.browser.page.input_value("#f") == ""
+    finally:
+        await hx.engine.handlers()["browser.close"]({})
+
+
+@needs_browser
+async def test_a_refused_secret_stops_the_run_and_the_recorder_with_its_reason(sites):
+    app, _ = sites
+    hx = Harness()
+    why = "PW is kept for other workspaces on this Mac, so it isn't used here."
+    ended = await hx.run(app + "/field.html", [WRITE], {"PW": {"refused": why}})
+    assert ended["result"] == "fail" and ended["steps"][0]["reason"] == "secretMissing", ended
+    assert ended["message"] == why
+    await hx.engine.handlers()["browser.open"]({"url": app + "/field.html", "viewport": VIEWPORT})
+    try:
+        with pytest.raises(EngineError) as e:
+            await hx.engine.handlers()["record.point"]({"action": "write", "secretRef": "PW", "secrets": {"PW": {"refused": why}}})
+        assert e.value.message == why
         assert await hx.engine.browser.page.input_value("#f") == ""
     finally:
         await hx.engine.handlers()["browser.close"]({})

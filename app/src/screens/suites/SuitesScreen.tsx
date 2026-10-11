@@ -1,10 +1,11 @@
 // Suites (top nav): workspace-level list of suites (design 7 · Suites, ui-requirements §5.14).
 // The edition adds columns (Team: Schedule, Result goes to), the row action (Run on runner)
 // and the running-row tint through edition.slots. Run (on this Mac) is open: /suites/:suiteId/run.
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppFrame } from '../../components/shell/AppFrame';
-import { Button, EmptyState, Icon, Skeleton, statusInfo } from '../../components/ui';
+import { Button, EmptyState, Icon, IconButton, Menu, Skeleton, statusInfo } from '../../components/ui';
+import { useCopyLink } from '../../components/common/useCopyLink';
 import { useLive } from '../../data/hooks';
 import type { App, Suite } from '../../data/types';
 import { formatWhen } from '../../components/common/format';
@@ -16,7 +17,7 @@ import { ariaShortcut, osText, thisComputer } from '../../lib/osWords';
 const { suiteColumns = [], suiteRowAction: RowAction, suitesNote } = edition.slots;
 const BEFORE = suiteColumns.filter(c => !c.afterLastRun), AFTER = suiteColumns.filter(c => c.afterLastRun);
 const useRunningSuite = edition.slots.useRunningSuite ?? (() => undefined);
-const colsStyle = { '--su-cols': ['minmax(0, 1fr)', ...BEFORE.map(c => c.width), '190px', ...AFTER.map(c => c.width), RowAction ? '250px' : '90px'].join(' ') } as CSSProperties;
+const colsStyle = { '--su-cols': ['minmax(0, 1fr)', ...BEFORE.map(c => c.width), '190px', ...AFTER.map(c => c.width), RowAction ? '284px' : '124px'].join(' ') } as CSSProperties;
 
 export default function SuitesScreen() {
   const navigate = useNavigate();
@@ -66,6 +67,7 @@ export default function SuitesScreen() {
                     <Button size="sm" icon="play_arrow" disabled={!s.tests.length} onClick={() => navigate(`/suites/${s.id}/run`)}
                       aria-label={`Run ${s.name} on ${thisComputer()}`} title={osText('Run on this Mac, one test after another')}>Run</Button>
                     {RowAction && <RowAction suite={s} />}
+                    <SuiteMenu suite={s} />
                   </div>
                 </div>
               );
@@ -74,6 +76,23 @@ export default function SuitesScreen() {
         </div>
       )}
     </AppFrame>
+  );
+}
+
+/** The suite's menu: Edit and Copy link (lib/openLinks.ts). */
+function SuiteMenu({ suite: s }: { suite: Suite }) {
+  const navigate = useNavigate();
+  const copyLink = useCopyLink();
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: 'relative' }}>
+      <IconButton icon="more_vert" label={`More for ${s.name}`} size={19} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)} />
+      <Menu open={open} onClose={() => setOpen(false)} label={`${s.name} actions`} width={200} style={{ top: 'calc(100% + 4px)', right: 0 }}
+        items={[
+          { label: 'Edit suite', icon: 'edit', onSelect: () => navigate(`/suites/${s.id}`) },
+          { label: 'Copy link', icon: 'link', onSelect: () => void copyLink({ kind: 'suite', suiteId: s.id }, s.name) },
+        ]} />
+    </div>
   );
 }
 

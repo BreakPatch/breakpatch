@@ -401,13 +401,30 @@ describe('where a described typing step will type (DES2-10)', () => {
   });
 });
 
-describe('the describe box is off (DESCRIBE_STEPS)', () => {
+describe('the describe box (DESCRIBE_STEPS)', () => {
+  it('is off by default; turned on, clicking and describing are both there', async () => {
+    const { AddStepBar } = await import('./AddStepBar');
+    function Bar({ describe }: { describe?: boolean }) {
+      const r = useRecorder({ viewport: vp, onError: vi.fn() });
+      return <AddStepBar rec={r} appId="a" allowGroups onInsertGroup={() => undefined} describe={describe} />;
+    }
+    const { unmount } = render(<Bar />);
+    expect(screen.queryByLabelText('Describe the next step')).toBeNull();
+    unmount();
+    render(<Bar describe />);
+    expect(screen.getByLabelText('Describe the next step')).toBeInTheDocument();
+    expect(screen.getByText(/Click anything on the page to add a step, or describe it below/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ask the AI assistant' })).toBeInTheDocument();
+  });
+});
+
+describe('with the describe box off (DESCRIBE_STEPS false)', () => {
   it('has no describe box: on-page actions say what to do on the page, Write keeps its box', async () => {
     const { AddStepBar } = await import('./AddStepBar');
     let r!: ReturnType<typeof useRecorder>;
     function Bar() {
       r = useRecorder({ viewport: vp, onError: vi.fn() });
-      return <AddStepBar rec={r} appId="a" allowGroups onInsertGroup={() => undefined} />;
+      return <AddStepBar rec={r} appId="a" allowGroups onInsertGroup={() => undefined} describe={false} />;
     }
     render(<Bar />);
     expect(screen.queryByLabelText('Describe the next step')).toBeNull();
@@ -428,7 +445,7 @@ describe('the describe box is off (DESCRIBE_STEPS)', () => {
     let r!: ReturnType<typeof useRecorder>;
     function Bar() {
       r = useRecorder({ viewport: vp, onError: vi.fn() });
-      return <AddStepBar rec={r} appId="a" allowGroups onInsertGroup={() => undefined} />;
+      return <AddStepBar rec={r} appId="a" allowGroups onInsertGroup={() => undefined} describe={false} />;
     }
     const { container } = render(<Bar />);
     // Nothing to type: no field look, and no icon in front repeating the action button's.

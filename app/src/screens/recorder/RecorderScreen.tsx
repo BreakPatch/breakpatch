@@ -14,13 +14,15 @@ import { SaveButton } from './SaveButton';
 import { useLeaveGuard } from './useLeaveGuard';
 import { useRecorder } from './useRecorder';
 import { addressOf, useBrowserSession } from './browserSession';
-import { hasFeature } from '../../edition';
+import { hasFeature, useFeature } from '../../edition';
+import { StoryDialog } from './StoryDialog';
 import { filesDir } from '../../lib/testFiles';
 import { addStepHint, editorStatuses, useEditorRun, type EditorRunDone } from './editorRun';
 import { checksNothing, UNCHECKED_NOTE } from '../run/reasons';
 import { preorder } from '../run/resolve';
 import { getEngine } from '../../engine';
 import { recordedOnForSave } from './recordedOn';
+import { takeImport } from '../../lib/scriptImport/pending';
 
 const DEFAULT_VP = { width: 1440, height: 900 };
 
@@ -38,6 +40,9 @@ export default function RecorderScreen() {
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // Write a test from a story (Breakpatch Team, aiTests): the steps it proposes are gone through in the recorder.
+  const aiTests = useFeature('aiTests');
+  const [storyOpen, setStoryOpen] = useState(false);
   // The browser stays on the address it opened at: a new start address (Test details) is for the
   // next run, and reopening would lose the page the steps are being recorded on.
   const [openedAt, setOpenedAt] = useState<{ id: string; url: string } | null>(null);
@@ -74,6 +79,16 @@ export default function RecorderScreen() {
     else if (step && findStep(steps, step)) rec.setSelectedId(step);
     setParams({}, { replace: true });
   }, [loaded, browser.ready, params, setParams, rec]);
+
+  // A test just imported from a script (ImportDialog): once the browser is ready, its steps are
+  // learned one after another, each done once so its screen checks are recorded (plan.ts `auto`).
+  const learnTaken = useRef(false);
+  useEffect(() => {
+    if (!loaded || !browser.ready || learnTaken.current) return;
+    learnTaken.current = true;
+    const p = takeImport(appId, testId);
+    if (p) rec.startPlan({ steps: p.steps, note: p.note }, { source: 'script', auto: true });
+  }, [loaded, browser.ready, appId, testId, rec]);
 
   async function save(note?: string): Promise<boolean> {
     if (!test) return false;
@@ -176,6 +191,8 @@ export default function RecorderScreen() {
   const actions = test && (
     <>
       <IconButton icon="description" label="Test details" onClick={() => setDetailsOpen(true)} disabled={editorRun.running} />
+      {aiTests && <Button icon="auto_awesome" onClick={() => setStoryOpen(true)} disabled={!loaded || !browser.ready || rec.busy || editorRun.running || rec.hand || !!rec.rerecordId}
+        title="Write a test from a story">From a story</Button>}
       {hasFeature('collaboration') && <SharedChip published={published} />}
       {rec.dirty && <div className="rec-dirty" role="status">Unsaved changes</div>}
       {rec.dirty && !editorRun.running && <span className="rec-run-note" title="Running never saves the test">Runs your unsaved changes too</span>}
@@ -193,6 +210,7 @@ export default function RecorderScreen() {
         loading={!loaded || !browser.ready} onEditGroup={id => guard(() => navigate(`/apps/${appId}/shared/${id}/edit`))} run={runProps} />
       {dialog}
       {test && <TestDetailsDialog open={detailsOpen} test={test} onClose={() => setDetailsOpen(false)} />}
+      {aiTests && <StoryDialog open={storyOpen} onClose={() => setStoryOpen(false)} onPlan={p => { rec.cancelAi(); rec.startPlan(p); }} />}
     </AppFrame>
   );
 }

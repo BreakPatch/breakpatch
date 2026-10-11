@@ -4,7 +4,8 @@ import type { Box, Point, Run, Step, StepRun } from '../../data/types';
 import { around, lockBox } from '../../components/live';
 import { formatDateTime, formatDuration } from '../../components/common/format';
 import { runBy, WHERE } from '../../components/common/runs';
-import { reasonText, reasonTitle, targetName } from '../run/reasons';
+import { reasonText, reasonTitle } from '../run/reasons';
+import { FIXED_TEXT, fixedTitle, gotNote, replyNote } from '../../lib/runWords';
 import { explanationText } from '../../lib/explain';
 
 export type DetailKind = 'failed' | 'fixed' | 'passed' | 'notRun' | 'stopped';
@@ -16,17 +17,20 @@ export function detailKind(r: StepRun | undefined): DetailKind {
   return r.result === 'passed' ? 'passed' : 'notRun';
 }
 
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-
 export function detailText(kind: DetailKind, step: Step, r: StepRun | undefined, canAccept: boolean): { headline: string; body: string } {
   switch (kind) {
-    case 'failed': return { headline: reasonTitle(r?.reason, step), body: reasonText(r?.reason, step) };
+    case 'failed': return { headline: reasonTitle(r?.reason, step), body: reasonText(r?.reason, step, r) };
     case 'stopped': return { headline: reasonTitle('stopped', step), body: reasonText('stopped', step) };
     case 'fixed': return {
-      headline: `${cap(targetName(step))} had moved. The AI assistant found it.`,
-      body: `It was used in the new position and the screen afterwards looked right.${canAccept ? ' Accept to save the new position, or the next run will look in the old spot again.' : ''}`,
+      headline: fixedTitle(step, r),
+      body: `${FIXED_TEXT}${canAccept ? ' Accept to save the new position, or the next run will look in the old spot again.' : ''}`,
     };
-    case 'passed': return { headline: 'This step passed', body: 'It found what it expected, and the screen afterwards looked right.' };
+    case 'passed':
+      // A Call step checks its reply, not the screen: its status and time, never the reply's body.
+      if (step.action === 'call') return { headline: 'This step passed', body: `${replyNote(r?.reply) ?? 'Your API replied'}, as this step expects.` };
+      // A Wait for an email step checks the inbox: what came, never the code or the link.
+      if (step.action === 'emailWait') return { headline: 'This step passed', body: `${gotNote(r?.email) ?? 'The email came'}. Nothing from the email is kept after the run.` };
+      return { headline: 'This step passed', body: 'It found what it expected, and the screen afterwards looked right.' };
     case 'notRun': return { headline: "This step didn't run", body: 'The run stopped before it got here.' };
   }
 }
@@ -45,8 +49,10 @@ export function systemNote(run: Pick<Run, 'systemMismatch'>, r: StepRun | undefi
 }
 
 /** Screenshots are worth showing for these: the page is part of the reason. */
-export function showsScreens(r: StepRun | undefined): boolean {
-  return !!r && r.result === 'failed' && !['secretMissing', 'setUpFailed', 'stopped', 'healingUnavailable'].includes(r.reason ?? '');
+export function showsScreens(r: StepRun | undefined, step?: Pick<Step, 'action'>): boolean {
+  // A Call step or a Wait for an email step keeps no screenshot: its failure is its reply's, or the inbox's.
+  if (step?.action === 'call' || step?.action === 'emailWait') return false;
+  return !!r && r.result === 'failed' && !['secretMissing', 'setUpFailed', 'stopped', 'healingUnavailable', 'callFailed', 'actionUnavailable', 'emailFailed'].includes(r.reason ?? '');
 }
 
 const EXPECT: Partial<Record<Step['action'], string>> = {
@@ -84,7 +90,10 @@ export function copyDetails(run: Run, step: Step | undefined, number: string, r:
   ];
   if (step && r) {
     lines.push('', `Step ${number}: ${step.label}`);
-    if (r.result === 'failed') lines.push(`${reasonTitle(r.reason, step)} (${r.reason ?? 'failed'})`, reasonText(r.reason, step));
+    if (r.result === 'failed') lines.push(`${reasonTitle(r.reason, step)} (${r.reason ?? 'failed'})`, reasonText(r.reason, step, r));
+    if (r.reply) lines.push(`Reply: ${replyNote(r.reply) ?? 'none'}`);
+    if (r.email) lines.push(`Email: ${gotNote(r.email) ?? 'none'}`);
+    if (r.fixedBy) lines.push(`Found by: ${r.fixedBy === 'structure' ? 'its role and name on the page' : 'the AI assistant'}`);
     if (step.target) lines.push(`What to look for: ${step.target}`);
     if (step.at) lines.push(`Position: ${step.at[0]}, ${step.at[1]}`);
     if (r.preDistance !== undefined) lines.push(`Before-step match distance: ${r.preDistance}`);

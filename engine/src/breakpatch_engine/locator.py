@@ -64,6 +64,9 @@ class Locator(Protocol):
     # Optional: reads a failed step's "What should happen" note against the screen after it.
     # {"happened": bool, "why": "it's still open"} or None. Only called when a check fails.
     async def judge(self, image: Image.Image, note: str) -> dict | None: ...
+    # Optional: the model's own words for a prompt about the screenshot, at most `max_tokens` long.
+    # For a Team planner (plan.py), which writes its prompt and reads the reply itself.
+    async def reply(self, image: Image.Image, prompt: str, max_tokens: int) -> str: ...
 
 
 class NoLocator:
@@ -89,6 +92,9 @@ class NoLocator:
 
     async def intent(self, image, sentence):
         return None
+
+    async def reply(self, image, prompt, max_tokens):
+        raise EngineError("not_ready", "The AI assistant isn't downloaded yet. Finish setup to use it.")
 
 
 def parse_intent(text: str) -> dict | None:
@@ -190,17 +196,20 @@ def parse_describe(text: str) -> dict | None:
 
 
 class VisionLocator:
-    """The four methods on top of one question to a vision model: `_generate(image, prompt)`
-    returns the model's reply text (blocking; it runs in a worker thread)."""
+    """The five methods on top of one question to a vision model: `_generate(image, prompt,
+    max_tokens)` returns the model's reply text (blocking; it runs in a worker thread), at most
+    `max_tokens` long, or the backend's own limit when that is None."""
 
     def available(self) -> bool:
         raise NotImplementedError
 
-    def _generate(self, image: Image.Image, prompt: str) -> str:
+    def _generate(self, image: Image.Image, prompt: str, max_tokens: int | None = None) -> str:
         raise NotImplementedError
 
-    async def _ask(self, image: Image.Image, prompt: str) -> str:
-        return await asyncio.to_thread(self._generate, image, prompt)
+    async def _ask(self, image: Image.Image, prompt: str, max_tokens: int | None = None) -> str:
+        if max_tokens is None:
+            return await asyncio.to_thread(self._generate, image, prompt)
+        return await asyncio.to_thread(self._generate, image, prompt, max_tokens)
 
     async def locate(self, image: Image.Image, description: str) -> list[int] | None:
         desc = description.replace('"', "'").strip()
@@ -220,6 +229,9 @@ class VisionLocator:
         y = round(at[1] * 1000 / image.height)
         text = await self._ask(image, DESCRIBE_PROMPT.format(x=x, y=y))
         return parse_describe(text)
+
+    async def reply(self, image: Image.Image, prompt: str, max_tokens: int) -> str:
+        return await self._ask(image, prompt, max(1, min(int(max_tokens), 2048)))
 
 
 # setup.warmUp: one look at a page drawn here, so it needs no file and no network.
@@ -289,7 +301,7 @@ class MlxLocator(VisionLocator):
         except Exception:  # noqa: BLE001
             self._config = getattr(self._model, "config", None)
 
-    def _generate(self, image: Image.Image, prompt: str) -> str:
+    def _generate(self, image: Image.Image, prompt: str, max_tokens: int | None = None) -> str:
         with self._lock:
             self._load()
             from mlx_vlm import generate  # type: ignore
@@ -299,7 +311,7 @@ class MlxLocator(VisionLocator):
             with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as f:
                 image.convert("RGB").save(f.name)
                 out = generate(self._model, self._processor, formatted, [f.name],
-                               max_tokens=self.max_tokens, temperature=0.0, verbose=False)
+                               max_tokens=max_tokens or self.max_tokens, temperature=0.0, verbose=False)
             text = out if isinstance(out, str) else getattr(out, "text", str(out))
             log.info("model reply: %s", text[:300])
             return text

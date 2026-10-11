@@ -8,6 +8,7 @@ import { appVersion, saveTextFile } from '../../platform';
 import { junitXml } from './junit';
 import { allOpen, buildView, type ReportInput, type ReportStepRun, type ReportView } from './view';
 import { reportHtml } from '.';
+import { screenName } from '../../data/devices';
 
 export interface ExportTest {
   appName: string;
@@ -15,7 +16,8 @@ export interface ExportTest {
   /** The steps as the run tested them (shared steps filled in). */
   steps: Step[];
   run: Run | null;
-  viewport?: Pick<Viewport, 'width'>;
+  /** The test's screen: its width sizes the screenshots; a phone or tablet is named in the report. */
+  viewport?: Pick<Viewport, 'width'> & Partial<Pick<Viewport, 'height' | 'device'>>;
   note?: string;
   /** Where the run's version was recorded (Version.recordedOn), when known: the report's Where for a run that records no system. */
   recordedOn?: RecordedOn;
@@ -50,6 +52,7 @@ export async function reportInput(o: {
   const now = o.now ?? Date.now();
   const tests = await Promise.all(o.tests.map(async t => ({
     appName: t.appName, name: t.name, steps: t.steps, ...(t.note ? { note: t.note } : {}), ...(t.recordedOn ? { recordedOn: t.recordedOn } : {}),
+    ...(t.viewport?.device ? { device: screenName({ width: t.viewport.width, height: t.viewport.height ?? 0, device: t.viewport.device }) } : {}),
     run: t.run ? { ...t.run, steps: o.screenshots ? await withImages(t, o.engine) : t.run.steps } : null,
   })));
   return {

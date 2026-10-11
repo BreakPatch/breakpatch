@@ -2,8 +2,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { useSystem } from '../state/system';
 import { listen } from '@tauri-apps/api/event';
-import type { Box, Explanation, HttpCall, Point, Step, StepRun, Viewport } from '../data/types';
-import { EngineError, type CallReply, type Engine, type EngineEvents, type FileChoice, type HandInput, type LocateResult, type Near, type EngineIntent, type Proposal, type RecordParams, type ReportImageReply, type ReportImageRequest, type RunStart, type SetupTaskName, type SystemInfo } from './engine';
+import type { Box, Explanation, HttpCall, InboxSettings, Point, Step, StepRun, Viewport } from '../data/types';
+import { EngineError, type CallReply, type CallStepOptions, type Engine, type EngineEvents, type FileChoice, type HandInput, type InboxCheck, type LocateResult, type Near, type EngineIntent, type Plan, type Proposal, type RecordParams, type ReportImageReply, type ReportImageRequest, type RunStart, type SecretScope, type SetupTaskName, type SystemInfo } from './engine';
 
 interface Wire { event: keyof EngineEvents; data: unknown }
 
@@ -40,13 +40,15 @@ export class SidecarEngine implements Engine {
   async pauseSetup(task: SetupTaskName) { await this.call('setup.pause', { task }); }
   async removeModel() { await this.call('setup.removeModel'); }
 
-  async openBrowser(url: string, viewport: Viewport) { await this.call('browser.open', { url, viewport: { width: viewport.width, height: viewport.height } }); }
+  async openBrowser(url: string, viewport: Viewport) { await this.call('browser.open', { url, viewport: { width: viewport.width, height: viewport.height, ...(viewport.device ? { device: viewport.device } : {}) } }); }
   async closeBrowser() { await this.call('browser.close'); }
   async navigate(nav: 'url' | 'reload' | 'back' | 'forward', url?: string) { await this.call('browser.navigate', { nav, url }); }
   async pointer(kind: 'move' | 'scroll', at: Point, dx?: number, dy?: number) { await this.call('browser.pointer', { kind, at, dx, dy }); }
 
   async recordPoint(p: RecordParams) { return (await this.call<{ step: Step }>('record.point', p)).step; }
-  locate(description: string, opts: { near?: Near } = {}) { return this.call<LocateResult | null>('record.locate', { description, ...(opts.near ? { near: opts.near } : {}) }); }
+  locate(description: string, opts: { near?: Near; shows?: boolean } = {}) {
+    return this.call<LocateResult | null>('record.locate', { description, ...(opts.near ? { near: opts.near } : {}), ...(opts.shows ? { shows: true } : {}) });
+  }
   intent(sentence: string) { return this.call<EngineIntent | null>('record.intent', { sentence }); }
   async chooseFile(choice: FileChoice) { await this.call('record.chooseFile', choice); }
   async hand(on: boolean) { await this.call('browser.hand', { on }); }
@@ -54,13 +56,22 @@ export class SidecarEngine implements Engine {
   async handChooseFile(choice: FileChoice) { await this.call('browser.chooseFile', choice); }
   propose(at: Point, opts: { name?: boolean } = {}) { return this.call<Proposal>('record.propose', { at, ...(opts.name === false ? { name: false } : {}) }); }
   focused() { return this.call<{ box: Box | null; name: string | null }>('record.focused'); }
+  plan(story: string, secrets: string[]) { return this.call<Plan>('record.plan', { story, secrets }); }
   async recordCheckpoint(region: Box, frame?: number) { return (await this.call<{ step: Step }>('record.checkpoint', { region, frame })).step; }
+  async stopWaiting() { await this.call('record.stop'); }
 
   async startRun(r: RunStart) { await this.call('run.start', r); }
   async stopRun(runId: string) { await this.call('run.stop', { runId }); }
 
+  /** "Check the inbox" (Team): the engine signs in as a run would; Community answers not_ready. */
+  checkInbox(inbox: InboxSettings, secrets: Record<string, string> = {}, scope: SecretScope = {}) {
+    return this.call<InboxCheck>('email.check', { inbox, secrets, ...scope });
+  }
+
   /** Through the engine, not the webview's fetch: the release CSP blocks that, and the engine keeps to the same rules as a run. */
-  tryCall(call: HttpCall, appUrl: string, secrets: Record<string, string> = {}) { return this.call<CallReply>('call.try', { call, appUrl, secrets }); }
+  tryCall(call: HttpCall, appUrl: string, secrets: Record<string, string> = {}, scope: SecretScope = {}, step: CallStepOptions = {}) {
+    return this.call<CallReply>('call.try', { call, appUrl, secrets, ...scope, ...step });
+  }
 
   async explain(step: Step, stepRun: StepRun, viewport: Pick<Viewport, 'width' | 'height'>) {
     const { explanation: _cached, ...sr } = stepRun;

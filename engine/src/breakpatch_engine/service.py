@@ -9,8 +9,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from . import calls, config, explain, install, plugins
-from .actions import parse_secrets
+from . import calls, config, explain, imaging, install, labels, plan, plugins
+from .actions import EmailSession, parse_secrets
 from .browser import BrowserSession
 from .locator import Locator, MlxLocator, NoLocator
 from .protocol import EngineError
@@ -24,6 +24,7 @@ Emit = Callable[[str, dict], None]
 TRY_TIMEOUT = 15.0        # seconds; the UI says "No reply after 15 s"
 _TEAM_HEALER = object()   # default: whatever plugins.py found (the Team engine's healer, or none)
 _TEAM_EXPLAINER = object()   # the same for the explainer
+_TEAM_PLANNER = object()     # and for the planner
 EXPLAIN_CACHE = 64        # explanations kept in memory (per failure screenshot)
 # A run asked for while an explanation is still being worked out waits for it this long at most
 # (its model call can't be cut short: it holds the model), so the run's own AI use isn't slowed.
@@ -116,13 +117,16 @@ class Engine:
     def __init__(self, emit: Emit, timings: config.Timings | None = None,
                  locator_fn: Callable[[], Locator] | None = None, headless: bool | None = None,
                  healer: Healer | None | object = _TEAM_HEALER,
-                 explainer: "explain.Explainer | None | object" = _TEAM_EXPLAINER):
+                 explainer: "explain.Explainer | None | object" = _TEAM_EXPLAINER,
+                 planner: "plan.Planner | None | object" = _TEAM_PLANNER):
         self.emit = emit
         # Fallback healing is Team-only (plugins.py); None runs moved targets as targetNotFound.
         self.healer: Healer | None = plugins.healer() if healer is _TEAM_HEALER else healer  # type: ignore[assignment]
         # So is "Why did this fail?" (explain.py); None answers run.explain with not_ready.
         self.explainer: explain.Explainer | None = (plugins.explainer() if explainer is _TEAM_EXPLAINER
                                                     else explainer)  # type: ignore[assignment]
+        # And "Write a test from a story" (plan.py); None answers record.plan with not_ready.
+        self.planner: plan.Planner | None = plugins.planner() if planner is _TEAM_PLANNER else planner  # type: ignore[assignment]
         self._explained: dict[tuple, asyncio.Future] = {}
         # Explanations still working, including ones whose answer came too late for the report.
         self._explaining: set[asyncio.Task] = set()
@@ -136,6 +140,7 @@ class Engine:
         self._browser_lock = asyncio.Lock()
         self._hand = False                      # "Use the page" is on
         self._hand_page = None
+        self._hand_finger = False               # a finger is down on a touch page ("Use the page")
         self._pending_chooser = None
 
     def handlers(self) -> dict:
@@ -161,12 +166,15 @@ class Engine:
             "record.propose": self.record_propose,
             "record.focused": self.record_focused,
             "record.intent": self.record_intent,
+            "record.plan": self.record_plan,
             "record.chooseFile": lambda p: self._sync(self.recorder.choose_file(p)),
+            "record.stop": self.record_stop,
             "run.start": self.run_start,
             "run.stop": self.run_stop,
             "run.explain": self.run_explain,
             "report.images": self.report_images,
             "call.try": self.call_try,
+            "email.check": self.email_check,
         }
 
     # ---------------------------------------------------------------- system
@@ -226,16 +234,23 @@ class Engine:
 
     async def browser_open(self, p: dict) -> dict:
         self._not_during_run()
+        self.recorder.stop_waiting()
         await self.browser_hand({"on": False})
         async with self._browser_lock:
             await self.browser.open(p.get("url") or "", p.get("viewport") or {})
+        # A new recording session: nothing a Call step kept in an earlier one carries over, it gets its
+        # own `{email}` address, and only emails from now on count for it.
+        self.recorder.values = {}
+        self.recorder.email = EmailSession()
         return {}
 
     async def browser_close(self, p: dict) -> dict:
         self._not_during_run()
+        self.recorder.stop_waiting()        # a Wait for an email being recorded ends with its browser
         await self.browser_hand({"on": False})
         async with self._browser_lock:
             await self.browser.close()
+        self.recorder.values = {}       # kept values live only as long as the recording's browser
         return {}
 
     async def browser_navigate(self, p: dict) -> dict:
@@ -268,7 +283,14 @@ class Engine:
                 self._hand_page.remove_listener("filechooser", self._hand_chooser)
             except Exception:  # noqa: BLE001
                 pass
+            if self._hand_finger:
+                # Done with a finger still down: the page isn't left holding a touch.
+                try:
+                    await self.browser.touch_event("cancel")
+                except Exception as e:  # noqa: BLE001 - the page may be gone already
+                    log.debug("couldn't lift the finger: %s", e)
             self._hand_page = None
+            self._hand_finger = False
             self._pending_chooser = None
         return {}
 
@@ -314,7 +336,9 @@ class Engine:
         button = p.get("button") if p.get("button") in ("left", "right", "middle") else "left"
         if kind in ("down", "up", "move", "click", "wheel") and pos is None:
             raise EngineError("bad_request", "The engine received a position it couldn't read.", repr(at))
-        if kind == "move":
+        if self.browser.touch and button == "left" and kind in ("down", "up", "move", "click"):
+            await self._hand_touch(kind, pos)
+        elif kind == "move":
             await page.mouse.move(*pos)
         elif kind == "down":
             await page.mouse.move(*pos)
@@ -338,6 +362,19 @@ class Engine:
             raise EngineError("bad_request", "The engine doesn't know that kind of input.", str(kind)[:20])
         log.debug("used the page: %s", kind)          # the kind only, never a key or text
         return {}
+
+    async def _hand_touch(self, kind: str, pos) -> None:
+        """The user's mouse on a phone or tablet's page is a finger: press, move while pressed, let go."""
+        if kind == "click":
+            await self.browser.tap(pos)
+        elif kind == "down":
+            self._hand_finger = True
+            await self.browser.touch_event("start", pos)
+        elif kind == "move" and self._hand_finger:
+            await self.browser.touch_event("move", pos)
+        elif kind == "up" and self._hand_finger:
+            self._hand_finger = False
+            await self.browser.touch_event("end")
 
     async def browser_pointer(self, p: dict) -> dict:
         self._not_during_run()
@@ -370,7 +407,18 @@ class Engine:
 
     async def record_point(self, p: dict) -> dict:
         phase = lambda ph: self.emit("record.checking", {"phase": ph})  # noqa: E731
-        return {"step": await self._recording(lambda: self.recorder.point(p, phase))}
+        return {"step": self._touch_words(await self._recording(lambda: self.recorder.point(p, phase)), p)}
+
+    async def record_stop(self, p: dict) -> dict:
+        """Ends a step that waits while it's recorded (Wait for an email): its `record.point` answers
+        `stopped` and the step isn't added. Nothing waiting: nothing happens."""
+        return {"stopped": self.recorder.stop_waiting()}
+
+    def _touch_words(self, step, p: dict):
+        """On a phone or tablet, a step the engine named says "Tap", not "Click" (labels.touch_words)."""
+        if not self.browser.touch or not isinstance(step, dict) or p.get("label"):
+            return step
+        return labels.touch_words(step)
 
     async def record_checkpoint(self, p: dict) -> dict:
         phase = lambda ph: self.emit("record.checking", {"phase": ph})  # noqa: E731
@@ -403,7 +451,7 @@ class Engine:
         self._not_during_run()
         self.browser.require()
         return await self.recorder.locate(p.get("description") or "", absence=p.get("absence") is True,
-                                          near=near_param(p.get("near")))
+                                          near=near_param(p.get("near")), shows=p.get("shows") is True)
 
     async def record_intent(self, p: dict):
         """What a described step means, from the AI assistant: `{action, target, repeat, text?,
@@ -414,6 +462,43 @@ class Engine:
         if not isinstance(sentence, str) or not sentence.strip():
             raise EngineError("bad_request", "Describe the step.")
         return await self.recorder.intent(sentence.strip()[:300])
+
+    async def record_plan(self, p: dict):
+        """A test from a user story (plan.py, roadmap #10): `{steps, note?, dropped?}`, the steps the
+        planner proposes, checked by plan.clean. Nothing is done to the page; the app finds and
+        records each step only when the person confirms it. Breakpatch Team: Community has no
+        planner and answers not_ready."""
+        pl = self.planner
+        if pl is None:
+            raise EngineError("not_ready", "Writing a test from a story is part of Breakpatch Team.")
+        self._not_during_run()
+        text = p.get("story")
+        if not isinstance(text, str) or not text.strip():
+            raise EngineError("bad_request", "Write the story first.")
+        page = self.browser.require()
+        story = plan.Story(text=text.strip()[:plan.MAX_STORY], secrets=plan.secret_names(p.get("secrets")),
+                           url=getattr(page, "url", None), viewport=(self.browser.width, self.browser.height),
+                           device=self.browser.device.id if self.browser.device else None, touch=self.browser.touch)
+        story.image = imaging.to_image(await self.browser.shoot())
+        try:
+            from .dom.extract import extract
+            ex = await asyncio.wait_for(extract(await self.browser.live(), story.viewport, texts=True), plan.PAGE_READ_S)
+            story.page = explain.page_record(ex.candidates, ex.texts)
+        except Exception as e:  # noqa: BLE001 - a page that can't be read is planned from the screenshot
+            log.info("couldn't read the page for a plan: %s", e)
+        work = asyncio.ensure_future(pl.plan(story, self.locator_fn))
+        # Not wait_for: cancelling the coroutine wouldn't stop the model's thread, only hide it.
+        done, _ = await asyncio.wait({work}, timeout=plan.TIMEOUT_S)
+        if not done:
+            work.add_done_callback(lambda t: t.cancelled() or t.exception())   # a late error is logged, not raised
+            raise EngineError("not_found", "The AI assistant took too long to make steps from this story. "
+                              "Try a shorter story, one action per sentence.", "timeout")
+        got = plan.clean(work.result(), story)
+        if got is None:
+            raise EngineError("not_found", "The AI assistant couldn't make steps from this story. "
+                              "Try a shorter story, one action per sentence.")
+        log.info("planned %d step(s) from a story of %d characters", len(got["steps"]), len(story.text))
+        return got
 
     # ---------------------------------------------------------------- replay
 
@@ -437,11 +522,20 @@ class Engine:
         self._activity = "run"
         runner = Runner(self.browser, self.locator_fn, self.timings, self.emit, healer=self.healer,
                         explainer=self.explainer)
+        # Play this step goes on from the recorder's page, with the values its Call steps kept.
+        if p.get("fromStepId") is not None:
+            runner.values = self.recorder.values
+            runner.email = self.recorder.email
 
         async def go():
             try:
                 await self._drain_explanations()
                 ended = await runner.run(p, stop)
+                if p.get("keepOpen"):
+                    # Recording carries on from where the run left the page, and from what it kept.
+                    self.recorder.values = runner.values
+                    if runner.email is not None:
+                        self.recorder.email = runner.email
             except Exception as e:  # noqa: BLE001
                 log.exception("run crashed")
                 ended = {"runId": run_id, "result": "fail", "durationMs": 0,
@@ -554,13 +648,33 @@ class Engine:
     # ---------------------------------------------------------------- set-up and clean-up calls
 
     async def call_try(self, p: dict) -> dict:
-        """"Try it" for a set-up or clean-up call: the same rules as a run (calls.py), one request."""
+        """"Try it" for a set-up or clean-up call, or a Call step: the same rules as a run
+        (calls.py), one request. A Call step's statuses that pass and the value it keeps are checked
+        too (`passStatus`, `keep`); the kept value itself never comes back."""
         call = p.get("call")
         if not isinstance(call, dict):
             raise EngineError("bad_request", "There's no call to try.")
-        reply = await calls.make(call, p.get("appUrl"), parse_secrets(p.get("secrets")), TRY_TIMEOUT)
+        keep = p.get("keep") if isinstance(p.get("keep"), dict) else None
+        reply = await calls.make(calls.with_run_values(call, 1), p.get("appUrl"), parse_secrets(p.get("secrets")),
+                                 calls.step_timeout(p.get("timeoutMs"), TRY_TIMEOUT), pass_status=p.get("passStatus"),
+                                 keep=str(keep.get("path") or "") if keep else None)
         log.info("tried a call: %s", reply.info)
-        return reply.to_json()
+        out = reply.to_json()
+        if keep and reply.ok:
+            out["kept"] = True
+        return out
+
+    async def email_check(self, p: dict) -> dict:
+        """Settings → Test inbox, "Check the inbox" (Breakpatch Team, issue #12): signs in to the
+        inbox as a run would and answers `{ ok, message? }`, never what's in it. Community:
+        `not_ready`."""
+        from . import plugins
+        check = getattr(plugins.action("emailWait"), "check", None)
+        if not callable(check):
+            raise EngineError("not_ready", "Checking a test inbox needs Breakpatch Team.")
+        if not isinstance(p.get("inbox"), dict):
+            raise EngineError("bad_request", "There's no test inbox to check.")
+        return await check({"inbox": p["inbox"], "secrets": parse_secrets(p.get("secrets"))})
 
     async def shutdown(self) -> None:
         if self._run:

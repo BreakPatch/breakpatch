@@ -29,6 +29,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
+    blips: dict = {}
+
+    def do_GET(self):
+        # /blip/<page>: the first request for it doesn't answer for 4 s (a network blip), later ones do.
+        if self.path.startswith("/blip/"):
+            key = self.path
+            first = key not in Handler.blips
+            Handler.blips[key] = Handler.blips.get(key, 0) + 1
+            self.path = self.path[len("/blip"):]
+            if first:
+                import time
+                time.sleep(4)
+        super().do_GET()
+
     def do_POST(self):
         Handler.calls.append(("POST", self.path))
         self.send_response(500 if self.path.startswith("/api/fail") else 200)
@@ -88,7 +102,8 @@ class Harness:
     async def run(self, steps, url, **kw):
         self.ended.clear()
         params = {"runId": kw.pop("runId", "r1"), "startUrl": url, "viewport": VIEWPORT, "steps": steps,
-                  "settings": {"autoFix": kw.pop("autoFix", False), "failOnFix": kw.pop("failOnFix", False)},
+                  "settings": {"autoFix": kw.pop("autoFix", False), "failOnFix": kw.pop("failOnFix", False),
+                               **kw.pop("settings", {})},
                   "secrets": kw.pop("secrets", {}), **kw}
         await self.call("run.start", params)
         await asyncio.wait_for(self.ended.wait(), 60)
@@ -183,6 +198,77 @@ async def test_moved_target_without_a_healer_fails_target_not_found(site, record
     assert step["preDistance"] > 6 and "newAt" not in step
     assert loc.calls == []                                           # the model was never asked
     assert "looking" not in [d["state"] for d in hx.of("run.step")]
+
+
+@pytest.mark.parametrize("switch", [False, True])
+async def test_community_fails_a_moved_target_whatever_the_structure_switch_says(site, recorded, monkeypatch, switch):
+    """The structure healing switch (config.HEAL_FROM_STRUCTURE) changes nothing without a healer."""
+    from breakpatch_engine import config
+    monkeypatch.setattr(config, "HEAL_FROM_STRUCTURE", switch)
+    hx = Harness(FakeLocator(MOVED_BOX), healer=None)
+    ended = await hx.run(recorded["steps"][:1], site + "/index.html?moved=1", autoFix=True)
+    assert ended["steps"][0]["reason"] == "targetNotFound" and "fixedBy" not in ended["steps"][0]
+
+
+def moved_by(fixed_by):
+    """A healer that finds the button where ?moved=1 puts it and says how (runner.fixed_by), or not."""
+    async def heal(runner, step, pre, ignore, iteration, old_dist):
+        if fixed_by is not None:
+            runner.fixed_by = fixed_by
+        return [490.0, 222.0], None, 0
+    return heal
+
+
+@pytest.mark.parametrize("fixed_by", ["structure", "ai", None, "guess"])
+async def test_a_healer_says_how_it_found_the_target(site, recorded, fixed_by):
+    hx = Harness(healer=moved_by(fixed_by))
+    ended = await hx.run(recorded["steps"][:1], site + "/index.html?moved=1", autoFix=True)
+    step = ended["steps"][0]
+    assert ended["result"] == "pass" and step["result"] == "healed"
+    healed = [d for d in hx.of("run.step") if d["state"] == "healed"][0]
+    if fixed_by in ("structure", "ai"):
+        assert step["fixedBy"] == fixed_by and healed["fixedBy"] == fixed_by
+    else:     # a healer that doesn't say (as before it existed), or says something else: nothing
+        assert "fixedBy" not in step and "fixedBy" not in healed
+
+
+@pytest.mark.parametrize("fixed_by, message", [
+    ("structure", "A step was fixed automatically and this run fails on fixes."),
+    ("ai", "A step was fixed by the AI assistant and this run fails on fixes."),
+    (None, "A step was fixed by the AI assistant and this run fails on fixes."),
+])
+async def test_fail_on_fix_says_who_fixed_it(site, recorded, fixed_by, message):
+    hx = Harness(healer=moved_by(fixed_by))
+    ended = await hx.run(recorded["steps"][:1], site + "/index.html?moved=1", autoFix=True, failOnFix=True)
+    assert ended["result"] == "fail" and ended["message"] == message
+
+
+async def test_a_start_page_that_didn_t_load_the_first_time_passes_on_a_retry(site, recorded):
+    """Roadmap #14: a network blip on the first try; the retry starts again in a new browser."""
+    hx = Harness()
+    ended = await hx.run(recorded["steps"], site + "/blip/index.html?retry=1", settings={"retries": 1})
+    assert ended["result"] == "pass", ended
+    assert ended["attempts"] == 2
+    first = ended["steps"][0]
+    assert first["result"] == "passed" and first["retried"][0]["reason"] == "timeout"
+    assert "didn't load" in first["retried"][0]["message"]
+    retry = hx.of("run.retry")
+    assert len(retry) == 1 and retry[0]["attempt"] == 2 and retry[0]["of"] == 2
+    # The steps ran again from the start: each was running twice or once after the retry.
+    assert [d["stepId"] for d in hx.of("run.step") if d["state"] == "passed"] == [s["id"] for s in recorded["steps"]]
+
+
+async def test_without_retries_the_same_blip_fails_the_run(site, recorded):
+    hx = Harness()
+    ended = await hx.run(recorded["steps"], site + "/blip/index.html?retry=0")
+    assert ended["result"] == "fail" and "attempts" not in ended and not hx.of("run.retry")
+
+
+async def test_a_moved_button_is_not_retried(site, recorded):
+    hx = Harness()
+    ended = await hx.run(recorded["steps"], site + "/index.html?moved=1", settings={"retries": 2})
+    assert ended["result"] == "fail" and "attempts" not in ended and not hx.of("run.retry")
+    assert ended["steps"][0]["reason"] == "targetNotFound"
 
 
 async def test_run_reports_where_it_ran_and_no_mismatch_on_the_same_system(site, recorded):

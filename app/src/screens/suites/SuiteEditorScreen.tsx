@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AppFrame } from '../../components/shell/AppFrame';
-import { Button, Checkbox, Icon, IconButton, Skeleton, TextInput, useToast } from '../../components/ui';
+import { Button, Checkbox, Icon, IconButton, Segmented, Skeleton, TextInput, useToast } from '../../components/ui';
 import { useBackend, useLive } from '../../data/hooks';
 import { canManageDeleted, type DeletedItem } from '../../data/backend';
 import type { App, Suite } from '../../data/types';
@@ -16,6 +16,7 @@ import { swapTests } from './suiteOrder';
 import { edition, type SuiteExtras } from '../../edition';
 import './suites.css';
 import { osText } from '../../lib/osWords';
+import { RETRY_CHOICES, retriesOf } from '../../lib/retries';
 
 type Ref = Suite['tests'][number];
 const key = (r: Ref) => `${r.appId}/${r.testId}`;
@@ -39,6 +40,8 @@ export default function SuiteEditorScreen() {
   // Kept as loaded when no panel edits them, so saving never drops a schedule or address.
   const [extras, setExtras] = useState<SuiteExtras>({ schedule: null });
   const [extrasProblem, setExtrasProblem] = useState<string | undefined>();
+  // The suite's own retries; unset means the default (lib/retries.ts), and stays unset until changed.
+  const [retries, setRetries] = useState<number | undefined>(undefined);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [tried, setTried] = useState(false);
@@ -52,7 +55,7 @@ export default function SuiteEditorScreen() {
     if (isNew) { if (loaded.current !== 'new') { loaded.current = 'new'; } return; }
     if (!suite || loaded.current === suite.id) return;
     loaded.current = suite.id;
-    setName(suite.name); setPicked(suite.tests);
+    setName(suite.name); setPicked(suite.tests); setRetries(suite.retries);
     setExtras({ schedule: suite.schedule, ...(suite.resultUrl ? { resultUrl: suite.resultUrl } : {}), ...(suite.notify ? { notify: suite.notify } : {}) });
     setDirty(false);
   }, [isNew, suite]);
@@ -92,7 +95,10 @@ export default function SuiteEditorScreen() {
     setSaving(true);
     try {
       const url = extras.resultUrl?.trim();
-      const out = await backend.saveSuite(suiteId ?? null, { name: name.trim(), tests: kept, schedule: extras.schedule, ...(url ? { resultUrl: url } : {}), ...(extras.notify !== undefined ? { notify: extras.notify } : {}) });
+      const out = await backend.saveSuite(suiteId ?? null, {
+        name: name.trim(), tests: kept, schedule: extras.schedule, ...(url ? { resultUrl: url } : {}), ...(extras.notify !== undefined ? { notify: extras.notify } : {}),
+        ...(retries !== undefined ? { retries } : {}),
+      });
       setDirty(false);
       if (!quiet) toast(isNew ? `${out.name} created.` : 'Suite saved.');
       if (isNew) { loaded.current = out.id; navigate(`/suites/${out.id}`, { replace: true }); }
@@ -226,6 +232,14 @@ export default function SuiteEditorScreen() {
               </div>
             </>
           )}
+          <div className="se-hrow" style={{ marginTop: 6 }}><div className="se-h">When a test fails because the page was slow</div></div>
+          <div className="se-retries">
+            <Segmented<string> label="When a test fails because the page was slow" value={String(retriesOf({ retries }))}
+              onChange={v => { setRetries(Number(v)); setDirty(true); }} items={RETRY_CHOICES.map(c => ({ value: String(c.value), label: c.label }))} />
+            <p className="se-retries-text">
+              Only for failures that look like timing: the page didn't settle, didn't load, or wasn't quite ready. The test runs again from the start, and the result says it passed on a retry, so a flaky test is easy to spot. Other failures, like a button that isn't there, fail at once.
+            </p>
+          </div>
         </div>
 
         {Panel && (

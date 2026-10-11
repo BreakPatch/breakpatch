@@ -6,7 +6,7 @@ import type { Person, RecordedOn, Run, Step, Test } from '../../data/types';
 import { useBackend } from '../../data/hooks';
 import { demoEngine, getEngine, type RunEnded, type RunStepEvent } from '../../engine';
 import { sampleApp } from '../../components/live';
-import { secrets } from '../../platform';
+import { secretsForRequest } from '../../lib/secretScope';
 import { useSession } from '../../state/session';
 import { hasFeature } from '../../edition';
 import { ensureSecretSites } from '../../lib/secretSites';
@@ -19,6 +19,7 @@ import { backendGroupLoader, callSecretNames, preorder, resolveSteps, secretName
 import { INITIAL_RUN, runReducer } from './runState';
 import { demoFailIds, demoSeen } from './demo';
 import { computer, ThisComputer } from '../../lib/osWords';
+import { inboxSecretNames, readInbox, usesEmail } from '../../lib/email';
 
 export interface Finished { ended: RunEnded; run: Run | null; steps: Step[]; recordedOn?: RecordedOn }
 
@@ -50,6 +51,8 @@ async function appUrlOf(backend: Backend, test: Test): Promise<string> {
  */
 export async function engineRun(backend: Backend, t: Test, steps: Step[], runId: string, opts: {
   keepOpen?: boolean; upToStepId?: string; fromStepId?: string; abandoned?: () => boolean;
+  /** How many times a failed run tries again when its failure looks like timing (a suite's, lib/retries.ts). */
+  retries?: number;
   /** Where the test was recorded (its version's `recordedOn`), to compare with this system. */
   recordedOn?: RecordedOn;
   /** Where the version being run starts (startUrlOf); the test's start address by default. */
@@ -64,26 +67,38 @@ export async function engineRun(backend: Backend, t: Test, steps: Step[], runId:
   const names = [...new Set([...secretNames(steps), ...callSecretNames(t.setUp, t.cleanUp)])];
   const appUrl = await appUrlOf(backend, t);
   await ensureSecretSites(names, appUrl);
-  const values = await secrets.resolve(names);
+  // The workspace's test inbox, when the steps wait for an email or use {email} (Team, lib/email.ts);
+  // its password is a saved secret like any other, used on the inbox's site only.
+  const inbox = usesEmail(steps) ? await readInbox(backend) : null;
+  const inboxNames = inboxSecretNames(steps, inbox).filter(n => !names.includes(n));
+  // This Mac's values, where the run is, and the workspace's sealed secrets (lib/secretScope.ts).
+  const forRun = await secretsForRequest([...names, ...inboxNames]);
   if (opts.abandoned?.()) return null;
   const startedAt = Date.now();
   opts.onStart?.(startedAt);
-  const shots: Record<string, string> = {};
+  // The last try's screenshots, by step. Another try starts afresh: an earlier try's are in its
+  // run.ended `retried`, and would otherwise land on a step that passed this time.
+  let shots: Record<string, string> = {};
   const ended = await new Promise<RunEnded>((resolve, reject) => {
     const offStep = engine.on('run.step', ev => {
       if (ev.runId !== runId) return;
       if (ev.screenshot) shots[ev.stepId] = ev.screenshot;
       opts.onStep?.(ev);
     });
-    const offEnd = engine.on('run.ended', ev => { if (ev.runId !== runId) return; offStep(); offEnd(); resolve(ev); });
+    const offRetry = engine.on('run.retry', ev => { if (ev.runId === runId) shots = {}; });
+    const off = () => { offStep(); offRetry(); offEnd(); };
+    const offEnd = engine.on('run.ended', ev => { if (ev.runId !== runId) return; off(); resolve(ev); });
     engine.startRun({
       runId, startUrl: opts.startUrl ?? t.startUrl, appUrl, viewport: t.viewport, steps, setUp: t.setUp, cleanUp: t.cleanUp,
-      settings: { autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix, allowSystemDifferences: prefs.allowSystemDifferences },
-      secrets: values, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}),
+      settings: {
+        autoFix: fixing && prefs.autoFix, failOnFix: fixing && prefs.failOnFix, allowSystemDifferences: prefs.allowSystemDifferences,
+        ...(opts.retries ? { retries: opts.retries } : {}),
+      },
+      ...forRun, ...(opts.recordedOn ? { recordedOn: opts.recordedOn } : {}), ...(inbox ? { inbox } : {}),
       ...(filesDir(backend.local?.path) ? { filesDir: filesDir(backend.local?.path) } : {}),
       ...(opts.keepOpen ? { keepOpen: true } : {}), ...(opts.upToStepId ? { upToStepId: opts.upToStepId } : {}),
       ...(opts.fromStepId ? { fromStepId: opts.fromStepId } : {}),
-    }).catch(err => { offStep(); offEnd(); reject(err); });
+    }).catch(err => { off(); reject(err); });
   });
   return { ended, startedAt, shots };
 }
@@ -116,16 +131,20 @@ export function useTestRun() {
     const engine = getEngine();
     const offStep = engine.on('run.step', ev => dispatch({ type: 'step', ev }));
     const offEnd = engine.on('run.ended', ev => dispatch({ type: 'ended', ev }));
+    const offRetry = engine.on('run.retry', ev => dispatch({ type: 'retry', ev }));
     return () => {
-      offStep(); offEnd();
+      offStep(); offEnd(); offRetry();
       // Leaving the screen stops the run; it isn't saved, since nobody chose to stop it.
       const cur = active.current;
       if (cur) { cur.abandoned = true; void engine.stopRun(cur.runId).catch(() => {}); }
     };
   }, []);
 
-  /** `notify: false` inside a suite: the suite says how it went as a whole. */
-  const start = useCallback(async (t: Test, opts: { notify?: boolean } = {}): Promise<Finished | null> => {
+  /**
+   * `notify: false` inside a suite: the suite says how it went as a whole. `retries`: the suite's
+   * (lib/retries.ts retriesOf); a test run on its own isn't retried: the person is watching it.
+   */
+  const start = useCallback(async (t: Test, opts: { notify?: boolean; retries?: number } = {}): Promise<Finished | null> => {
     if (active.current) return null;
     dispatch({ type: 'prepare' });
     setTest(t); setRun(null); setSaveError(null);
@@ -146,7 +165,7 @@ export function useTestRun() {
       }
       const { user } = useSession.getState();
       const got = await engineRun(backend, t, resolved, handle.runId, {
-        abandoned: () => handle.abandoned, recordedOn, startUrl,
+        abandoned: () => handle.abandoned, recordedOn, startUrl, retries: opts.retries,
         onStart: at => dispatch({ type: 'start', runId: handle.runId, ids: [...byId.keys()], at }),
         onStep: ev => {
           // The sample page follows the run. A run that will fail at the moved Done button
@@ -170,6 +189,7 @@ export function useTestRun() {
           result: ended.result, healedCount,
           steps: ended.steps.map(s => (shots[s.stepId] && !s.screenshotPath ? { ...s, screenshotPath: shots[s.stepId] } : s)),
           ...(ended.systemMismatch ? { systemMismatch: ended.systemMismatch } : {}),
+          ...(ended.attempts && ended.attempts > 1 ? { attempts: ended.attempts } : {}),
         });
         if (demo && ended.result === 'fail') demoSeen.set(saved.id, sampleApp.get());
       } catch (e) {

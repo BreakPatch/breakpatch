@@ -8,7 +8,7 @@ import { WorkspaceSwitcher } from '../components/shell/WorkspaceSwitcher';
 import { initFolder, previewStorage } from '../data/local';
 import type { Workspace } from '../data/types';
 import { CONNECTIONS_KEY, canOpenKind, connections, folderConnection, folderConnectionId, loadConnections, useConnections, workspaceConnection, workspaceConnectionId } from './connections';
-import { useSession } from './session';
+import { previousConnection, useSession } from './session';
 import { edition } from '../edition';
 
 const ws: Workspace = { name: 'Acme', domain: 'acme.com', database: 'breakpatch', config: { apiKey: 'k', authDomain: 'a', projectId: 'acme-qa', appId: '1' } };
@@ -115,9 +115,49 @@ describe('the switcher', () => {
     show();
     fireEvent.click(screen.getByRole('button', { name: 'Workspace: Personal: b-tests. Switch workspace' }));
     const items = screen.getAllByRole('menuitemradio');
-    expect(items.map(i => i.textContent)).toEqual(['folderPersonal: a-tests', 'folderPersonal: b-testscheck']);
+    // Team turns on ⌘1 to ⌘9 (switcherShortcuts); Community's menu has no shortcuts.
+    const keys = edition.name === 'team' ? ['⌘1', '⌘2'] : ['', ''];
+    expect(items.map(i => i.textContent)).toEqual([`folderPersonal: a-tests${keys[0]}`, `folderPersonal: b-testscheck${keys[1]}`]);
     fireEvent.click(items[0]);
     await waitFor(() => expect(useSession.getState().local?.path).toBe(a));
     expect(useConnections.getState().activeId).toBe(folderConnectionId(a));
+  });
+});
+
+describe('the switcher in Community', () => {
+  const show = () => render(<ToastProvider><MemoryRouter><WorkspaceSwitcher /></MemoryRouter></ToastProvider>);
+
+  it.skipIf(edition.name === 'team')('has no ⌘1 to ⌘9: the keys do nothing, as before', async () => {
+    const a = '/Users/you/Projects/a-tests', b = '/Users/you/Projects/b-tests';
+    for (const p of [a, b]) { await previewStorage().mkdir(p); await initFolder(previewStorage(), p); }
+    await useSession.getState().connectLocal(a);
+    await useSession.getState().connectLocal(b);
+    show();
+    const ev = new KeyboardEvent('keydown', { key: '1', code: 'Digit1', metaKey: true, bubbles: true, cancelable: true });
+    window.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+    await new Promise(r => setTimeout(r, 20));
+    expect(useSession.getState().local?.path).toBe(b);
+    fireEvent.click(screen.getByRole('button', { name: 'Workspace: Personal: b-tests. Switch workspace' }));
+    expect(screen.getAllByRole('menuitemradio').map(i => i.getAttribute('aria-keyshortcuts'))).toEqual([null, null]);
+    expect(screen.queryByRole('menuitem')).toBeNull();          // nothing after the list: no Add or Manage
+  });
+});
+
+describe('leaving a workspace', () => {
+  const acme = workspaceConnection(ws, 1);
+  const globex = workspaceConnection({ ...ws, name: 'Globex', config: { ...ws.config, projectId: 'globex-qa' } }, 3);
+  const folder = folderConnection('/Users/ana/web/tests', undefined, 2);
+
+  it('goes back to the one used before it, a workspace or the tests folder, and never to one this edition can\'t open', () => {
+    localStorage.setItem(CONNECTIONS_KEY, JSON.stringify({ list: [acme, folder, globex], activeId: globex.id }));
+    connections.reloadForTests();
+    // Community opens no Team workspace: only the folder is somewhere to go back to.
+    expect(previousConnection(globex.id)?.id).toBe(folder.id);
+    expect(previousConnection(folder.id)?.id).toBe(edition.name === 'team' ? globex.id : undefined);
+    localStorage.setItem(CONNECTIONS_KEY, JSON.stringify({ list: [acme, globex], activeId: globex.id }));
+    connections.reloadForTests();
+    expect(previousConnection(globex.id)?.id).toBe(edition.name === 'team' ? acme.id : undefined);
+    expect(previousConnection(null)?.id).toBe(edition.name === 'team' ? globex.id : undefined);
   });
 });

@@ -45,6 +45,15 @@ describe('edits', () => {
     expect(findStep(s, 'c')?.target).toBe('Save button');
     expect(findStep(sample(), 'c')?.target).toBeUndefined();
   });
+  it('a new "What to look for" drops the element kept for the old one; other edits keep it', () => {
+    const element = { role: 'button', name: 'Save', origin: 'https://app.acme.com', offset: [0, 0] as [number, number] };
+    const steps = [st('a'), loop('L', [{ ...st('b'), target: 'Save button', element }])];
+    expect(findStep(updateStep(steps, 'b', { target: 'Done button' }), 'b')).not.toHaveProperty('element');
+    expect(findStep(updateStep(steps, 'b', { target: undefined }), 'b')).not.toHaveProperty('element');
+    expect(findStep(updateStep(steps, 'b', { target: 'Save button' }), 'b')?.element).toEqual(element);
+    expect(findStep(updateStep(steps, 'b', { label: 'Click Save', expect: 'changes' }), 'b')?.element).toEqual(element);
+    expect(findStep(steps, 'b')?.element).toEqual(element);
+  });
   it('appends into the open loop, else at the end', () => {
     expect(ids(appendStep(sample(), st('e'), 'L'))).toEqual(['a', { L: ['b', 'c', 'e'] }, 'd']);
     expect(ids(appendStep(sample(), st('e'), null))).toEqual(['a', { L: ['b', 'c'] }, 'd', 'e']);

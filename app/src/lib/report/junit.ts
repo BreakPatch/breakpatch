@@ -1,5 +1,5 @@
 // JUnit XML from the report's view: one <testcase> per test, as GitHub, GitLab and Jenkins read
-// it. breakpatch-ci writes the same bytes (the open engine's breakpatch_engine/report/junit.py):
+// it, with each earlier try of a retried test. breakpatch-ci writes the same bytes (the open engine's breakpatch_engine/report/junit.py):
 // both are checked against engine/tests/fixtures/report/report-*.junit.xml.
 import type { ReportView } from './view';
 
@@ -19,11 +19,21 @@ export function junitXml(view: ReportView): string {
   for (const t of view.tests) {
     const c = t.junit;
     const head = `    <testcase name="${xmlEscape(t.name)}" classname="${xmlEscape(t.appName || j.name)}" time="${xmlEscape(c.seconds)}"`;
-    if (c.status === 'passed') { out.push(`${head}/>`); continue; }
+    const retries = c.retries ?? [];
+    if (c.status === 'passed' && !retries.length) { out.push(`${head}/>`); continue; }
     out.push(`${head}>`);
-    out.push(c.status === 'skipped'
-      ? `      <skipped message="${xmlEscape(c.message)}"/>`
-      : `      <failure message="${xmlEscape(c.message)}" type="${xmlEscape(c.type)}">${xmlEscape(c.text)}</failure>`);
+    // Earlier tries (engine "Retries"), as Maven Surefire writes reruns: <flakyFailure> for each in a
+    // test that passed in the end (Jenkins and others show it as flaky). In one that failed every
+    // try, <failure> is the first try's and <rerunFailure> each later one's, this last try's included.
+    const tag = c.status === 'passed' ? 'flakyFailure' : 'rerunFailure';
+    let later = retries;
+    if (c.status === 'skipped') out.push(`      <skipped message="${xmlEscape(c.message)}"/>`);
+    else if (c.status !== 'passed') {
+      const [first, ...rest] = [...retries, c];
+      later = rest;
+      out.push(`      <failure message="${xmlEscape(first.message)}" type="${xmlEscape(first.type)}">${xmlEscape(first.text)}</failure>`);
+    }
+    for (const r of later) out.push(`      <${tag} message="${xmlEscape(r.message)}" type="${xmlEscape(r.type)}">${xmlEscape(r.text)}</${tag}>`);
     out.push('    </testcase>');
   }
   out.push('  </testsuite>', '</testsuites>', '');

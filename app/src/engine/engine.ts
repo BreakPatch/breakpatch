@@ -1,5 +1,5 @@
 // UI-side view of the Python engine (see engine/PROTOCOL.md).
-import type { Box, Explanation, HttpCall, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
+import type { Box, Direction, Explanation, Generated, HttpCall, InboxSettings, KeptValue, Point, RecordedOn, SampleFile, Step, StepRun, SystemMismatch, Viewport } from '../data/types';
 
 export interface SystemInfo {
   memoryGb: number; chip: string; os: string; engineVersion: string;
@@ -40,7 +40,21 @@ export type HandInput =
   | { kind: 'text'; text: string };
 export type FileChoice = { sample: SampleFile } | { file: string; path: string } | { cancel: true };
 
-export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' | 'post' | 'ignore'>> & {
+/**
+ * A workspace secret (Breakpatch Team, issue #45) as a request carries it: its name and its
+ * document's sealed `value`. Only the shell opens it, for the engine (app/src-tauri/src/workspace_secrets.rs).
+ */
+export interface SealedSecret { name: string; id: string; enc: string; kid: number }
+
+/**
+ * Where a run, a recorded step or a tried call happens, for its saved secrets (engine/PROTOCOL.md
+ * "Saved secrets"): the open workspace's or tests folder's connection id, so the shell refuses a
+ * secret on this Mac kept for other workspaces (#33), and the workspace's own secrets the request
+ * may use (#45). The shell takes both out before the engine sees the request.
+ */
+export interface SecretScope { workspace?: string; workspaceSecrets?: SealedSecret[] }
+
+export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' | 'post' | 'ignore'>> & SecretScope & {
   action: Step['action']; at?: Point;
   /** A "Write saved secret" step's value, by name. Typed, never stored in the step; the shell adds its sites. */
   secrets?: Record<string, string>;
@@ -53,8 +67,12 @@ export type RecordParams = Partial<Omit<Step, 'id' | 'label' | 'target' | 'pre' 
   target?: string;
   /** The step's name, when the app already has one (the engine then doesn't ask the AI assistant). */
   label?: string;
+  /** A Call step: the app's base address, which its call may reach (engine/PROTOCOL.md "Call steps"). */
+  appUrl?: string;
   /** <tests folder>/files, for uploads of the user's own files. */
   filesDir?: string;
+  /** The workspace's test inbox, for a Wait for an email step and `{email}` (Team, engine/PROTOCOL.md "Wait for an email"). */
+  inbox?: InboxSettings;
 };
 
 /** What a click on the live view would act on (nothing is done to the page): `record.propose`. */
@@ -73,12 +91,36 @@ export interface EngineIntent { action: string; repeat: number; target?: string;
 
 export interface LocateResult { box: Box; at: Point; target: string; frame?: number; path?: LocatePath; s0Score?: number }
 
+/**
+ * One step a user story asks for (Breakpatch Team, engine `record.plan`): proposed, not done. The
+ * engine has already applied the safety rules (engine/PROTOCOL.md "A test from a story").
+ */
+export interface PlanStep {
+  action: 'click' | 'doubleClick' | 'rightClick' | 'hover' | 'write' | 'navigate' | 'scroll' | 'waitFor' | 'checkpoint';
+  /** What to find on the page, in words. None: the field that has the focus (write), the page (scroll). */
+  target?: string;
+  /** Write: typed text from the story, a picked saved secret, or a generated value. */
+  text?: string; secretRef?: string; generated?: Generated;
+  /** Write with no value the engine would type: the person says what to type, or picks a saved secret. */
+  needs?: 'text' | 'secret';
+  url?: string; direction?: Direction; seconds?: number;
+  /** It looks like it deletes, pays or sends something. */
+  careful?: boolean;
+}
+/** `dropped`: proposed steps no step can do; `overLimit`: steps left out past the most a plan has (30). */
+export interface Plan { steps: PlanStep[]; note?: string; dropped?: number; overLimit?: number }
+
 export interface RunSettings {
   autoFix: boolean; failOnFix: boolean;
   /** "Allow for small differences between systems": the engine treats a missing value as on. */
   allowSystemDifferences?: boolean;
+  /**
+   * How many times a failed run tries again, from the start in a new browser, when its failure
+   * looks like timing (engine/PROTOCOL.md "Retries"): 0 to 2. Missing: none.
+   */
+  retries?: number;
 }
-export interface RunStart {
+export interface RunStart extends SecretScope {
   runId: string; startUrl: string; viewport: Viewport; steps: Step[];
   /** The app's base address: set-up and clean-up calls may only go to its hosts. Defaults to `startUrl`. */
   appUrl?: string;
@@ -100,20 +142,33 @@ export interface RunStart {
   filesDir?: string;
   /** Where the test was recorded (its version's `recordedOn`), to compare with this system. */
   recordedOn?: RecordedOn;
+  /** The workspace's test inbox, when the steps wait for an email or use `{email}` (Team). */
+  inbox?: InboxSettings;
 }
 
-/** The answer to "Try it" for a set-up or clean-up call (engine `call.try`). */
+/** The answer to "Check the inbox" (Team, engine `email.check`): a plain sentence either way, never what's in it. */
+export interface InboxCheck { ok: boolean; message?: string }
+
+/** The answer to "Try it" for a set-up or clean-up call, or a Call step (engine `call.try`). */
 export interface CallReply {
   ok: boolean; status?: number; ms?: number;
-  error?: 'invalid' | 'refused' | 'redirect' | 'secret' | 'unreachable' | 'timeout' | 'status';
+  error?: 'invalid' | 'refused' | 'redirect' | 'secret' | 'unreachable' | 'timeout' | 'status' | 'keep';
   /** A plain sentence when it didn't work. */
   message?: string;
+  /** A Call step's `keep`: the value was found in the reply (the value itself never comes back). */
+  kept?: boolean;
 }
+/** What "Try it" checks beyond the call itself: a Call step's statuses that pass, its wait, its kept value. */
+export interface CallStepOptions { passStatus?: string; timeoutMs?: number; keep?: KeptValue }
 export interface RunStepEvent {
   runId: string; index: number; stepId: string;
   state: 'running' | 'looking' | 'passed' | 'healed' | 'failed';
   reason?: StepRun['reason']; oldAt?: Point; newAt?: Point; screenshot?: string;
-  passedBy?: StepRun['passedBy']; why?: string; timings?: StepRun['timings']; unchecked?: string[];
+  passedBy?: StepRun['passedBy']; fixedBy?: StepRun['fixedBy']; why?: string; timings?: StepRun['timings']; unchecked?: string[];
+  /** A Call step's reply: status and time. */
+  reply?: StepRun['reply'];
+  /** A Wait for an email step's: what came, never the value. */
+  email?: StepRun['email'];
 }
 export interface RunEnded {
   runId: string; result: 'pass' | 'fail'; durationMs: number; steps: StepRun[];
@@ -121,6 +176,22 @@ export interface RunEnded {
   ranOn?: RecordedOn;
   /** The test was recorded on another kind of system. */
   systemMismatch?: SystemMismatch;
+  /** How many tries the run took when it was retried (2 or 3); absent after one. */
+  attempts?: number;
+}
+
+/** A try failed in a way that looks like timing, and the next one starts now (engine "Retries"). */
+export interface RunRetryEvent {
+  runId: string;
+  /** The try starting now: 2 or 3. */
+  attempt: number;
+  /** The most tries there can be. */
+  of: number;
+  stepId: string;
+  reason?: StepRun['reason'];
+  /** A short phrase for logs ("the page was slow"). */
+  why?: string;
+  message?: string;
 }
 
 export interface EngineEvents {
@@ -134,6 +205,7 @@ export interface EngineEvents {
   'browser.fileChooser': FileChooserEvent;
   'run.step': RunStepEvent;
   'run.ended': RunEnded;
+  'run.retry': RunRetryEvent;
 }
 
 export class EngineError extends Error {
@@ -158,14 +230,24 @@ export interface Engine {
   pointer(kind: 'move' | 'scroll', at: Point, dx?: number, dy?: number): Promise<void>;
 
   recordPoint(p: RecordParams): Promise<Step>;
-  /** `near`: the "+" or "−" next to something ("add 2 people"), found from the page's structure first. */
-  locate(description: string, opts?: { near?: Near }): Promise<LocateResult | null>;
+  /**
+   * `near`: the "+" or "−" next to something ("add 2 people"), found from the page's structure first.
+   * `shows`: what to find may be text on the screen, not a control (a checkpoint, a Wait until).
+   */
+  locate(description: string, opts?: { near?: Near; shows?: boolean }): Promise<LocateResult | null>;
   /** What a described step means, from the AI assistant; null without it or when it can't tell. */
   intent(sentence: string): Promise<EngineIntent | null>;
   /** The element at a point and its name, without acting. `name: false` skips the AI assistant. */
   propose(at: Point, opts?: { name?: boolean }): Promise<Proposal>;
   /** The field that has the keyboard focus (`record.focused`): its box and name, nulls when none. */
   focused(): Promise<{ box: Box | null; name: string | null }>;
+  /**
+   * "Write a test from a story" (Breakpatch Team, engine `record.plan`): the steps the story asks
+   * for, proposed and not done. `secrets`: the saved secret names it may type (never values).
+   * Throws EngineError `not_ready` in Community, without the licence feature or the AI assistant;
+   * `not_found` when it couldn't make steps from the story.
+   */
+  plan(story: string, secrets: string[]): Promise<Plan>;
   /** The answer to a `record.fileChooser` event. */
   chooseFile(choice: FileChoice): Promise<void>;
   /** "Use the page": the user's own input goes straight to the page; nothing is recorded. */
@@ -174,12 +256,20 @@ export interface Engine {
   input(i: HandInput): Promise<void>;
   handChooseFile(choice: FileChoice): Promise<void>;
   recordCheckpoint(region: Box, frame?: number): Promise<Step>;
+  /** Ends a Wait for an email step's wait while it's recorded (engine `record.stop`): its recordPoint fails with `stopped`. */
+  stopWaiting?(): Promise<void>;
 
   startRun(r: RunStart): Promise<void>;
   stopRun(runId: string): Promise<void>;
 
-  /** "Try it": one request under the same rules as a run's set-up and clean-up calls. */
-  tryCall(call: HttpCall, appUrl: string, secrets?: Record<string, string>): Promise<CallReply>;
+  /**
+   * Settings → Test inbox, "Check the inbox" (Team, engine `email.check`): signs in as a run would.
+   * Throws EngineError `not_ready` in Community. Absent on an engine that can't.
+   */
+  checkInbox?(inbox: InboxSettings, secrets?: Record<string, string>, scope?: SecretScope): Promise<InboxCheck>;
+
+  /** "Try it": one request under the same rules as a run's set-up and clean-up calls (and a Call step's `step` options). */
+  tryCall(call: HttpCall, appUrl: string, secrets?: Record<string, string>, scope?: SecretScope, step?: CallStepOptions): Promise<CallReply>;
 
   /**
    * "Why did this fail?" for one failed step of a finished run (Team; engine `run.explain`).

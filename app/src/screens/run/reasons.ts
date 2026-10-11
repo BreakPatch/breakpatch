@@ -5,7 +5,7 @@ import type { StepRun, Step } from '../../data/types';
 
 
 // The words the report repeats (the exported report, breakpatch-ci's view.py) live in lib/runWords.ts.
-export { UNCHECKED_NOTE, passNote, reasonAdvice, reasonText, reasonTitle, targetName } from '../../lib/runWords';
+export { UNCHECKED_NOTE, passNote, reasonAdvice, reasonText, reasonTitle, retriedNote, targetName } from '../../lib/runWords';
 
 /** Whether a step's own checks leave anything to compare (DESK-01: a whole-screen ignore zone). */
 export function checksNothing(step: Pick<Step, 'action' | 'pre' | 'post' | 'region' | 'ignore'>, vp = { width: 1440, height: 900 }): boolean {
@@ -40,6 +40,23 @@ export function slowNote(t: StepRun['timings'], prev?: number | string): string 
   return `Took ${secs(total)}: ${secs(ms)} ${what}.`;
 }
 
+// The engine's tolerances (engine/src/breakpatch_engine/config.py) for steps saved without one.
+const PRE_TOLERANCE = 6, POST_TOLERANCE = 10, CHECKPOINT_TOLERANCE = 8, RELAXED_EXTRA = 2;
+/** A passed check this close to its tolerance (hash bits) is "close to failing" (roadmap #14). */
+export const CLOSE_BITS = 2;
+export const CLOSE_NOTE = 'Passed, but only just: the screen almost didn\'t match the recording. If this test fails now and then, this step may be why.';
 
-
-
+/**
+ * A step that passed with a screen check within CLOSE_BITS of what it allows (`relaxed`: the run
+ * allowed for another system, which adds its 2 bits). Only the checks judged by how close the
+ * screen is: not a step whose result is only that something changed, or that passed another way.
+ */
+export function closeToFailing(step: Pick<Step, 'action' | 'pre' | 'post' | 'tolerance' | 'expect'>, r: StepRun | undefined, relaxed = false): boolean {
+  if (!r || (r.result !== 'passed' && r.result !== 'healed') || r.passedBy) return false;
+  const extra = relaxed ? RELAXED_EXTRA : 0;
+  const near = (d: number | undefined, tol: number) => typeof d === 'number' && d <= tol + extra && tol + extra - d <= CLOSE_BITS;
+  if (step.pre && near(r.preDistance, step.pre.tolerance ?? PRE_TOLERANCE)) return true;
+  if (step.expect === 'changes' || step.expect === 'noChange') return false;
+  const post = step.action === 'checkpoint' ? step.tolerance ?? CHECKPOINT_TOLERANCE : step.post ? step.post.tolerance ?? POST_TOLERANCE : undefined;
+  return post !== undefined && near(r.postDistance, post);
+}

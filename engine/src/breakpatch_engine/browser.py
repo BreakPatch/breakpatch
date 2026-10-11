@@ -2,13 +2,16 @@
 structure is only read through the DevTools protocol (names, roles, boxes), never scripted.
 
 Fixed viewport, device_scale_factor=1, light colour scheme, en-US locale, so the same test renders
-the same way on every Mac. The live view is a stream of JPEG frames sent only when the page changes
-(Chrome's screencast, which only produces frames on change), at most ~10 per second.
+the same way on every Mac. A phone or tablet test (devices.py) also gets the device's user agent,
+`is_mobile` and a touch screen: its taps, presses, swipes and scrolls are touch input, not the mouse.
+The live view is a stream of JPEG frames sent only when the page changes (Chrome's screencast,
+which only produces frames on change), at most ~10 per second.
 """
 from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import io
 import logging
 import os
@@ -22,6 +25,7 @@ from typing import Callable, Sequence
 import numpy as np
 
 from . import config, imaging, net
+from .devices import Device, device_for
 from .protocol import EngineError
 from .sites import origin_of
 
@@ -113,6 +117,8 @@ class BrowserSession:
         self.headless = headless if headless is not None else os.environ.get("BP_HEADED") != "1"
         self.width = 1280
         self.height = 800
+        self.device: Device | None = None      # the phone or tablet a test is for; None on a desktop
+        self._touch_cdp = None                   # (page, CDP session) that sends touch input
         self._pw = None
         self._browser = None
         self.context = None
@@ -151,10 +157,15 @@ class BrowserSession:
     async def open(self, url: str, viewport: dict) -> None:
         from playwright.async_api import async_playwright
 
+        device = device_for(viewport)           # before anything starts: an unknown device is refused
         await self.close()
         self.start_origin = origin_of(url)
-        self.width = int(viewport.get("width") or 1280)
-        self.height = int(viewport.get("height") or 800)
+        self.device = device
+        if device is not None:
+            self.width, self.height = device.width, device.height
+        else:
+            self.width = int(viewport.get("width") or 1280)
+            self.height = int(viewport.get("height") or 800)
         config.apply_browser_env()
         self._pw = await async_playwright().start()
         try:
@@ -177,9 +188,10 @@ class BrowserSession:
         except Exception as e:  # noqa: BLE001
             await self.close()
             raise launch_error(e) from e
+        screen = device.context_options() if device is not None else {
+            "viewport": {"width": self.width, "height": self.height}, "device_scale_factor": 1}
         self.context = await self._browser.new_context(
-            viewport={"width": self.width, "height": self.height}, device_scale_factor=1,
-            accept_downloads=True, locale="en-US", color_scheme="light")
+            **screen, accept_downloads=True, locale="en-US", color_scheme="light")
         self.context.on("page", self._on_new_page)
         await self.context.add_init_script(NO_CARET_SCRIPT)
         await self.context.route(NOT_WEB, self._guard_route)
@@ -188,8 +200,14 @@ class BrowserSession:
         if url:
             await self.goto(url, start=True)
 
+    @property
+    def touch(self) -> bool:
+        """Whether the page has a touch screen (a phone or tablet test): taps, not clicks."""
+        return self.device is not None and self.device.touch
+
     async def close(self) -> None:
         await self._tell_watchers()
+        await self._drop_touch()
         await self._stop_stream()
         for t in list(self._download_tasks):
             t.cancel()
@@ -293,6 +311,7 @@ class BrowserSession:
             self._on_new_page(page)
         if page is not self.page:
             await self._tell_watchers()
+            await self._drop_touch()
         self.page = page
         try:
             await page.bring_to_front()
@@ -463,6 +482,11 @@ class BrowserSession:
         await (await self.live()).mouse.move(float(at[0]), float(at[1]))
 
     async def click(self, at: Sequence[float], button: str = "left", count: int = 1, hold: float = 0.0) -> None:
+        """A click, or on a touch screen a tap (`count` taps; `hold` makes it a long press). The
+        right button stays a mouse click: there's no touch for it."""
+        if self.touch and button == "left":
+            await (self.long_press(at, hold) if hold > 0 else self.tap(at, count))
+            return
         page = await self.live()
         mouse = page.mouse
         x, y = float(at[0]), float(at[1])
@@ -482,6 +506,10 @@ class BrowserSession:
             raise
 
     async def drag(self, frm: Sequence[float], to: Sequence[float], steps: int = 12) -> None:
+        """Press, move and let go: a finger on a touch screen, else the mouse."""
+        if self.touch:
+            await self.touch_drag(frm, to, steps)
+            return
         mouse = (await self.live()).mouse
         await mouse.move(float(frm[0]), float(frm[1]))
         await mouse.down()
@@ -493,6 +521,107 @@ class BrowserSession:
         if at is not None:
             await mouse.move(float(at[0]), float(at[1]))
         await mouse.wheel(float(dx), float(dy))
+
+    async def scroll(self, at: Sequence[float] | None, dx: float, dy: float) -> None:
+        """A scroll step: the mouse wheel, or on a touch screen a finger moving the page (dy > 0
+        shows more of the page below, as the wheel does)."""
+        if self.touch:
+            await self.touch_scroll(at, dx, dy)
+        else:
+            await self.wheel(at, dx, dy)
+
+    # ---------- touch (phone and tablet tests) ----------
+
+    async def _touch_session(self):
+        """A DevTools session on the current page that sends touch input, kept until the page changes."""
+        page = await self.live()
+        if self._touch_cdp is None or self._touch_cdp[0] is not page:
+            await self._drop_touch()
+            self._touch_cdp = (page, await self.context.new_cdp_session(page))
+        return page, self._touch_cdp[1]
+
+    async def _drop_touch(self) -> None:
+        held, self._touch_cdp = self._touch_cdp, None
+        if held is not None:
+            try:
+                await asyncio.wait_for(held[1].detach(), 2)
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def touch_event(self, kind: str, at: Sequence[float] | None = None) -> None:
+        """One raw touch: "start" or "move" at `at`, "end" or "cancel" (Input.dispatchTouchEvent)."""
+        page, cdp = await self._touch_session()
+        points = [{"x": float(at[0]), "y": float(at[1])}] if at is not None and kind in ("start", "move") else []
+        try:
+            await cdp.send("Input.dispatchTouchEvent", {"type": "touch" + kind.capitalize(), "touchPoints": points})
+        except Exception:
+            if page.is_closed():          # the touch closed its own page, like a click can
+                return
+            raise
+
+    async def tap(self, at: Sequence[float], count: int = 1) -> None:
+        page = await self.live()
+        for i in range(max(1, int(count))):
+            if i:
+                await asyncio.sleep(0.08)       # close enough together to be a double tap
+            try:
+                await page.touchscreen.tap(float(at[0]), float(at[1]))
+            except Exception:
+                if page.is_closed():
+                    return
+                raise
+
+    async def _lifting(self, gesture) -> None:
+        """Runs the rest of a gesture whose finger is down, then lets go. Stopped part way (the run
+        stopped, the page went away), it still lets go, so the next touch doesn't start held."""
+        try:
+            await gesture
+        except BaseException:
+            with contextlib.suppress(Exception):
+                await self.touch_event("end")
+            raise
+        await self.touch_event("end")
+
+    async def long_press(self, at: Sequence[float], hold: float) -> None:
+        await self.touch_event("start", at)
+        await self._lifting(asyncio.sleep(max(hold, 0.0)))
+
+    async def touch_drag(self, frm: Sequence[float], to: Sequence[float], steps: int = 12) -> None:
+        async def moves():
+            n = max(1, int(steps))
+            for i in range(1, n + 1):
+                await asyncio.sleep(0.016)
+                await self.touch_event("move", (frm[0] + (to[0] - frm[0]) * i / n, frm[1] + (to[1] - frm[1]) * i / n))
+        await self.touch_event("start", frm)
+        await self._lifting(moves())
+
+    async def touch_scroll(self, at: Sequence[float] | None, dx: float, dy: float) -> None:
+        """A finger moving the page by (dx, dy), the opposite way: strokes that stay on the screen
+        (a long scroll is several), each held still before it lets go so the page doesn't fling on.
+        (Chromium's synthetic touch scroll gesture does nothing in headless mode.)"""
+        x, y = (float(at[0]), float(at[1])) if at is not None else (self.width / 2, self.height / 2)
+        left = [float(dx), float(dy)]
+        size = (self.width, self.height)
+        for _ in range(40):
+            if abs(left[0]) < 1 and abs(left[1]) < 1:
+                return
+            pos = [x, y]
+            share = _stroke_share(pos, left, size)
+            if share < 1:                   # not enough room from here: start at the far edge
+                pos = [(size[i] - TOUCH_EDGE if left[i] > 0 else TOUCH_EDGE) if abs(left[i]) >= 1 else pos[i] for i in (0, 1)]
+                share = _stroke_share(pos, left, size)
+            if share <= 0:
+                return
+            to = (pos[0] - left[0] * share, pos[1] - left[1] * share)
+            await self.touch_event("start", pos)
+            steps = max(4, int(max(abs(to[0] - pos[0]), abs(to[1] - pos[1])) / 25))
+            for i in range(1, steps + 1):
+                await asyncio.sleep(0.016)
+                await self.touch_event("move", (pos[0] + (to[0] - pos[0]) * i / steps, pos[1] + (to[1] - pos[1]) * i / steps))
+            await asyncio.sleep(0.12)       # held still: no speed left to fling with
+            await self.touch_event("move", to)
+            await self.touch_event("end")
+            left = [left[0] * (1 - share), left[1] * (1 - share)]
 
     async def element_box(self, at: Sequence[float]) -> list[int] | None:
         """The border box of the element at `at` (viewport px), read through the DevTools protocol
@@ -537,9 +666,11 @@ class BrowserSession:
         name = got.get("name") if isinstance(got.get("name"), str) and got["name"].strip() else None
         return {"box": box if imaging.box_area(box) else None, "name": name[:80] if name else None}
 
-    async def element_name(self, at: Sequence[float]) -> dict | None:
+    async def element_name(self, at: Sequence[float], box: bool = False) -> dict | None:
         """What the page itself calls the element at `at` (its accessible name and role, read through
-        the DevTools protocol), e.g. {"name": "Sign in", "role": "button"}; None when it has none."""
+        the DevTools protocol), e.g. {"name": "Sign in", "role": "button"}; None when it has none.
+        With `box`, also that named element's border box in viewport px (`box`, not clamped to the
+        viewport; absent when it can't be read), for dom/same.py."""
         page = await self.live()
         cdp = None
         try:
@@ -547,6 +678,18 @@ class BrowserSession:
             got = await _node_at(cdp, at)
             tree = await cdp.send("Accessibility.getPartialAXTree", {"backendNodeId": got["backendNodeId"],
                                                                      "fetchRelatives": True})
+            for node in tree.get("nodes", []):             # the node itself first, then its ancestors
+                if node.get("ignored"):
+                    continue
+                name = ((node.get("name") or {}).get("value") or "").strip()
+                role = (node.get("role") or {}).get("value") or ""
+                if name and role not in ("RootWebArea", "WebArea", "generic", "none", "presentation", "StaticText"):
+                    out = {"name": " ".join(name.split())[:80], "role": role}
+                    if box and (b := await _border_box(cdp, node.get("backendDOMNodeId"))) is not None:
+                        out["box"] = b
+                    return out
+                if role in ("RootWebArea", "WebArea"):
+                    break
         except Exception as e:  # noqa: BLE001
             log.debug("no accessible name at %s: %s", at, e)
             return None
@@ -556,15 +699,6 @@ class BrowserSession:
                     await cdp.detach()
                 except Exception:  # noqa: BLE001
                     pass
-        for node in tree.get("nodes", []):             # the node itself first, then its ancestors
-            if node.get("ignored"):
-                continue
-            name = ((node.get("name") or {}).get("value") or "").strip()
-            role = (node.get("role") or {}).get("value") or ""
-            if name and role not in ("RootWebArea", "WebArea", "generic", "none", "presentation", "StaticText"):
-                return {"name": " ".join(name.split())[:80], "role": role}
-            if role in ("RootWebArea", "WebArea"):
-                break
         return None
 
     async def type_text(self, text: str) -> None:
@@ -702,6 +836,21 @@ def launch_error(e: Exception) -> EngineError:
     if "Executable doesn't exist" in text or "executable" in text.lower():
         return EngineError("not_ready", "The browser isn't installed yet. Finish setup to install it.", text)
     return EngineError("internal", "The browser couldn't start.", text)
+
+
+TOUCH_EDGE = 10        # px a scrolling finger keeps from the screen's edges
+
+
+def _stroke_share(pos: Sequence[float], left: Sequence[float], size: Sequence[int]) -> float:
+    """How much of the scroll `left` one finger stroke from `pos` can do (0 to 1) before the finger,
+    moving the opposite way, reaches the edge of the screen."""
+    share = 1.0
+    for i in (0, 1):
+        if abs(left[i]) < 1:
+            continue
+        room = pos[i] - TOUCH_EDGE if left[i] > 0 else size[i] - TOUCH_EDGE - pos[i]
+        share = min(share, max(0.0, room) / abs(left[i]))
+    return share
 
 
 def launch_options(headless: bool, width: int = 1280, height: int = 800) -> dict:
@@ -860,6 +1009,18 @@ async def _node_at(cdp, at: Sequence[float]) -> dict:
     x = float(at[0]) + float(view.get("pageX") or 0)
     y = float(at[1]) + float(view.get("pageY") or 0)
     return await cdp.send("DOM.getNodeForLocation", {"x": int(x), "y": int(y), "includeUserAgentShadowDOM": False})
+
+
+async def _border_box(cdp, backend_node_id) -> list[float] | None:
+    """A node's border box in viewport px, rounded to 0.1 px as extract.py's are, or None."""
+    if backend_node_id is None:
+        return None
+    try:
+        q = (await cdp.send("DOM.getBoxModel", {"backendNodeId": backend_node_id}))["model"]["border"]
+    except Exception:  # noqa: BLE001 - not rendered, or gone meanwhile
+        return None
+    xs, ys = q[0::2], q[1::2]
+    return [round(min(xs), 1), round(min(ys), 1), round(max(xs), 1), round(max(ys), 1)]
 
 # What has the keyboard focus (BrowserSession.focused): a field that takes typing, its box and name.
 _FOCUSED_JS = r"""() => {

@@ -4,7 +4,7 @@
 // Firestore database). Reads are live subscriptions; writes return promises.
 
 import type {
-  App, Explanation, HttpCall, Member, Millis, NotifyInput, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
+  App, Explanation, FlakyMark, HttpCall, InboxSettings, Member, Millis, NotifyInput, Person, QueueItem, RecordedOn, Role, Run, RunnerStatus, RunRequest, Step, StepGroup,
   RunIssue, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Viewport, Workspace,
 } from './types';
 
@@ -22,6 +22,8 @@ export interface NewSuite {
   name: string; tests: Suite['tests']; schedule: Suite['schedule']; resultUrl?: string;
   /** Where the result goes (Team, admins). With `url`, the address is saved apart from the suite; without, it stays as it was. */
   notify?: NotifyInput | null;
+  /** How often a failed test is tried again (lib/retries.ts). Left out: as it was. */
+  retries?: number;
 }
 
 /** The note on the version a new start address makes (Backend.updateTestDetails). */
@@ -160,6 +162,18 @@ export interface TrackerStore {
   save(t: TrackerSettings): Promise<void>;
 }
 
+/**
+ * The workspace's test inbox (Team, issue #12: Settings → Test inbox), for Wait for an email steps
+ * and `{email}`. Everyone in the team (and the runner, and breakpatch-ci) reads it; admins set it.
+ * Never a password: that's a saved secret, by name.
+ */
+export interface InboxStore {
+  /** null: none set up. */
+  settings(l: Listener<InboxSettings | null>): Unsubscribe;
+  /** Admins only. null removes it. */
+  save(i: InboxSettings | null): Promise<void>;
+}
+
 export interface Backend {
   readonly kind: 'demo' | 'firebase' | 'local';
   /** Optional: things added to saved runs later (see RunNotes). */
@@ -168,12 +182,19 @@ export interface Backend {
   readonly notify?: NotifyStore;
   /** Optional (Team): issue trackers (see TrackerStore). */
   readonly trackers?: TrackerStore;
+  /** Optional (Team): the test inbox (see InboxStore). */
+  readonly inbox?: InboxStore;
   /** Recently deleted (see RecentlyDeleted): where deleteApp, deleteTest, deleteGroup and deleteSuite move things. */
   readonly recentlyDeleted?: RecentlyDeleted;
   /** The team workspace; null for a local tests folder. */
   readonly workspace: Workspace | null;
   /** The tests folder (kind 'local'). */
   readonly local?: { path: string };
+  /**
+   * Optional (a tests folder): the folder's own id, the same in every copy of it, which links to
+   * its tests name (lib/openLinks.ts). Made and saved in the folder the first time it's asked for.
+   */
+  folderId?(): Promise<string>;
   /** Optional: plain lines about data that was skipped (e.g. a file that isn't valid JSON). Calls `l` at once. */
   onWarnings?(l: Listener<string[]>): Unsubscribe;
   /** Optional: stop watching for changes when the app switches away from this backend. */
@@ -222,6 +243,11 @@ export interface Backend {
   updateTestDetails(appId: string, testId: string, d: TestDetails): Promise<Version | null>;
   /** Marks a saved version as the one CI runs with `--version released` (null clears it). Team workspaces only. */
   setReleasedVersion?(appId: string, testId: string, version: number | null): Promise<void>;
+  /**
+   * Someone's answer to the test's Flaky marker (lib/flaky.ts): known flaky, not flaky, or null to
+   * take it back. It isn't an edit of the test: no new version, and its Last updated stays.
+   */
+  setFlakyMark?(appId: string, testId: string, mark: FlakyMark | null): Promise<void>;
   duplicateTest(appId: string, testId: string): Promise<Test>;
   /** To Recently deleted, with its versions (its runs stay in the app's runs). */
   deleteTest(appId: string, testId: string): Promise<void>;

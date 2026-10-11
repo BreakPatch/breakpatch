@@ -95,6 +95,41 @@ def test_unknown_hosts_fail_plainly():
     assert refused({"method": "GET", "url": "https://nope.acme.com/"}).kind == "unreachable"
 
 
+# ---------------------------------------------------------------- the engine's own requests (plan_get)
+
+def get_refused(url, **kw):
+    with pytest.raises(CallRefused) as e:
+        calls.plan_get(url, {}, resolver=PUBLIC, proxy_finder=lambda u: None, **kw)
+    return e.value
+
+
+def test_the_engine_s_own_requests_keep_the_address_rules():
+    """plan_get (the Team engine's test inbox): no host rule, but the address rules a call has."""
+    p = calls.plan_get("https://app.acme.com/api/v1/search?q=1", {"Accept": "application/json"}, resolver=PUBLIC,
+                       proxy_finder=lambda u: "http://proxy.corp:3128")
+    assert (p.method, p.host, p.port, p.target, p.address, p.proxy) == (
+        "GET", "app.acme.com", 443, "/api/v1/search?q=1", "93.184.216.34", "http://proxy.corp:3128")
+    assert p.headers == {"Accept": "application/json"} and p.addresses == ["93.184.216.34"]
+    for url in ("https://meta.acme.com/", "https://alibaba.acme.com/", "http://169.254.169.254/latest",
+                "https://[fd00:ec2::254]/", "https://[::ffff:169.254.169.254]/"):
+        e = get_refused(url, allow_private_http=True)
+        assert e.kind == "refused" and "metadata" in e.message, url
+    assert get_refused("https://nope.acme.com/").kind == "unreachable"
+    assert get_refused("ftp://app.acme.com/").kind == "invalid"
+    # Plain http: this computer always; its network only when allowed; the internet never.
+    assert calls.plan_get("http://localhost:8025/", resolver=PUBLIC).proxy is None
+    assert get_refused("http://intranet.corp/").kind == "http"
+    assert calls.plan_get("http://intranet.corp/", allow_private_http=True, resolver=PUBLIC).address == "10.1.1.1"
+    for url in ("http://app.acme.com/", "http://mixed.acme.com/"):
+        assert get_refused(url, allow_private_http=True).kind == "http", url
+
+
+def test_addresses_of_takes_an_address_as_it_is():
+    assert calls.addresses_of("[::1]", 443, PUBLIC) == ["::1"]
+    assert calls.addresses_of("10.0.0.7", 993, PUBLIC) == ["10.0.0.7"]
+    assert calls.addresses_of("mixed.acme.com", 993, PUBLIC) == ["93.184.216.40", "192.168.1.10"]
+
+
 def test_headers_can_use_a_saved_secret_on_its_own_site():
     ok = {"TOKEN": Secret("s3cret", ("https://api.acme.com",))}
     call = {"method": "POST", "url": "https://api.acme.com/seed",
@@ -108,6 +143,14 @@ def test_headers_can_use_a_saved_secret_on_its_own_site():
     assert refused({**call, "headers": [{"name": "Bad Name", "value": "a"}]}).kind == "invalid"
     assert refused({**call, "headers": [{"name": "Host", "value": "evil.example"}]}).kind == "invalid"
     assert calls.call_secret_refs(call) == ["TOKEN"]
+
+
+def test_a_secret_the_shell_refused_is_never_sent():
+    """A secret on this Mac kept for other workspaces reaches the engine as its reason only."""
+    call = {"method": "POST", "url": "https://api.acme.com/seed", "headers": [{"name": "Authorization", "secretRef": "TOKEN"}]}
+    why = "TOKEN is kept for other workspaces on this Mac."
+    e = refused(call, secrets={"TOKEN": Secret("", (), False, why)})
+    assert e.kind == "secret" and e.message == why
 
 
 def test_logs_leave_out_queries_user_info_and_secrets():

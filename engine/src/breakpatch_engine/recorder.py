@@ -9,25 +9,28 @@ from typing import Callable
 
 from pathlib import Path
 
-from . import checks, config, imaging, labels
-from .actions import FILE_REF, POINTER_ACTIONS, ActionFailed, Context, parse_secrets, perform, sample_path
+from . import calls, checks, config, imaging, labels
+from .actions import (BUILT_IN_ACTIONS, FILE_REF, POINTER_ACTIONS, TEAM_ACTIONS, ActionFailed, Context, EmailSession,
+                      email_address, parse_secrets, perform, sample_path)
 from .browser import BrowserSession
+from .dom import same
 from .dom.flow import LocateFlow
 from .locator import Locator
 from .protocol import NULL, EngineError
 
 log = logging.getLogger("breakpatch.recorder")
 
-ACTIONS = POINTER_ACTIONS | {"write", "waitUntil", "waitFor", "navigate", "switchTab", "upload", "downloadCheck",
-                             "checkpoint", "loop", "group"}
+ACTIONS = BUILT_IN_ACTIONS | set(TEAM_ACTIONS)
 # Fields copied from the request into the step as they are.
 PASS_THROUGH = ("from", "to", "direction", "distance", "text", "secretRef", "generated", "durationMs", "url", "nav",
-                "sample", "fileType", "minBytes", "timeoutMs", "count", "groupId", "groupVersion", "steps")
+                "sample", "fileType", "minBytes", "timeoutMs", "count", "groupId", "groupVersion", "steps",
+                "valueRef", "passStatus", "keep", "email")
 Phase = Callable[[str], None]
 ROLE_WORDS = {"button": "button", "link": "link", "textbox": "field", "searchbox": "field", "checkbox": "checkbox",
               "radio": "option", "combobox": "list", "menuitem": "menu item", "tab": "tab", "switch": "switch",
               "img": "image", "heading": "heading"}
 CLICKY = {"click", "doubleClick", "longClick", "rightClick"}   # what can open a page's file picker
+RECORD_WAIT_MS = 150_000      # a Team step's wait while recording (Wait for an email), at most
 
 
 def varies_each_run(step: dict) -> bool:
@@ -36,7 +39,8 @@ def varies_each_run(step: dict) -> bool:
     if step.get("action") != "write":
         return False
     text = step.get("text") or ""
-    return bool(step.get("generated")) or any(k in text for k in ("{i}", "{time}", "{date}", "{timestamp}"))
+    return bool(step.get("generated")) or bool(step.get("valueRef")) or any(
+        k in text for k in ("{i}", "{time}", "{date}", "{timestamp}", "{email}", "{emailCode}", "{emailLink}"))
 
 
 def suggest_expect(before, after, blast, ignore, url_before: str, url_after: str) -> str:
@@ -86,6 +90,92 @@ class Recorder:
         self._download_mark = 0
         self._noise: dict[str, list] = {}
         self._last_watch: list = []
+        # What Call steps recorded (or played) in this session kept, for later Write steps (actions.Context.values).
+        self.values: dict[str, tuple[str, str | None]] = {}
+        # `{email}` while recording (Breakpatch Team): a new one each time the recorder opens its
+        # browser (service.browser_open); a Run there hands over its last try's.
+        self.email = EmailSession()
+        # Set while a Team step waits (Wait for an email): `record.stop`, or the recording's browser
+        # closing or opening again, sets it and the wait ends at once (stop_waiting).
+        self._waiting: asyncio.Event | None = None
+
+    def stop_waiting(self) -> bool:
+        """Ends a Team step's wait in progress (the step isn't added). False when nothing waits."""
+        if self._waiting is None or self._waiting.is_set():
+            return False
+        self._waiting.set()
+        log.info("stopped waiting while recording")
+        return True
+
+    def context(self, p: dict, **kw) -> Context:
+        """A step's actions.Context while recording: its secrets, this session's kept values and `{email}`."""
+        from . import plugins
+        inbox = p.get("inbox") if isinstance(p.get("inbox"), dict) else None
+        address = (email_address(inbox.get("address"), self.email.tag)
+                   if inbox and plugins.action("emailWait") is not None else None)
+        return Context(self.t, secrets=parse_secrets(p.get("secrets"), self.b.start_origin), values=self.values,
+                       app_url=p.get("appUrl") or self.b.start_origin, inbox=inbox, email=address,
+                       email_since=self.email.since, email_used=self.email.used, **kw)
+
+    async def _team_action(self, p: dict, step: dict, phase: Phase) -> dict:
+        """A step the Team engine performs (Wait for an email, issue #12), added: it's done now, as
+        a run does it, so the steps recorded after it can use what it kept. One that doesn't work
+        isn't added (the error says why). Community: `not_ready`."""
+        from . import plugins
+        action = step["action"]
+        do = plugins.action(action)
+        if do is None:
+            raise EngineError("not_ready", f"{TEAM_ACTIONS[action]} needs Breakpatch Team.")
+        step["label"] = p.get("label") or labels.default_label(action, step)
+        phase("acting")
+        # The app gives record.point 180 s (the shell's engine.rs): while recording, a wait stops
+        # at RECORD_WAIT_MS whatever the step says; the step keeps its own for runs.
+        now = dict(step)
+        if isinstance(step.get("timeoutMs"), (int, float)) and not isinstance(step.get("timeoutMs"), bool):
+            now["timeoutMs"] = min(step["timeoutMs"], RECORD_WAIT_MS)
+        stop = self._waiting = asyncio.Event()
+        try:
+            await do(now, self.context(p, stop=stop))
+        except ActionFailed as e:
+            if e.reason == "stopped":
+                raise EngineError("stopped", "Stopped waiting. The step wasn't added.")
+            code = {"actionUnavailable": "not_ready", "secretMissing": "not_found", "timeout": "not_found"}.get(e.reason, "network" if e.reason == "emailFailed" else "bad_request")
+            raise EngineError(code, e.message)
+        finally:
+            if self._waiting is stop:
+                self._waiting = None
+        log.info("recorded a %s step", action)
+        return step
+
+    async def _call(self, p: dict, step: dict, phase: Phase) -> dict:
+        """A Call step, added: the call is made now, as a run makes it, so the steps recorded after
+        it see what it did. One that doesn't pass isn't added (the error says why)."""
+        call = p.get("call")
+        if not isinstance(call, dict) or not str(call.get("url") or "").strip():
+            raise EngineError("bad_request", "Enter the address to call.")
+        keep = p.get("keep") if isinstance(p.get("keep"), dict) else None
+        step.pop("keep", None)
+        if keep is not None:
+            name = str(keep.get("name") or "")
+            if not calls.VALUE_NAME.match(name):
+                raise EngineError("bad_request", "Name the value with letters, numbers and _ only, starting with a letter.")
+            step["keep"] = {"path": str(keep.get("path") or "").strip(), "name": name}
+        step["call"] = {k: v for k, v in call.items() if k in ("method", "url", "headers", "body", "allowOtherHosts")}
+        phase("acting")
+        sent = calls.with_run_values(step["call"], 1)
+        app_url = p.get("appUrl") or self.b.start_origin
+        reply = await calls.make(sent, app_url, parse_secrets(p.get("secrets"), self.b.start_origin),
+                                 calls.step_timeout(p.get("timeoutMs"), self.t.http_timeout),
+                                 pass_status=p.get("passStatus"), keep=step["keep"]["path"] if keep else None)
+        log.info("recorded a call step: %s", reply.info)
+        if not reply.ok:
+            code = "bad_request" if reply.error in ("invalid", "refused", "secret") else "network"
+            raise EngineError(code, f"The call didn't work. {reply.message or ''}".strip(), reply.info)
+        if keep and reply.kept is not None:
+            from .sites import origin_of
+            self.values[step["keep"]["name"]] = (reply.kept, origin_of(sent.get("url")))
+        step["label"] = p.get("label") or labels.default_label("call", step)
+        return step
 
     async def _settle(self, shoot, ignore=None):
         return await checks.settle(shoot, ignore, self.t.settle_interval, self.t.settle_frames, self.t.settle_timeout)
@@ -111,6 +201,10 @@ class Recorder:
             step["label"] = p.get("label") or labels.default_label(action, p)
             step.setdefault("steps", [])
             return step
+        if action == "call":
+            return await self._call(p, step, phase)
+        if action in TEAM_ACTIONS:
+            return await self._team_action(p, step, phase)
         if action == "waitFor":
             # Wait N seconds only waits: no checks of its own (the next step's check guards the page).
             await asyncio.sleep(max(0, float(p.get("durationMs") or 1000)) / 1000)
@@ -131,6 +225,17 @@ class Recorder:
             step.setdefault("timeoutMs", 10000)
             return step
 
+        wants = [str(p["valueRef"])] if action == "write" and p.get("valueRef") else []
+        wants += [n for n in ("emailCode", "emailLink") if action in ("write", "navigate")
+                  and "{" + n + "}" in str(p.get("text") or p.get("url") or "")]
+        for name in wants:
+            if name not in self.values and name in ("emailCode", "emailLink"):
+                what = "a code" if name == "emailCode" else "a link"
+                raise EngineError("not_found", f"No email has given {what} yet. Play the Wait for an email step "
+                                               "(Play to here), then add this step.")
+            if name not in self.values:
+                raise EngineError("not_found", f"There's no value {name} yet. Play the Call step that keeps it "
+                                               "(Play to here), then add this step.")
         self.b.require()
         w, h = self.b.width, self.b.height
         anchor = at or frm
@@ -149,15 +254,20 @@ class Recorder:
         # Straight after the last look at the page: the click lands on what that look (and the
         # user) saw. Naming what was clicked only needs that look, so it runs while the page reacts.
         # What the page calls the element, read before the action changes it (DESK-03).
-        dom_name = await self.b.element_name(anchor) if anchor is not None and not p.get("label") else None
+        # With structure healing on (config.HEAL_FROM_STRUCTURE), also its box: the step keeps the
+        # element, for "Fixed automatically" to find it again by its role and name (dom/same.py).
+        keep_element = anchor is not None and config.HEAL_FROM_STRUCTURE
+        dom_name = await self.b.element_name(anchor, box=True) if keep_element \
+            else await self.b.element_name(anchor) if anchor is not None and not p.get("label") else None
+        element = same.element_of(dom_name, anchor, self.b.url) if keep_element else None
+        dom_name = dom_name if not p.get("label") else None
         phase("acting")
         url_before = self.b.url
         if len(self.b.downloads) < self._download_mark:
             self._download_mark = 0          # the browser was reopened
         # A download check without a position looks at downloads since the last check, so a
         # "click the link" step followed by "check the download" works as it does in replay.
-        ctx = Context(self.t, secrets=parse_secrets(p.get("secrets"), self.b.start_origin),
-                      download_mark=self._download_mark, files_dir=p.get("filesDir"))
+        ctx = self.context(p, download_mark=self._download_mark, files_dir=p.get("filesDir"))
         # A click that opens the page's file picker: the app asks which file to use (no system
         # dialog can show), and the step becomes an upload of that file.
         choosers: list = []
@@ -256,6 +366,8 @@ class Recorder:
                 pre_region = imaging.box_around(anchor, config.PRE_RADIUS, w, h)
                 step["pre"] = {"region": pre_region, "hash": imaging.region_hash(before, pre_region, ignore),
                                "tolerance": config.PRE_TOLERANCE}
+                if element:
+                    step["element"] = element
             if blast is not None:
                 post_region, expect = blast, True
             else:
@@ -524,7 +636,7 @@ class Recorder:
         got = await loc.intent(imaging.to_image(await self.b.shoot()), sentence)
         return got or NULL
 
-    async def locate(self, description: str, absence: bool = False, near: dict | None = None):
+    async def locate(self, description: str, absence: bool = False, near: dict | None = None, shows: bool = False):
         """Finds a described element (dom/flow.py): from the page's structure on pages that have
         one, else with the AI assistant. `absence`: "not found" is the expected answer, so the AI
         assistant is never asked after the page's structure didn't find it."""
@@ -532,7 +644,7 @@ class Recorder:
             raise EngineError("bad_request", "Describe what to look for.")
         self.b.require()
         seq = self.b.last_seq               # the frame the live view shows as the page is looked at
-        found = await self.finder.locate(description.strip(), absence=absence, near=near)
+        found = await self.finder.locate(description.strip(), absence=absence, near=near, shows=shows)
         if found.box is None:
             return NULL
         out = {"box": found.box, "at": found.at, "target": description.strip(), "frame": seq, "path": found.path}

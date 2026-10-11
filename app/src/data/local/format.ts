@@ -3,8 +3,47 @@
 // as ISO strings and a newline at the end. Same data in → same bytes out.
 
 export const FORMAT = 'breakpatch';
-/** The folder format this app reads and writes. A higher number in breakpatch.json is from a newer app. */
+/** The folder format a new tests folder is written as. A number above NEWEST_READ_SCHEMA_VERSION in breakpatch.json is from a newer app. */
 export const SCHEMA_VERSION = 1;
+/**
+ * 2: a phone or tablet test (`viewport.device`, data/devices.ts), or an app whose default screen is
+ * one. Apps from before would run it as a desktop test and could save over it, so the first such
+ * file this app writes raises the folder to 2 (localBackend.ts raiseFormat): those apps then
+ * refuse the folder (NEWER_MESSAGE). A folder with no phone or tablet tests stays at 1.
+ */
+export const DEVICE_SCHEMA_VERSION = 2;
+/**
+ * 3: a Call step (issue #44, `action: "call"`), or a Write step that types a value one keeps
+ * (`valueRef`), in a test or shared steps file (lib/calls.ts usesCallSteps). Apps from before can't
+ * run such a step (their engine doesn't know it) or edit it, so the first such file this app writes
+ * raises the folder to 3 (localBackend.ts raiseFormat), as phone tests raise it to 2: those apps
+ * then refuse the folder (NEWER_MESSAGE). A folder without Call steps stays where it was.
+ */
+export const CALL_SCHEMA_VERSION = 3;
+/**
+ * 4: a Wait for an email step (Breakpatch Team, issue #12, `action: "emailWait"`) in a test or shared
+ * steps file (lib/email.ts usesEmailSteps). Apps from before don't know the step: they'd show it as
+ * nothing and could save over it, so the first such file this app writes raises the folder to 4, as
+ * Call steps raise it to 3. A folder without one stays where it was.
+ */
+export const EMAIL_SCHEMA_VERSION = 4;
+/** The newest folder format this app reads and saves to. */
+export const NEWEST_READ_SCHEMA_VERSION = EMAIL_SCHEMA_VERSION;
+
+/**
+ * A tests folder's own id: breakpatch.json `id`, made once (when the folder is set up, or for an
+ * older folder the first time a link to one of its tests is copied). It travels with the folder,
+ * through Git too, so a link to a test (lib/openLinks.ts) finds the folder on any Mac that has it,
+ * wherever it is. Apps from before it keep it as it is (they rewrite breakpatch.json only to raise
+ * its format, keeping every key).
+ */
+export function newFolderId(): string {
+  const bytes = new Uint8Array(10);
+  crypto.getRandomValues(bytes);
+  return [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+/** A folder id as newFolderId makes them (or one edited by hand within the same characters). */
+export function isFolderId(v: unknown): v is string { return typeof v === 'string' && /^[a-z0-9]{8,64}$/.test(v); }
 
 /** Keys that come first, in this order; then the rest alphabetically; then LAST. */
 const FIRST = [

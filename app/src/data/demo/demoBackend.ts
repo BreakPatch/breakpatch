@@ -3,10 +3,10 @@
 import { edition } from '../../edition';
 import {
   AuthError, cleanDetails, detailsDiff, newestDeletedFirst, startUrlNote, upTo,
-  type Backend, type DeletedItem, type DeletedRef, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type RecentlyDeleted, type RunNotes, type TestDetails, type TrackerStore, type Unsubscribe,
+  type Backend, type DeletedItem, type DeletedRef, type Limit, type Listener, type NewApp, type NewSuite, type NewTest, type NotifyStore, type RecentlyDeleted, type RunNotes, type TestDetails, type TrackerStore, type InboxStore, type Unsubscribe,
 } from '../backend';
 import type {
-  App, Explanation, Member, Person, QueueItem, RecordedOn, Role, Run, RunIssue, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Workspace,
+  App, Explanation, FlakyMark, InboxSettings, Member, Person, QueueItem, RecordedOn, Role, Run, RunIssue, RunnerStatus, RunRequest, Step, StepGroup, Suite, SuiteRun, Test, TestStatus, TrackerSettings, Version, Workspace,
 } from '../types';
 import { applyRunnerPreview, runnerPreviewFlag, type RunnerPreview } from './preview';
 import { communityDemo, people, seedApps, seedGroups, seedMembers, seedQueue, seedRunner, seedRuns, seedSuiteRuns, seedSuites, seedTests } from './seed';
@@ -151,6 +151,13 @@ export class DemoBackend implements Backend {
     const last = moved && t.currentVersion > 0 ? this.st.versions[`${appId}/${testId}`]?.at(-1) : undefined;
     // The same steps as a new version that starts at the new address, like the Firebase backend.
     return last ? this.saveTest(appId, testId, last.steps, startUrlNote(d.startUrl), last.recordedOn) : this.wait(null);
+  }
+  async setFlakyMark(appId: string, testId: string, mark: FlakyMark | null) {
+    this.mutate(s => { s.tests = s.tests.map(t => {
+      if (t.appId !== appId || t.id !== testId) return t;
+      const { flakyMark: _old, ...rest } = t;
+      return mark ? { ...rest, flakyMark: mark } : rest;
+    }); });
   }
   private patchTest(appId: string, testId: string, p: Partial<Test>) {
     const me = this.me();
@@ -332,6 +339,13 @@ export class DemoBackend implements Backend {
   readonly trackers: TrackerStore = {
     settings: l => { this.trackerListeners.add(l); l(this.trackerSettings); return () => { this.trackerListeners.delete(l); }; },
     save: async t => { this.trackerSettings = t; this.trackerListeners.forEach(l => l(t)); },
+  };
+  /** The test inbox (Team, Wait for an email): the sample workspace's Mailpit, in memory (the demo engine reads no inbox). */
+  private inboxSettings: InboxSettings | null = { kind: 'mailpit', server: 'https://mail.staging.acme.example', address: 'qa@staging.acme.example' };
+  private inboxListeners = new Set<Listener<InboxSettings | null>>();
+  readonly inbox: InboxStore = {
+    settings: l => { this.inboxListeners.add(l); l(this.inboxSettings); return () => { this.inboxListeners.delete(l); }; },
+    save: async i => { this.inboxSettings = i; this.inboxListeners.forEach(l => l(i)); },
   };
   async deleteSuite(id: string) {
     const suite = this.st.suites.find(x => x.id === id);

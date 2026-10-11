@@ -5,6 +5,7 @@ import { formatDateTime } from '../../components/common/format';
 import { tookText } from './reportData';
 import { runBy, runStatus, WHERE } from '../../components/common/runs';
 import { hasFeature } from '../../edition';
+import { passedOnRetry } from '../../lib/runWords';
 
 /** `more`: shows older runs (the list holds the newest page). */
 export function RunHistory({ runs, currentId, onOpen, more }: { runs: Run[]; currentId: string; onOpen: (r: Run) => void; more?: () => void }) {
@@ -21,7 +22,7 @@ export function RunHistory({ runs, currentId, onOpen, more }: { runs: Run[]; cur
         return (
           <div role="row" key={r.id} tabIndex={0} className={`rh-row rh-tr${r.id === currentId ? ' current' : ''}`} aria-current={r.id === currentId || undefined}
             onClick={() => onOpen(r)} onKeyDown={e => { if (e.key === 'Enter') onOpen(r); }}>
-            <div role="cell"><StatusPill status={runStatus(r)} /></div>
+            <div role="cell" className="col rh-result"><StatusPill status={runStatus(r)} />{passedOnRetry(r) && <span className="rh-note">{passedOnRetry(r)}</span>}</div>
             <div role="cell" className="rh-2">{formatDateTime(r.startedAt)}</div>
             <div role="cell" className="rh-2 col rh-who">
               <span className="ellipsis">{runBy(r)}</span>

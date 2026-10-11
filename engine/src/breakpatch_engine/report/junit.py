@@ -1,5 +1,5 @@
 """JUnit XML from the report's view (view.py): one <testcase> per test, as GitHub, GitLab and
-Jenkins read it. The app writes the same bytes (app/src/lib/report/junit.ts): both are checked
+Jenkins read it, with each earlier try of a retried test (flakyFailure, rerunFailure). The app writes the same bytes (app/src/lib/report/junit.ts): both are checked
 against tests/fixtures/report/report.junit.xml."""
 from __future__ import annotations
 
@@ -25,14 +25,24 @@ def junit_xml(view: dict) -> str:
     for t in view["tests"]:
         c = t["junit"]
         head = f'    <testcase name="{esc(t["name"])}" classname="{esc(t["appName"] or j["name"])}" time="{esc(c["seconds"])}"'
-        if c["status"] == "passed":
+        retries = c.get("retries") or []
+        if c["status"] == "passed" and not retries:
             out.append(head + "/>")
             continue
         out.append(head + ">")
+        # Earlier tries (engine/PROTOCOL.md "Retries"), as Maven Surefire writes reruns: <flakyFailure>
+        # for each in a test that passed in the end (Jenkins and others show it as flaky). In one that
+        # failed every try, <failure> is the first try's and <rerunFailure> each later one's, this
+        # last try's included. Readers that don't know them see the test's own result.
+        tag = "flakyFailure" if c["status"] == "passed" else "rerunFailure"
+        later = retries
         if c["status"] == "skipped":
             out.append(f'      <skipped message="{esc(c["message"])}"/>')
-        else:
-            out.append(f'      <failure message="{esc(c["message"])}" type="{esc(c["type"])}">{esc(c["text"])}</failure>')
+        elif c["status"] != "passed":
+            first, *later = [*retries, c]
+            out.append(f'      <failure message="{esc(first["message"])}" type="{esc(first["type"])}">{esc(first["text"])}</failure>')
+        for r in later:
+            out.append(f'      <{tag} message="{esc(r["message"])}" type="{esc(r["type"])}">{esc(r["text"])}</{tag}>')
         out.append("    </testcase>")
     out += ["  </testsuite>", "</testsuites>", ""]
     return "\n".join(out)

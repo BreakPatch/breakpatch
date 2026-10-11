@@ -164,6 +164,10 @@ select.input { appearance: none; padding-right: 32px; background-image: none; cu
 .menu-item:has(.menu-detail) .icon { margin-top: 1px; }
 .menu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
 .menu-item .menu-check { color: var(--accent); margin-left: auto; }
+/* A shortcut at the end of the row, like a Mac menu's: quiet, and in one column whether the row is ticked or not. */
+.menu-shortcut { margin-left: auto; padding-left: 12px; min-width: 2.6em; text-align: right; font-size: 13px; color: var(--text-faint); font-variant-numeric: tabular-nums; letter-spacing: .02em; flex: none; }
+.menu-check + .menu-shortcut { margin-left: 0; padding-left: 6px; }
+.menu-item[aria-checked="true"] .menu-shortcut { font-weight: 400; }
 .menu-item[aria-checked="true"] { font-weight: 600; }
 
 /* ---------- Chip select (the app's own menu, not the system pop-up) ---------- */

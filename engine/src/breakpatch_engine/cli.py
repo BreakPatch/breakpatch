@@ -36,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--revision", default="main")
     d.add_argument("--dir", required=True)
     d.add_argument("--files", default="{}")     # the allowlist from models.py: name -> SHA-256
+    sub.add_parser("_search")  # internal: one search with a time limit, for textsearch.py
 
     r = sub.add_parser("_runtime_download")  # internal: the pausable llama.cpp runtime download
     r.add_argument("--spec", required=True)     # the runtimes.py entry, as JSON
@@ -48,6 +49,9 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.cmd in (None, "serve"):
         return serve()
+    if args.cmd == "_search":
+        from .textsearch import child_main
+        return child_main()
     _logging()
     if args.cmd == "info":
         from .install import system_info

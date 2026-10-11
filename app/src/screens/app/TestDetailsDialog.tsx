@@ -5,7 +5,7 @@ import { Button, Dialog, Icon, TextInput, useToast } from '../../components/ui';
 import { useBackend } from '../../data/hooks';
 import type { Test } from '../../data/types';
 import { useFeature } from '../../edition';
-import { isHttpAddress } from './tryCall';
+import { isHttpAddress } from '../../lib/calls';
 
 /** "app.example.com/login" → "https://app.example.com/login": a bare host is taken as https (DES2-18). */
 export function withScheme(url: string): string {

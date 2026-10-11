@@ -3,12 +3,18 @@
 // Clicking the page and describing are always both available: no mode switch.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { ActionKind, Direction, Generated, SampleFile, StepGroup } from '../../data/types';
-import { secrets } from '../../platform';
-import { actionInfo, GENERATED_CHOICES, SAMPLES } from '../../engine/labels';
+import { secretNamesHere } from '../../lib/secretScope';
+import { actionInfo, GENERATED_CHOICES, SAMPLES, TOUCH_HIDDEN } from '../../engine/labels';
 import { countRows, findStep, TOKENS, numberOf } from '../../components/steps';
+import { CallStepDialog } from '../../components/calls/CallStepDialog';
+import { keptNames } from '../../lib/calls';
+import { keptChoiceLabel, keptValueLabel } from '../../lib/email';
+import { edition, useFeature } from '../../edition';
+import { EMAIL_TOKENS } from '../../components/steps';
 import { Button, ChipSelect, Icon } from '../../components/ui';
 import { useLatched, usePresence } from '../../components/ui/presence';
 import { ActionMenu } from './ActionMenu';
+import { PlanCard } from './PlanCard';
 import { SharedStepsPicker } from './SharedStepsPicker';
 import { composerInput, DESCRIBE_STEPS, INSTANT, onPage, pageHint, placeholderFor, shortName, toolHint, type MenuAction } from './actions';
 import type { Recorder } from './useRecorder';
@@ -24,7 +30,9 @@ type FloatBanner = { text: string; tone?: 'ok' | 'bad'; icon?: string; action?: 
 const sameBanner = (a: FloatBanner, b: FloatBanner) => a.text === b.text && a.tone === b.tone && a.icon === b.icon && a.action?.label === b.action?.label;
 const leaving = (closing: boolean) => closing ? { 'aria-hidden': true, inert: true } : {};
 
-export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, banner: bannerNow, describe = DESCRIBE_STEPS }: {
+export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, banner: bannerNow, describe = DESCRIBE_STEPS, touch = false }: {
+  /** A phone or tablet test: gestures are taps and presses, and the mouse-only ones aren't offered. */
+  touch?: boolean;
   /** The describe box (DESCRIBE_STEPS); the tests of describing turn it on. */
   describe?: boolean;
   rec: Recorder; appId: string; allowGroups: boolean; onInsertGroup: (g: StepGroup, version: number | 'latest') => void;
@@ -33,7 +41,9 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   /** A line floating over the page ("Playing steps 1–9 first…", "You're using the page directly…"). */
   banner?: FloatBanner | null;
 }) {
-  const [menu, setMenu] = useState<'closed' | 'menu' | 'picker'>('closed');
+  const [menu, setMenu] = useState<'closed' | 'menu' | 'picker' | 'call' | `edition:${string}`>('closed');
+  // Tokens from the test inbox, offered with the feature (Team: Wait for an email).
+  const email = useFeature('email');
   const [secretNames, setSecretNames] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const actionBtn = useRef<HTMLButtonElement>(null);
@@ -47,6 +57,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   const bannerP = usePresence(!!bannerNow), banner = useLatched(bannerNow, sameBanner);
   const askP = usePresence(asking), askAi = useLatched(asking ? rec.ai : null), askText = useLatched(asking ? rec.ask : null);
   const lostP = usePresence(rec.ai.state === 'notfound'), lostText = useLatched(rec.ai.state === 'notfound' ? rec.notFound : null);
+  // A story's step (plan.ts) gets Skip and Edit next to Confirm and Try again, and on "Couldn't find".
+  const lostPlan = useLatched(rec.ai.state === 'notfound' ? rec.ai.plan !== undefined : null);
   // Only a key pressed after the bar appeared answers it: the Enter that sent a sentence can show the
   // bar during its own keydown (typing, an address, a scroll are proposed at once), and must not
   // confirm it too. So the listener starts after that event, and a held key's repeats don't count.
@@ -63,10 +75,21 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
     return () => { clearTimeout(start); window.removeEventListener('keydown', onKey); };
   }, [asking, rec]);
 
-  useEffect(() => { void secrets.list().then(setSecretNames).catch(() => setSecretNames([])); }, []);
+  useEffect(() => { void secretNamesHere().then(setSecretNames).catch(() => setSecretNames([])); }, []);
+  // Right click and Hover need a mouse: a touch test is never left on one.
+  useEffect(() => { if (touch && TOUCH_HIDDEN.has(action)) rec.setAction('click'); }, [touch, action, rec]);
   // Try again on a described step: its sentence is back in the box, ready to change.
   useEffect(() => { if (rec.refocus) inputRef.current?.focus(); }, [rec.refocus]);
   useEffect(() => { if (action === 'write' && o.writeSource === 'secret' && !o.secretRef && secretNames[0]) rec.setOptions({ secretRef: secretNames[0] }); }, [action, o.writeSource, o.secretRef, secretNames, rec]);
+  // Values Call steps in this test keep: a Write step can type one of them ("From a call").
+  const kept = keptNames(rec.steps);
+  const keptKey = kept.join('\n');
+  useEffect(() => {
+    if (action !== 'write' || o.writeSource !== 'value') return;
+    const names = keptKey ? keptKey.split('\n') : [];
+    if (!names.length) rec.setOptions({ writeSource: 'typed' });
+    else if (!names.includes(o.valueRef)) rec.setOptions({ valueRef: names[0] });
+  }, [action, o.writeSource, o.valueRef, keptKey, rec]);
 
   const closeMenu = () => { setMenu('closed'); actionBtn.current?.focus(); };
   const pick = (a: MenuAction) => {
@@ -76,6 +99,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
       return;
     }
     if (a.kind === 'loop') { setMenu('closed'); rec.addLoop(); return; }
+    if (a.kind === 'call') { setMenu('call'); return; }
+    if (a.edition) { setMenu(`edition:${a.kind}`); return; }
     rec.setAction(a.kind);
     if (a.kind === 'group') { setMenu('picker'); return; }
     setMenu('closed');
@@ -114,6 +139,12 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
           options={secretNames.length ? secretNames.map(n => ({ value: n, label: n })) : [{ value: '', label: osText('No saved secrets on this Mac') }]} />
       </span>
     );
+  } else if (action === 'write' && o.writeSource === 'value') {
+    field = (
+      <span className="rec-field-chip">
+        <ChipSelect label={keptChoiceLabel(kept) === 'From the email' ? 'Value from the email' : 'Value from a call'} up value={o.valueRef} onChange={v => rec.setOptions({ valueRef: v })} options={kept.map(n => ({ value: n, label: keptValueLabel(n) }))} />
+      </span>
+    );
   } else if (action === 'write' && o.writeSource === 'generated') {
     field = (
       <span className="rec-field-chip">
@@ -145,7 +176,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
       : !describe && action === 'upload'
       ? <span className="rec-inline rec-page-hint">{sampleChips()}</span>
       : onPage(action)
-      ? <span className="rec-inline rec-page-hint"><span className="grow">{pageHint(action)}</span>{!describe && action === 'waitUntil' && maxWaitBox()}</span>
+      ? <span className="rec-inline rec-page-hint"><span className="grow">{pageHint(action, touch)}</span>{!describe && action === 'waitUntil' && maxWaitBox()}</span>
       : <span className="rec-inline faint">{action === 'drag' ? 'Drag on the page from the start point to the end point, or click one and then the other.' : placeholderFor(action)}</span>;
   }
 
@@ -154,16 +185,17 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
     if (action === 'write') return (
       <div className="rec-extra">
         <div className="rec-chips" role="radiogroup" aria-label="What to write">
-          {([['typed', 'Typed text'], ['secret', 'Saved secret'], ['generated', 'Generated']] as const).map(([v, l]) => (
+          {([['typed', 'Typed text'], ['secret', 'Saved secret'], ['generated', 'Generated'], ...(kept.length ? [['value', keptChoiceLabel(kept)]] as const : [])] as const).map(([v, l]) => (
             <button key={v} type="button" role="radio" aria-checked={o.writeSource === v} className={'rec-chip' + (o.writeSource === v ? ' on' : '')} onClick={() => rec.setOptions({ writeSource: v })}>{l}</button>
           ))}
         </div>
         {o.writeSource === 'typed' && (
           <div className="rec-chips"><span className="faint">Insert:</span>
-            {TOKENS.map(t => <button key={t.token} type="button" className="rec-chip" onClick={() => insertToken(t.token)}>{t.name}</button>)}
+            {[...TOKENS, ...(email ? EMAIL_TOKENS : [])].map(t => <button key={t.token} type="button" className="rec-chip" onClick={() => insertToken(t.token)}>{t.name}</button>)}
           </div>
         )}
-        {o.writeSource === 'secret' && <span className="faint">{osText("The value stays in this Mac's Keychain and is never shown.")}</span>}
+        {o.writeSource === 'secret' && <span className="faint">{osText("The value stays in this Mac's Keychain and isn't logged, but in a field you can see, it can show in a screenshot.")}</span>}
+        {o.writeSource === 'value' && <span className="faint">Types what {keptChoiceLabel(kept) === 'From the email' ? 'the email had' : keptChoiceLabel(kept) === 'From a call' ? 'the Call step kept' : 'the step before kept'}, only on the app's own pages. It isn't saved with the test or logged, but in a field you can see, it can show in a screenshot.</span>}
       </div>
     );
     // Drawn or clicked on the page: their options are in the bar, not floating over where you draw.
@@ -214,20 +246,21 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   // Nothing to type and nothing to send (it's done on the page): no field look and no send button.
   const passive = !!frozen || (input === 'none' && (onPage(action) || action === 'drag'));
   const showSend = !passive && action !== 'group';
-  const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' && !onPage(action) : action === 'write' ? o.writeSource !== 'typed' || rec.text !== '' : !!rec.text.trim());
+  const canSend = !busy && (input === 'none' ? action !== 'drag' && action !== 'group' && action !== 'call' && !onPage(action) : action === 'write' ? o.writeSource !== 'typed' || rec.text !== '' : !!rec.text.trim());
 
   if (rec.retryNote && !rr) hint = <><Icon name="ads_click" size={16} className="rec-hint-icon" />Click the page again to pick another spot.</>;
   // What the box can't do, by the box, until the sentence is changed (not a toast that goes).
   if (rec.unhandled && !rr) hint = <><Icon name="info" size={16} className="rec-hint-icon" /><span className="grow rec-hint-unhandled" role="status">{rec.unhandled}</span></>;
   // While frozen the bar itself says why (the field above), so the hint row stays empty.
   if (frozen) hint = null;
-  else if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span></>;
+  else if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span>{rec.stopWaiting && <Button onClick={rec.stopWaiting}>Stop waiting</Button>}</>;
 
   return (
     <div className="rec-bar">
       {/* Everything that comes and goes (AI bars, the chosen action's options) floats over the bottom of the
           page, never in the layout: the add step bar keeps one height and the page view never moves. */}
       <div className="rec-float">
+      <PlanCard rec={rec} />
       {bannerP.mounted && banner && (
         <div className={'rec-ai rec-banner' + (banner.tone ? ' ' + banner.tone : '') + (bannerP.closing ? ' closing' : '')} role="status" {...leaving(bannerP.closing)}>
           <Icon name={banner.icon ?? (banner.tone === 'bad' ? 'cancel' : banner.tone === 'ok' ? 'check_circle' : 'play_arrow')} size={20} className="rec-ai-icon" />
@@ -241,6 +274,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
           <div className="grow rec-ai-text">{askText}</div>
           <Button kind="primary" onClick={rec.confirmAi} autoFocus>Confirm</Button>
           <Button onClick={rec.retryAi}>Try again</Button>
+          {askAi.state !== 'idle' && askAi.plan !== undefined && <><Button onClick={rec.skipPlanStep}>Skip</Button><Button onClick={rec.openPlanEdit}>Edit</Button></>}
           <span className="rec-ai-keys">Enter confirms · Esc cancels</span>
           <button type="button" className="rec-ai-link" onClick={rec.cancelAi}>Cancel</button>
         </div>
@@ -249,7 +283,8 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
         <div className={'rec-ai rec-ai-notfound' + (lostP.closing ? ' closing' : '')} role="alert" {...leaving(lostP.closing)}>
           <Icon name="search_off" size={20} className="rec-ai-icon" />
           <div className="grow">{lostText}</div>
-          <button type="button" className="rec-ai-link" onClick={() => { rec.cancelAi(); inputRef.current?.focus(); }}>OK</button>
+          {lostPlan ? <><Button onClick={rec.openPlanEdit}>Edit</Button><Button onClick={rec.skipPlanStep}>Skip</Button></>
+            : <button type="button" className="rec-ai-link" onClick={() => { rec.cancelAi(); inputRef.current?.focus(); }}>OK</button>}
         </div>
       )}
       {rec.secretAsk && rec.ai.state === 'idle' && !rec.busy && <SecretAsk rec={rec} taken={secretNames} />}
@@ -264,7 +299,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
           {field}
           <button ref={actionBtn} type="button" className={'rec-action-btn' + (menu !== 'closed' ? ' open' : '')} aria-haspopup="menu" aria-expanded={menu !== 'closed'}
             onClick={() => setMenu(m => (m === 'closed' ? 'menu' : 'closed'))}>
-            <Icon name={actionInfo(action).icon} size={16} />{shortName(action)}<Icon name={menu !== 'closed' ? 'expand_less' : 'expand_more'} size={16} className="faint" />
+            <Icon name={actionInfo(action).icon} size={16} />{shortName(action, touch)}<Icon name={menu !== 'closed' ? 'expand_less' : 'expand_more'} size={16} className="faint" />
           </button>
           {showSend && (
             <button type="button" className="rec-send" aria-label={input === 'describe' ? 'Ask the AI assistant' : 'Add step'}
@@ -274,7 +309,14 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
             </button>
           )}
         </div>
-        <ActionMenu open={menu === 'menu'} current={action} allowGroups={allowGroups} onPick={pick} onClose={closeMenu} />
+        <ActionMenu open={menu === 'menu'} current={action} allowGroups={allowGroups} touch={touch} onPick={pick} onClose={closeMenu} />
+        <CallStepDialog open={menu === 'call'} adding appUrl={rec.appUrl ?? ''} takenNames={kept}
+          onSave={patch => rec.recordCall(patch)} onClose={() => { setMenu('closed'); actionBtn.current?.focus(); }} />
+        {(edition.slots.recorderActions ?? []).map(a => (
+          <a.Dialog key={a.kind} open={menu === `edition:${a.kind}`} steps={rec.steps}
+            onSave={patch => rec.recordAction({ ...patch, action: a.kind })}
+            onClose={() => { setMenu('closed'); actionBtn.current?.focus(); }} />
+        ))}
         {menu === 'picker' && (
           <SharedStepsPicker appId={appId} insertAs={countRows(rec.steps) + 1}
             onInsert={(g, v) => { setMenu('closed'); onInsertGroup(g, v); }}

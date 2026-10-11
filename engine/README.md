@@ -75,7 +75,7 @@ venv instead.
 
 ```
 src/breakpatch_engine/
-  cli.py        serve / info, and the internal `_download` child process
+  cli.py        serve / info, and the internal `_download` and `_search` child processes
   plugins.py    finds the Breakpatch Team engine when it's installed and takes its healer and licence
   protocol.py   JSON Lines server: one response per id, events, plain errors, stdout guarded
   service.py    request handlers (PROTOCOL.md) wired to the parts below
@@ -85,6 +85,7 @@ src/breakpatch_engine/
                 saved secrets with the sites they may be typed on
   sites.py      web origins (for secrets and calls)
   calls.py      set-up and clean-up calls and "Try it": https, the app's hosts, no private addresses
+  textsearch.py a regular expression a test gives, searched in a child process with a time limit
   imaging.py    region pHash with ignore zones blanked, Hamming distance, diffs, blast radius, noise
   checks.py     noise watch and settle detection over a stream of screenshots
   recorder.py   record.point / record.checkpoint / record.locate / record.intent (spec §10)
@@ -96,9 +97,11 @@ src/breakpatch_engine/
   dom/          the fast locator for record.locate: extract.py (the controls on screen, DevTools
                 DOMSnapshot + accessibility tree), s0.py (scoring a description, no model),
                 router.py (Fast or Visual per page), flow.py (S0, then the AI assistant),
-                near.py (a stepper's "+" or "−" next to something, record.locate `near`)
+                near.py (a stepper's "+" or "−" next to something, record.locate `near`),
+                same.py (a recorded control again by its role and name, for Team's healing;
+                off until config.py's HEAL_FROM_STRUCTURE is on)
   install.py    system.info, Chromium install, resumable model download of the allowed files only
-  config.py     paths (env overridable) and timings (BP_FAST=1 shortens them)
+  config.py     paths (env overridable), timings (BP_FAST=1 shortens them), the HEAL_FROM_STRUCTURE switch
   labels.py     default step labels (mirrors app/src/engine/labels.ts)
   samples/      the bundled upload files (scripts/make_samples.py regenerates them)
 tests/          pytest: imaging, protocol (subprocess), setup (fake Hub), record + replay e2e

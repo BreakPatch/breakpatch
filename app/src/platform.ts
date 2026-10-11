@@ -20,6 +20,22 @@ export async function copyText(text: string): Promise<void> {
 }
 
 /**
+ * Copies text that's still being worked out (e.g. a link that needs a file read first). WebKit
+ * lets a page write the clipboard only while the click that asked for it is going on, so the
+ * write starts at once with the text to come (ClipboardItem); where that isn't there, it's
+ * copyText once the text is known. Rejects when the text can't be had.
+ */
+export async function copyTextSoon(text: Promise<string>): Promise<void> {
+  const Item = (globalThis as { ClipboardItem?: typeof ClipboardItem }).ClipboardItem;
+  if (Item && navigator.clipboard?.write) {
+    const blob = text.then(t => new Blob([t], { type: 'text/plain' }));
+    try { await navigator.clipboard.write([new Item({ 'text/plain': blob })]); return; }
+    catch { await blob; /* the text itself failed: say so; else the older way below */ }
+  }
+  await copyText(await text);
+}
+
+/**
  * The clipboard's text, for a Paste button; null when it can't be read. In the app it's read
  * through the shell (tauri-plugin-clipboard-manager): WebKit's navigator.clipboard.readText()
  * first shows a "Paste" bubble to confirm. In a browser (the preview), navigator.clipboard.
@@ -54,17 +70,32 @@ export async function saveTextFile(defaultName: string, contents: string, opts: 
 
 /** Lets the user pick a file and returns its text (e.g. a .bpworkspace file). */
 export async function openTextFile(extensions: string[]): Promise<string | null> {
+  return (await openNamedTextFile(extensions, 'Workspace'))?.text ?? null;
+}
+
+/**
+ * Lets the user pick a file and returns its name and text (e.g. a test script to import). With
+ * `maxBytes`, a bigger file isn't read: the call throws `tooBig` instead.
+ */
+export async function openNamedTextFile(extensions: string[], filterName: string, limit?: { maxBytes: number; tooBig: string }): Promise<{ name: string; text: string } | null> {
+  const tooBig = () => new Error(limit?.tooBig);
   if (isTauri()) {
     const { open } = await import('@tauri-apps/plugin-dialog');
-    const path = await open({ multiple: false, filters: [{ name: 'Workspace', extensions }] });
+    const path = await open({ multiple: false, filters: [{ name: filterName, extensions }] });
     if (!path || Array.isArray(path)) return null;
-    const { readTextFile } = await import('@tauri-apps/plugin-fs');
-    return readTextFile(path);
+    const { readTextFile, stat } = await import('@tauri-apps/plugin-fs');
+    if (limit && (await stat(path)).size > limit.maxBytes) throw tooBig();
+    return { name: path.split(/[\\/]/).pop() ?? path, text: await readTextFile(path) };
   }
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     input.type = 'file'; input.accept = extensions.map(e => '.' + e).join(',');
-    input.onchange = () => { const f = input.files?.[0]; if (!f) return resolve(null); f.text().then(resolve, () => resolve(null)); };
+    input.onchange = () => {
+      const f = input.files?.[0];
+      if (!f) return resolve(null);
+      if (limit && f.size > limit.maxBytes) return reject(tooBig());
+      f.text().then(text => resolve({ name: f.name, text }), () => resolve(null));
+    };
     input.click();
   });
 }
@@ -79,30 +110,32 @@ const memPolicies = new Map<string, Omit<SecretPolicy, 'name'>>([
   ['ACME_TEST_PASSWORD', { origins: ['https://app.example.com'], runnerCanUse: false }],
 ]);
 
-export interface SetSecretOptions { origins?: string[]; runnerCanUse?: boolean }
+export interface SetSecretOptions { origins?: string[]; runnerCanUse?: boolean; workspaces?: string[] }
 
 export const secrets = {
   async list(): Promise<string[]> {
     if (isTauri()) return tauriInvoke<string[]>('secrets_list');
     return [...memSecrets.keys()];
   },
-  /** Names with their sites and "Runner can use" flag. The Team runner reads the flag here. */
+  /** Names with their sites, "Runner can use" flag and workspaces. The Team runner reads the flag here. */
   async info(): Promise<SecretPolicy[]> {
     if (isTauri()) return tauriInvoke<SecretPolicy[]>('secrets_info');
     return [...memSecrets.keys()].sort().map(name => ({ name, origins: [], runnerCanUse: false, ...memPolicies.get(name) }));
   },
-  /** Saves a value. `origins` / `runnerCanUse` set where it may be used; left out, they stay as they were. */
+  /** Saves a value. `origins` / `runnerCanUse` / `workspaces` set where it may be used; left out, they stay as they were. */
   async set(name: string, value: string, opts: SetSecretOptions = {}): Promise<void> {
-    if (isTauri()) return tauriInvoke('secrets_set', { name, value, origins: opts.origins ?? null, runnerCanUse: opts.runnerCanUse ?? null });
+    if (isTauri()) return tauriInvoke('secrets_set', { name, value, origins: opts.origins ?? null, runnerCanUse: opts.runnerCanUse ?? null, workspaces: opts.workspaces ?? null });
     memSecrets.set(name, value);
     const before = memPolicies.get(name) ?? { origins: [], runnerCanUse: false };
-    memPolicies.set(name, { origins: opts.origins ?? before.origins, runnerCanUse: opts.runnerCanUse ?? before.runnerCanUse });
+    const workspaces = opts.workspaces ?? before.workspaces ?? [];
+    memPolicies.set(name, { origins: opts.origins ?? before.origins, runnerCanUse: opts.runnerCanUse ?? before.runnerCanUse, ...(workspaces.length ? { workspaces } : {}) });
   },
-  /** Changes where a saved secret may be used, without its value. */
-  async setPolicy(name: string, origins: string[], runnerCanUse: boolean): Promise<void> {
-    if (isTauri()) return tauriInvoke('secrets_set_policy', { name, origins, runnerCanUse });
+  /** Changes where a saved secret may be used, without its value. `workspaces` left out: as it was. */
+  async setPolicy(name: string, origins: string[], runnerCanUse: boolean, workspaces?: string[]): Promise<void> {
+    if (isTauri()) return tauriInvoke('secrets_set_policy', { name, origins, runnerCanUse, workspaces: workspaces ?? null });
     if (!memSecrets.has(name)) throw new Error(`There's no saved secret ${name} on this Mac.`);
-    memPolicies.set(name, { origins: [...new Set(origins)], runnerCanUse });
+    const kept = workspaces ? [...new Set(workspaces)] : memPolicies.get(name)?.workspaces ?? [];
+    memPolicies.set(name, { origins: [...new Set(origins)], runnerCanUse, ...(kept.length ? { workspaces: kept } : {}) });
   },
   async remove(name: string): Promise<void> {
     if (isTauri()) return tauriInvoke('secrets_delete', { name });
@@ -148,6 +181,18 @@ export async function onWorkspaceLink(cb: (payload: string) => void): Promise<()
   const launchFile = await tauriInvoke<string | null>('workspace_file_take').catch(() => null);
   if (launchFile) cb(launchFile);
   return () => { offFile(); offUrl(); };
+}
+
+/**
+ * Listens for breakpatch:// links only (lib/openLinks.ts), the one the app opened with first. Opened
+ * .bpworkspace files are onWorkspaceLink's alone: the shell hands a file opened at launch over once.
+ */
+export async function onLinkOpened(cb: (link: string) => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { onOpenUrl, getCurrent } = await import('@tauri-apps/plugin-deep-link');
+  const first = await getCurrent().catch(() => null);
+  first?.forEach(cb);
+  return onOpenUrl(urls => urls.forEach(cb));
 }
 
 export function appVersion(): string { return import.meta.env.VITE_APP_VERSION ?? '0.1.0'; }

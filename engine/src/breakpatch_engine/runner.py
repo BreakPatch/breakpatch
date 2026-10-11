@@ -17,8 +17,9 @@ from typing import Awaitable, Callable, Iterator, Protocol
 
 import numpy as np
 
-from . import calls, checks, config, explain, imaging, systems
-from .actions import ActionFailed, Context, Secret, parse_secrets, perform, secret_refs
+from . import calls, checks, config, explain, imaging, retry, systems
+from .actions import (TEAM_ACTIONS, ActionFailed, Context, EmailSession, Secret, email_address, fill_email, parse_secrets,
+                      perform, secret_refs)
 from .sites import origin_of
 from .browser import BrowserSession
 from .locator import Locator
@@ -34,7 +35,9 @@ class Healer(Protocol):
     Called when a step's pre-check fails and `autoFix` is on. Returns `(at, from, preDistance)`
     at the new spot (`at`/`from` as the step uses them, else None), or raises StepFailed with
     `targetNotFound`, `healFailed` or `healingUnavailable`. It may use `runner.locator_fn`,
-    `runner.locator` (cached per run), `runner.b` (the browser) and `runner._event`.
+    `runner.locator` (cached per run), `runner.b` (the browser) and `runner._event`. It may say how
+    it found the spot in `runner.fixed_by` (FIXED_BY; None before each call), which the StepRun
+    reports as `fixedBy`: a healer that doesn't set it reports nothing, as before.
     """
 
     def __call__(self, runner: "Runner", step: dict, pre: dict, ignore, iteration: int | None,
@@ -51,7 +54,15 @@ MESSAGES = {
     "setUpFailed": "The set-up call didn't succeed, so the test didn't start.",
     "stopped": "The run was stopped.",
     "fileMissing": "The file this upload chooses isn't in the tests folder.",
+    "callFailed": "The call to your API didn't work.",
+    "actionUnavailable": "This step needs Breakpatch Team.",
+    "emailFailed": "The test inbox couldn't be read.",
 }
+# What a step the Team engine performs (plugins.register_action) may add to its StepRun.
+ACTION_FIELDS = ("email",)
+# How a healer found a moved target (Healer, StepRun `fixedBy`): from the page's structure, by the
+# target's role and name (dom/same.py), or by the AI assistant.
+FIXED_BY = ("structure", "ai")
 
 
 def walk(steps: list[dict]) -> Iterator[dict]:
@@ -89,6 +100,7 @@ class Runner:
         self.healer = healer                  # None: no healing (Community), see plugins.py
         self.explainer = explainer            # None: no page read after a failure (Community)
         self.locator: Locator | None = None   # for the healer: loaded lazily on the first failed pre-check
+        self.fixed_by: str | None = None      # the healer's FIXED_BY for the step it's fixing, if it says
         self._passed_by: str | None = None
         self._tries = 0
         self._post_message: str | None = None
@@ -101,13 +113,80 @@ class Runner:
         self.relaxed = False                  # screen checks allow for another system (systems.py)
         self.ran_on: dict | None = None
         self.mismatch: dict | None = None
+        # Values Call steps kept (actions.Context.values): those of the recorder's session for Play
+        # this step, and after the run, those the run kept (the recorder carries on with them).
+        self.values: dict[str, tuple[str, str | None]] = {}
+        # `{email}` for this try (actions.EmailSession): for Play this step, the recorder's; after the
+        # run, the last try's (the recorder carries on with it). Every try of a run shares `used`.
+        self.email: EmailSession | None = None
 
     async def run(self, req: dict, stop: asyncio.Event) -> dict:
+        """The whole run: one try, and with `settings.retries` up to that many more when a try
+        fails in a way that may be timing (retry.py). Each try starts again from the start, in a
+        new browser, with the set-up and clean-up calls. run.ended is the last try's, with
+        `attempts` and each earlier try's failure on its step (`retried`)."""
+        settings = req.get("settings") or {}
+        fail_on_fix = bool(settings.get("failOnFix"))
+        # The recorder's Run, Play to here and Play this step leave the page for recording: never retried.
+        retries = 0 if (req.get("keepOpen") or req.get("fromStepId")) else retry.retries_setting(settings.get("retries"))
+        t0 = time.monotonic()
+        earlier: list[dict] = []
+        clean_up_failed = False
+        self.attempt = 1
+        self._email_used: set = self.email.used if self.email is not None else set()
+        while True:
+            started = time.monotonic()
+            ok = await self._attempt(req, stop)
+            clean_up_failed = clean_up_failed or self.clean_up_failed
+            if ok or self.attempt > retries or stop.is_set():
+                break
+            failed = self._failed_step()
+            why = retry.why_retry(failed[1], failed[0], self.relaxed) if failed else None
+            if failed is None or why is None:
+                break
+            if time.monotonic() - t0 >= self.t.retry_budget:
+                log.info("not retried: the run has taken %.0f s already (at most %.0f s)", time.monotonic() - t0,
+                         self.t.retry_budget)
+                break
+            step, rec = failed
+            entry = {"attempt": self.attempt, "reason": rec.get("reason"), "message": self.message,
+                     "durationMs": int((time.monotonic() - started) * 1000)}
+            entry.update({k: rec[k] for k in ("preDistance", "postDistance", "screenshotPath") if rec.get(k) is not None})
+            earlier.append({"stepId": step.get("id"), **entry})
+            log.info("try %d of %d failed at %s (%s): %s, so it runs again", self.attempt, retries + 1, step.get("id"),
+                     rec.get("reason"), why)
+            self.emit("run.retry", {"runId": self.run_id, "attempt": self.attempt + 1, "of": retries + 1,
+                                    "stepId": step.get("id"), "reason": rec.get("reason"), "why": why,
+                                    "message": self.message})
+            try:
+                await asyncio.wait_for(stop.wait(), self.t.retry_pause)
+            except asyncio.TimeoutError:
+                pass
+            if stop.is_set():
+                break
+            # The next try starts clean: the clean-up call this try left out (it runs after a failure
+            # only with alsoOnFailure) runs now, so a set-up that adds things doesn't meet its own.
+            if self.clean_up_skipped and not await self._clean_up(req["cleanUp"]):
+                clean_up_failed = True
+            self.attempt += 1
+        self.clean_up_failed = clean_up_failed
+        return self._ended(t0, ok, fail_on_fix, earlier)
+
+    def _failed_step(self) -> tuple[dict, dict] | None:
+        """The step that failed this try (not the loop or shared-steps card around it, unless the
+        failure is its own: a start page that didn't load fails the first step, whatever it is),
+        and its StepRun."""
+        failed = [(s, self.results[self.index[id(s)]]) for s in walk(self._steps)]
+        failed = [(s, r) for s, r in failed if r.get("result") == "failed"]
+        leaves = [(s, r) for s, r in failed if not (s.get("action") in ("loop", "group") and s.get("steps"))]
+        return (leaves or failed or [None])[-1]
+
+    async def _attempt(self, req: dict, stop: asyncio.Event) -> bool:
+        """One try: secrets, set-up call, a new browser at the start page, the steps, the clean-up call."""
         run_id = str(req.get("runId") or "run")
         steps = req.get("steps") or []
         settings = req.get("settings") or {}
         auto_fix = bool(settings.get("autoFix"))
-        fail_on_fix = bool(settings.get("failOnFix"))
         # "Allow for small differences between systems": on unless the client turns it off.
         self.allow_differences = settings.get("allowSystemDifferences") is not False
         self.relaxed, self.ran_on, self.mismatch = False, None, None
@@ -117,6 +196,8 @@ class Runner:
         self.as_runner = bool(req.get("runner"))
         # Set-up and clean-up calls may only reach the app's own hosts (calls.py).
         self.app_url = str(req.get("appUrl") or req.get("startUrl") or "")
+        # The test inbox a Wait for an email step reads and `{email}` builds on (Breakpatch Team).
+        self.inbox = req.get("inbox") if isinstance(req.get("inbox"), dict) else None
         self._steps = steps
         order = list(walk(steps))
         self.index = {id(s): i for i, s in enumerate(order)}
@@ -134,8 +215,8 @@ class Runner:
         self.message: str | None = None
         self.details: str | None = None
         self.clean_up_failed = False
+        self.clean_up_skipped = False
         self.reached_set_up = False   # clean-up never runs for a run that stopped before set-up
-        t0 = time.monotonic()
         ok = False
         try:
             try:
@@ -144,23 +225,33 @@ class Runner:
                 ok = True
         finally:
             clean_up = None if self.keep_open else req.get("cleanUp")
-            if clean_up and self.reached_set_up and (ok or clean_up.get("alsoOnFailure")):
-                reply = await calls.make(clean_up, self.app_url, self.secrets, self.t.http_timeout)
-                log.info("clean-up call: %s", reply.info)
-                if not reply.ok:
-                    self.clean_up_failed = True
+            if clean_up and self.reached_set_up:
+                if ok or clean_up.get("alsoOnFailure"):
+                    self.clean_up_failed = not await self._clean_up(clean_up)
+                else:
+                    self.clean_up_skipped = True   # run() makes it before another try
             if not self.keep_open:
                 try:
                     await self.b.close()
                 except Exception:  # noqa: BLE001
                     pass
-        return self._ended(t0, ok, fail_on_fix)
+        return ok
+
+    async def _clean_up(self, clean_up: dict) -> bool:
+        """The clean-up call: True when it went through."""
+        reply = await calls.make(clean_up, self.app_url, self.secrets, self.t.http_timeout)
+        log.info("clean-up call: %s", reply.info)
+        return reply.ok
 
     async def _execute(self, req: dict, steps: list[dict], order: list[dict], secrets: dict[str, Secret],
                        stop: asyncio.Event) -> bool:
         """True when every step passed (or healed)."""
         refs = secret_refs(steps)
         first = order[0] if order else None
+        # The test inbox's password, for its first Wait for an email step (the step says so if it's missing).
+        waits = [s for s in order if s.get("action") == "emailWait"]
+        if waits and self.inbox and self.inbox.get("passwordRef"):
+            refs.append((waits[0], str(self.inbox["passwordRef"])))
         refs += [(first, n) for n in calls.call_secret_refs(req.get("setUp")) + calls.call_secret_refs(req.get("cleanUp"))]
         for s, name in refs:
             problem = secret_problem(name, secrets.get(name), self.as_runner)
@@ -176,8 +267,13 @@ class Runner:
             if not self.b.is_open:
                 self.message = "The browser isn't open."
                 return False
-            ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed, files_dir=self.files_dir)
+            if self.email is None:
+                self.email = EmailSession(used=self._email_used)
+            ctx = self._context(secrets, stop)
             return await self._run_list(steps, ctx, stop, iteration=None)
+        self.values = {}
+        # Every try its own `{email}` address, and only emails from now on count for it.
+        self.email = EmailSession(used=self._email_used)
         if req.get("setUp"):
             reply = await calls.make(req["setUp"], self.app_url, secrets, self.t.http_timeout)
             log.info("set-up call: %s", reply.info)
@@ -202,8 +298,20 @@ class Runner:
         first = next((s for s in order if s.get("action") not in ("loop", "group")), {})
         await checks.settle(self.b.shoot, first.get("ignore"), self.t.settle_interval, self.t.settle_frames,
                             self.t.settle_timeout)
-        ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed, files_dir=self.files_dir)
+        ctx = self._context(secrets, stop)
         return await self._run_list(steps, ctx, stop, iteration=None)
+
+    def _context(self, secrets: dict[str, Secret], stop: asyncio.Event) -> Context:
+        from . import plugins
+        email = self.email or EmailSession(used=self._email_used)
+        # `{email}` only when a test inbox was sent and something can read it (the Team engine).
+        address = (email_address(self.inbox.get("address"), email.tag)
+                   if self.inbox and plugins.action("emailWait") is not None else None)
+        ctx = Context(self.t, secrets=secrets, stop=stop, relaxed=self.relaxed, files_dir=self.files_dir,
+                      values=self.values, app_url=self.app_url, inbox=self.inbox, email=address,
+                      email_since=email.since, email_used=email.used)
+        self.values = ctx.values
+        return ctx
 
     def _compare_systems(self, recorded_on) -> None:
         """Where the test was recorded against where it runs (systems.py). A mismatch relaxes the
@@ -217,11 +325,22 @@ class Runner:
 
     # ------------------------------------------------------------------
 
-    def _ended(self, t0: float, ok: bool, fail_on_fix: bool) -> dict:
+    def _ended(self, t0: float, ok: bool, fail_on_fix: bool, earlier: list[dict] | None = None) -> dict:
         healed = any(r["result"] == "healed" for r in self.results)
         result = "pass" if ok and not (healed and fail_on_fix) else "fail"
+        steps = self.results
+        if earlier:
+            # Each earlier try's failure stays on the step it failed at, whatever the last try did there.
+            where = {str(r.get("stepId")): i for i, r in enumerate(steps)}
+            steps = [dict(r) for r in steps]
+            for e in earlier:
+                i = where.get(str(e["stepId"]))
+                if i is not None:
+                    steps[i].setdefault("retried", []).append({k: v for k, v in e.items() if k != "stepId" and v is not None})
         out = {"runId": self.run_id, "result": result, "durationMs": int((time.monotonic() - t0) * 1000),
-               "steps": self.results}
+               "steps": steps}
+        if earlier:
+            out["attempts"] = len(earlier) + 1
         if self.clean_up_failed:
             out["cleanUpFailed"] = True
         if self.ran_on:
@@ -229,8 +348,9 @@ class Runner:
         if self.mismatch:
             out["systemMismatch"] = self.mismatch
         if result == "fail":
-            out["message"] = self.message or ("A step was fixed by the AI assistant and this run fails on fixes."
-                                              if ok else "The test failed.")
+            by_ai = all(r.get("fixedBy", "ai") == "ai" for r in self.results if r["result"] == "healed")
+            fixed = "A step was fixed by the AI assistant" if by_ai else "A step was fixed automatically"
+            out["message"] = self.message or (f"{fixed} and this run fails on fixes." if ok else "The test failed.")
             if self.details:
                 out["details"] = self.details
         return out
@@ -245,7 +365,8 @@ class Runner:
     def _fail(self, step: dict, err: StepFailed, iteration: int | None = None) -> None:
         i = self.index[id(step)]
         rec = {"stepId": step.get("id"), "result": "failed", "reason": err.reason}
-        for k in ("preDistance", "postDistance", "oldAt", "newAt", "screenshotPath", "timings"):
+        for k in ("preDistance", "postDistance", "oldAt", "newAt", "fixedBy", "screenshotPath", "timings", "reply",
+                  *ACTION_FIELDS):
             if err.extra.get(k) is not None:
                 rec[k] = err.extra[k]
         self.results[i] = rec
@@ -253,8 +374,9 @@ class Runner:
         self.details = self.details or err.extra.get("details")
         self._event(step, "failed", iteration, reason=err.reason, message=err.message, details=err.extra.get("details"),
                     preDistance=rec.get("preDistance"), postDistance=rec.get("postDistance"),
-                    oldAt=rec.get("oldAt"), newAt=rec.get("newAt"), screenshot=rec.get("screenshotPath"),
-                    timings=rec.get("timings"))
+                    oldAt=rec.get("oldAt"), newAt=rec.get("newAt"), fixedBy=rec.get("fixedBy"),
+                    screenshot=rec.get("screenshotPath"), timings=rec.get("timings"), reply=rec.get("reply"),
+                    email=rec.get("email"))
 
     async def _run_list(self, steps: list[dict], ctx: Context, stop: asyncio.Event, iteration: int | None) -> bool:
         for step in steps:
@@ -283,7 +405,9 @@ class Runner:
                     log.exception("step %s crashed", step.get("id"))
                     e = StepFailed("unexpectedScreen", "Something went wrong in the engine during this step.",
                                    details=f"{type(e).__name__}: {e}")
-                if e.reason not in ("stopped", "secretMissing"):
+                # A Call step's failure is about its reply, not the page: no screenshot. The same for
+                # a Wait for an email step's (the inbox's).
+                if e.reason not in ("stopped", "secretMissing") and kind != "call" and kind not in TEAM_ACTIONS:
                     e.extra.setdefault("screenshotPath", await self._keep_screenshot(step))
                     await self._keep_page(e)
                 self._fail(step, e, iteration)
@@ -295,8 +419,9 @@ class Runner:
             self.results[self.index[id(step)]] = rec
             self._event(step, rec["result"], iteration, preDistance=rec.get("preDistance"),
                         postDistance=rec.get("postDistance"), oldAt=rec.get("oldAt"), newAt=rec.get("newAt"),
-                        screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"), why=rec.get("why"),
-                        timings=rec.get("timings"), unchecked=rec.get("unchecked"))
+                        fixedBy=rec.get("fixedBy"), screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"),
+                        why=rec.get("why"), timings=rec.get("timings"), unchecked=rec.get("unchecked"),
+                        reply=rec.get("reply"), email=rec.get("email"))
             self._stop_if_reached(step)
         return True
 
@@ -368,7 +493,8 @@ class Runner:
         try:
             folder = Path(self.screenshots) / safe_name(self.run_id, "run")
             folder.mkdir(parents=True, exist_ok=True)
-            path = folder / f"{self.index[id(step)] + 1:03d}-{safe_name(step.get('id'), 'step')}.png"
+            again = f"-try{self.attempt}" if getattr(self, "attempt", 1) > 1 else ""     # an earlier try's stays
+            path = folder / f"{self.index[id(step)] + 1:03d}-{safe_name(step.get('id'), 'step')}{again}.png"
             await (await self.b.live()).screenshot(path=str(path), type="png")
             return str(path)
         except Exception as e:  # noqa: BLE001
@@ -407,6 +533,11 @@ class Runner:
             now = time.monotonic()
             timings[name] = int((now - clock) * 1000)
             clock = now
+
+        if kind == "call":
+            return await self._call_step(step, ctx, rec, lap)
+        if kind in TEAM_ACTIONS:
+            return await self._action_step(step, ctx, rec, lap)
 
         if kind == "waitFor":
             # Wait N seconds only waits: any pre, post or expect a file has on it (recorded before
@@ -453,9 +584,12 @@ class Runner:
             if dist > tol:
                 if not self.auto_fix or self.healer is None:
                     raise StepFailed("targetNotFound", preDistance=dist)
+                self.fixed_by = None
                 at, frm, new_dist = await self.healer(self, step, pre, ignore, iteration, dist)
                 rec.update({"result": "healed", "oldAt": step.get("at") or step.get("from"),
                             "newAt": at or frm, "preDistance": new_dist})
+                if self.fixed_by in FIXED_BY:
+                    rec["fixedBy"] = self.fixed_by
 
         url_before = self.b.url
         own = None
@@ -503,6 +637,69 @@ class Runner:
                 raise StepFailed(reason, message, **_keep(rec))
         if rec["result"] == "healed":
             rec["screenshotPath"] = await self._keep_screenshot(step)
+        return rec
+
+    async def _call_step(self, step: dict, ctx: Context, rec: dict, lap) -> dict:
+        """A Call step (issue #44): one request to the app's API under the set-up call's rules
+        (calls.py), judged by its status. Nothing on the page is checked. The report gets the status
+        and the time, never the reply; a value it keeps (`keep`) goes to later Write steps only."""
+        call = step.get("call")
+        if not isinstance(call, dict):
+            raise StepFailed("callFailed", "This step has no call to make.")
+        keep = step.get("keep") if isinstance(step.get("keep"), dict) else None
+        name = str(keep.get("name") or "") if keep else ""
+        if keep and not calls.VALUE_NAME.match(name):
+            raise StepFailed("callFailed", "The name this step keeps the value as uses letters, numbers and _ only.")
+        call = calls.with_run_values(call, ctx.i)
+        try:
+            call = {k: (fill_email(v, ctx) if k in ("url", "body") and isinstance(v, str) else v) for k, v in call.items()}
+        except ActionFailed as e:
+            raise StepFailed(e.reason, e.message)
+        made = asyncio.ensure_future(calls.make(
+            call, self.app_url, ctx.secrets, calls.step_timeout(step.get("timeoutMs"), self.t.http_timeout),
+            pass_status=step.get("passStatus"), keep=str(keep.get("path") or "") if keep else None))
+        if ctx.stop is not None:
+            # Stop doesn't wait for the reply (up to the step's timeout): the call is left to finish
+            # on its own and its reply is dropped.
+            stopped = asyncio.ensure_future(ctx.stop.wait())
+            try:
+                await asyncio.wait({made, stopped}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                stopped.cancel()
+                let_go = not made.done()       # stopped, or the run itself was cancelled
+                if let_go:
+                    made.cancel()
+            if let_go:
+                raise StepFailed("stopped")
+        reply = await made
+        lap("actionMs")
+        log.info("call step %s: %s", step.get("id"), reply.info)
+        rec["reply"] = reply.shown()
+        if not reply.ok:
+            reason = "secretMissing" if reply.error == "secret" else "callFailed"
+            raise StepFailed(reason, f"{MESSAGES['callFailed']} {reply.message or ''}".strip(), details=reply.info,
+                             reply=rec["reply"] or None, timings=rec.get("timings"))
+        if keep and reply.kept is not None:
+            ctx.values[name] = (reply.kept, origin_of(call.get("url")))
+        return rec
+
+    async def _action_step(self, step: dict, ctx: Context, rec: dict, lap) -> dict:
+        """A step the Team engine performs (plugins.register_action): Wait for an email (issue #12).
+        Nothing on the page is checked. Without the Team engine it fails with `actionUnavailable`,
+        never passes; what it adds to the StepRun is only ACTION_FIELDS (never a value it kept)."""
+        from . import plugins
+        kind = step.get("action")
+        do = plugins.action(kind)
+        if do is None:
+            what = TEAM_ACTIONS.get(kind, "This step")
+            raise StepFailed("actionUnavailable", f"{what} needs Breakpatch Team.", timings=rec.get("timings"))
+        try:
+            extra = await do(step, ctx)
+        except ActionFailed as e:
+            raise StepFailed(e.reason, e.message, timings=rec.get("timings"))
+        lap("actionMs")
+        if isinstance(extra, dict):
+            rec.update({k: extra[k] for k in ACTION_FIELDS if isinstance(extra.get(k), dict)})
         return rec
 
     async def _wait_region(self, region, want: str, tol: int, ignore) -> int:
@@ -618,6 +815,8 @@ def secret_problem(name: str, secret: Secret | None, as_runner: bool) -> str | N
     """Why a secret can't be used in this run at all, checked before any call or action."""
     if secret is None:
         return f"The saved secret {name} isn't on this Mac."
+    if secret.refused:
+        return secret.refused
     if not secret.origins:
         return f"{name} isn't allowed on any site yet. Add the sites it's for in Settings, Saved secrets."
     if as_runner and not secret.runner_can_use:
@@ -633,4 +832,4 @@ def _note(note: str) -> str:
 
 
 def _keep(rec: dict) -> dict:
-    return {k: rec[k] for k in ("preDistance", "postDistance", "oldAt", "newAt", "timings") if k in rec}
+    return {k: rec[k] for k in ("preDistance", "postDistance", "oldAt", "newAt", "fixedBy", "timings") if k in rec}

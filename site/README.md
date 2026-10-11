@@ -12,7 +12,7 @@ site/
   docs/index.html       the Documentation page (built from docs/manual.md); /manual/ redirects here
   connect/index.html    Team invite link page
   report/index.html     run report links from Slack, Teams and issues (opens the report in the app)
-  pricing/index.html    pricing: Community, Team and Business (coming later), Solo's hidden card and checkout
+  pricing/index.html    pricing: Community (beta), Team and Business (coming later), Solo's hidden card and checkout
   thanks/index.html     after checkout: where the licence key is
   terms/ privacy/ refunds/   legal pages (drafts; Paddle's website review needs them)
   assets/paddle-config.js    Paddle client-side token and price ids (sandbox and live), and Solo's launch switch
@@ -34,21 +34,16 @@ The pricing, thanks and legal pages (`pricing/`, `thanks/`, `terms/`, `privacy/`
 
 ## Launch day
 
-- **GitHub links.** Every GitHub link is `<a data-gh="/path">`, and `assets/site.js` points them all at `GITHUB` (one line at its top). The HTML also has the full address in `href` for browsers without JavaScript. The repository is private, so these 404 for visitors until it's public.
-- **Pre-launch notes.** While a page's `<html>` has `data-prelaunch`, it shows its `.prelaunch` notes ("Public release coming soon. Join the list") and `.prelaunch-text` words (Home's install answer, Pricing's "or email support@breakpatch.dev"). The pages that have it: `index.html`, `pricing/`, `connect/`, `report/`, and the manual through `build-manual.mjs`. On launch day, delete the attribute from each (`grep -rl data-prelaunch site`), then run `node site/build-manual.mjs`. The manual's notes are the paragraphs starting with `<!-- prelaunch -->` in `docs/manual.md`: delete those too.
+- **GitHub links.** Every GitHub link is `<a data-gh="/path">`, and `assets/site.js` points them all at `GITHUB` (one line at its top). The HTML also has the full address in `href` for browsers without JavaScript.
+- **Pre-launch notes: done** (the public beta, v0.1.0-beta.1). No page has `data-prelaunch` any more, and the "Public release coming soon" notes and `<!-- prelaunch -->` paragraphs are gone. `site.css` and `build-manual.mjs` still understand them (`.prelaunch`, `.prelaunch-text`, shown only under `<html data-prelaunch>`), should a page ever need a note like that again. `launch.test.mjs` checks none is left.
+- **Beta.** Community is a beta. A small `.beta-tag` pill ("Beta", outlined in the accent colour, like the docs' `.tag`) sits at the start of Home's requirements line under the install command, after "Community" on Home's editions card and after "Community" on Pricing's card; the Documentation's Install section has the sentence on what beta means, and the main README a badge and the same sentence. Team and Business keep "Coming later" with no Beta label. With the first stable release, take out every `beta-tag` (`grep -rn beta-tag site`), the sentence in `docs/manual.md` and the README's, and the checks in `launch.test.mjs`.
 - **Solo.** Solo goes on sale on the site when the back office's `SOLO_ON_SALE` is on (its README, "Solo"): `assets/paddle-config.js` asks its `GET /api/solo-domain`, which answers 404 until then, and sets `soloOnSale` from the answer (remembered on each browser, so a later visit is drawn right at once). There's no switch on the site to flip with it; put the Solo prices in `paddle-config.js` first. While Solo isn't on sale, `<html>` has no `data-solo`, and `site.css` hides every `.solo-only` element (the Solo cards on Home and Pricing, the Solo column in Home's table, and the words about Solo in Home's and Pricing's text and questions), shows the `.solo-off` ones in their place, and shows the manual's `.solo-soon` notes ("Coming soon", the paragraphs starting with `<!-- solo-soon -->` in `docs/manual.md`, styled like the pre-launch notes). `pricing.js` then doesn't set up the Solo card at all, so the domain check is never called. `paddle-config.js` sets `data-solo` from `<head>` on Home, Pricing and the manual, so the page never moves. The terms, refunds and privacy pages mention Solo as "when offered" either way. Anything new about Solo on those pages gets `class="solo-only"`.
 
-## Private beta
+## Betas and the install command
 
-`install` also works against the private repository, for the owner's beta test:
+The plain command, `curl -fsSL https://breakpatch.dev/install | sh`, installs GitHub's Latest release. Until the first stable release, the release workflow publishes each beta as Latest, so the plain command and the in-app updater get the newest beta; after that, betas are prereleases and only `BREAKPATCH_CHANNEL=beta` (the newest release, prereleases included) or `BREAKPATCH_VERSION` installs them. The main README's "Betas and updates" has the details.
 
-```
-curl -fsSL https://breakpatch.dev/install | BREAKPATCH_GITHUB_TOKEN=<token> BREAKPATCH_CHANNEL=beta sh
-```
-
-`install-ci` takes the same `BREAKPATCH_GITHUB_TOKEN` and `BREAKPATCH_CHANNEL`. It's tested like `install`, by `scripts/test-install-ci.sh`, which also runs `install-ci.ps1` with PowerShell 7 (`pwsh`) on Linux when it's installed. `install-ci.ps1` takes the same variables (as `$env:NAME` before `irm … | iex`); its token path and the `.cmd` it writes need a check on a real Windows machine.
-
-The token is a fine-grained personal access token for `BreakPatch/breakpatch` only, Contents read-only, expiring in 7 days. The script sends it to `https://api.github.com` only, never prints it or puts it on a command line, and downloads through the API's asset addresses. `BREAKPATCH_CHANNEL=beta` picks the newest release, prereleases included (GitHub's `releases/latest` skips them). The main README's "Private beta" section has the details. Once the repository is public the token isn't needed: the plain command works, and the token mode can go.
+`install` and `install-ci` still take `BREAKPATCH_GITHUB_TOKEN`, from the private beta while the repository was private; it isn't needed now. `install-ci` is tested like `install`, by `scripts/test-install-ci.sh`, which also runs `install-ci.ps1` with PowerShell 7 (`pwsh`) on Linux when it's installed. `install-ci.ps1` takes the same variables (as `$env:NAME` before `irm … | iex`); its token path and the `.cmd` it writes need a check on a real Windows machine.
 
 ## Phones
 

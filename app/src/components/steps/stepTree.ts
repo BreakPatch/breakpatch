@@ -111,7 +111,18 @@ function mapTree(steps: Step[], fn: (s: Step) => Step | Step[] | null): Step[] {
 }
 
 export function updateStep(steps: Step[], id: string, patch: Partial<Step> | ((s: Step) => Step)): Step[] {
-  return mapTree(steps, s => s.id !== id ? s : typeof patch === 'function' ? patch(s) : { ...s, ...patch });
+  return mapTree(steps, s => s.id !== id ? s : typeof patch === 'function' ? patch(s) : editStep(s, patch));
+}
+
+/**
+ * A step with an edit from the step editor. A new "What to look for" drops the `element` the engine
+ * kept when it recorded the step (structure healing, #41): it named the element the old words
+ * described, and "Fixed automatically" must never go back to it.
+ */
+export function editStep(s: Step, patch: Partial<Step>): Step {
+  const next = { ...s, ...patch };
+  if ('target' in patch && !('element' in patch) && (patch.target ?? '') !== (s.target ?? '')) delete next.element;
+  return next;
 }
 
 /** Deleting a loop keeps its steps in place (only the repeat goes). */

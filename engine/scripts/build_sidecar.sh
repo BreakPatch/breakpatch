@@ -151,6 +151,9 @@ raise SystemExit(main())
 PY
 
 team_hidden="--hidden-import breakpatch_team_engine --collect-submodules breakpatch_team_engine"
+# The standard library modules only the Team engine imports: compiled to native code, its imports
+# can't be seen, so PyInstaller is told (Wait for an email reads IMAP mailboxes and emails).
+team_stdlib="--hidden-import imaplib --hidden-import email.policy --hidden-import email.utils --hidden-import html.parser"
 if team_installed; then
   if [ "${BP_NO_HARDEN:-0}" = 1 ]; then
     echo "build_sidecar: WARNING: BP_NO_HARDEN=1, shipping the Team engine as source (.pyc). Debug only, never a release." >&2
@@ -219,7 +222,7 @@ fi
 if team_installed; then
   echo "build_sidecar: bundling the Breakpatch Team engine"
   # plugins.py imports it by name at run time, so PyInstaller can't see it without help.
-  extra="$extra $team_hidden"
+  extra="$extra $team_hidden $team_stdlib"
 else
   echo "build_sidecar: Breakpatch Team engine not installed; this is a Community build"
 fi

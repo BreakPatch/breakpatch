@@ -3,7 +3,7 @@
 // breakpatch_engine/report/view.py) repeats them, so the two are changed together; the golden
 // files in engine/tests/fixtures/report/ check they agree. Plain data and functions only: lib/
 // imports nothing from screens/ or components/.
-import type { FailReason, Run, RunSource, Step, StepRun } from '../data/types';
+import type { FailReason, RetriedTry, Run, RunSource, Step, StepRun } from '../data/types';
 import { isMac, osText, ThisComputer } from './osWords';
 
 export const WHERE: Record<RunSource, { label: string; icon: string }> = {
@@ -49,15 +49,57 @@ export function targetName(step: Pick<Step, 'target' | 'label' | 'action'>): str
   return 'what to click';
 }
 
-/** A pass that wasn't a plain match with the recording, in words for the report. */
-export function passNote(r: Pick<StepRun, 'passedBy' | 'why'> | undefined): string | undefined {
+/**
+ * A fixed step's headline, by how it was found (the engine's `fixedBy`: from the page's structure, by
+ * its role and name, or by the AI assistant; runs from before it say neither, and were the AI assistant's).
+ */
+export function fixedTitle(step: Pick<Step, 'target' | 'label' | 'action'>, r: Pick<StepRun, 'fixedBy'> | undefined): string {
+  const name = targetName(step);
+  const by = r?.fixedBy === 'structure' ? 'It was found by its name on the page.' : 'The AI assistant found it.';
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} had moved. ${by}`;
+}
+export const FIXED_TEXT = 'It was used in the new position and the screen afterwards looked right.';
+/** A fixed step's screenshot caption, by how it was found. */
+export function fixedCaption(r: Pick<StepRun, 'fixedBy'> | undefined): string {
+  return r?.fixedBy === 'structure' ? 'Where it was found by its name' : 'Where the AI assistant found it';
+}
+
+/** A pass that wasn't a plain match with the recording, in words for the report; a Call step's reply; what an email gave. */
+export function passNote(r: Pick<StepRun, 'passedBy' | 'why'> & Partial<Pick<StepRun, 'reply' | 'email'>> | undefined): string | undefined {
   if (r?.passedBy === 'gone') return 'Passed: the dialog closed. The page behind it looked different from when it was recorded.';
   if (r?.passedBy === 'note') return r.why ?? 'Passed: the step did what its note says.';
-  return undefined;
+  return replyNote(r?.reply) ?? gotNote(r?.email);
+}
+
+/**
+ * What a Wait for an email step got: "Got a 6-digit code in 4.2 s", "Got a link to app.acme.com in
+ * 3.1 s", never the code or the link (report/view.py email_note says the same).
+ */
+export function gotNote(got: StepRun['email'] | undefined): string | undefined {
+  if (!got || !['code', 'link', 'email'].includes(got.got)) return undefined;
+  const took = typeof got.ms === 'number' ? ` in ${replyTime(got.ms)}` : '';
+  if (got.got === 'code') return got.digits === true && typeof got.chars === 'number' ? `Got a ${got.chars}-digit code${took}` : `Got a code${took}`;
+  if (got.got === 'link') return got.site ? `Got a link to ${got.site}${took}` : `Got a link${took}`;
+  return `The email came${took}`;
+}
+
+/** A Call step's reply: "Replied 200 in 0.4 s" (its status and time, never its body). */
+export function replyNote(reply: StepRun['reply'] | undefined): string | undefined {
+  if (!reply || typeof reply.status !== 'number') return undefined;
+  return typeof reply.ms === 'number' ? `Replied ${reply.status} in ${replyTime(reply.ms)}` : `Replied ${reply.status}`;
+}
+
+/** "38 ms", else "1.2 s" rounded half up from whole milliseconds (report/view.ts shortTime, view.py short_time). */
+function replyTime(ms: number): string {
+  const n = Math.max(0, Math.floor(ms));
+  if (n < 1000) return `${n} ms`;
+  const t = Math.floor((n + 50) / 100);
+  return `${Math.floor(t / 10)}.${t % 10} s`;
 }
 
 /** The headline: "Couldn't find the Done button". */
 export function reasonTitle(reason: FailReason | undefined, step: Pick<Step, 'target' | 'label' | 'action'>): string {
+  if (reason === 'timeout' && step.action === 'emailWait') return 'No email came in time';
   switch (reason) {
     case 'targetNotFound': case 'healFailed': return `Couldn't find ${targetName(step)}`;
     case 'unexpectedScreen': return step.action === 'checkpoint' ? "The screen didn't look as expected" : "The screen didn't look as expected after this step";
@@ -68,6 +110,9 @@ export function reasonTitle(reason: FailReason | undefined, step: Pick<Step, 'ta
     case 'setUpFailed': return "The set-up call didn't work";
     case 'stopped': return 'You stopped the run';
     case 'fileMissing': return "The file to upload isn't in the tests folder";
+    case 'callFailed': return step.action === 'write' ? "The value from the call couldn't be typed" : "The call to your API didn't work";
+    case 'actionUnavailable': return 'This step needs Breakpatch Team';
+    case 'emailFailed': return step.action === 'emailWait' ? "The test inbox couldn't be read" : "What the email had couldn't be used";
     default: return 'This step failed';
   }
 }
@@ -78,8 +123,8 @@ const VERB: Partial<Record<Step['action'], string>> = {
   write: 'write in', drag: 'drag', swipe: 'swipe', scroll: 'scroll', upload: 'upload to',
 };
 
-/** One plain sentence (or two) under the headline. */
-export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'target' | 'label' | 'action' | 'secretRef'> & Partial<Pick<Step, 'file'>>): string {
+/** One plain sentence (or two) under the headline. `r`: the step's result (a Call step's reply). */
+export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'target' | 'label' | 'action' | 'secretRef'> & Partial<Pick<Step, 'file'>>, r?: Pick<StepRun, 'reply'>): string {
   const verb = VERB[step.action] ?? 'use';
   switch (reason) {
     case 'targetNotFound': return `It wasn't where it was when this step was recorded, so there was nothing to ${verb}. The run stopped here.`;
@@ -90,6 +135,7 @@ export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'tar
       return 'The page looked different from when it was recorded once the step was done. The run stopped here.';
     case 'noChange': return 'The step was done, but nothing changed on the page the way it did when it was recorded. The run stopped here.';
     case 'timeout':
+      if (step.action === 'emailWait') return 'No email this step waits for arrived in time. The run stopped here.';
       if (step.action === 'waitUntil') return 'What this step waits for never appeared. The run stopped here.';
       return "The page didn't finish loading or settle in time. The run stopped here.";
     case 'healingUnavailable': return 'Download it in Settings → AI assistant, then run again.';
@@ -97,18 +143,32 @@ export function reasonText(reason: FailReason | undefined, step: Pick<Step, 'tar
     case 'setUpFailed': return "The call before the test didn't answer with success, so no steps ran.";
     case 'stopped': return "The steps from here on didn't run.";
     case 'fileMissing': return `${step.file ?? 'The file'} isn't in the tests folder. Put it back in the files folder, or re-record the step.`;
+    case 'callFailed':
+      if (step.action === 'write') return "No Call step before it kept this value, or the page wasn't one of the app's own. The run stopped here.";
+      if (typeof r?.reply?.status === 'number') return `${replyNote(r.reply)}, which this step doesn't count as a pass. The run stopped here.`;
+      return "It didn't get a reply this step counts as a pass. The run stopped here.";
+    case 'actionUnavailable': return "It's part of Breakpatch Team, so it couldn't run here, and it never passes without it. The run stopped here.";
+    case 'emailFailed':
+      if (step.action === 'emailWait') return "The inbox couldn't be read, or the email didn't have what this step picks out. The run stopped here.";
+      return "No Wait for an email step before it picked this out, or the page wasn't one of the app's own. The run stopped here.";
     default: return 'The run stopped here.';
   }
 }
 
-/** What to try, under the side-by-side screenshots. */
-export function reasonAdvice(reason: FailReason | undefined): string {
+/** What to try, under the side-by-side screenshots. `step`: the step that failed (a Wait for an email step's own advice). */
+export function reasonAdvice(reason: FailReason | undefined, step?: Pick<Step, 'action'>): string {
+  if (reason === 'timeout' && step?.action === 'emailWait') {
+    return 'Check that the app sends the email, to the address this step waits for. If emails take long, let the step wait longer, then run again.';
+  }
   switch (reason) {
     case 'secretMissing': return osText('Saved secrets stay on each Mac. Add it here once and every test that uses it can run.');
     case 'healingUnavailable': return 'Without the AI assistant, a moved button fails the run. Re-record the step, or download the assistant.';
     case 'setUpFailed': return 'Check that the set-up address works and that the app is running, then run again.';
+    case 'callFailed': return "Check that the address works and that the app is running: the step's Try it shows what it replies now. Then run again.";
     case 'timeout': return 'If the app was slow this time, run again. If it always takes longer now, re-record this step.';
     case 'stopped': return 'Run again to go through every step.';
+    case 'actionUnavailable': return 'Run it with Breakpatch Team, or remove this step.';
+    case 'emailFailed': return 'Check the test inbox in Settings, Test inbox, and what this step picks out, then run again.';
     default: return 'If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer.';
   }
 }
@@ -119,4 +179,49 @@ export function tookText(ms: number): string {
   if (total < 60) return `${total} s`;
   const m = Math.floor(total / 60), s = total % 60;
   return s ? `${m} min ${s} s` : `${m} min`;
+}
+
+// ---------- retries (engine/PROTOCOL.md "Retries") ----------
+
+/** "try 1", "tries 1 and 2". */
+export function triesText(attempts: number[]): string {
+  if (attempts.length === 1) return `try ${attempts[0]}`;
+  return `tries ${attempts.slice(0, -1).join(', ')} and ${attempts[attempts.length - 1]}`;
+}
+
+/** A step's failures on earlier tries, oldest first. */
+export function retriedOf(r: Pick<StepRun, 'retried'> | undefined): RetriedTry[] {
+  return (r?.retried ?? []).filter(e => e && typeof e.attempt === 'number').slice().sort((a, b) => a.attempt - b.attempt);
+}
+
+/**
+ * "Failed on try 1: Waited too long for the page. It passed on the next try." on a step that
+ * failed on an earlier try of the run; '' when it didn't. `state`: what the step did on the last try.
+ */
+export function retriedNote(r: Pick<StepRun, 'retried'> | undefined, step: Pick<Step, 'target' | 'label' | 'action'>, state: 'passed' | 'fixed' | 'failed' | 'stopped' | 'notRun'): string {
+  const tries = retriedOf(r);
+  if (!tries.length) return '';
+  const titles = [...new Set(tries.map(e => reasonTitle(e.reason, step)))];
+  const said = `Failed on ${triesText(tries.map(e => e.attempt))}: ${titles.join('; ')}.`;
+  if (state === 'passed' || state === 'fixed') return `${said} It passed on the next try.`;
+  if (state === 'failed') return `Also f${said.slice(1)}`;
+  return `${said} The last try stopped before this step.`;
+}
+
+/** How many tries a run took (1 unless it was retried). */
+export const attemptsOf = (run: Pick<Run, 'attempts'> | null | undefined): number =>
+  typeof run?.attempts === 'number' && run.attempts > 1 ? Math.floor(run.attempts) : 1;
+
+/** "Passed on retry 1" for a run that passed on a retry; '' otherwise. */
+export function passedOnRetry(run: Pick<Run, 'attempts' | 'result'> | null | undefined): string {
+  const n = attemptsOf(run);
+  return n > 1 && run?.result === 'pass' ? `Passed on retry ${n - 1}` : '';
+}
+
+/** The report's line for a run that took more than one try; '' for one try. */
+export function retryNote(run: Pick<Run, 'attempts' | 'result'> | null | undefined): string {
+  const n = attemptsOf(run);
+  if (n <= 1) return '';
+  if (run?.result === 'fail') return n === 2 ? 'Failed on both tries.' : `Failed on all ${n} tries.`;
+  return `${passedOnRetry(run)}: ${n === 2 ? 'the first try' : `the first ${n - 1} tries`} failed. A test that passes only on a retry may be flaky.`;
 }

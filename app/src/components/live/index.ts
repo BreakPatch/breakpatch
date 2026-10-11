@@ -1,7 +1,7 @@
 // Live browser view, shared by the Recorder, the Run view and the Report.
 import type { Step } from '../../data/types';
 import { demoEngine } from '../../engine';
-import { actionInfo } from '../../engine/labels';
+import { actionWords } from '../../engine/labels';
 import { inside, lockBox } from './geometry';
 import type { LiveMarker } from './LiveView';
 
@@ -17,8 +17,9 @@ const CLICKS = new Set<Step['action']>(['click', 'doubleClick', 'longClick', 'ri
  * The locked-area marker for a step, or null when it has no area on the page. In demo mode
  * a point snaps to the sample app's button under it, and the marker hides while that
  * button isn't on screen (like the prototype). Run view: pass label "Clicking here".
+ * `touch`: a phone or tablet test, whose marker says "Tap locked here".
  */
-export function stepMarker(step: Step, n: number, label?: string): LiveMarker | null {
+export function stepMarker(step: Step, n: number, label?: string, touch = false): LiveMarker | null {
   const eng = demoEngine();
   let hidden = false;
   const snap = eng ? (p: [number, number]) => {
@@ -28,5 +29,5 @@ export function stepMarker(step: Step, n: number, label?: string): LiveMarker | 
   } : undefined;
   const box = lockBox(step, snap);
   if (!box || hidden) return null;
-  return { kind: 'locked', box, n, label: label ?? (CLICKS.has(step.action) ? `${actionInfo(step.action).name} locked here` : 'Locked here') };
+  return { kind: 'locked', box, n, label: label ?? (CLICKS.has(step.action) ? `${actionWords(step.action, touch).name} locked here` : 'Locked here') };
 }

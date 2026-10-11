@@ -8,6 +8,9 @@ as the Tauri event `engine://event`.
 
 All coordinates are **viewport pixels at DPR 1**. Boxes are `[x1, y1, x2, y2]`.
 
+A **viewport** is `{ width, height, device? }`. `device` names a phone or tablet preset (below,
+"Phones and tablets"); without it, it's a desktop test, as every test made before presets.
+
 ## Messages
 
 ```jsonc
@@ -172,7 +175,7 @@ the app config, or (Breakpatch Team) the workspace's model override.
 ### Browser (live view)
 | Method | Params | Result |
 |---|---|---|
-| `browser.open` | `{ url, viewport: {width, height} }` | `{}` — starts streaming `frame` events |
+| `browser.open` | `{ url, viewport: {width, height, device?} }` | `{}` — starts streaming `frame` events; `bad_request` for a `device` this engine doesn't know |
 | `browser.close` | – | `{}` |
 | `browser.navigate` | `{ nav: "url"\|"reload"\|"back"\|"forward", url? }` | `{}` |
 | `browser.pointer` | `{ kind: "move"\|"scroll", at, dx?, dy? }` | `{}` — lets the user scroll/hover the live view without recording; `busy` while a step records |
@@ -208,16 +211,47 @@ doesn't change the screen by itself; a repaint with the same picture sends no fr
 popup, or the popup closes itself, frames come from the page now in front.
 The browser methods answer `busy` during a run.
 
+### Phones and tablets
+
+A test made for a phone or tablet has `viewport.device`, one of the presets in
+`src/breakpatch_engine/devices.py` (the app lists the same ones in `app/src/data/devices.ts`):
+`iphone-15`, `iphone-se`, `pixel-8`, `galaxy-s24`, then the tablets `ipad`, `ipad-pro-11`,
+`galaxy-tab-s9`. Each is a pinned copy of Playwright's device descriptor: the page gets the
+device's viewport, user agent, `isMobile` and a touch screen. `browser.open` and `run.start` use
+the preset's size whatever `width` and `height` say. Two things differ from the descriptor:
+
+- **Scale 1.** The page is drawn at device scale factor 1, so coordinates, frames, screenshots and
+  screen checks stay viewport pixels at DPR 1, at the device's size.
+- **Chromium.** An iPhone or iPad preset gives the page an iPhone's size, user agent and touch, but
+  it's still drawn by Chromium, not Safari.
+
+On a touch screen the same steps are touch input, in recording and replay (`actions.perform`):
+`click` is a tap, `doubleClick` two taps, `longClick` a long press (a finger held down), `swipe`
+and `drag` a finger moving (`Input.dispatchTouchEvent`), and `scroll` finger strokes that move the
+page (several when it's longer than the screen, each held still before it lets go so the page
+doesn't fling). Clicks that are part of another step (focusing a field for `write`, `upload`,
+`downloadCheck`) are taps too. `rightClick` and `hover` stay mouse input; the app doesn't offer them
+for a touch test. A step label the engine makes says "Tap", "Double tap" and "Long press" ("Tap
+Sign in", "Tap the spot you tapped"); a `label` the app sends is kept as it is.
+
+With **Use the page** on, `browser.input` `down`, `move` (while down), `up` and `click` with the left
+button are a finger too; `wheel`, keys and text are as on a desktop.
+
+A device name the engine doesn't know (a test from a newer Breakpatch) fails with `bad_request`
+"…Update Breakpatch to run it.", never runs as a desktop test.
+
 ### Recording
 | Method | Params | Result |
 |---|---|---|
-| `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame? }` | `{ step: Step }` |
-| `record.locate` | `{ description, absence?, near? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below) |
+| `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame?, valueRef?, call?, appUrl?, passStatus?, keep?, email?, inbox? }` | `{ step: Step }` |
+| `record.locate` | `{ description, absence?, near?, shows? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below). `shows: true`: what to find may be text on the screen, not a control (a checkpoint, a Wait until; below) |
 | `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell. An empty sentence is `bad_request`; only its first 300 characters are read |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
+| `record.plan` | `{ story, secrets? }` | `{ steps: PlanStep[], note?, dropped?, overLimit? }` — Breakpatch Team: the steps a user story asks for, proposed and not done (below). Community: `not_ready` |
 | `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
 | `record.focused` | `{}` | `{ box, name }` — the field that has the keyboard focus (its label, aria-label, placeholder or name; nulls when nothing that takes typing has it), for the confirm bar of a described typing step; nothing is done to the page |
 | `record.chooseFile` | `{ sample }` \| `{ file, path }` \| `{ cancel: true }` | `{}` — the answer to a `record.fileChooser` event: the file for a click that opened the page's file picker (below) |
+| `record.stop` | `{}` | `{ stopped }` — ends a step that waits while it's recorded (Wait for an email, Breakpatch Team): its `record.point` answers `stopped` and the step isn't added. `browser.close` and `browser.open` end it too. `stopped: false` when nothing was waiting |
 
 Nothing the user does on the live view reaches the page by itself: the app turns a click, drag or
 scroll into a proposed step ("Click Next button?"), using `record.propose` for the element's box
@@ -235,6 +269,15 @@ With a model installed, the engine asks it to name the clicked element (unless `
 a given `target` is kept); without one the target reads like "The spot you clicked, near the top
 left of the page". The naming looks at the screen from before the action but runs after it, while
 the page reacts, so it never delays the click.
+
+With structure healing switched on (`HEAL_FROM_STRUCTURE` in `config.py`, off for now; roadmap #41),
+a step with a pre-check also keeps the control it acts on, as the page names it, read before the
+action: `element` `{ role, name, origin, offset }` (`dom/same.py`). `role` and `name` are its
+accessible role and name (a control: a button, link, field, checkbox and the like; a named dialog
+or heading isn't kept), `origin` the page's scheme, host and port, and `offset` where in the
+control the step acted, in px from its centre. A spot with no named control keeps none. With the
+switch off no step has `element`, and a step that has one replays exactly as one without it, except
+for healing (Replay below). Apps keep it as it is: it isn't a format change.
 
 `frame` is the `seq` of the live view frame the user clicked or drew on (`record.locate` returns
 the one it found the box on). Right before acting, and at its first look, the engine checks that
@@ -363,6 +406,14 @@ then uses the chosen action with the sentence as what to look for, as before. No
 the page: the app looks for the target with `record.locate` and records the step (or, for a
 repeat, that many steps one after another) through `record.point` only when the user confirms.
 
+**Text that shows (`record.locate` `shows`).** A checkpoint or a Wait until often looks for plain
+text ("Account created"), which isn't a control, so S0 is unsure about it. With `shows: true`, on a
+Fast page where S0 is unsure, the short text runs on screen are read first (`dom/shown.py`): the
+description without quotes, a leading "the" and trailing words such as "message shows"; a text
+that reads exactly that wins, else the shortest that has it as whole words and isn't much longer
+(40 characters at most beyond it), ties in reading order. The answer's `path` is `"fast"`. When no
+text reads like it, the AI assistant is asked as before. Without `shows` nothing changes.
+
 **The "+" or "−" next to something (`record.locate` `near`).** `near: { control: "increase", of:
 "People" }` finds a stepper's control from the page's structure (`dom/near.py`) instead of S0,
 which folds punctuation away and can't tell "+" from "−". Controls that increase are named,
@@ -377,12 +428,55 @@ page is Visual, the AI assistant looks for `description` as usual (path `"fast-v
 Without `near`, `record.locate` is unchanged, and the short text runs on screen aren't collected
 at all (they're read only for a locate with `near`).
 
+**A test from a story (`record.plan`, Breakpatch Team, roadmap #10).** The person pastes a short
+user story or acceptance criteria ("Sign up with a new email and my password, then I see Account
+created") and picks which saved secrets it may type. `record.plan` hands the planner the Team
+engine registered (`plugins.register_planner`, the contract in `engine/src/breakpatch_engine/plan.py`)
+the story (its first 2,000 characters), those secret names (never their values), the page as it is
+now (a screenshot, its address, and the controls and short texts on screen, read in 0.75 s at
+most) and the viewport. It answers the steps it proposes, at most 30; nothing is done to the page.
+Community has no planner: `not_ready` "Writing a test from a story is part of Breakpatch Team." The
+Team engine plans only with the licence feature `aiTests` and the AI assistant downloaded (else
+`not_ready`). An empty story is `bad_request`; the browser must be open (`not_ready`). A plan with no
+usable step, or none after 90 s, is `not_found` ("… Try a shorter story, one action per sentence.").
+
+`PlanStep`: `{ action, target?, text?, secretRef?, generated?, needs?, url?, direction?, seconds?, careful? }`
+- `action`: `click`, `doubleClick`, `rightClick`, `hover`, `write`, `navigate`, `scroll`, `waitFor`
+  or `checkpoint`. `target`: what to find on the page, in words; always there for the clicks, hover
+  and checkpoint, optional for `write` (none: the field that has the focus) and `scroll` (none: the
+  page). `navigate` has `url` (http or https only), `scroll` a `direction`, `waitFor` `seconds` (1 to 60).
+- The engine checks every step itself (`plan.clean`), whatever the planner said, and leaves out the
+  ones no step can do (`dropped` counts them) and any past the 30th (`overLimit` counts those). On
+  a phone or tablet test (the open browser has a `device`, so the planner's `Story` has `device`
+  and `touch: true`) no step can be a `hover` or `rightClick`: there's no pointer for them. A
+  `navigate` goes only to the page's own site (scheme, host and port) or to an address or host the
+  story names; any other is left out.
+- A `write` types only: a saved secret the person picked (`secretRef`); a generated value
+  (`generated`); or `text` the person wrote in the story (case and spaces aside). Run-time values
+  (`{timestamp}` to the second, `{i}` the repeat number, `{time}` HH:MM, `{date}` YYYY-MM-DD; only
+  `{timestamp}` differs on every run) don't make other text typeable: they may only end text from
+  the story (`Ada Lovelace {i}`) or a short made-up name of one to three words (`Test project
+  {time}`), or be in the name of a made-up email address at a test domain (`example.com`, `.test`
+  and the like) or one the story names (`ada+{timestamp}@example.com`). Into a field named like a
+  password, only a picked secret. Otherwise the step comes back with no value and `needs: "text"`
+  or `needs: "secret"`: the app asks the person before it can be done.
+- `careful: true`: the step looks like it deletes, pays, buys, sends or cancels something. The app
+  always asks about it, in words that say so.
+
+The app then goes through the steps one at a time in the recorder: it finds each step's target on
+the live page with `record.locate` (the fast locator first, then the AI assistant; `shows: true`
+for a checkpoint), shows it with its box for **Confirm**, **Try again**, **Skip** or **Edit**, and on
+Confirm records it with `record.point` (or `record.checkpoint`) like a clicked step. The steps are
+ordinary steps: the saved test replays without the AI assistant. Nothing is saved until the person
+saves.
+
 ### Replay
 | Method | Params | Result |
 |---|---|---|
-| `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix, allowSystemDifferences? }, secrets: {NAME: Secret}, runner?, recordedOn?: RecordedOn }` | `{}` — returns at once, then events |
+| `run.start` | `{ runId, startUrl, appUrl?, viewport, steps: Step[], setUp?: Call, cleanUp?: Call & {alsoOnFailure?}, settings: { autoFix, failOnFix, allowSystemDifferences?, retries? }, secrets: {NAME: Secret}, runner?, recordedOn?: RecordedOn, inbox?: Inbox }` | `{}` — returns at once, then events |
 | `run.stop` | `{ runId }` | `{}` — stops after the current step |
-| `call.try` | `{ call: Call, appUrl, secrets? }` | `{ ok, status?, ms?, error?, message? }` — "Try it": one request under the same rules as a run |
+| `call.try` | `{ call: Call, appUrl, secrets?, passStatus?, timeoutMs?, keep? }` | `{ ok, status?, ms?, error?, message?, kept? }` — "Try it": one request under the same rules as a run (a Call step's `passStatus`, `timeoutMs` and `keep` too; `kept: true` when the value was found, never the value) |
+| `email.check` | `{ inbox: Inbox, secrets? }` | `{ ok, message? }` — Settings → Test inbox, "Check the inbox": signs in to the inbox as a run would and counts its emails, nothing else (Breakpatch Team, see Wait for an email below; Community: `not_ready`) |
 | `run.explain` | `{ step: Step, stepRun: StepRun, viewport? }` | `{ explanation: Explanation \| null }` — "Why did this fail?" for one failed step of a finished run (Breakpatch Team, see below) |
 | `report.images` | `{ items: [{ path, size: "full"\|"small" }], viewportWidth? }` | `{ images: [{ src, width, height, bytes } \| null] }` — screenshots for an exported report, as WebP `data:` URIs (see Export a report) |
 
@@ -414,13 +508,15 @@ runner (see Saved secrets).
 
 `run.start` fails with `busy` when a run or recording is going, and `not_ready` when the browser
 isn't installed. The run opens its own browser (closing the live view's) and closes it at the end.
-A `waitFor`/`waitUntil` in progress is cut short by `run.stop`.
+A `waitFor`/`waitUntil` in progress is cut short by `run.stop`, and so is a Call step waiting for its reply (the step fails with `stopped`; the reply, when it comes, is dropped).
 
-Events: `run.step` `{ runId, index, stepId, state: "running"|"looking"|"passed"|"healed"|"failed", reason?, preDistance?, postDistance?, oldAt?, newAt?, screenshot?, iteration?, message?, details? }`
-(`looking` = AI assistant is finding a moved target; `screenshot` is a local file path, only on failure or heal;
-`iteration` is the 1-based repeat number inside a loop; `message` is a plain sentence on failure)
-and `run.ended` `{ runId, result: "pass"|"fail", durationMs, steps: StepRun[], message?, details?, cleanUpFailed?, ranOn?, systemMismatch? }`
-(`ranOn` and `systemMismatch`: see Where a test was recorded).
+Events: `run.step` `{ runId, index, stepId, state: "running"|"looking"|"passed"|"healed"|"failed", reason?, preDistance?, postDistance?, oldAt?, newAt?, fixedBy?, screenshot?, iteration?, message?, details?, reply? }`
+(`looking` = a moved target is being looked for; `fixedBy`: see Healing below; `screenshot` is a local file path, only on failure or heal;
+`iteration` is the 1-based repeat number inside a loop; `message` is a plain sentence on failure;
+`reply` `{ status?, ms? }` is a Call step's, also in its `StepRun`: see Call steps below; `email` `{ got, chars?,
+digits?, site?, ms? }` is a Wait for an email step's, also in its `StepRun`: see Wait for an email below)
+and `run.ended` `{ runId, result: "pass"|"fail", durationMs, steps: StepRun[], message?, details?, cleanUpFailed?, ranOn?, systemMismatch?, attempts? }`
+(`ranOn` and `systemMismatch`: see Where a test was recorded; `attempts`: see Retries).
 
 `index` is the step's position in a **pre-order walk** of the nested steps (a loop or group comes
 before its children; children count once, not once per repeat). `run.ended.steps` is in the same
@@ -441,8 +537,46 @@ nothing), `unexpectedScreen` (post-check or checkpoint mismatch, wrong download 
 `noChange` (`expectChange` but nothing changed), `timeout` (the screen never settled, the page
 didn't load, no popup/file picker/download), `healFailed` (the AI assistant's spot doesn't match
 the stored hash), `healingUnavailable` (`autoFix` on, healing installed, but no model), `secretMissing`,
-`setUpFailed`, `stopped`. `failOnFix` makes a run with a healed step end with `result: "fail"`
+`setUpFailed`, `stopped`, `fileMissing`, `callFailed` (a Call step's call didn't pass, or a Write step's
+kept value isn't there or may not be typed on that page), `actionUnavailable` (a step the Team engine
+performs, without it or without its licence feature: never a pass), `emailFailed` (the test inbox
+couldn't be read, the email didn't have what the step picks out, or a Write or Go to step's `{emailCode}`
+or `{emailLink}` isn't there or may not be used on that page). `failOnFix` makes a run with a healed step end with `result: "fail"`
 (the step stays `healed`).
+
+**Retries** (roadmap #14, `retry.py`). `settings.retries` (0, 1 or 2; missing, anything else or
+more is 0, 2 at most) lets a failed run try again: the whole test from the start, in a new browser,
+with its set-up call and clean-up call, as the first try did. Before another try the clean-up call
+is made even without `alsoOnFailure` (when the try got as far as the set-up call), so the next
+set-up starts clean. A single step is never done again on its own: its action may already have
+changed the page. A try is retried only when its failure looks
+like timing:
+
+- `timeout` (the screen didn't settle, the start page didn't load, no popup, file picker or download);
+- `noChange` (the step was done but nothing happened, often a click before the page was ready);
+- `targetNotFound` when its `preDistance` is at most 4 bits past the pre-check's tolerance, and
+  `unexpectedScreen` when its `postDistance` is at most 4 past the check's (relaxed checks add
+  their 2 bits as usual). Further off, the page really is different, and isn't retried.
+
+Never: `secretMissing`, `setUpFailed`, `stopped`, `healingUnavailable`, `healFailed`,
+`fileMissing`, `callFailed` (a Call step's call didn't pass: the API answered), `actionUnavailable`,
+`emailFailed` (the inbox answered; no email in time is `timeout`, which is retried), a failure with no distance (something went wrong inside the engine), `failOnFix`,
+or a run the client stopped. No retry starts once the run has taken 5 minutes (`retry_budget`,
+stretched by `BP_TIMINGS_SCALE` and breakpatch-ci's tier like the other long waits); the next try
+starts 1 s after the last. The recorder's own runs (`keepOpen`, `fromStepId`) are never retried.
+A retried try makes its Call steps' calls again and starts with no kept values: a Write step of a
+kept value types what this try's call replied. It also gets a new `{email}` address, and only emails
+that came after it started count, never one an earlier try used: a Wait for an email step waits for a new email.
+
+Before each retry the engine sends `run.retry` `{ runId, attempt, of, stepId, reason, why, message }`
+(`attempt`: the try starting now, 2 or 3; `of`: the most there can be; `why`: a short phrase for
+logs), then the new try's `run.step` events from the first step. `run.ended` is the last try's,
+with `durationMs` over every try, `attempts` (how many tries it took: 2 or 3; absent after one try),
+and each earlier try's failure kept on the step it failed at, whatever the last try did there:
+`StepRun.retried: [{ attempt, reason, message?, durationMs, preDistance?, postDistance?, screenshotPath? }]`.
+So a run that passes on a retry says so, and one that never passes keeps every try's failure. An
+earlier try's screenshot is `<n>-<stepId>-try<attempt>.png` from the second try on, so none is
+overwritten. Without `retries`, or after one try, `run.ended` is exactly as before.
 
 Healing (spec §11.2, only with `autoFix`) is Breakpatch Team: it runs only when the Team engine
 (`breakpatch_team_engine`) is installed next to this one (`plugins.py`) **and** its licence (see
@@ -453,10 +587,28 @@ nothing is written back. Without the Team engine (Community), or without such a 
 is ignored: a failed pre-check fails with `targetNotFound`, and `looking`, `healed`, `healFailed`
 and `healingUnavailable` never occur.
 
+**From the page's structure first** (roadmap #41; only while `HEAL_FROM_STRUCTURE` is on, off for
+now). A step that kept its `element` (Recording above) is looked for before the model: the page's
+controls are read as `record.locate` reads them, and exactly one with that role and name (case and
+runs of spaces aside) is taken, at the same `offset` from its centre. Never on a page `record.locate`
+calls Visual (a Flutter app, a canvas over a quarter of the viewport, fewer than 3 controls), never
+when two or more controls have that role and name, never when the page isn't on the step's `origin`
+or the control is in another site's iframe, never a disabled one, and not when the page can't be
+read in 2 s. The pre-check is then repeated there, as for the AI assistant's spot. In every other
+case, or when that check doesn't pass, the AI assistant looks as before: so a target that is really
+gone still fails with `targetNotFound` (or `healingUnavailable` without a model, its message then
+saying it wasn't found by its name either), and no model is loaded when the structure finds it.
+While the switch is on, a healed step's `StepRun` and `run.step` say how it was found: `fixedBy:
+"structure"` or `"ai"` (absent with the switch off, and from older engines). A failure after a heal
+keeps it too. With `failOnFix`, a run whose fixes weren't all the AI assistant's ends with the
+message "A step was fixed automatically and this run fails on fixes."
+
 Loops and shared steps are nested, as stored (spec §12.1): a `loop` step carries its
 `count` and child `steps`; a `group` step carries `groupId`, `groupVersion` and the child
 `steps` the UI resolved from that version before starting. The engine runs children in order.
 `{i}` in `text` (and `url`) is the 1-based repeat number; `{time}` is HH:MM and `{date}` is YYYY-MM-DD at run time.
+`{email}` is the try's own address in the test inbox, and `{emailCode}` and `{emailLink}` what a Wait for
+an email step before picked out (Breakpatch Team: see Wait for an email).
 
 **Why did this fail? (`run.explain`).** Breakpatch Team explains a failed step in plain words,
 when the report asks (roadmap #7). Nothing about it happens during the steps of a run, and
@@ -556,7 +708,7 @@ changed. `RecordedOn` says where a test's steps were recorded
 A secret travels as `{ value, origins, runnerCanUse }`: `origins` are the sites it may be typed
 on (`https://app.example.com`, scheme, host and port), and `runnerCanUse` whether the local runner
 may use it (off by default). The Tauri shell fills `origins` and `runnerCanUse` itself, from the
-Keychain index (app/src-tauri/src/secrets.rs), for every `run.start`, `record.point` and `call.try`
+Keychain index (app/src-tauri/src/secrets.rs), for every `run.start`, `record.point`, `call.try` and `email.check`
 that goes through `engine_request`: whatever the UI put there is replaced, so the UI (or the Team
 runner) can keep sending `{NAME: value}`. A bare value from any other client (`breakpatch-ci`, the
 tests) counts as allowed on the start page's site only (`startUrl`, or the page `browser.open`
@@ -570,10 +722,29 @@ page's own scripts can't fake it. On a mismatch the step fails with `secretMissi
 ("NAME isn't allowed on any site yet…"): the app asks once to allow the app's site for secrets saved
 before sites existed.
 
+A secret the shell refused for this request travels as `{ refused }` alone: a plain sentence saying
+why, and no value. Using it fails like a missing secret, with that sentence: a run stops before it
+starts (`secretMissing`), `record.point` fails with `not_found`, and `call.try` with `error: "secret"`.
+
 **The local runner** (Breakpatch Team) sends `runner: true` in `run.start`. Then a secret without
 `runnerCanUse` fails its step before anything runs ("NAME can't be used by the runner…"). The UI
 reads the flag with `secrets.info()` (app/src/platform.ts; shell command `secrets_info`), so the
 runner can also refuse a request before it starts it.
+
+**Which workspaces** (issue #33). A secret on this Mac may be kept for chosen workspaces and tests
+folders (`workspaces` in the Keychain index: connection ids such as `team:<project>/<database>`,
+`hosted:<id>`, `local:<hash>`; none means every one). The UI adds `workspace`, the open one's
+connection id (app/src/lib/secretScope.ts), to `run.start`, `record.point` and `call.try`. The
+shell takes it out and sends a secret kept for other workspaces as `{ refused }` ("NAME is kept for
+other workspaces on this Mac…"); without `workspace`, only secrets kept for every workspace go.
+
+**Workspace secrets** (Breakpatch Team, issue #45). The UI may also add `workspaceSecrets`:
+`[{ name, id, enc, kid }]`, the sealed `value` of `secrets/<id>` in the open workspace, for names
+this Mac's secrets don't cover there. The shell takes it out, opens each with the workspace's key
+(app/src-tauri/src/workspace_secrets.rs), checks the sealed name is the one asked for, and adds
+`{ value, origins, runnerCanUse }` with the sites and runner flag sealed with it. A secret on this
+Mac allowed in the workspace wins; one that doesn't open goes as `{ refused }`. The engine sees
+neither `workspace` nor `workspaceSecrets`, and the UI never gets a workspace secret's value.
 
 ### Set-up and clean-up calls
 
@@ -595,7 +766,117 @@ runner can also refuse a request before it starts it.
 
 A refused or failed set-up call fails the first step with `setUpFailed` and a message that says
 why. `call.try` answers `{ ok: true, status, ms }`, or `{ ok: false, status?, ms?, error, message }`
-with `error` one of `invalid`, `refused`, `redirect`, `secret`, `unreachable`, `timeout`, `status`.
+with `error` one of `invalid`, `refused`, `redirect`, `secret`, `unreachable`, `timeout`, `status`,
+`keep`.
+
+### Call steps
+
+A **Call** step (issue #44) makes a call like a set-up call at its place among the steps: mark an
+order as paid, turn on a feature flag, ask a test API for a one-time code.
+
+```jsonc
+{ "id": "s1", "action": "call", "label": "Call POST api.acme.com/test/orders/42/pay",
+  "call": { "method": "POST", "url": "https://api.acme.com/test/orders/42/pay",
+            "headers": [{ "name": "Authorization", "secretRef": "API_TOKEN" }],
+            "body": "{\"paid\": true}", "allowOtherHosts": false },
+  "passStatus": "2xx",                         // optional: "200, 201", "2xx, 404", "200-204"
+  "timeoutMs": 30000,                          // optional: 1 s to 120 s, default 30 s
+  "keep": { "path": "$.code", "name": "CODE" } // optional: a value for a later Write step
+}
+```
+
+- `call` is a `Call` with the same rules (above), and also `body`: text, at most 64 KB, not on a
+  GET. Without a `Content-Type` header it goes as `application/json` when it reads as JSON, else as
+  plain text. `{i}`, `{time}`, `{date}` and `{timestamp}` in its address and body are filled in at
+  run time, as in a Write step's text. `allowOtherHosts` is the step's own.
+- It passes when the reply's status is in `passStatus` (statuses from 200 to 599, classes like
+  `2xx`, ranges like `200-204`; default `2xx`). A redirect is never followed and never a pass.
+- Nothing on the page is checked: no `pre`, `post`, `ignore` or `expect`. The step's `StepRun`
+  and its `run.step` events carry `reply: { status?, ms? }`, the reply's status and how long it
+  took. The reply's body is never in an event, a result, a report or a log.
+- A failure is `callFailed` with a message that says why (`It replied 500.`, `No reply after
+  30 s.`, a rule it breaks), or `secretMissing` when a header's saved secret is missing or not
+  allowed on the call's site. Secrets in headers are checked before the run starts, like a Write
+  step's, and go in `secrets` (the shell fills their sites, workspaces and workspace secrets as for
+  any other).
+- `keep`: where a value is in a JSON reply (`$.code`, `$.data.items[0].id`, `$['one-time code']`)
+  and a name for it (letters, numbers and `_`, starting with a letter). The value (a string,
+  number or true/false, at most 1,000 characters, no line breaks) is kept for the rest of the run
+  only. A reply that isn't JSON or has nothing there fails the step (`callFailed`). A Write step
+  with `valueRef: "CODE"` (and no `text`) types it, under the same guard as a saved secret: only
+  into a page of the app (its host, or another under the same domain, as calls may reach) or of
+  the call's own site, checked after the click and before every key. A value no Call step before
+  it kept fails the Write step with `callFailed`.
+- `record.point` with `action: "call"` takes `call`, `appUrl`, `secrets`, `passStatus`,
+  `timeoutMs` and `keep`, and makes the call at once, as a run would, so the steps recorded after it
+  see what it did. One that doesn't pass isn't recorded: `bad_request` (a rule it breaks) or
+  `network` ("The call didn't work. It replied 500."). The recorder keeps what it kept for the Write
+  steps recorded after it (`record.point` with `valueRef`; `not_found` when it has nothing by that
+  name yet: play the Call step first), and so does a run with `keepOpen`; Play this step
+  (`fromStepId`) uses what the recorder has. A failed Call step keeps no screenshot.
+
+### Wait for an email
+
+A **Wait for an email** step (issue #12, Breakpatch Team) waits for a message in the workspace's test
+inbox and picks out a code or a link from it, for the steps after it. Sign-up, password reset and
+log-in with a code then run end to end. The open engine knows the step and its placeholders; the
+Team engine performs it (`plugins.register_action("emailWait", …)`), behind the licence feature
+`email`. Without the Team engine, or without that feature, the step fails with `actionUnavailable`
+("Waiting for an email needs Breakpatch Team.") and never passes; so does `{email}`.
+
+```jsonc
+{ "id": "e1", "action": "emailWait", "label": "Wait for an email with a code",
+  "email": { "to": "{email}",                 // optional: the address it waits for, {email} by default
+             "from": "no-reply@acme.com",     // optional: the sender contains this
+             "subjectContains": "Your code",  // optional
+             "pick": "code",                  // "code", "link", or absent (only that it came)
+             "codePattern": "\\b\\d{6}\\b",     // optional: a regular expression (Python's), 6 digits by default
+             "linkContains": "/verify" },     // optional: the first link (http or https) containing this
+  "timeoutMs": 60000 }                        // optional: 5 s to 300 s, 60 s by default
+```
+
+`Inbox` (`inbox` in `run.start`, `record.point` and `email.check`; set once per workspace, in
+Settings → Test inbox):
+`{ kind: "mailpit" | "imap", server, port?, user?, passwordRef?, address, folder? }`. Mailpit:
+`server` is its web address (`https://mailpit.staging.acme.com`; plain `http://` only to an address on
+this computer's network), read through its API. IMAP: `server` is the host (`imap.acme.com`), `port`
+993 by default, over TLS (plain only to this computer itself), read only (nothing is marked read),
+`folder` INBOX by default. `passwordRef` is a saved secret's name (it goes in `secrets` like any other,
+and must be allowed on the inbox's site: Mailpit's address, or `https://<IMAP server>`); a missing one
+fails the first Wait for an email step before the run starts (`secretMissing`). `address` is what
+`{email}` builds on. Cloud metadata addresses are never reached. Mail services with an API of their own
+(Mailosaur, MailSlurp) don't need this: a Call step to their "wait for a message" address with `keep`
+does the same.
+
+- `{email}` (Write text, Go to address, a Call step's address and body, the step's `to`) is the try's
+  own address: the inbox's `address` with `+bp-<8 letters and digits>` (plus addressing):
+  `qa@acme.com` → `qa+bp-k3j9x2ma@acme.com`. Every try of a run, and every recording (each
+  `browser.open`), has its own. Without an inbox (or the Team engine) it fails with `emailFailed` (or
+  `actionUnavailable`) and nothing is typed.
+- The step looks every 2 s until `timeoutMs` for the newest email to `to` that matches `from` and
+  `subjectContains`, that no step of this run used yet, and, unless `to` is the try's own `{email}`,
+  that came after the try started (30 s of leeway for the inbox's clock). No such email: `timeout`
+  ("No email to qa+bp-k3j9x2ma@acme.com arrived within 60 s."), retried like any timeout. A code is
+  looked for in the first 20,000 characters of the email's text; a `codePattern` is searched with a
+  time limit (textsearch.py), and one that takes too long fails the step with `emailFailed` ("The code
+  pattern took too long. Make it simpler."), as does one that repeats a repeat, like `(a+)+`. An email that
+  came without what the step picks out: `emailFailed` at the end of the wait. An inbox that can't be
+  read (refused password, unknown server): `emailFailed` at once.
+- What it picks out is kept for the rest of the run only, like a Call step's value: `emailCode` or
+  `emailLink`. A Write step types it with `{emailCode}` or `{emailLink}` in its text (or `valueRef`),
+  and a Go to address opens `{emailLink}`, only on the app's own pages (as a kept value is typed): a
+  link to another site isn't opened (`emailFailed`, naming the site, never the address). The message
+  itself is never kept: its subject, text and addresses are read to match and pick, then dropped.
+- Nothing on the page is checked. The `StepRun` and its `run.step` events carry `email`: `{ got:
+  "code", chars, digits, ms }`, `{ got: "link", site, ms }` or `{ got: "email", ms }`, never the
+  code or the link. A failed step keeps no screenshot.
+- `record.point` with `action: "emailWait"` takes `email`, `timeoutMs`, `inbox` and `secrets`, and
+  waits now, as a run would, so the steps recorded after it can type what it kept; one that doesn't
+  get its email isn't recorded (`not_found` for no email in time or a missing secret, `network` when the
+  inbox couldn't be read, `not_ready` without Team, `stopped` after `record.stop` or when the recording's
+  browser closes). A Write step recorded with `{emailCode}` before
+  any email has given one fails with `not_found` ("…Play the Wait for an email step…"). The recorder
+  keeps what a run with `keepOpen` kept, and its `{email}`.
 
 ## Environment
 
@@ -609,7 +890,7 @@ with `error` one of `invalid`, `refused`, `redirect`, `secret`, `unreachable`, `
 | `BP_CHROMIUM` | – | explicit Chromium binary (development, CI images) |
 | `BP_HEADED` | – | `1` shows the browser window |
 | `BP_FAST` | – | `1` shortens every wait (tests) |
-| `BP_TIMINGS_SCALE` | `1` | a slow machine (a Raspberry Pi): multiplies the settle, pre-check, navigation and start-page waits by this number, from 1 to 10; the noise watch isn't stretched |
+| `BP_TIMINGS_SCALE` | `1` | a slow machine (a Raspberry Pi): multiplies the settle, pre-check, navigation and start-page waits by this number, from 1 to 10, and the time after which no retry starts (see Retries); the noise watch isn't stretched |
 | `BP_LOG` | `INFO` | log level (stderr) |
 | `HF_ENDPOINT`, `HF_TOKEN` | Hugging Face defaults | model download; development only, ignored by a release build (a packaged sidecar) |
 | `BP_NO_SANDBOX` | – | `1` turns Chromium's sandbox off; development only |
@@ -640,10 +921,16 @@ the pipeline names their sites (`--secret NAME=https://site[,…]`), each goes a
 listed, or whose sites don't include the test's start page, `appUrl` or a call that sends it. Each run is written to
 `apps/<appId>/runs` as the app writes one, with `source: "ci"` and the local `screenshotPath` left
 out; a suite also writes `suiteRuns`. A suite prints `{ result, suite, suiteId, version, counts,
-tests: [{ name, appId, testId, version, result, failedStep?, note?, runId? }], suiteRunId?, saved }`
+tests: [{ name, appId, testId, version, result, failedStep?, note?, runId?, attempts? }], suiteRunId?, saved }`
 and exits 0 when it passed (with fixes too) and 1 when a test failed; 2 also covers a workspace,
 suite or test that can't be read and a sign-in that fails. The Team repo's
 `engine/src/breakpatch_team_engine/workspace.py` has the details.
+
+**Retries.** `--retries N` (0 to 2, default 0) sends `settings.retries` (see Retries): a test that
+passes on a retry passes (exit 0), its JSON has `attempts` and each step's `retried`, a suite row has
+`attempts` and the suite's `counts.flaky` (only when some did) counts the tests that passed only on a
+retry, and runs written to the workspace carry `attempts` (the rules allow 2 or 3). Without it,
+nothing changes. A suite's own `retries` (the app's setting) isn't used by breakpatch-ci.
 
 **Another system.** A test file's `recordedOn` is compared with the CI machine as in Where a
 test was recorded. On a mismatch `breakpatch-ci` prints one line on stderr before the run
@@ -667,7 +954,10 @@ so they're typed only on the start page's site (see Saved secrets).
 `breakpatch-ci` runs under a **machine licence**: a machine seat on the Team licence (like the
 local runner Mac's), taken through the licence service's `activate` with `kind: "machine"`, and
 checked with the same built-in keys as above. It needs the `ci` feature (`--auto-fix` also needs
-`autoFix`, otherwise it runs without fixing and says so on stderr).
+`autoFix`, otherwise it runs without fixing and says so on stderr). Its healer is the app's, so with
+`HEAL_FROM_STRUCTURE` on (Healing above) `--auto-fix` fixes a web page's moved control from the
+page's structure on a machine without the model too, and a fixed step's stderr line says how
+("healed (found by its role and name on the page)").
 
 | Variable | Use |
 |---|---|

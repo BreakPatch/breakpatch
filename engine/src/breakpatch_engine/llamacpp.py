@@ -577,10 +577,10 @@ class LlamaCppLocator(VisionLocator):
         server.ensure()
         return server.load_seconds
 
-    def _generate(self, image: Image.Image, prompt: str) -> str:
+    def _generate(self, image: Image.Image, prompt: str, max_tokens: int | None = None) -> str:
         server = self._need_server()
         with self._lock:
-            doc = server.chat(request_body(image, prompt, self.max_tokens), self.timeout_s)
+            doc = server.chat(request_body(image, prompt, max_tokens or self.max_tokens), self.timeout_s)
         text, timings = reply_text(doc)
         self.last_timings = timings
         log.info("model reply (prompt %s tokens in %s ms, %s tokens in %s ms): %s", timings.get("prompt_n"),
