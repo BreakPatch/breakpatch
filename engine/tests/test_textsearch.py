@@ -19,8 +19,9 @@ def test_a_match_and_its_first_group():
     assert textsearch.search(r"(x)?y", "y") == ("y", None)
     assert textsearch.search(r"\d{6}", "no code here") is None
     assert textsearch.search(r"(\d+) €", "Total — 12 € à payer") == ("12 €", "12")
-    with pytest.raises(textsearch.SearchFailed):
-        textsearch.search("([", "text")
+    for bad in ("([", "(?a)(?u)x"):            # re.error, and the ValueError Python gives for that one
+        with pytest.raises(textsearch.SearchFailed):
+            textsearch.search(bad, "text")
 
 
 async def test_a_pattern_that_never_ends_is_stopped_and_the_loop_keeps_ticking():

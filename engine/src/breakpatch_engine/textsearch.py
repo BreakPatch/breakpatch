@@ -48,7 +48,7 @@ def search(pattern: str, text: str, timeout: float = SEARCH_S) -> tuple[str, str
     from a thread (asyncio.to_thread), never on the event loop."""
     try:
         re.compile(pattern)
-    except re.error as e:
+    except (re.error, ValueError, OverflowError, RecursionError) as e:    # (?a)(?u) is a ValueError
         raise SearchFailed("not a regular expression") from e
     from .install import self_command
     try:
@@ -138,7 +138,7 @@ def child_main() -> int:
         req = json.loads(sys.stdin.buffer.read().decode("utf-8"))
         limit = min(max(float(req.get("limit", SEARCH_S + SELF_STOP_S)), 0.1), START_S)
         pattern = re.compile(str(req["pattern"]))
-    except (UnicodeDecodeError, ValueError, KeyError, TypeError, AttributeError, re.error):
+    except (UnicodeDecodeError, ValueError, KeyError, TypeError, AttributeError, OverflowError, RecursionError, re.error):
         return 2
     timed = hasattr(signal, "setitimer")
     if timed:
