@@ -9,7 +9,7 @@ import type { RecorderActionDialogProps } from '../edition/types';
 import { edition } from '../edition';
 import { resetFeaturesForTests, setFeatures } from '../edition/features';
 import { NO_FEATURES } from '../edition/types';
-import { getEngine, type RunEnded } from '../engine';
+import { EngineError, getEngine, type RunEnded } from '../engine';
 import { DemoEngine } from '../engine/demoEngine';
 import { emailLabel } from '../engine/labels';
 import { DemoBackend, DEMO_WORKSPACE } from '../data/demo/demoBackend';
@@ -21,7 +21,7 @@ import { useRecorder } from '../screens/recorder/useRecorder';
 import { INITIAL_RUN, runReducer } from '../screens/run/runState';
 import { detailText, showsScreens } from '../screens/report/reportData';
 import { keptNames } from './calls';
-import { inboxSecretNames, keptChoiceLabel, keptValueLabel, readInbox } from './email';
+import { INBOX_READ_MS, inboxSecretNames, keptChoiceLabel, keptValueLabel, readInbox } from './email';
 import { gotNote, passNote, reasonAdvice, reasonText, reasonTitle } from './runWords';
 
 Element.prototype.scrollIntoView ??= () => undefined;   // not in jsdom
@@ -138,6 +138,33 @@ describe("the recorder's action list and the edition's action", () => {
     expect(screen.getByRole('radio', { name: 'From the email' })).toBeInTheDocument();
   });
 
+  it('stops waiting when asked: the step is not added, and nothing is said', async () => {
+    const backend = new DemoBackend();
+    await backend.inbox.save(INBOX);
+    useSession.setState({ backend });
+    const engine = getEngine();
+    let stop: (() => void) | undefined;
+    vi.spyOn(engine, 'recordPoint').mockImplementation(() => new Promise((_, reject) => { stop = () => reject(new EngineError('stopped', "Stopped waiting. The step wasn't added.")); }));
+    const stopWaiting = vi.fn(async () => { stop?.(); });
+    Object.assign(engine, { stopWaiting });
+    try {
+      const onError = vi.fn();
+      const { result } = renderHook(() => useRecorder({ viewport: { width: 1440, height: 900 }, onError, appUrl: APP }));
+      expect(result.current.stopWaiting).toBeUndefined();
+      let added: Promise<boolean> | undefined;
+      act(() => { added = result.current.record({ action: 'emailWait', email: { to: '{email}', pick: 'code' } }); });
+      await waitFor(() => expect(result.current.stopWaiting).toBeDefined());
+      await waitFor(() => expect(stop).toBeDefined());
+      await act(async () => { result.current.stopWaiting!(); expect(await added).toBe(false); });
+      expect(stopWaiting).toHaveBeenCalledTimes(1);
+      expect(onError).not.toHaveBeenCalled();
+      expect(result.current.steps).toEqual([]);
+      expect(result.current.stopWaiting).toBeUndefined();
+    } finally {
+      delete (engine as { stopWaiting?: unknown }).stopWaiting;
+    }
+  });
+
   it('sends the inbox with a Write of {email}, and none with plain text', async () => {
     const backend = new DemoBackend();
     useSession.setState({ backend });
@@ -170,6 +197,25 @@ describe('a run with a Wait for an email step', () => {
     await backend.inbox.save(null);
     expect(await readInbox(backend)).toBeNull();
     expect(await readInbox({ ...backend, inbox: undefined } as unknown as DemoBackend)).toBeNull();
+  });
+
+  it('leaves no timer behind once the store answered, and gives up on one that never does', async () => {
+    vi.useFakeTimers();
+    try {
+      const off = vi.fn();
+      const answers = { inbox: { settings: (l: (v: InboxSettings | null) => void) => { queueMicrotask(() => l(INBOX)); return off; } } } as unknown as DemoBackend;
+      expect(await readInbox(answers)).toEqual(INBOX);
+      expect(off).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+      const silent = { inbox: { settings: () => off } } as unknown as DemoBackend;
+      const got = readInbox(silent);
+      expect(vi.getTimerCount()).toBe(1);
+      await vi.advanceTimersByTimeAsync(INBOX_READ_MS);
+      expect(await got).toBeNull();
+      expect(off).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('fails in the preview without the feature, and passes with what came when it has it', async () => {

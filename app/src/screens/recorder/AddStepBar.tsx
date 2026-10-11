@@ -253,7 +253,7 @@ export function AddStepBar({ rec, appId, allowGroups, onInsertGroup, frozen, ban
   if (rec.unhandled && !rr) hint = <><Icon name="info" size={16} className="rec-hint-icon" /><span className="grow rec-hint-unhandled" role="status">{rec.unhandled}</span></>;
   // While frozen the bar itself says why (the field above), so the hint row stays empty.
   if (frozen) hint = null;
-  else if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span></>;
+  else if (rec.busy && !rr) hint = <><Icon name="hourglass_top" size={16} className="rec-hint-icon" /><span className="grow">{rec.phaseText ?? 'Working…'} You can add the next step when this one is done.</span>{rec.stopWaiting && <Button onClick={rec.stopWaiting}>Stop waiting</Button>}</>;
 
   return (
     <div className="rec-bar">

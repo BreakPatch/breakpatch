@@ -344,15 +344,7 @@ def plan(call: dict, app_url: str | None, secrets: dict[str, Secret], resolver=r
         raise CallRefused(f"This call goes to {host}, which isn't part of {where}. "
                           "Turn on Allow other hosts for this test to call it.")
     port = port or (443 if scheme == "https" else 80)
-    try:
-        literal = host.strip("[]")
-        addrs = [literal] if _ip(literal) is not None else resolver(host, port)
-    except (OSError, UnicodeError) as e:
-        raise CallRefused(f"Couldn't find {host}. Check the address.", "unreachable") from e
-    if not addrs:
-        raise CallRefused(f"Couldn't find {host}. Check the address.", "unreachable")
-    if any(is_metadata(a) for a in addrs):
-        raise CallRefused(f"{host} is a cloud metadata address, which calls never reach.")
+    addrs = addresses_of(host, port, resolver)
     if not others and not all(is_public(a) for a in addrs):
         # A local or intranet app may call its own local addresses; anything else may not.
         app_local = local_app
@@ -369,7 +361,52 @@ def plan(call: dict, app_url: str | None, secrets: dict[str, Secret], resolver=r
     body = _body(call, method, headers)
     target = (u.path or "/") + (f"?{u.query}" if u.query else "")
     proxy = proxy_finder(url) if scheme == "https" and not is_loopback_host(host) else None
-    return Plan(method, url, scheme, host, port, target, addrs[0], headers, proxy, list(addrs), body)
+    return Plan(method=method, url=url, scheme=scheme, host=host, port=port, target=target, address=addrs[0],
+                headers=headers, proxy=proxy, addresses=list(addrs), body=body)
+
+
+def addresses_of(host: str, port: int, resolver=resolve) -> list[str]:
+    """Where `host` connects: the address itself when it is one, else every address it resolves to,
+    under the rule nothing lifts: no cloud metadata address. For the Team engine's connections too
+    (its test inbox), so an address blocked here is blocked there. Raises CallRefused, "unreachable"
+    when the name isn't found."""
+    try:
+        literal = host.strip("[]")
+        addrs = [literal] if _ip(literal) is not None else resolver(host, port)
+    except (OSError, UnicodeError) as e:
+        raise CallRefused(f"Couldn't find {host}. Check the address.", "unreachable") from e
+    if not addrs:
+        raise CallRefused(f"Couldn't find {host}. Check the address.", "unreachable")
+    if any(is_metadata(a) for a in addrs):
+        raise CallRefused(f"{host} is a cloud metadata address, which Breakpatch never reaches.")
+    return list(addrs)
+
+
+def plan_get(url: str, headers: dict[str, str] | None = None, *, allow_private_http: bool = False,
+             resolver=resolve, proxy_finder: net.Finder = net.proxy_for) -> Plan:
+    """A GET the engine makes for itself (not a test's call: no app, no host rule), such as the Team
+    engine's test inbox: the address rules of addresses_of, and https unless every address is this
+    computer's (loopback) or, with `allow_private_http`, none is on the internet. Through the
+    system's proxy like a call. Raises CallRefused: "invalid", "unreachable", "refused" (a metadata
+    address), or "http" (plain http:// to an address it isn't allowed for)."""
+    try:
+        u = urlsplit(str(url or "").strip())
+        port = u.port
+    except ValueError:
+        raise CallRefused("Enter a full address, starting with https://", "invalid") from None
+    scheme, host = u.scheme.lower(), (u.hostname or "").lower().rstrip(".")
+    if scheme not in ("http", "https") or not host:
+        raise CallRefused("Enter a full address, starting with https://", "invalid")
+    port = port or (443 if scheme == "https" else 80)
+    addrs = addresses_of(host, port, resolver)
+    if scheme == "http" and not all(is_loopback_host(a) for a in addrs):
+        if not allow_private_http or any(is_public(a) for a in addrs):
+            raise CallRefused(f"{host} needs https://. Plain http:// is only for an address on this computer"
+                              + (" or its network." if allow_private_http else "."), "http")
+    target = (u.path or "/") + (f"?{u.query}" if u.query else "")
+    proxy = proxy_finder(url) if scheme == "https" and not is_loopback_host(host) else None
+    return Plan(method="GET", url=url, scheme=scheme, host=host, port=port, target=target, address=addrs[0],
+                headers=dict(headers or {}), proxy=proxy, addresses=addrs)
 
 
 def _body(call: dict, method: str, headers: dict[str, str]) -> bytes | None:
@@ -430,7 +467,7 @@ def _headers(call: dict, origin: str | None, secrets: dict[str, Secret]) -> dict
 PROXY_POLICY_REFUSALS = frozenset({401, 403, 407, 451})
 
 
-def _connect_any(addresses: list[str], port: int, timeout: float, open_one) -> socket.socket:
+def connect_any(addresses: list[str], port: int, timeout: float, open_one) -> socket.socket:
     """Opens the first of the checked addresses that answers (as create_connection does for a name).
     A refused or unreachable address moves on to the next, through a proxy too; the last error is
     raised. A proxy's policy refusal is raised at once."""
@@ -447,13 +484,16 @@ def _connect_any(addresses: list[str], port: int, timeout: float, open_one) -> s
     raise last or OSError("no address to connect to")
 
 
+_connect_any = connect_any            # the name before it was public
+
+
 class _Pinned(http.client.HTTPConnection):
     def __init__(self, host, port, address, timeout):
         super().__init__(host, port, timeout=timeout)
         self._addresses = address if isinstance(address, list) else [address]
 
     def connect(self):
-        self.sock = _connect_any(self._addresses, self.port, self.timeout,
+        self.sock = connect_any(self._addresses, self.port, self.timeout,
                                  lambda a: socket.create_connection((a, self.port), self.timeout))
 
 
@@ -465,16 +505,18 @@ class _PinnedTLS(http.client.HTTPSConnection):
 
     def connect(self):
         if self._proxy:
-            raw = _connect_any(self._addresses, self.port, self.timeout,
+            raw = connect_any(self._addresses, self.port, self.timeout,
                                lambda a: net.tunnel(self._proxy, a, self.port, self.timeout))
         else:
-            raw = _connect_any(self._addresses, self.port, self.timeout,
+            raw = connect_any(self._addresses, self.port, self.timeout,
                                lambda a: socket.create_connection((a, self.port), self.timeout))
         self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
 
 
-def _exchange(p: Plan, timeout: float, read: int = REPLY_READ) -> tuple[int, bytes]:
-    """Sends the request and reads at most `read` bytes of the reply: (status, body)."""
+def exchange(p: Plan, timeout: float, read: int = REPLY_READ) -> tuple[int, bytes]:
+    """Sends the planned request (plan, plan_get) and reads at most `read` bytes of the reply:
+    (status, body). Raises OSError, ssl.SSLError (net.ProxyError through a proxy) and
+    http.client.HTTPException."""
     if p.scheme == "https":
         conn = _PinnedTLS(p.host, p.port, p.tried(), timeout, p.proxy)
     else:
@@ -491,8 +533,11 @@ def _exchange(p: Plan, timeout: float, read: int = REPLY_READ) -> tuple[int, byt
         conn.close()
 
 
+_exchange = exchange                  # the name before it was public
+
+
 def _send(p: Plan, timeout: float) -> int:
-    return _exchange(p, timeout)[0]
+    return exchange(p, timeout)[0]
 
 
 async def make(call: dict, app_url: str | None, secrets: dict[str, Secret], timeout: float,
@@ -513,7 +558,7 @@ async def make(call: dict, app_url: str | None, secrets: dict[str, Secret], time
         return Reply(False, error=e.kind, message=e.message, info=f"{shown} refused: {e.message}")
     try:
         status, body = await asyncio.wait_for(
-            asyncio.to_thread(_exchange, p, timeout, KEEP_READ if keep is not None else REPLY_READ), timeout + 5)
+            asyncio.to_thread(exchange, p, timeout, KEEP_READ if keep is not None else REPLY_READ), timeout + 5)
     except (asyncio.TimeoutError, socket.timeout, TimeoutError):
         return Reply(False, error="timeout", message=f"No reply after {int(timeout)} s.", info=f"{shown} timed out")
     except net.ProxyError as e:

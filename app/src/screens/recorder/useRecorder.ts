@@ -272,7 +272,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
       if (!rr && insertRef.current === tempId) setInsertAfter(prevInsert);
       if (!rr) setSteps(s => removeStep(s, tempId));
       setSelectedId(rr);
-      onErrorRef.current(e instanceof EngineError || e instanceof Error ? e.message : "Couldn't record that step.");
+      // Stop waiting was the person's own choice: nothing to say.
+      if (!(e instanceof EngineError && e.code === 'stopped')) onErrorRef.current(e instanceof EngineError || e instanceof Error ? e.message : "Couldn't record that step.");
       return false;
     } finally {
       busyRef.current = false; setBusyId(null); setChecking(false); setFileAsk(a => (a?.stepId ? a : null));
@@ -729,6 +730,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     ask: askBase && [askBase, careful ? CAREFUL_NOTE : null, toCheck ? CHECK_NOTE : null].filter(Boolean).join(' '),
     notFound: ai.state === 'notfound' ? ai.message ?? (ai.plan !== undefined ? planNotFoundText(ai.what) : notFoundText(ai.what)) : null,
     busy: busyId !== null,
+    /** While a Wait for an email step is recorded: ends its wait (engine `record.stop`); the step isn't added. */
+    stopWaiting: busyId !== null && busyAction === 'emailWait' && engine.stopWaiting ? () => { void engine.stopWaiting?.().catch(() => {}); } : undefined,
   };
 }
 

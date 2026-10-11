@@ -527,7 +527,7 @@ class Runner:
 
         if kind == "call":
             return await self._call_step(step, ctx, rec, lap)
-        if kind in TEAM_ACTIONS or (kind and _registered(kind)):
+        if kind in TEAM_ACTIONS:
             return await self._action_step(step, ctx, rec, lap)
 
         if kind == "waitFor":
@@ -790,11 +790,6 @@ EXPECTS = ("newPage", "closes", "appears", "changes", "noChange")
 
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9_-]+")
-
-
-def _registered(kind: str) -> bool:
-    from . import plugins
-    return plugins.action(kind) is not None
 
 
 def safe_name(value, fallback: str) -> str:

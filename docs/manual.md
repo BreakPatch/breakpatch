@@ -878,7 +878,8 @@ The step's other fields:
 
 - **To**: `{email}`, the run's own address, unless you change it. Every run (and every try of a run) has its own, so an email from an earlier run can't be taken by mistake. With a fixed address, only emails that came after the run started count.
 - **From contains** and **Subject contains**, to tell emails apart, for example a welcome email and the one with the code.
-- **Wait, seconds**: how long it waits, 60 seconds unless you change it (5 to 300). While you record, it waits at most 150 seconds.
+- **Code pattern**: for a code that isn't 6 digits, a regular expression, read the way Python reads one (named groups are `(?P<name>…)`; `\p{…}` and `(?<name>…)` don't work). With a group in brackets, the code is what the group matched: `code: ([A-Z0-9-]+)`. The code is looked for in the first 20,000 characters of the email's text. A pattern that repeats a repeat, like `(a+)+`, isn't accepted, and one that takes longer than a second or two to search fails the step: "The code pattern took too long. Make it simpler."
+- **Wait, seconds**: how long it waits, 60 seconds unless you change it (5 to 300). While you record, it waits at most 150 seconds, and **Stop waiting** in the bar below the page ends the wait without adding the step.
 
 What a run shows and keeps:
 
