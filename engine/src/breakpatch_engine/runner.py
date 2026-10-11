@@ -35,7 +35,9 @@ class Healer(Protocol):
     Called when a step's pre-check fails and `autoFix` is on. Returns `(at, from, preDistance)`
     at the new spot (`at`/`from` as the step uses them, else None), or raises StepFailed with
     `targetNotFound`, `healFailed` or `healingUnavailable`. It may use `runner.locator_fn`,
-    `runner.locator` (cached per run), `runner.b` (the browser) and `runner._event`.
+    `runner.locator` (cached per run), `runner.b` (the browser) and `runner._event`. It may say how
+    it found the spot in `runner.fixed_by` (FIXED_BY; None before each call), which the StepRun
+    reports as `fixedBy`: a healer that doesn't set it reports nothing, as before.
     """
 
     def __call__(self, runner: "Runner", step: dict, pre: dict, ignore, iteration: int | None,
@@ -58,6 +60,9 @@ MESSAGES = {
 }
 # What a step the Team engine performs (plugins.register_action) may add to its StepRun.
 ACTION_FIELDS = ("email",)
+# How a healer found a moved target (Healer, StepRun `fixedBy`): from the page's structure, by the
+# target's role and name (dom/same.py), or by the AI assistant.
+FIXED_BY = ("structure", "ai")
 
 
 def walk(steps: list[dict]) -> Iterator[dict]:
@@ -95,6 +100,7 @@ class Runner:
         self.healer = healer                  # None: no healing (Community), see plugins.py
         self.explainer = explainer            # None: no page read after a failure (Community)
         self.locator: Locator | None = None   # for the healer: loaded lazily on the first failed pre-check
+        self.fixed_by: str | None = None      # the healer's FIXED_BY for the step it's fixing, if it says
         self._passed_by: str | None = None
         self._tries = 0
         self._post_message: str | None = None
@@ -342,8 +348,9 @@ class Runner:
         if self.mismatch:
             out["systemMismatch"] = self.mismatch
         if result == "fail":
-            out["message"] = self.message or ("A step was fixed by the AI assistant and this run fails on fixes."
-                                              if ok else "The test failed.")
+            by_ai = all(r.get("fixedBy", "ai") == "ai" for r in self.results if r["result"] == "healed")
+            fixed = "A step was fixed by the AI assistant" if by_ai else "A step was fixed automatically"
+            out["message"] = self.message or (f"{fixed} and this run fails on fixes." if ok else "The test failed.")
             if self.details:
                 out["details"] = self.details
         return out
@@ -358,7 +365,8 @@ class Runner:
     def _fail(self, step: dict, err: StepFailed, iteration: int | None = None) -> None:
         i = self.index[id(step)]
         rec = {"stepId": step.get("id"), "result": "failed", "reason": err.reason}
-        for k in ("preDistance", "postDistance", "oldAt", "newAt", "screenshotPath", "timings", "reply", *ACTION_FIELDS):
+        for k in ("preDistance", "postDistance", "oldAt", "newAt", "fixedBy", "screenshotPath", "timings", "reply",
+                  *ACTION_FIELDS):
             if err.extra.get(k) is not None:
                 rec[k] = err.extra[k]
         self.results[i] = rec
@@ -366,8 +374,9 @@ class Runner:
         self.details = self.details or err.extra.get("details")
         self._event(step, "failed", iteration, reason=err.reason, message=err.message, details=err.extra.get("details"),
                     preDistance=rec.get("preDistance"), postDistance=rec.get("postDistance"),
-                    oldAt=rec.get("oldAt"), newAt=rec.get("newAt"), screenshot=rec.get("screenshotPath"),
-                    timings=rec.get("timings"), reply=rec.get("reply"), email=rec.get("email"))
+                    oldAt=rec.get("oldAt"), newAt=rec.get("newAt"), fixedBy=rec.get("fixedBy"),
+                    screenshot=rec.get("screenshotPath"), timings=rec.get("timings"), reply=rec.get("reply"),
+                    email=rec.get("email"))
 
     async def _run_list(self, steps: list[dict], ctx: Context, stop: asyncio.Event, iteration: int | None) -> bool:
         for step in steps:
@@ -410,7 +419,8 @@ class Runner:
             self.results[self.index[id(step)]] = rec
             self._event(step, rec["result"], iteration, preDistance=rec.get("preDistance"),
                         postDistance=rec.get("postDistance"), oldAt=rec.get("oldAt"), newAt=rec.get("newAt"),
-                        screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"), why=rec.get("why"),
+                        fixedBy=rec.get("fixedBy"), screenshot=rec.get("screenshotPath"), passedBy=rec.get("passedBy"),
+                        why=rec.get("why"),
                         timings=rec.get("timings"), unchecked=rec.get("unchecked"), reply=rec.get("reply"),
                         email=rec.get("email"))
             self._stop_if_reached(step)
@@ -575,9 +585,12 @@ class Runner:
             if dist > tol:
                 if not self.auto_fix or self.healer is None:
                     raise StepFailed("targetNotFound", preDistance=dist)
+                self.fixed_by = None
                 at, frm, new_dist = await self.healer(self, step, pre, ignore, iteration, dist)
                 rec.update({"result": "healed", "oldAt": step.get("at") or step.get("from"),
                             "newAt": at or frm, "preDistance": new_dist})
+                if self.fixed_by in FIXED_BY:
+                    rec["fixedBy"] = self.fixed_by
 
         url_before = self.b.url
         own = None
@@ -825,4 +838,4 @@ def _note(note: str) -> str:
 
 
 def _keep(rec: dict) -> dict:
-    return {k: rec[k] for k in ("preDistance", "postDistance", "oldAt", "newAt", "timings") if k in rec}
+    return {k: rec[k] for k in ("preDistance", "postDistance", "oldAt", "newAt", "fixedBy", "timings") if k in rec}

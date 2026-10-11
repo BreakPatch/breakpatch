@@ -11,9 +11,10 @@
 <body>
   <!-- Structure healing (dom/same.py, roadmap #41): a "Save" button that moves, with the query
        saying how. moved: to the right. twice: and another Save button. renamed: it reads "Store".
-       gone: no Save button. off: disabled. elsewhere: no Save here, but one where it moved to, in
-       an iframe from another site (localhost and 127.0.0.1 are different origins). flutter: a
-       Flutter host element on the page. canvas: a big canvas behind everything. -->
+       restyled: and it's light now. gone: no Save button. off: disabled. elsewhere: no Save here,
+       but one where it moved to, in an iframe from another site (localhost and 127.0.0.1 are
+       different origins). flutter: a Flutter host element on the page. canvas: a big canvas
+       behind everything. -->
   <h1 class="abs" style="left:250px;top:60px;margin:0;font-size:24px">Settings</h1>
   <button id="save" class="abs" style="top:200px;width:140px;height:44px">Save</button>
   <div id="msg" class="abs"></div>
@@ -28,12 +29,13 @@
     b.style.cssText = 'left:20px;top:20px;width:140px;height:44px';
     document.body.appendChild(b);
   } else {
-    save.style.left = (q.get('moved') || q.get('twice') || q.get('renamed') || q.get('off') ? 420 : 100) + 'px';
+    save.style.left = (q.get('moved') || q.get('twice') || q.get('renamed') || q.get('off') || q.get('restyled') ? 420 : 100) + 'px';
     if (q.get('twice')) {
       var other = save.cloneNode(true); other.id = 'save2'; other.style.left = '420px'; other.style.top = '120px';
       document.body.appendChild(other);
     }
     if (q.get('renamed')) save.textContent = 'Store';
+    if (q.get('restyled')) { save.style.background = '#fff'; save.style.color = '#2d5fa8'; }
     if (q.get('off')) save.disabled = true;
     if (q.get('gone') || q.get('elsewhere')) save.remove();
     if (q.get('elsewhere')) {
@@ -49,9 +51,10 @@
       c.style.cssText = 'left:0;top:0;width:800px;height:300px;z-index:-1';
       document.body.appendChild(c);
     }
-    save.onclick = function () {
+    document.addEventListener('click', function (e) {   // either Save button
+      if (e.target.tagName !== 'BUTTON' || e.target.textContent !== 'Save') return;
       setTimeout(function () { var m = document.getElementById('msg'); m.className = 'abs on'; m.textContent = 'Saved'; }, 150);
-    };
+    });
   }
 </script>
 </body></html>

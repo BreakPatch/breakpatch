@@ -26,6 +26,20 @@ describe('report data', () => {
     expect(detailText('fixed', done, undefined, false).body).not.toContain('Accept');
     expect(detailText('fixed', done, undefined, false).headline).toBe('The Done button had moved. The AI assistant found it.');
   });
+  it('says how a fixed step was found (the engine\'s fixedBy)', () => {
+    const r = (fixedBy?: 'structure' | 'ai') => ({ stepId: 's6', result: 'healed' as const, ...(fixedBy ? { fixedBy } : {}) });
+    expect(detailText('fixed', done, r('structure'), false).headline).toBe('The Done button had moved. It was found by its name on the page.');
+    expect(detailText('fixed', done, r('ai'), false).headline).toBe('The Done button had moved. The AI assistant found it.');
+    expect(detailText('fixed', done, r(), true).body).toContain('Accept');
+    const run = { id: 'run-1', appId: 'web', testId: 't', testName: 'Create a project', testVersion: 7, startedBy: { uid: 'u', name: 'Maria Lopez', email: '' }, machine: "Maria's Mac", source: 'desktop', startedAt: Date.now(), durationMs: 51_000, result: 'pass', healedCount: 1, steps: [] } as Run;
+    expect(copyDetails(run, done, '6', r('structure'), 'Web app')).toContain('Found by: its role and name on the page');
+    expect(copyDetails(run, done, '6', r('ai'), 'Web app')).toContain('Found by: the AI assistant');
+    expect(copyDetails(run, done, '6', r(), 'Web app')).not.toContain('Found by');
+  });
+  it('keeps the element a step acts on with Accept new position: it moved with it', () => {
+    const element = { role: 'button', name: 'Done', origin: 'https://app.example.com', offset: [-4, 2] as [number, number] };
+    expect(movedStep({ ...done, element }, [100, 100], [130, 90]).element).toEqual(element);
+  });
   it('says how long a run took', () => {
     expect(tookText(51_000)).toBe('51 s');
     expect(tookText(68_000)).toBe('1 min 8 s');

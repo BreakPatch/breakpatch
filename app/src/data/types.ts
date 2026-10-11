@@ -184,6 +184,12 @@ export interface Step {
   expectNote?: string;
   /** An upload of one of the user's own files: "files/<name>", in the tests folder. */
   file?: string;
+  /**
+   * What the page called the element this step acts on, kept by the engine when it records the step
+   * with structure healing on (engine config HEAL_FROM_STRUCTURE): "Fixed automatically" first looks
+   * for it by its role and name (engine dom/same.py). Optional; apps from before keep it as it is.
+   */
+  element?: StepElement;
   fileType?: string; minBytes?: number;
   count?: number;                // loop
   groupId?: string; groupVersion?: number | 'latest';
@@ -241,6 +247,9 @@ export type FailReason =
 
 export type RunSource = 'desktop' | 'ci' | 'runner';
 
+/** Step.element: an accessible role and name, the page's origin, and where in the element the step acted (px from its centre). */
+export interface StepElement { role: string; name: string; origin: string; offset: Point }
+
 export interface StepRun {
   stepId: string;
   result: StepResult;
@@ -252,6 +261,8 @@ export interface StepRun {
   passedBy?: 'gone' | 'note';
   /** With passedBy "note": the AI assistant's sentence. */
   why?: string;
+  /** A fixed step: how it was found, by its role and name in the page's structure or by the AI assistant. Absent from runs before it. */
+  fixedBy?: 'structure' | 'ai';
   /** Where the step's time went (engine run.step `timings`). */
   timings?: StepTimings;
   /** Checks that had nothing left to compare (their ignore zones cover them), so they were skipped. */

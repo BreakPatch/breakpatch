@@ -211,7 +211,7 @@
           "label": "Click Invite",
           "result": "fixed",
           "resultText": "Fixed automatically",
-          "headline": "The Invite button had moved. The AI assistant found it.",
+          "headline": "The Invite button had moved. It was found by its name on the page.",
           "body": "It was used in the new position and the screen afterwards looked right.",
           "stepNote": "",
           "system": "",

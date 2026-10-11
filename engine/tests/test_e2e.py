@@ -200,6 +200,49 @@ async def test_moved_target_without_a_healer_fails_target_not_found(site, record
     assert "looking" not in [d["state"] for d in hx.of("run.step")]
 
 
+@pytest.mark.parametrize("switch", [False, True])
+async def test_community_fails_a_moved_target_whatever_the_structure_switch_says(site, recorded, monkeypatch, switch):
+    """The structure healing switch (config.HEAL_FROM_STRUCTURE) changes nothing without a healer."""
+    from breakpatch_engine import config
+    monkeypatch.setattr(config, "HEAL_FROM_STRUCTURE", switch)
+    hx = Harness(FakeLocator(MOVED_BOX), healer=None)
+    ended = await hx.run(recorded["steps"][:1], site + "/index.html?moved=1", autoFix=True)
+    assert ended["steps"][0]["reason"] == "targetNotFound" and "fixedBy" not in ended["steps"][0]
+
+
+def moved_by(fixed_by):
+    """A healer that finds the button where ?moved=1 puts it and says how (runner.fixed_by), or not."""
+    async def heal(runner, step, pre, ignore, iteration, old_dist):
+        if fixed_by is not None:
+            runner.fixed_by = fixed_by
+        return [490.0, 222.0], None, 0
+    return heal
+
+
+@pytest.mark.parametrize("fixed_by", ["structure", "ai", None, "guess"])
+async def test_a_healer_says_how_it_found_the_target(site, recorded, fixed_by):
+    hx = Harness(healer=moved_by(fixed_by))
+    ended = await hx.run(recorded["steps"][:1], site + "/index.html?moved=1", autoFix=True)
+    step = ended["steps"][0]
+    assert ended["result"] == "pass" and step["result"] == "healed"
+    healed = [d for d in hx.of("run.step") if d["state"] == "healed"][0]
+    if fixed_by in ("structure", "ai"):
+        assert step["fixedBy"] == fixed_by and healed["fixedBy"] == fixed_by
+    else:     # a healer that doesn't say (as before it existed), or says something else: nothing
+        assert "fixedBy" not in step and "fixedBy" not in healed
+
+
+@pytest.mark.parametrize("fixed_by, message", [
+    ("structure", "A step was fixed automatically and this run fails on fixes."),
+    ("ai", "A step was fixed by the AI assistant and this run fails on fixes."),
+    (None, "A step was fixed by the AI assistant and this run fails on fixes."),
+])
+async def test_fail_on_fix_says_who_fixed_it(site, recorded, fixed_by, message):
+    hx = Harness(healer=moved_by(fixed_by))
+    ended = await hx.run(recorded["steps"][:1], site + "/index.html?moved=1", autoFix=True, failOnFix=True)
+    assert ended["result"] == "fail" and ended["message"] == message
+
+
 async def test_a_start_page_that_didn_t_load_the_first_time_passes_on_a_retry(site, recorded):
     """Roadmap #14: a network blip on the first try; the retry starts again in a new browser."""
     hx = Harness()

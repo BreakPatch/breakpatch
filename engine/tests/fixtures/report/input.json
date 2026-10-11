@@ -105,7 +105,7 @@
           "id": "rn-2", "testName": "Invite a teammate", "testVersion": 7, "startedBy": { "serviceAccount": "QA Mac mini" }, "machine": "QA Mac mini",
           "source": "runner", "startedAt": 1790258421400, "durationMs": 64000, "result": "pass", "healedCount": 1,
           "steps": [
-            { "stepId": "b1", "result": "healed", "oldAt": [900, 40], "newAt": [860, 40], "screenshotPath": "/tmp/shots/rn-2/001-b1.png",
+            { "stepId": "b1", "result": "healed", "fixedBy": "structure", "oldAt": [900, 40], "newAt": [860, 40], "screenshotPath": "/tmp/shots/rn-2/001-b1.png",
               "image": { "src": "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAQAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA=", "width": 480, "height": 300 } },
             { "stepId": "b2", "result": "passed" }
           ]
