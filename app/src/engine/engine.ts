@@ -247,6 +247,8 @@ export interface Engine {
   input(i: HandInput): Promise<void>;
   handChooseFile(choice: FileChoice): Promise<void>;
   recordCheckpoint(region: Box, frame?: number): Promise<Step>;
+  /** Ends a Wait for an email step's wait while it's recorded (engine `record.stop`): its recordPoint fails with `stopped`. */
+  stopWaiting?(): Promise<void>;
 
   startRun(r: RunStart): Promise<void>;
   stopRun(runId: string): Promise<void>;

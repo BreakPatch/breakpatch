@@ -58,6 +58,7 @@ export class SidecarEngine implements Engine {
   focused() { return this.call<{ box: Box | null; name: string | null }>('record.focused'); }
   plan(story: string, secrets: string[]) { return this.call<Plan>('record.plan', { story, secrets }); }
   async recordCheckpoint(region: Box, frame?: number) { return (await this.call<{ step: Step }>('record.checkpoint', { region, frame })).step; }
+  async stopWaiting() { await this.call('record.stop'); }
 
   async startRun(r: RunStart) { await this.call('run.start', r); }
   async stopRun(runId: string) { await this.call('run.stop', { runId }); }

@@ -3,6 +3,7 @@
 `actionUnavailable`, never a pass). Reading an inbox is the Team engine's (its tests use a fake
 Mailpit and a fake IMAP server); here a stand-in action keeps a code and a link."""
 import asyncio
+import time
 import http.server
 import json
 import logging
@@ -352,6 +353,40 @@ async def test_recording_waits_for_the_email_and_later_steps_type_what_it_kept(s
     try:
         assert isinstance(hx.engine.recorder.email, EmailSession) and hx.engine.recorder.email.tag != before.tag
         assert (await hx.h["email.check"]({"inbox": INBOX}))["ok"] is True
+    finally:
+        await hx.h["browser.close"]({})
+
+
+@needs_browser
+async def test_a_wait_being_recorded_ends_with_record_stop_or_its_browser(site, monkeypatch):
+    """Recording waits up to 150 s for an email: Stop waiting (`record.stop`) or closing the
+    recording's browser ends it at once, and the step isn't added."""
+    started = []
+
+    async def wait(step, ctx):
+        started.append(ctx.stop)
+        await asyncio.wait_for(ctx.stop.wait(), 30)
+        raise ActionFailed("stopped", "The run was stopped.")
+    monkeypatch.setattr(plugins, "_actions", {"emailWait": wait})
+    monkeypatch.setattr(plugins, "_loaded", True)
+    hx = Harness()
+    point = {"action": "emailWait", "email": {"to": "{email}", "pick": "code"}, "timeoutMs": 60000, "inbox": INBOX}
+    assert await hx.h["record.stop"]({}) == {"stopped": False}              # nothing waiting
+    await hx.h["browser.open"]({"url": site + "/index.html", "viewport": VIEWPORT})
+    try:
+        for end in ("record.stop", "browser.close"):
+            recording = asyncio.ensure_future(hx.h["record.point"](point))
+            while not started or started[-1].is_set():
+                await asyncio.sleep(0.01)
+            t0 = time.monotonic()
+            await hx.h[end]({})
+            with pytest.raises(EngineError) as e:
+                await recording
+            assert e.value.code == "stopped" and "wasn't added" in e.value.message, end
+            assert time.monotonic() - t0 < 2
+            assert hx.engine.recorder._waiting is None
+            if end == "browser.close":
+                await hx.h["browser.open"]({"url": site + "/index.html", "viewport": VIEWPORT})
     finally:
         await hx.h["browser.close"]({})
 

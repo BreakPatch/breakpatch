@@ -199,6 +199,7 @@ A device name the engine doesn't know (a test from a newer Breakpatch) fails wit
 | `record.propose` | `{ at, name? }` | `{ at, frame, box?, name?, target? }` — what a click at `at` would act on; nothing is done to the page |
 | `record.focused` | `{}` | `{ box, name }` — the field that has the keyboard focus (its label, aria-label, placeholder or name; nulls when nothing that takes typing has it), for the confirm bar of a described typing step; nothing is done to the page |
 | `record.chooseFile` | `{ sample }` \| `{ file, path }` \| `{ cancel: true }` | `{}` — the answer to a `record.fileChooser` event: the file for a click that opened the page's file picker (below) |
+| `record.stop` | `{}` | `{ stopped }` — ends a step that waits while it's recorded (Wait for an email, Breakpatch Team): its `record.point` answers `stopped` and the step isn't added. `browser.close` and `browser.open` end it too. `stopped: false` when nothing was waiting |
 
 Nothing the user does on the live view reaches the page by itself: the app turns a click, drag or
 scroll into a proposed step ("Click Next button?"), using `record.propose` for the element's box
@@ -792,7 +793,8 @@ does the same.
 - `record.point` with `action: "emailWait"` takes `email`, `timeoutMs`, `inbox` and `secrets`, and
   waits now, as a run would, so the steps recorded after it can type what it kept; one that doesn't
   get its email isn't recorded (`not_found` for no email in time or a missing secret, `network` when the
-  inbox couldn't be read, `not_ready` without Team). A Write step recorded with `{emailCode}` before
+  inbox couldn't be read, `not_ready` without Team, `stopped` after `record.stop` or when the recording's
+  browser closes). A Write step recorded with `{emailCode}` before
   any email has given one fails with `not_found` ("…Play the Wait for an email step…"). The recorder
   keeps what a run with `keepOpen` kept, and its `{email}`.
 

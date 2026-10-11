@@ -108,6 +108,7 @@ class Engine:
             "record.intent": self.record_intent,
             "record.plan": self.record_plan,
             "record.chooseFile": lambda p: self._sync(self.recorder.choose_file(p)),
+            "record.stop": self.record_stop,
             "run.start": self.run_start,
             "run.stop": self.run_stop,
             "run.explain": self.run_explain,
@@ -146,6 +147,7 @@ class Engine:
 
     async def browser_open(self, p: dict) -> dict:
         self._not_during_run()
+        self.recorder.stop_waiting()
         await self.browser_hand({"on": False})
         async with self._browser_lock:
             await self.browser.open(p.get("url") or "", p.get("viewport") or {})
@@ -157,6 +159,7 @@ class Engine:
 
     async def browser_close(self, p: dict) -> dict:
         self._not_during_run()
+        self.recorder.stop_waiting()        # a Wait for an email being recorded ends with its browser
         await self.browser_hand({"on": False})
         async with self._browser_lock:
             await self.browser.close()
@@ -318,6 +321,11 @@ class Engine:
     async def record_point(self, p: dict) -> dict:
         phase = lambda ph: self.emit("record.checking", {"phase": ph})  # noqa: E731
         return {"step": self._touch_words(await self._recording(lambda: self.recorder.point(p, phase)), p)}
+
+    async def record_stop(self, p: dict) -> dict:
+        """Ends a step that waits while it's recorded (Wait for an email): its `record.point` answers
+        `stopped` and the step isn't added. Nothing waiting: nothing happens."""
+        return {"stopped": self.recorder.stop_waiting()}
 
     def _touch_words(self, step, p: dict):
         """On a phone or tablet, a step the engine named says "Tap", not "Click" (labels.touch_words)."""

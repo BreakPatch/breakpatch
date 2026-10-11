@@ -878,7 +878,7 @@ The step's other fields:
 
 - **To**: `{email}`, the run's own address, unless you change it. Every run (and every try of a run) has its own, so an email from an earlier run can't be taken by mistake. With a fixed address, only emails that came after the run started count.
 - **From contains** and **Subject contains**, to tell emails apart, for example a welcome email and the one with the code.
-- **Wait, seconds**: how long it waits, 60 seconds unless you change it (5 to 300). While you record, it waits at most 150 seconds.
+- **Wait, seconds**: how long it waits, 60 seconds unless you change it (5 to 300). While you record, it waits at most 150 seconds, and **Stop waiting** in the bar below the page ends the wait without adding the step.
 
 What a run shows and keeps:
 

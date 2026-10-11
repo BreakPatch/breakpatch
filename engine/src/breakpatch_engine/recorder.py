@@ -94,6 +94,17 @@ class Recorder:
         # `{email}` while recording (Breakpatch Team): a new one each time the recorder opens its
         # browser (service.browser_open); a Run there hands over its last try's.
         self.email = EmailSession()
+        # Set while a Team step waits (Wait for an email): `record.stop`, or the recording's browser
+        # closing or opening again, sets it and the wait ends at once (stop_waiting).
+        self._waiting: asyncio.Event | None = None
+
+    def stop_waiting(self) -> bool:
+        """Ends a Team step's wait in progress (the step isn't added). False when nothing waits."""
+        if self._waiting is None or self._waiting.is_set():
+            return False
+        self._waiting.set()
+        log.info("stopped waiting while recording")
+        return True
 
     def context(self, p: dict, **kw) -> Context:
         """A step's actions.Context while recording: its secrets, this session's kept values and `{email}`."""
@@ -121,12 +132,17 @@ class Recorder:
         now = dict(step)
         if isinstance(step.get("timeoutMs"), (int, float)) and not isinstance(step.get("timeoutMs"), bool):
             now["timeoutMs"] = min(step["timeoutMs"], RECORD_WAIT_MS)
+        stop = self._waiting = asyncio.Event()
         try:
-            await do(now, self.context(p))
+            await do(now, self.context(p, stop=stop))
         except ActionFailed as e:
-            code = {"actionUnavailable": "not_ready", "secretMissing": "not_found", "timeout": "not_found",
-                    "stopped": "bad_request"}.get(e.reason, "network" if e.reason == "emailFailed" else "bad_request")
+            if e.reason == "stopped":
+                raise EngineError("stopped", "Stopped waiting. The step wasn't added.")
+            code = {"actionUnavailable": "not_ready", "secretMissing": "not_found", "timeout": "not_found"}.get(e.reason, "network" if e.reason == "emailFailed" else "bad_request")
             raise EngineError(code, e.message)
+        finally:
+            if self._waiting is stop:
+                self._waiting = None
         log.info("recorded a %s step", action)
         return step
 

@@ -9,7 +9,7 @@ import type { RecorderActionDialogProps } from '../edition/types';
 import { edition } from '../edition';
 import { resetFeaturesForTests, setFeatures } from '../edition/features';
 import { NO_FEATURES } from '../edition/types';
-import { getEngine, type RunEnded } from '../engine';
+import { EngineError, getEngine, type RunEnded } from '../engine';
 import { DemoEngine } from '../engine/demoEngine';
 import { emailLabel } from '../engine/labels';
 import { DemoBackend, DEMO_WORKSPACE } from '../data/demo/demoBackend';
@@ -136,6 +136,33 @@ describe("the recorder's action list and the edition's action", () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Write text/ }));
     expect(await screen.findByRole('button', { name: 'Test inbox address' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'From the email' })).toBeInTheDocument();
+  });
+
+  it('stops waiting when asked: the step is not added, and nothing is said', async () => {
+    const backend = new DemoBackend();
+    await backend.inbox.save(INBOX);
+    useSession.setState({ backend });
+    const engine = getEngine();
+    let stop: (() => void) | undefined;
+    vi.spyOn(engine, 'recordPoint').mockImplementation(() => new Promise((_, reject) => { stop = () => reject(new EngineError('stopped', "Stopped waiting. The step wasn't added.")); }));
+    const stopWaiting = vi.fn(async () => { stop?.(); });
+    Object.assign(engine, { stopWaiting });
+    try {
+      const onError = vi.fn();
+      const { result } = renderHook(() => useRecorder({ viewport: { width: 1440, height: 900 }, onError, appUrl: APP }));
+      expect(result.current.stopWaiting).toBeUndefined();
+      let added: Promise<boolean> | undefined;
+      act(() => { added = result.current.record({ action: 'emailWait', email: { to: '{email}', pick: 'code' } }); });
+      await waitFor(() => expect(result.current.stopWaiting).toBeDefined());
+      await waitFor(() => expect(stop).toBeDefined());
+      await act(async () => { result.current.stopWaiting!(); expect(await added).toBe(false); });
+      expect(stopWaiting).toHaveBeenCalledTimes(1);
+      expect(onError).not.toHaveBeenCalled();
+      expect(result.current.steps).toEqual([]);
+      expect(result.current.stopWaiting).toBeUndefined();
+    } finally {
+      delete (engine as { stopWaiting?: unknown }).stopWaiting;
+    }
   });
 
   it('sends the inbox with a Write of {email}, and none with plain text', async () => {
