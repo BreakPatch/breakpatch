@@ -119,12 +119,17 @@ def test_labels_and_the_retry_policy():
     assert retry.why_retry({"result": "failed", "reason": "timeout"}) is not None       # no email in time: another try
 
 
-def test_the_team_engine_cannot_take_over_a_built_in_action(fresh=None):
+def test_the_team_engine_adds_only_the_actions_this_engine_knows(fresh=None):
+    """A closed list (actions.TEAM_ACTIONS): never a built-in action, nor one the engine couldn't
+    name, report or record."""
     before = dict(plugins._actions)
     try:
         plugins.register_action("click", lambda *a: None)
         plugins.register_action("write", lambda *a: None)
-        assert "click" not in plugins._actions and "write" not in plugins._actions
+        plugins.register_action("smsWait", lambda *a: None)
+        assert not {"click", "write", "smsWait"} & set(plugins._actions)
+        plugins.register_action("emailWait", lambda *a: None)
+        assert "emailWait" in plugins._actions
         plugins.register_action("emailWait", None)
         assert "emailWait" not in plugins._actions
     finally:

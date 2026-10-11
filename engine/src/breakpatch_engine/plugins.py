@@ -54,10 +54,14 @@ class StepAction(Protocol):
 
 def register_action(name: str, perform: "StepAction | None") -> None:
     """Called by the Team engine's `register(plugins)`: performs steps whose `action` is `name`
-    (an older one never calls it: those steps fail with `actionUnavailable`). None removes it."""
-    from .actions import BUILT_IN_ACTIONS
-    if str(name) in BUILT_IN_ACTIONS:
-        log.warning("the Team engine can't take over the %s action; ignored", name)
+    (an older one never calls it: those steps fail with `actionUnavailable`). None removes it.
+
+    A closed list: `name` must be one of actions.TEAM_ACTIONS, the steps this engine already knows
+    how to name, label, report and record (labels.py, report/, recorder.py, PROTOCOL.md) and whose
+    StepRun fields it keeps (runner.ACTION_FIELDS). Anything else is ignored, built-in actions too."""
+    from .actions import TEAM_ACTIONS
+    if str(name) not in TEAM_ACTIONS:
+        log.warning("the Team engine can't add the %s action, which this engine doesn't know; ignored", name)
         return
     if perform is None:
         _actions.pop(str(name), None)
