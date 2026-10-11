@@ -695,8 +695,9 @@ A runner Mac and CI sign in with a token instead of an email. An admin makes one
 
 - **Set up a runner Mac**: name it, press **Make the token** and copy it. Runner tokens start with `BPM1-`. It's shown only this once. On the runner Mac choose **Connect a team workspace** → **Hosted by Breakpatch** → **This is a runner Mac**, and paste it. That Mac becomes the workspace's [local runner](#the-local-runner), and its runs show under its name. The runner's checklist in Settings → Local runner has the same **Set up a runner Mac** button.
 - **Add a CI token**: for [breakpatch-ci](#from-ci-with-breakpatch-ci). CI tokens start with `BPC1-`; one made earlier starts with `BPM1-` and keeps working. The window lists what CI needs, each with its own **Copy**. In CI, set `BREAKPATCH_WORKSPACE=hosted:<workspace>`, and the secrets `BREAKPATCH_WORKSPACE_TOKEN` (the token), `BREAKPATCH_MACHINE_KEY` (the workspace's [machine key](#encryption-and-the-recovery-code)) and `BREAKPATCH_LICENCE_KEY` (your licence key, for [the machine licence](#from-ci-with-breakpatch-ci)). There's no `.bpworkspace` file or CI account: `breakpatch-ci run --suite smoke-7f3a` signs in with the token.
-- **The wrong one in the wrong place** is refused before anything is sent, and the message says which it got and which goes there. A CI token pasted on the runner Mac says "That's a CI token, for breakpatch-ci. This Mac needs a runner token, which starts with BPM1-". A runner token or the runner's machine pass in `BREAKPATCH_WORKSPACE_TOKEN` says that breakpatch-ci needs a CI token, which starts with `BPC1-`. A token typed as a licence key says it isn't one. The runner's **machine pass** (also `BPM1-…`, but longer) is never typed: Breakpatch gives it to the runner.
-- The trash button next to a token stops it working at once. A workspace holds its machine licences plus 2 tokens.
+- **Add a run-queue token**: for CI, n8n or a script that only starts suites on the runner Mac, without breakpatch-ci. Run-queue tokens start with `BPQ1-`. The window shows the token once, the address to send runs to and a `curl` example. The token can only add runs: it can't read or change anything. See [In a hosted workspace](#in-a-hosted-workspace).
+- **The wrong one in the wrong place** is refused before anything is sent, and the message says which it got and which goes there. A CI token pasted on the runner Mac says "That's a CI token, for breakpatch-ci. This Mac needs a runner token, which starts with BPM1-". A runner token or the runner's machine pass in `BREAKPATCH_WORKSPACE_TOKEN` says that breakpatch-ci needs a CI token, which starts with `BPC1-`, and so does a run-queue token. A token typed as a licence key says it isn't one. The runner's **machine pass** (also `BPM1-…`, but longer) is never typed: Breakpatch gives it to the runner.
+- The trash button next to a token stops it working at once. A workspace holds its machine licences plus 2 runner and CI tokens, and 10 run-queue tokens.
 
 ### Plan, region and usage
 
@@ -940,7 +941,12 @@ Anyone can press **Run on runner** on a suite. If the runner is offline, the req
 
 ## Run requests
 
-The runner starts a suite whenever a document is added here:
+The runner starts a suite whenever a run request comes in. **Run on runner** adds one for you, and the runner queues scheduled suites itself. To start a suite from CI, a script or a tool like n8n:
+
+- in a workspace **hosted by Breakpatch**, send the request to its run queue with a run-queue token: see [In a hosted workspace](#in-a-hosted-workspace);
+- in a workspace **of your own**, add a document to its run requests, as below.
+
+In a workspace of your own, the runner watches this list:
 
 ```
 projects/<your-project>/databases/breakpatch/documents/runRequests
@@ -953,9 +959,9 @@ Settings → Local runner → **How run requests work** shows the exact path for
 | `suiteId` | Yes | Which suite to run. Copy it from the suite, for example `smoke-7f3a`. |
 | `createdAt` | Yes | When it was asked for. Set it to the server's time, not your own clock: the security rules check it. |
 | `requestedBy` | No | Shown in the queue, the run history and the result message, for example `Codemagic · build 412`. |
-| `note` | No | Any text you want in the result message. |
+| `note` | No | Any text you want in the result message. Leave it out once the workspace is [encrypted](#encryption-and-the-recovery-code): the security rules then take only a note the app has encrypted. |
 
-The runner picks it up within a few seconds, queues it and deletes the document. The Run button and schedules add these for you.
+The runner picks it up within a few seconds, queues it and deletes the document.
 
 **How other tools add requests is up to you.** A few examples:
 
@@ -1000,7 +1006,40 @@ await addDoc(collection(getFirestore(app, 'breakpatch'), 'runRequests'), {
 
 ### From an automation tool
 
-n8n, Zapier or Make can add a Firestore document on any event: a deploy, a merged pull request, a button in a chat. Use the same path and fields, with `createdAt` set to the server's time.
+n8n, Zapier or Make can add a Firestore document on any event: a deploy, a merged pull request, a button in a chat. Use the same path and fields, with `createdAt` set to the server's time. In a hosted workspace they call the run queue instead (below).
+
+### In a hosted workspace
+
+Nothing outside Breakpatch writes to a hosted workspace's database, so it has a **run queue** instead: an address you send a request to, from CI, n8n, a script or anything that can make a web request.
+
+1. An admin makes a **run-queue token** in Settings → Local runner → **Add a run-queue token**, named after what will use it, like `n8n` or `Release script`. Runs it adds show under that name in the queue, the run history and the result message. It starts with `BPQ1-`, it's shown only once, and it can only add runs: it can't read or change anything. Keep it as a secret in your CI or tool, and remove it in the same place when it's no longer needed.
+2. Send a POST with the token and the suite's id:
+
+```sh
+curl -sS -X POST https://europe-west1-breakpatch-cloud.cloudfunctions.net/queueRun \
+  -H "Authorization: Bearer $BREAKPATCH_QUEUE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"suiteId\": \"smoke-7f3a\", \"note\": \"Build $BUILD_NUMBER\", \"requestId\": \"build-$BUILD_NUMBER\"}"
+```
+
+| Field | Needed | What it's for |
+|---|---|---|
+| `suiteId` | Yes | Which suite to run. Copy it from the suite, for example `smoke-7f3a`. A suite goes by its id: its name is encrypted, so Breakpatch can't look it up by name. |
+| `note` | No | Any text you want in the result message, under 500 characters. It's encrypted once the runner takes the request, not before, so keep secrets out of it. |
+| `requestId` | No | Your own id for this request, like a build number: up to 128 letters, digits and `. _ : -`. Sent again by the same token within 24 hours, it adds no second run and gets the first answer back, so retrying is safe. |
+
+The answer is `{"ok": true, "id": "…", "suiteId": "smoke-7f3a", "requestedBy": "n8n", "duplicate": false}`. The runner picks the request up within a few seconds, as it does Run on runner's; if the runner Mac is off, the request waits for it. Settings → Local runner → **How run requests work** shows the address and the example too. When a request can't be added, the answer is `{"ok": false, "error": {"code": "…", "message": "…"}}`, and the message says what to do:
+
+| Status | Code | Why |
+|---|---|---|
+| 400 | `bad_request` | A field is missing or wrong; the message says which. |
+| 401 | `unauthenticated`, `invalid_token` | No token, or one that was removed or isn't whole. Send it as `Authorization: Bearer BPQ1-…`. |
+| 403 | `not_queue_token` | A CI or runner token. Use a run-queue token. |
+| 404 | `suite_not_found` | No suite with that id in this workspace, or it's in Recently deleted. |
+| 409 | `request_id_used`, `read_only`, `suspended` | That `requestId` was used for a different request in the last 24 hours; or the workspace is read-only or closed. |
+| 429 | `rate_limited`, `queue_full` | A token adds up to 60 runs an hour; or too many requests are waiting, so check the runner Mac is on. |
+
+**In n8n**, use an **HTTP Request** node: method POST, the address above, Authentication *Generic Credential Type* → *Header Auth* with the name `Authorization` and the value `Bearer ` followed by the token, and *Send Body* as JSON with `suiteId` (and `note`, `requestId` if you like). Zapier and Make work the same way with their web request steps.
 
 ## From CI with breakpatch-ci
 
