@@ -5,7 +5,7 @@ Off until config.HEAL_FROM_STRUCTURE is on.
 Recording keeps what the page called the element a step acts on (`element_of`, the step's
 `element`): its accessible role and name, the origin (scheme, host and port) of the page it was
 on, where in the element the step acted (`offset` from its centre) and whether it was the only
-control with that role and name in the whole page then (`unique`, from `unique`). When a run's
+control with that role and name in the whole page then (`unique`, from `unique()`). When a run's
 pre-check fails, `find` reads the page's controls as the fast locator does (extract.py, router.py)
 and looks for that role and name. It never guesses:
 
@@ -15,9 +15,9 @@ and looks for that role and name. It never guesses:
 - Only a step whose element was the one control with that role and name when it was recorded
   (`unique` true). A step without `unique`, or with it false, answers nothing.
 - Exactly one control with that role and name, wherever it is: on screen, and also counted over
-  the whole page (`_count`: off screen, scrolled away in an inner box, in any frame). Two or more is
-  ambiguous: nothing. The screen check after this can't tell identical controls apart (another
-  table row's Delete), so the whole page is counted, not just the viewport.
+  the whole page (`_Origins.count`: off screen, scrolled away in an inner box, in any frame). Two
+  or more is ambiguous: nothing. The screen check after this can't tell identical controls apart
+  (another table row's Delete), so the whole page is counted, not just the viewport.
 - The page must be on the origin the step was recorded on, and that control in a document of the
   same origin: never one in another site's iframe.
 - A disabled one isn't taken.
@@ -159,7 +159,8 @@ class _Origins(Extractor):
                         if b is None or b in seen or b not in laid or nd.get("ignored"):
                             continue
                         seen.add(b)
-                        if (nd.get("role") or {}).get("value") == role and key((nd.get("name") or {}).get("value")) == want:
+                        named = key((nd.get("name") or {}).get("value"))
+                        if (nd.get("role") or {}).get("value") == role and named == want:
                             n += 1
         finally:
             await asyncio.gather(*(p.s.send("Accessibility.disable") for p in procs), return_exceptions=True)

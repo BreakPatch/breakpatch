@@ -138,7 +138,8 @@ def child_main() -> int:
         req = json.loads(sys.stdin.buffer.read().decode("utf-8"))
         limit = min(max(float(req.get("limit", SEARCH_S + SELF_STOP_S)), 0.1), START_S)
         pattern = re.compile(str(req["pattern"]))
-    except (UnicodeDecodeError, ValueError, KeyError, TypeError, AttributeError, OverflowError, RecursionError, re.error):
+    except (UnicodeDecodeError, ValueError, KeyError, TypeError, AttributeError, OverflowError, RecursionError,
+            re.error):
         return 2
     timed = hasattr(signal, "setitimer")
     if timed:
