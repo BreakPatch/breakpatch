@@ -6,6 +6,7 @@ import asyncio
 import functools
 import http.server
 import threading
+import types
 from pathlib import Path
 
 import pytest
@@ -92,6 +93,53 @@ def test_never_one_in_another_sites_frame():
 def test_never_a_disabled_one_and_never_another_role():
     assert same.match(SAVE, [cand(disabled=True)], [ORIGIN]) == (None, "it's disabled")
     assert same.match(SAVE, [cand(role="link")], [ORIGIN]) == (None, "no control with that role and name")
+
+
+# ---------------------------------------------------------------- a slow page
+
+class FakeSession:
+    def __init__(self, hang=False):
+        self.hang, self.detached = hang, False
+
+    async def send(self, method, params=None):
+        if self.hang:
+            await asyncio.sleep(60)
+        return {"targetInfo": {"targetId": "F"}}
+
+    async def detach(self):
+        self.detached = True
+
+
+class FakePage:
+    """A page with an iframe whose session never answers while the Extractor opens."""
+
+    def __init__(self):
+        self.sessions = []
+        self.frames = [types.SimpleNamespace(url=ORIGIN), types.SimpleNamespace(url=ORIGIN + "/frame")]
+        self.context = self
+
+    async def new_cdp_session(self, target):
+        s = FakeSession(hang=target is self.frames[1])
+        self.sessions.append(s)
+        return s
+
+
+class FakeBrowser:
+    url, width, height = ORIGIN + "/settings", 800, 600
+
+    def __init__(self):
+        self.page = FakePage()
+
+    async def live(self):
+        return self.page
+
+
+def test_a_read_that_times_out_while_opening_closes_every_session(monkeypatch):
+    monkeypatch.setattr(same, "READ_S", 0.2)
+    b = FakeBrowser()
+    got = asyncio.run(same.find(b, SAVE))
+    assert got.at is None and got.why == "the page's structure couldn't be read (TimeoutError)"
+    assert len(b.page.sessions) == 2 and all(s.detached for s in b.page.sessions)
 
 
 # ---------------------------------------------------------------- on real pages

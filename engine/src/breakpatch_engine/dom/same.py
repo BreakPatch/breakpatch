@@ -129,8 +129,9 @@ class _Origins(Extractor):
 
 
 async def _read(page, viewport) -> Extraction:
-    ex = await _Origins(page, viewport).open()
-    try:
+    ex = _Origins(page, viewport)
+    try:   # open() too: a timeout while it opens the sessions still closes the ones it has
+        await ex.open()
         return await ex.extract()
     finally:
         await ex.close()
