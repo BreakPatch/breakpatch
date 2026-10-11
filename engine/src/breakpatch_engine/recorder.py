@@ -13,6 +13,7 @@ from . import calls, checks, config, imaging, labels
 from .actions import (BUILT_IN_ACTIONS, FILE_REF, POINTER_ACTIONS, TEAM_ACTIONS, ActionFailed, Context, EmailSession,
                       email_address, parse_secrets, perform, sample_path)
 from .browser import BrowserSession
+from .dom import same
 from .dom.flow import LocateFlow
 from .locator import Locator
 from .protocol import NULL, EngineError
@@ -237,7 +238,13 @@ class Recorder:
         # Straight after the last look at the page: the click lands on what that look (and the
         # user) saw. Naming what was clicked only needs that look, so it runs while the page reacts.
         # What the page calls the element, read before the action changes it (DESK-03).
-        dom_name = await self.b.element_name(anchor) if anchor is not None and not p.get("label") else None
+        # With structure healing on (config.HEAL_FROM_STRUCTURE), also its box: the step keeps the
+        # element, for "Fixed automatically" to find it again by its role and name (dom/same.py).
+        keep_element = anchor is not None and config.HEAL_FROM_STRUCTURE
+        dom_name = await self.b.element_name(anchor, box=True) if keep_element \
+            else await self.b.element_name(anchor) if anchor is not None and not p.get("label") else None
+        element = same.element_of(dom_name, anchor, self.b.url) if keep_element else None
+        dom_name = dom_name if not p.get("label") else None
         phase("acting")
         url_before = self.b.url
         if len(self.b.downloads) < self._download_mark:
@@ -343,6 +350,8 @@ class Recorder:
                 pre_region = imaging.box_around(anchor, config.PRE_RADIUS, w, h)
                 step["pre"] = {"region": pre_region, "hash": imaging.region_hash(before, pre_region, ignore),
                                "tolerance": config.PRE_TOLERANCE}
+                if element:
+                    step["element"] = element
             if blast is not None:
                 post_region, expect = blast, True
             else:

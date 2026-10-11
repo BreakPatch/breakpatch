@@ -668,9 +668,11 @@ class BrowserSession:
         name = got.get("name") if isinstance(got.get("name"), str) and got["name"].strip() else None
         return {"box": box if imaging.box_area(box) else None, "name": name[:80] if name else None}
 
-    async def element_name(self, at: Sequence[float]) -> dict | None:
+    async def element_name(self, at: Sequence[float], box: bool = False) -> dict | None:
         """What the page itself calls the element at `at` (its accessible name and role, read through
-        the DevTools protocol), e.g. {"name": "Sign in", "role": "button"}; None when it has none."""
+        the DevTools protocol), e.g. {"name": "Sign in", "role": "button"}; None when it has none.
+        With `box`, also that named element's border box in viewport px (`box`, not clamped to the
+        viewport; absent when it can't be read), for dom/same.py."""
         page = await self.live()
         cdp = None
         try:
@@ -678,6 +680,18 @@ class BrowserSession:
             got = await _node_at(cdp, at)
             tree = await cdp.send("Accessibility.getPartialAXTree", {"backendNodeId": got["backendNodeId"],
                                                                      "fetchRelatives": True})
+            for node in tree.get("nodes", []):             # the node itself first, then its ancestors
+                if node.get("ignored"):
+                    continue
+                name = ((node.get("name") or {}).get("value") or "").strip()
+                role = (node.get("role") or {}).get("value") or ""
+                if name and role not in ("RootWebArea", "WebArea", "generic", "none", "presentation", "StaticText"):
+                    out = {"name": " ".join(name.split())[:80], "role": role}
+                    if box and (b := await _border_box(cdp, node.get("backendDOMNodeId"))) is not None:
+                        out["box"] = b
+                    return out
+                if role in ("RootWebArea", "WebArea"):
+                    break
         except Exception as e:  # noqa: BLE001
             log.debug("no accessible name at %s: %s", at, e)
             return None
@@ -687,15 +701,6 @@ class BrowserSession:
                     await cdp.detach()
                 except Exception:  # noqa: BLE001
                     pass
-        for node in tree.get("nodes", []):             # the node itself first, then its ancestors
-            if node.get("ignored"):
-                continue
-            name = ((node.get("name") or {}).get("value") or "").strip()
-            role = (node.get("role") or {}).get("value") or ""
-            if name and role not in ("RootWebArea", "WebArea", "generic", "none", "presentation", "StaticText"):
-                return {"name": " ".join(name.split())[:80], "role": role}
-            if role in ("RootWebArea", "WebArea"):
-                break
         return None
 
     async def type_text(self, text: str) -> None:
@@ -993,6 +998,18 @@ async def _node_at(cdp, at: Sequence[float]) -> dict:
     x = float(at[0]) + float(view.get("pageX") or 0)
     y = float(at[1]) + float(view.get("pageY") or 0)
     return await cdp.send("DOM.getNodeForLocation", {"x": int(x), "y": int(y), "includeUserAgentShadowDOM": False})
+
+
+async def _border_box(cdp, backend_node_id) -> list[float] | None:
+    """A node's border box in viewport px, rounded to 0.1 px as extract.py's are, or None."""
+    if backend_node_id is None:
+        return None
+    try:
+        q = (await cdp.send("DOM.getBoxModel", {"backendNodeId": backend_node_id}))["model"]["border"]
+    except Exception:  # noqa: BLE001 - not rendered, or gone meanwhile
+        return None
+    xs, ys = q[0::2], q[1::2]
+    return [round(min(xs), 1), round(min(ys), 1), round(max(xs), 1), round(max(ys), 1)]
 
 # What has the keyboard focus (BrowserSession.focused): a field that takes typing, its box and name.
 _FOCUSED_JS = r"""() => {
