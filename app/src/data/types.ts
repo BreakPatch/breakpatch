@@ -248,7 +248,11 @@ export type FailReason =
 export type RunSource = 'desktop' | 'ci' | 'runner';
 
 /** Step.element: an accessible role and name, the page's origin, and where in the element the step acted (px from its centre). */
-export interface StepElement { role: string; name: string; origin: string; offset: Point }
+/**
+ * `unique`: no other control in the whole page had that role and name when the step was recorded.
+ * Healing from the structure needs it true; elements kept before it existed have none.
+ */
+export interface StepElement { role: string; name: string; origin: string; offset: Point; unique?: boolean }
 
 export interface StepRun {
   stepId: string;

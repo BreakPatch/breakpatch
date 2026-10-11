@@ -24,7 +24,7 @@ VIEWPORT = {"width": 800, "height": 600}
 SAVE_AT = [170, 222]                  # the centre of "Save"
 MOVED_AT = [490, 222]                 # where it is once moved
 ORIGIN = "http://127.0.0.1:8000"
-SAVE = {"role": "button", "name": "Save", "origin": ORIGIN, "offset": [0, 0]}
+SAVE = {"role": "button", "name": "Save", "origin": ORIGIN, "offset": [0, 0], "unique": True}
 
 
 def cand(role="button", name="Save", box=(420, 200, 560, 244), disabled=False):
@@ -36,8 +36,11 @@ def cand(role="button", name="Save", box=(420, 200, 560, 244), disabled=False):
 
 def test_a_named_control_is_kept_with_where_the_step_acted_in_it():
     dom = {"role": "button", "name": "Save", "box": [100, 200, 240, 244]}
-    assert same.element_of(dom, [150, 230], ORIGIN + "/settings?x=1") == {
-        "role": "button", "name": "Save", "origin": ORIGIN, "offset": [-20.0, 8.0]}
+    assert same.element_of(dom, [150, 230], ORIGIN + "/settings?x=1", True) == {
+        "role": "button", "name": "Save", "origin": ORIGIN, "offset": [-20.0, 8.0], "unique": True}
+    # Unique only when the whole page was counted and had no other one.
+    assert same.element_of(dom, [150, 230], ORIGIN)["unique"] is False
+    assert same.element_of(dom, [150, 230], ORIGIN, "yes")["unique"] is False
     # Its name as element_name keeps it: spaces collapsed, 80 characters at most.
     long = same.element_of({**dom, "name": " Save   all " + "x" * 100}, [150, 230], ORIGIN)
     assert long["name"].startswith("Save all x") and len(long["name"]) == 80
@@ -134,6 +137,18 @@ class FakeBrowser:
         return self.page
 
 
+@pytest.mark.parametrize("element", [{k: v for k, v in SAVE.items() if k != "unique"}, {**SAVE, "unique": False},
+                                     {**SAVE, "unique": "true"}, {**SAVE, "unique": 1}])
+def test_an_element_not_known_to_be_unique_is_never_looked_for(element):
+    """A step recorded before `unique` existed, or whose name another control shared: nothing, and
+    the page isn't even read (the Team healer then asks the AI assistant)."""
+    assert same.usable(element)
+    b = FakeBrowser()
+    got = asyncio.run(same.find(b, element))
+    assert (got.at, got.box) == (None, None) and b.page.sessions == []
+    assert got.why == "its name wasn't known to be the only one on the page when it was recorded"
+
+
 def test_a_read_that_times_out_while_opening_closes_every_session(monkeypatch):
     monkeypatch.setattr(same, "READ_S", 0.2)
     b = FakeBrowser()
@@ -183,6 +198,11 @@ def test_a_moved_button_is_found_where_the_step_acted_in_it(site):
 @needs_browser
 @pytest.mark.parametrize("query, why", [
     ("twice=1", "2 controls with that role and name"),
+    # Identical controls the viewport doesn't show: below the fold, scrolled away in an inner box.
+    ("moved=1&below=1", "2 controls with that role and name in the whole page"),
+    ("moved=1&scrolled=1", "2 controls with that role and name in the whole page"),
+    ("moved=1&framed=1", "2 controls with that role and name in the whole page"),
+    ("moved=1&below=1&scrolled=1", "3 controls with that role and name in the whole page"),
     ("elsewhere=1", "it's in another site's frame"),
     ("renamed=1", "no control with that role and name"),
     ("gone=1", "no control with that role and name"),
@@ -233,11 +253,16 @@ def test_with_the_switch_off_a_step_keeps_no_element(site, monkeypatch):
 def test_with_the_switch_on_a_step_keeps_its_element(site, monkeypatch):
     monkeypatch.setattr(config, "HEAL_FROM_STRUCTURE", True)
     step = record(site + "/heal.html", action="click", at=[150, 230])
-    assert step["element"] == {"role": "button", "name": "Save", "origin": site, "offset": [-20.0, 8.0]}
+    assert step["element"] == {"role": "button", "name": "Save", "origin": site, "offset": [-20.0, 8.0], "unique": True}
     assert step["label"] == "Click Save button"
     # A label the app gives doesn't change what's kept.
     step = record(site + "/heal.html", action="click", at=SAVE_AT, label="Save the settings")
     assert step["label"] == "Save the settings" and step["element"]["name"] == "Save"
+    # Another Save in the page, off screen or scrolled away: kept, but not unique.
+    for query in ("below=1", "scrolled=1"):
+        step = record(site + "/heal.html?" + query, action="click", at=[150, 230])
+        assert step["element"] == {"role": "button", "name": "Save", "origin": site, "offset": [-20.0, 8.0],
+                                   "unique": False}
     # Not a control (the heading): nothing kept, and the step is as before.
     step = record(site + "/heal.html", action="click", at=[300, 72])
     assert "element" not in step and "pre" in step
