@@ -54,6 +54,20 @@ def target_name(step: dict) -> str:
     return "the field to write in" if step.get("action") == "write" else "what to click"
 
 
+def fixed_title(step: dict, r: dict | None) -> str:
+    """A fixed step's headline, by how it was found (`fixedBy`; runs from before it were the AI assistant's)."""
+    name = target_name(step)
+    by = "It was found by its name on the page." if (r or {}).get("fixedBy") == "structure" else "The AI assistant found it."
+    return f"{name[0].upper()}{name[1:]} had moved. {by}"
+
+
+FIXED_TEXT = "It was used in the new position and the screen afterwards looked right."
+
+
+def fixed_caption(r: dict | None) -> str:
+    return "Where it was found by its name" if (r or {}).get("fixedBy") == "structure" else "Where the AI assistant found it"
+
+
 def reason_title(reason, step: dict) -> str:
     if reason in ("targetNotFound", "healFailed"):
         return f"Couldn't find {target_name(step)}"
@@ -357,9 +371,7 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
         elif state == "stopped":
             headline, body = reason_title("stopped", step), reason_text("stopped", step)
         elif state == "fixed":
-            name = target_name(step)
-            headline = f"{name[0].upper()}{name[1:]} had moved. The AI assistant found it."
-            body = "It was used in the new position and the screen afterwards looked right."
+            headline, body = fixed_title(step, r), FIXED_TEXT
     note = ""
     if r and state == "passed":
         note = UNCHECKED_NOTE if r.get("unchecked") else pass_note(r)
@@ -375,7 +387,7 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
                      "size": "full" if state == "failed" else "small",
                      "alt": f"Screenshot: step {number}, {step.get('label') or ''}".rstrip(", "),
                      "caption": "What was on screen when the step failed" if state == "failed"
-                     else "Where the AI assistant found it" if state == "fixed" else "The screen at this step"}
+                     else fixed_caption(r) if state == "fixed" else "The screen at this step"}
     ex = explanation((r or {}).get("explanation")) if state == "failed" and not quiet else None
     system = system_note(run, r) if not quiet else ""
     v = {"number": number, "depth": depth, "label": str(step.get("label") or ""), "result": state,

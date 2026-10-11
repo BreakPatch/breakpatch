@@ -8,6 +8,9 @@
   pixels, like Flutter or a canvas (Visual).
 - `flow.py` puts them in front of the AI assistant: Fast pages try S0 first and ask the model
   only when S0 is unsure; Visual pages use the model alone.
+- `same.py` finds a recorded element again by its role and name, for "Fixed automatically"
+  (Breakpatch Team) before it asks the AI assistant: on Fast pages only, never on another site,
+  and never when two controls share that role and name. Off until config.HEAL_FROM_STRUCTURE is on.
 
 Page structure only helps find a target. Nothing is clicked by selector: the answer is a point on
 the screen, and every step is still checked on the screen.

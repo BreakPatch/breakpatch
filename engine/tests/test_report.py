@@ -67,6 +67,21 @@ def test_where_names_the_run_s_own_machine_as_the_app_does(case, here, monkeypat
     assert report_view.where_text(case["run"], case.get("recordedOn")) == want
 
 
+@pytest.mark.parametrize("fixed_by, headline, caption", [
+    ("structure", "The Save button had moved. It was found by its name on the page.", "Where it was found by its name"),
+    ("ai", "The Save button had moved. The AI assistant found it.", "Where the AI assistant found it"),
+    (None, "The Save button had moved. The AI assistant found it.", "Where the AI assistant found it"),
+])
+def test_a_fixed_step_says_how_it_was_found(fixed_by, headline, caption):
+    """The engine's `fixedBy` (roadmap #41); a run from before it was the AI assistant's. As the app's view.ts."""
+    r = {"stepId": "s1", "result": "healed", "image": {"src": "data:image/webp;base64,AA", "width": 4, "height": 3}}
+    if fixed_by:
+        r["fixedBy"] = fixed_by
+    v = report_view.step_view({"id": "s1", "action": "click", "label": "Click Save", "target": "Save button, the top"},
+                              "1", 0, r, {}, {}, True)
+    assert (v["headline"], v["image"]["caption"]) == (headline, caption)
+
+
 def test_a_desktop_run_with_no_system_of_its_own_says_this_mac_on_a_mac(monkeypatch):
     monkeypatch.setattr(report_view.sys, "platform", "darwin")
     assert report_view.where_text({"source": "desktop"}) == "This Mac"

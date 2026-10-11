@@ -797,6 +797,8 @@ Every run shows the version it tested. Shared steps show which tests use the lat
 
 When a button has moved, the AI assistant looks for it using its *What to look for* description, checks it's the same thing, and the run carries on. The step is marked **Fixed automatically**, and the suite result is *Passed with fixes*.
 
+<!-- soon --> Coming later. On web pages, Breakpatch will first look for a moved button by the name the page gives it, check on the screen that it's the same button, and ask the AI assistant only when that doesn't find it. That's quicker, and it works without the AI assistant, in CI too. If two buttons have the same name, or the page is on another site, it asks the AI assistant instead of guessing. Flutter apps and pages drawn on a canvas keep using the AI assistant. The report will say how each step was found.
+
 Nothing changes until someone decides. In the report:
 
 - **Accept new position**: the next run looks in the new spot.

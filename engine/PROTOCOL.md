@@ -218,6 +218,15 @@ a given `target` is kept); without one the target reads like "The spot you click
 left of the page". The naming looks at the screen from before the action but runs after it, while
 the page reacts, so it never delays the click.
 
+With structure healing switched on (`HEAL_FROM_STRUCTURE` in `config.py`, off for now; roadmap #41),
+a step with a pre-check also keeps the control it acts on, as the page names it, read before the
+action: `element` `{ role, name, origin, offset }` (`dom/same.py`). `role` and `name` are its
+accessible role and name (a control: a button, link, field, checkbox and the like; a named dialog
+or heading isn't kept), `origin` the page's scheme, host and port, and `offset` where in the
+control the step acted, in px from its centre. A spot with no named control keeps none. With the
+switch off no step has `element`, and a step that has one replays exactly as one without it, except
+for healing (Replay below). Apps keep it as it is: it isn't a format change.
+
 `frame` is the `seq` of the live view frame the user clicked or drew on (`record.locate` returns
 the one it found the box on). Right before acting, and at its first look, the engine checks that
 the page still looks like that frame around the click (96 × 96 px) or inside the drawn box; if it
@@ -449,8 +458,8 @@ runner (see Saved secrets).
 isn't installed. The run opens its own browser (closing the live view's) and closes it at the end.
 A `waitFor`/`waitUntil` in progress is cut short by `run.stop`, and so is a Call step waiting for its reply (the step fails with `stopped`; the reply, when it comes, is dropped).
 
-Events: `run.step` `{ runId, index, stepId, state: "running"|"looking"|"passed"|"healed"|"failed", reason?, preDistance?, postDistance?, oldAt?, newAt?, screenshot?, iteration?, message?, details?, reply? }`
-(`looking` = AI assistant is finding a moved target; `screenshot` is a local file path, only on failure or heal;
+Events: `run.step` `{ runId, index, stepId, state: "running"|"looking"|"passed"|"healed"|"failed", reason?, preDistance?, postDistance?, oldAt?, newAt?, fixedBy?, screenshot?, iteration?, message?, details?, reply? }`
+(`looking` = a moved target is being looked for; `fixedBy`: see Healing below; `screenshot` is a local file path, only on failure or heal;
 `iteration` is the 1-based repeat number inside a loop; `message` is a plain sentence on failure;
 `reply` `{ status?, ms? }` is a Call step's, also in its `StepRun`: see Call steps below; `email` `{ got, chars?,
 digits?, site?, ms? }` is a Wait for an email step's, also in its `StepRun`: see Wait for an email below)
@@ -525,6 +534,22 @@ new spot, and the action and the post-check run as usual. Healed steps report `o
 nothing is written back. Without the Team engine (Community), or without such a licence, `autoFix`
 is ignored: a failed pre-check fails with `targetNotFound`, and `looking`, `healed`, `healFailed`
 and `healingUnavailable` never occur.
+
+**From the page's structure first** (roadmap #41; only while `HEAL_FROM_STRUCTURE` is on, off for
+now). A step that kept its `element` (Recording above) is looked for before the model: the page's
+controls are read as `record.locate` reads them, and exactly one with that role and name (case and
+runs of spaces aside) is taken, at the same `offset` from its centre. Never on a page `record.locate`
+calls Visual (a Flutter app, a canvas over a quarter of the viewport, fewer than 3 controls), never
+when two or more controls have that role and name, never when the page isn't on the step's `origin`
+or the control is in another site's iframe, never a disabled one, and not when the page can't be
+read in 2 s. The pre-check is then repeated there, as for the AI assistant's spot. In every other
+case, or when that check doesn't pass, the AI assistant looks as before: so a target that is really
+gone still fails with `targetNotFound` (or `healingUnavailable` without a model, its message then
+saying it wasn't found by its name either), and no model is loaded when the structure finds it.
+While the switch is on, a healed step's `StepRun` and `run.step` say how it was found: `fixedBy:
+"structure"` or `"ai"` (absent with the switch off, and from older engines). A failure after a heal
+keeps it too. With `failOnFix`, a run whose fixes weren't all the AI assistant's ends with the
+message "A step was fixed automatically and this run fails on fixes."
 
 Loops and shared steps are nested, as stored (spec §12.1): a `loop` step carries its
 `count` and child `steps`; a `group` step carries `groupId`, `groupVersion` and the child
@@ -876,7 +901,10 @@ so they're typed only on the start page's site (see Saved secrets).
 `breakpatch-ci` runs under a **machine licence**: a machine seat on the Team licence (like the
 local runner Mac's), taken through the licence service's `activate` with `kind: "machine"`, and
 checked with the same built-in keys as above. It needs the `ci` feature (`--auto-fix` also needs
-`autoFix`, otherwise it runs without fixing and says so on stderr).
+`autoFix`, otherwise it runs without fixing and says so on stderr). Its healer is the app's, so with
+`HEAL_FROM_STRUCTURE` on (Healing above) `--auto-fix` fixes a web page's moved control from the
+page's structure on a machine without the model too, and a fixed step's stderr line says how
+("healed (found by its role and name on the page)").
 
 | Variable | Use |
 |---|---|

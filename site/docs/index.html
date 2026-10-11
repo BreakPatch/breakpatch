@@ -353,6 +353,7 @@
 </section>
 <section id="fixed-automatically" class="team"><h2>Fixed automatically <span class="tag">Team</span></h2>
 <p>When a button has moved, the AI assistant looks for it using its <em>What to look for</em> description, checks it's the same thing, and the run carries on. The step is marked <strong>Fixed automatically</strong>, and the suite result is <em>Passed with fixes</em>.</p>
+<p class="soon" role="note"><span class="dot" aria-hidden="true"></span><span>Coming later. On web pages, Breakpatch will first look for a moved button by the name the page gives it, check on the screen that it's the same button, and ask the AI assistant only when that doesn't find it. That's quicker, and it works without the AI assistant, in CI too. If two buttons have the same name, or the page is on another site, it asks the AI assistant instead of guessing. Flutter apps and pages drawn on a canvas keep using the AI assistant. The report will say how each step was found.</span></p>
 <p>Nothing changes until someone decides. In the report:</p>
 <ul><li><strong>Accept new position</strong>: the next run looks in the new spot.</li><li><strong>Dismiss</strong>: the next run looks in the old spot again.</li></ul>
 <p>Settings → <strong>Automatic fixing</strong>:</p>

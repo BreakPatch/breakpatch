@@ -49,6 +49,21 @@ export function targetName(step: Pick<Step, 'target' | 'label' | 'action'>): str
   return 'what to click';
 }
 
+/**
+ * A fixed step's headline, by how it was found (the engine's `fixedBy`: from the page's structure, by
+ * its role and name, or by the AI assistant; runs from before it say neither, and were the AI assistant's).
+ */
+export function fixedTitle(step: Pick<Step, 'target' | 'label' | 'action'>, r: Pick<StepRun, 'fixedBy'> | undefined): string {
+  const name = targetName(step);
+  const by = r?.fixedBy === 'structure' ? 'It was found by its name on the page.' : 'The AI assistant found it.';
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} had moved. ${by}`;
+}
+export const FIXED_TEXT = 'It was used in the new position and the screen afterwards looked right.';
+/** A fixed step's screenshot caption, by how it was found. */
+export function fixedCaption(r: Pick<StepRun, 'fixedBy'> | undefined): string {
+  return r?.fixedBy === 'structure' ? 'Where it was found by its name' : 'Where the AI assistant found it';
+}
+
 /** A pass that wasn't a plain match with the recording, in words for the report; a Call step's reply; what an email gave. */
 export function passNote(r: Pick<StepRun, 'passedBy' | 'why'> & Partial<Pick<StepRun, 'reply' | 'email'>> | undefined): string | undefined {
   if (r?.passedBy === 'gone') return 'Passed: the dialog closed. The page behind it looked different from when it was recorded.';

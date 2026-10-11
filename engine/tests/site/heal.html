@@ -1,0 +1,60 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Heal</title>
+<style>
+  body { margin: 0; font: 16px/1.2 sans-serif; background: #f6f3ef; color: #222; }
+  .abs { position: absolute; }
+  button { font: 15px sans-serif; border: 0; border-radius: 6px; background: #2d5fa8; color: #fff; }
+  #msg { left: 300px; top: 420px; width: 320px; height: 40px; }
+  #msg.on { background: #dff1e0; border: 1px solid #5a9e5f; }
+  iframe { border: 0; background: #f6f3ef; }
+</style></head>
+<body>
+  <!-- Structure healing (dom/same.py, roadmap #41): a "Save" button that moves, with the query
+       saying how. moved: to the right. twice: and another Save button. renamed: it reads "Store".
+       restyled: and it's light now. gone: no Save button. off: disabled. elsewhere: no Save here,
+       but one where it moved to, in an iframe from another site (localhost and 127.0.0.1 are
+       different origins). flutter: a Flutter host element on the page. canvas: a big canvas
+       behind everything. -->
+  <h1 class="abs" style="left:250px;top:60px;margin:0;font-size:24px">Settings</h1>
+  <button id="save" class="abs" style="top:200px;width:140px;height:44px">Save</button>
+  <div id="msg" class="abs"></div>
+  <button class="abs" style="left:40px;top:540px;width:100px;height:32px">Cancel</button>
+  <a class="abs" style="left:600px;top:320px" href="#help">Help</a>
+<script>
+  var q = new URLSearchParams(location.search);
+  var save = document.getElementById('save');
+  if (q.get('inner')) {   // the other site's page in the iframe: only a Save button, where it moved to
+    document.body.innerHTML = '';
+    var b = document.createElement('button'); b.className = 'abs'; b.textContent = 'Save';
+    b.style.cssText = 'left:20px;top:20px;width:140px;height:44px';
+    document.body.appendChild(b);
+  } else {
+    save.style.left = (q.get('moved') || q.get('twice') || q.get('renamed') || q.get('off') || q.get('restyled') ? 420 : 100) + 'px';
+    if (q.get('twice')) {
+      var other = save.cloneNode(true); other.id = 'save2'; other.style.left = '420px'; other.style.top = '120px';
+      document.body.appendChild(other);
+    }
+    if (q.get('renamed')) save.textContent = 'Store';
+    if (q.get('restyled')) { save.style.background = '#fff'; save.style.color = '#2d5fa8'; }
+    if (q.get('off')) save.disabled = true;
+    if (q.get('gone') || q.get('elsewhere')) save.remove();
+    if (q.get('elsewhere')) {
+      var host = location.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
+      var f = document.createElement('iframe'); f.className = 'abs';
+      f.style.cssText = 'left:400px;top:180px;width:200px;height:90px';
+      f.src = location.protocol + '//' + host + ':' + location.port + location.pathname + '?inner=1';
+      document.body.appendChild(f);
+    }
+    if (q.get('flutter')) document.body.appendChild(document.createElement('flt-glass-pane'));
+    if (q.get('canvas')) {
+      var c = document.createElement('canvas'); c.className = 'abs';
+      c.style.cssText = 'left:0;top:0;width:800px;height:300px;z-index:-1';
+      document.body.appendChild(c);
+    }
+    document.addEventListener('click', function (e) {   // either Save button
+      if (e.target.tagName !== 'BUTTON' || e.target.textContent !== 'Save') return;
+      setTimeout(function () { var m = document.getElementById('msg'); m.className = 'abs on'; m.textContent = 'Saved'; }, 150);
+    });
+  }
+</script>
+</body></html>

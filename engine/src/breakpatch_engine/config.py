@@ -183,3 +183,14 @@ RELAXED_EXTRA = 2       # bits
 def check_tolerance(tolerance: int, relaxed: bool) -> int:
     """The Hamming distance a screen check allows: the step's own, plus RELAXED_EXTRA when relaxed."""
     return int(tolerance) + (RELAXED_EXTRA if relaxed else 0)
+
+
+# ========================= STRUCTURE HEALING SWITCH =========================
+# Roadmap #41 (Breakpatch Team): "Fixed automatically" first looks for a moved target by its role
+# and accessible name in the page's structure (dom/same.py), checks it on the screen, and asks the
+# AI assistant only when that doesn't find it. Web pages only. Built and tested, but off until it
+# has been tried on a Mac. While it's off nothing changes: recorded steps keep no `element`, and
+# the Team healer asks the AI assistant, as before. Read where it's used (config.HEAL_FROM_STRUCTURE),
+# never copied, so the tests can turn it on and off.
+HEAL_FROM_STRUCTURE = False
+# ============================================================================

@@ -4,7 +4,7 @@
 // engine/tests/fixtures/report/view-*.json, built from input.json. The words are the report's own
 // (lib/runWords.ts, lib/explain.ts), so view.py repeats them: change them together.
 import type { Explanation, RecordedOn, Run, Step, StepRun } from '../../data/types';
-import { UNCHECKED_NOTE, attemptsOf, passNote, reasonAdvice, reasonText, reasonTitle, retriedNote, retriedOf, retryNote, runBy, targetName, tookText, whereText } from '../runWords';
+import { FIXED_TEXT, UNCHECKED_NOTE, attemptsOf, fixedCaption, fixedTitle, passNote, reasonAdvice, reasonText, reasonTitle, retriedNote, retriedOf, retryNote, runBy, tookText, whereText } from '../runWords';
 import { CAUSE_TEXT, SUGGESTION_TEXT } from '../explain';
 
 /** A screenshot, as a WebP data: URI (the engine's `report.images`). */
@@ -182,11 +182,7 @@ function stepView(step: Step, number: string, depth: number, r: ReportStepRun | 
   if (!quiet) {
     if (state === 'failed') { headline = reasonTitle(reason, step); body = reasonText(reason, step, r); advice = reasonAdvice(reason, step); }
     else if (state === 'stopped') { headline = reasonTitle('stopped', step); body = reasonText('stopped', step); }
-    else if (state === 'fixed') {
-      const name = targetName(step);
-      headline = `${name.charAt(0).toUpperCase()}${name.slice(1)} had moved. The AI assistant found it.`;
-      body = 'It was used in the new position and the screen afterwards looked right.';
-    }
+    else if (state === 'fixed') { headline = fixedTitle(step, r); body = FIXED_TEXT; }
   }
   const again = retriedNote(r, step, state);
   const stepNote = [r && state === 'passed' ? (r.unchecked?.length ? UNCHECKED_NOTE : passNote(r) ?? '') : '', again].filter(Boolean).join(' ');
@@ -196,7 +192,7 @@ function stepView(step: Step, number: string, depth: number, r: ReportStepRun | 
     ? {
         src: img.src, width: int(img.width), height: int(img.height), size: state === 'failed' ? 'full' : 'small',
         alt: `Screenshot: step ${number}, ${step.label ?? ''}`.replace(/[, ]+$/, ''),
-        caption: state === 'failed' ? 'What was on screen when the step failed' : state === 'fixed' ? 'Where the AI assistant found it' : 'The screen at this step',
+        caption: state === 'failed' ? 'What was on screen when the step failed' : state === 'fixed' ? fixedCaption(r) : 'The screen at this step',
       }
     : null;
   const explanation = state === 'failed' && !quiet ? explanationView(r?.explanation) : null;

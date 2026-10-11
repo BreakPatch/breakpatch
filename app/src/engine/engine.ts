@@ -155,7 +155,7 @@ export interface RunStepEvent {
   runId: string; index: number; stepId: string;
   state: 'running' | 'looking' | 'passed' | 'healed' | 'failed';
   reason?: StepRun['reason']; oldAt?: Point; newAt?: Point; screenshot?: string;
-  passedBy?: StepRun['passedBy']; why?: string; timings?: StepRun['timings']; unchecked?: string[];
+  passedBy?: StepRun['passedBy']; fixedBy?: StepRun['fixedBy']; why?: string; timings?: StepRun['timings']; unchecked?: string[];
   /** A Call step's reply: status and time. */
   reply?: StepRun['reply'];
   /** A Wait for an email step's: what came, never the value. */

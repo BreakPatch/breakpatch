@@ -97,9 +97,11 @@ src/breakpatch_engine/
   dom/          the fast locator for record.locate: extract.py (the controls on screen, DevTools
                 DOMSnapshot + accessibility tree), s0.py (scoring a description, no model),
                 router.py (Fast or Visual per page), flow.py (S0, then the AI assistant),
-                near.py (a stepper's "+" or "−" next to something, record.locate `near`)
+                near.py (a stepper's "+" or "−" next to something, record.locate `near`),
+                same.py (a recorded control again by its role and name, for Team's healing;
+                off until config.py's HEAL_FROM_STRUCTURE is on)
   install.py    system.info, Chromium install, resumable model download of the allowed files only
-  config.py     paths (env overridable) and timings (BP_FAST=1 shortens them)
+  config.py     paths (env overridable), timings (BP_FAST=1 shortens them), the HEAL_FROM_STRUCTURE switch
   labels.py     default step labels (mirrors app/src/engine/labels.ts)
   samples/      the bundled upload files (scripts/make_samples.py regenerates them)
 tests/          pytest: imaging, protocol (subprocess), setup (fake Hub), record + replay e2e
