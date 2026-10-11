@@ -41,8 +41,9 @@ def search(pattern: str, text: str, timeout: float = SEARCH_S) -> tuple[str, str
         raise SearchFailed("not a regular expression") from e
     from .install import self_command
     try:
+        # No console window for it on Windows (the sidecar has none of its own to share).
         proc = subprocess.Popen(self_command() + ["_search"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.DEVNULL)
+                                stderr=subprocess.DEVNULL, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except OSError as e:
         raise SearchFailed("the search couldn't start") from e
     try:
