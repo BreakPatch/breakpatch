@@ -32,16 +32,21 @@ Emit = Callable[[str, dict], None]
 class Healer(Protocol):
     """Finds a moved target during a run (spec §11.2). Provided by the Team engine.
 
-    Called when a step's pre-check fails and `autoFix` is on. Returns `(at, from, preDistance)`
-    at the new spot (`at`/`from` as the step uses them, else None), or raises StepFailed with
-    `targetNotFound`, `healFailed` or `healingUnavailable`. It may use `runner.locator_fn`,
-    `runner.locator` (cached per run), `runner.b` (the browser) and `runner._event`. It may say how
-    it found the spot in `runner.fixed_by` (FIXED_BY; None before each call), which the StepRun
-    reports as `fixedBy`: a healer that doesn't set it reports nothing, as before.
+    Called when a step's pre-check fails and `autoFix` is on. Returns `(at, from, preDistance,
+    fixedBy)` at the new spot (`at`/`from` as the step uses them, else None; `fixedBy` how it found
+    it, one of FIXED_BY, which the StepRun reports, or None to say nothing), or raises StepFailed
+    with `targetNotFound`, `healFailed` or `healingUnavailable`. It may use `runner.locator_fn`,
+    `runner.locator` (cached per run), `runner.b` (the browser) and `runner._event`.
+
+    Team engines from before `fixedBy` was returned give `(at, from, preDistance)` and may say how
+    in `runner.fixed_by` instead (None before each call), which is still read for them only. A
+    healer that says neither reports nothing, as before. A Team engine can tell this engine reads
+    the fourth element from HEALER_RETURNS_FIXED_BY.
     """
 
     def __call__(self, runner: "Runner", step: dict, pre: dict, ignore, iteration: int | None,
-                 old_dist: int) -> Awaitable[tuple[list | None, list | None, int]]: ...
+                 old_dist: int) -> Awaitable[tuple[list | None, list | None, int]
+                                             | tuple[list | None, list | None, int, str | None]]: ...
 
 MESSAGES = {
     "targetNotFound": "The thing this step acts on isn't where it was.",
@@ -63,6 +68,8 @@ ACTION_FIELDS = ("email",)
 # How a healer found a moved target (Healer, StepRun `fixedBy`): from the page's structure, by the
 # target's role and name (dom/same.py), or by the AI assistant.
 FIXED_BY = ("structure", "ai")
+# This engine reads how a healer found the spot from the fourth element of what it returns (Healer).
+HEALER_RETURNS_FIXED_BY = True
 
 
 def walk(steps: list[dict]) -> Iterator[dict]:
@@ -100,7 +107,7 @@ class Runner:
         self.healer = healer                  # None: no healing (Community), see plugins.py
         self.explainer = explainer            # None: no page read after a failure (Community)
         self.locator: Locator | None = None   # for the healer: loaded lazily on the first failed pre-check
-        self.fixed_by: str | None = None      # the healer's FIXED_BY for the step it's fixing, if it says
+        self.fixed_by: str | None = None      # older Team healers' FIXED_BY for the step being fixed (Healer)
         self._passed_by: str | None = None
         self._tries = 0
         self._post_message: str | None = None
@@ -585,11 +592,13 @@ class Runner:
                 if not self.auto_fix or self.healer is None:
                     raise StepFailed("targetNotFound", preDistance=dist)
                 self.fixed_by = None
-                at, frm, new_dist = await self.healer(self, step, pre, ignore, iteration, dist)
+                got = tuple(await self.healer(self, step, pre, ignore, iteration, dist))
+                at, frm, new_dist = got[:3]
+                by = got[3] if len(got) > 3 else self.fixed_by      # an older Team healer: the attribute
                 rec.update({"result": "healed", "oldAt": step.get("at") or step.get("from"),
                             "newAt": at or frm, "preDistance": new_dist})
-                if self.fixed_by in FIXED_BY:
-                    rec["fixedBy"] = self.fixed_by
+                if by in FIXED_BY:
+                    rec["fixedBy"] = by
 
         url_before = self.b.url
         own = None
