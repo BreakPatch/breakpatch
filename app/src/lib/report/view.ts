@@ -53,6 +53,8 @@ export interface StepView {
   advice: string; took: string; phases: string;
   image: (ReportImage & { size: 'full' | 'small'; alt: string; caption: string }) | null;
   open: boolean; hasDetail: boolean;
+  /** Open when printed: the step that failed, or one that failed on an earlier try. */
+  printOpen: boolean;
 }
 export interface JunitCase {
   seconds: string; timestamp: string; status: 'passed' | 'failed' | 'skipped'; type: string; message: string; text: string;
@@ -64,6 +66,11 @@ export interface TestView {
   meta: Meta[]; testNote: string; retryNote: string; stepsText: string; steps: StepView[]; junit: JunitCase;
   /** In a suite, a test that passed starts closed: what didn't pass is what's read first. */
   stepsOpen: boolean;
+  /**
+   * A test that passed on its first try: "10 steps, all passed", which the PDF shows in place of
+   * its steps. '' when it didn't pass, or passed only on a retry: then its steps print.
+   */
+  passedText: string;
 }
 export interface ReportView {
   title: string; generator: string; kindLabel: string; heading: string; result: StepState; resultText: string;
@@ -197,11 +204,12 @@ function stepView(step: Step, number: string, depth: number, r: ReportStepRun | 
     : null;
   const explanation = state === 'failed' && !quiet ? explanationView(r?.explanation) : null;
   const system = quiet ? '' : systemText(run, r);
+  const open = state === 'failed' && !quiet;
+  const hasDetail = !!(headline || body || stepNote || system || explanation || advice || where || image);
   return {
     number, depth, label: String(step.label ?? ''), result: state, resultText: RESULT_TEXT[state],
     headline, body, stepNote, system, explanation, advice, took, phases: where, image,
-    open: state === 'failed' && !quiet,
-    hasDetail: !!(headline || body || stepNote || system || explanation || advice || where || image),
+    open, hasDetail, printOpen: hasDetail && (open || !!again),
     reasonCode: state === 'failed' && headline ? String(reason ?? '') : '',
   };
 }
@@ -264,6 +272,14 @@ function junitCase(state: StepState, steps: StepViewX[], t: ReportTestInput, run
   return { ...base, status: 'failed', type: s.reasonCode || 'failed', message: `Step ${s.number}: ${s.label}: ${s.headline}`, text: lines.filter(Boolean).join('\n') };
 }
 
+/** "10 steps, all passed": a test that passed on its first try, as the PDF shows it in place of its steps. */
+function passedText(state: StepState, steps: StepView[], run: ReportRun | null): string {
+  if (!run || (state !== 'passed' && state !== 'fixed') || attemptsOf(run) > 1 || !steps.length) return '';
+  const ran = steps.filter(s => s.result === 'passed' || s.result === 'fixed').length, fixed = int(run.healedCount);
+  const all = ran === steps.length ? `${plural(steps.length, 'step')}, all passed` : `${ran} of ${plural(steps.length, 'step')} passed`;
+  return all + (fixed ? `, ${fixed} fixed automatically` : '');
+}
+
 function testView(t: ReportTestInput, index: number, offset: number, screenshots: boolean, multi: boolean): TestView {
   const run = t.run ?? null;
   const byId = new Map<string, StepRun>((run?.steps ?? []).map(r => [String(r.stepId), r]));
@@ -275,7 +291,7 @@ function testView(t: ReportTestInput, index: number, offset: number, screenshots
     anchor: `test-${index + 1}`, name: String(t.name || run?.testName || 'Test'), appName: String(t.appName ?? ''), multi,
     result: state, resultText: run ? RUN_TEXT[state] : "Couldn't run", meta: run ? runMeta(run, offset, t.recordedOn, t.device) : [],
     testNote: run ? '' : String(t.note || "It couldn't run."), retryNote: retryNote(run), stepsText: plural(steps.length, 'step'), steps, junit,
-    stepsOpen: state !== 'passed' && state !== 'fixed',
+    stepsOpen: state !== 'passed' && state !== 'fixed', passedText: passedText(state, steps, run),
   };
 }
 
@@ -332,7 +348,15 @@ export function buildView(inp: ReportInput): ReportView {
   };
 }
 
-/** The same view with every step open: for printing, where a closed step would print closed. */
-export function allOpen(view: ReportView): ReportView {
-  return { ...view, tests: view.tests.map(t => ({ ...t, stepsOpen: true, steps: t.steps.map(s => ({ ...s, open: s.hasDetail })) })) };
+/**
+ * The view as the PDF prints it: a test that passed on its first try is its summary and
+ * "10 steps, all passed", without its steps; any other test lists its steps, with the one that
+ * failed open (and one that failed on an earlier try). The template's print styles hide the
+ * steps of a test that passed, and its script opens the same steps when the HTML is printed.
+ */
+export function printView(view: ReportView): ReportView {
+  return {
+    ...view,
+    tests: view.tests.map(t => ({ ...t, stepsOpen: true, steps: t.passedText ? [] : t.steps.map(s => ({ ...s, open: s.printOpen })) })),
+  };
 }

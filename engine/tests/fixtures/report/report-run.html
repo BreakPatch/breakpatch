@@ -95,6 +95,7 @@ body.bpr-page { margin: 0; }
 .bpr-shot-full img { width: 100%; }
 .bpr-shot-small img { width: 100%; max-width: 360px; }
 .bpr-shot figcaption { font-size: 12px; color: var(--bpr-faint); }
+.bpr-passed-text { display: none; }
 .bpr-foot { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--bpr-line); color: var(--bpr-faint); font-size: 12px; }
 @media (max-width: 600px) {
   .bpr { padding: 20px 16px 36px; }
@@ -115,6 +116,8 @@ body.bpr-page { margin: 0; }
   .bpr-step summary::after { display: none; }
   .bpr-step, .bpr-shot, .bpr-ai, .bpr-callout { break-inside: avoid; }
   .bpr-test { break-before: auto; }
+  .bpr-passed-text { display: block; }
+  .bpr-brief .bpr-steps, .bpr-brief .bpr-test-steps { display: none; }
   .bpr-shot-full img { max-height: 16cm; object-fit: contain; object-position: left top; }
 }
 @page { margin: 14mm 12mm; }
@@ -170,7 +173,7 @@ body.bpr-page { margin: 0; }
 </div>
 </details></li>
 <li class="bpr-step bpr-passed bpr-d0"><div class="bpr-row"><span class="bpr-no">7</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Write &lt;Q4&gt; &amp; friends</span><span class="bpr-status">Passed</span></div></li>
-<li class="bpr-step bpr-failed bpr-d0"><details open><summary><span class="bpr-no">8</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Click Done</span><span class="bpr-status">Failed</span><span class="bpr-took">5.0 s</span></summary>
+<li class="bpr-step bpr-failed bpr-d0"><details open data-bpr-print><summary><span class="bpr-no">8</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Click Done</span><span class="bpr-status">Failed</span><span class="bpr-took">5.0 s</span></summary>
 <div class="bpr-detail">
 <p class="bpr-headline">Couldn&#39;t find the Done button</p>
 <p>It wasn&#39;t where it was when this step was recorded, so there was nothing to click. The run stopped here.</p>
@@ -209,12 +212,17 @@ body.bpr-page { margin: 0; }
     if (what === 'open' || what === 'close') all().forEach(function (d) { d.open = what === 'open'; });
     if (what === 'theme') setTheme(theme === 'auto' ? 'light' : theme === 'light' ? 'dark' : 'auto');
   });
-  var closed = [];
+  // Printed as the app's PDF: a test's steps open, and in them only the step that failed (or
+  // failed on an earlier try). A test that passed prints without its steps (the print styles).
+  var was = [];
   window.addEventListener('beforeprint', function () {
-    closed = [];
-    all().forEach(function (d) { if (!d.open) { closed.push(d); d.open = true; } });
+    was = [];
+    all().forEach(function (d) {
+      was.push([d, d.open]);
+      d.open = d.classList.contains('bpr-test-steps') || d.hasAttribute('data-bpr-print');
+    });
   });
-  window.addEventListener('afterprint', function () { closed.forEach(function (d) { d.open = false; }); closed = []; });
+  window.addEventListener('afterprint', function () { was.forEach(function (w) { w[0].open = w[1]; }); was = []; });
 })();
 </script>
 </body>

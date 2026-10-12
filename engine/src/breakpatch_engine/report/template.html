@@ -103,6 +103,7 @@ body.bpr-page { margin: 0; }
 .bpr-shot-full img { width: 100%; }
 .bpr-shot-small img { width: 100%; max-width: 360px; }
 .bpr-shot figcaption { font-size: 12px; color: var(--bpr-faint); }
+.bpr-passed-text { display: none; }
 .bpr-foot { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--bpr-line); color: var(--bpr-faint); font-size: 12px; }
 @media (max-width: 600px) {
   .bpr { padding: 20px 16px 36px; }
@@ -123,6 +124,8 @@ body.bpr-page { margin: 0; }
   .bpr-step summary::after { display: none; }
   .bpr-step, .bpr-shot, .bpr-ai, .bpr-callout { break-inside: avoid; }
   .bpr-test { break-before: auto; }
+  .bpr-passed-text { display: block; }
+  .bpr-brief .bpr-steps, .bpr-brief .bpr-test-steps { display: none; }
   .bpr-shot-full img { max-height: 16cm; object-fit: contain; object-position: left top; }
 }
 @page { margin: 14mm 12mm; }
@@ -142,7 +145,7 @@ body.bpr-page { margin: 0; }
 {{/note}}{{#screenshotsLeftOut}}<p class="bpr-muted bpr-small">Screenshots were left out of this report.</p>
 {{/screenshotsLeftOut}}<div class="bpr-tools" hidden><button type="button" data-bpr="open">Open all steps</button><button type="button" data-bpr="close">Close all steps</button><button type="button" data-bpr="theme">Theme: automatic</button></div>
 </header>
-{{#tests}}<section class="bpr-test" id="{{anchor}}" aria-label="{{name}}">
+{{#tests}}<section class="bpr-test{{#passedText}} bpr-brief{{/passedText}}" id="{{anchor}}" aria-label="{{name}}">
 {{#multi}}<div class="bpr-test-head">
 <div class="bpr-app">{{appName}}</div>
 <h2>{{name}}</h2>
@@ -151,9 +154,10 @@ body.bpr-page { margin: 0; }
 </div>
 {{/multi}}{{#testNote}}<p class="bpr-callout">{{testNote}}</p>
 {{/testNote}}{{#retryNote}}<p class="bpr-callout">{{retryNote}}</p>
-{{/retryNote}}{{#multi}}<details class="bpr-test-steps"{{#stepsOpen}} open{{/stepsOpen}}><summary>{{stepsText}}</summary>
+{{/retryNote}}{{#passedText}}<p class="bpr-passed-text">{{passedText}}</p>
+{{/passedText}}{{#multi}}<details class="bpr-test-steps"{{#stepsOpen}} open{{/stepsOpen}}><summary>{{stepsText}}</summary>
 {{/multi}}<ol class="bpr-steps">
-{{#steps}}<li class="bpr-step bpr-{{result}} bpr-d{{depth}}">{{#hasDetail}}<details{{#open}} open{{/open}}><summary><span class="bpr-no">{{number}}</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">{{label}}</span><span class="bpr-status">{{resultText}}</span>{{#took}}<span class="bpr-took">{{took}}</span>{{/took}}</summary>
+{{#steps}}<li class="bpr-step bpr-{{result}} bpr-d{{depth}}">{{#hasDetail}}<details{{#open}} open{{/open}}{{#printOpen}} data-bpr-print{{/printOpen}}><summary><span class="bpr-no">{{number}}</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">{{label}}</span><span class="bpr-status">{{resultText}}</span>{{#took}}<span class="bpr-took">{{took}}</span>{{/took}}</summary>
 <div class="bpr-detail">
 {{#headline}}<p class="bpr-headline">{{headline}}</p>
 {{/headline}}{{#body}}<p>{{body}}</p>
@@ -193,12 +197,17 @@ body.bpr-page { margin: 0; }
     if (what === 'open' || what === 'close') all().forEach(function (d) { d.open = what === 'open'; });
     if (what === 'theme') setTheme(theme === 'auto' ? 'light' : theme === 'light' ? 'dark' : 'auto');
   });
-  var closed = [];
+  // Printed as the app's PDF: a test's steps open, and in them only the step that failed (or
+  // failed on an earlier try). A test that passed prints without its steps (the print styles).
+  var was = [];
   window.addEventListener('beforeprint', function () {
-    closed = [];
-    all().forEach(function (d) { if (!d.open) { closed.push(d); d.open = true; } });
+    was = [];
+    all().forEach(function (d) {
+      was.push([d, d.open]);
+      d.open = d.classList.contains('bpr-test-steps') || d.hasAttribute('data-bpr-print');
+    });
   });
-  window.addEventListener('afterprint', function () { closed.forEach(function (d) { d.open = false; }); closed = []; });
+  window.addEventListener('afterprint', function () { was.forEach(function (w) { w[0].open = w[1]; }); was = []; });
 })();
 </script>
 </body>

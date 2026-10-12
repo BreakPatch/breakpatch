@@ -102,7 +102,8 @@
           "phases": "doing the step 812 ms · waiting for the page to settle 1.5 s · check after 38 ms",
           "image": null,
           "open": false,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": false
         },
         {
           "number": "2",
@@ -120,7 +121,8 @@
           "phases": "doing the step 1.2 s",
           "image": null,
           "open": false,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": false
         },
         {
           "number": "3",
@@ -138,7 +140,8 @@
           "phases": "",
           "image": null,
           "open": false,
-          "hasDetail": false
+          "hasDetail": false,
+          "printOpen": false
         },
         {
           "number": "3.1",
@@ -156,7 +159,8 @@
           "phases": "doing the step 250 ms",
           "image": null,
           "open": false,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": false
         },
         {
           "number": "3.2",
@@ -181,7 +185,8 @@
             "caption": "Where the AI assistant found it"
           },
           "open": false,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": false
         },
         {
           "number": "4",
@@ -199,7 +204,8 @@
           "phases": "",
           "image": null,
           "open": false,
-          "hasDetail": false
+          "hasDetail": false,
+          "printOpen": false
         },
         {
           "number": "5",
@@ -217,7 +223,8 @@
           "phases": "",
           "image": null,
           "open": false,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": false
         },
         {
           "number": "6",
@@ -235,7 +242,8 @@
           "phases": "check before 41 ms · doing the step 60 ms · waiting for the page to settle 305 ms · check after 29 ms",
           "image": null,
           "open": false,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": false
         },
         {
           "number": "7",
@@ -253,7 +261,8 @@
           "phases": "",
           "image": null,
           "open": false,
-          "hasDetail": false
+          "hasDetail": false,
+          "printOpen": false
         },
         {
           "number": "8",
@@ -282,7 +291,8 @@
             "caption": "What was on screen when the step failed"
           },
           "open": true,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": true
         },
         {
           "number": "9",
@@ -300,7 +310,8 @@
           "phases": "",
           "image": null,
           "open": false,
-          "hasDetail": false
+          "hasDetail": false,
+          "printOpen": false
         }
       ],
       "junit": {
@@ -312,7 +323,8 @@
         "text": "Step 8: Click Done\nCouldn't find the Done button\nIt wasn't where it was when this step was recorded, so there was nothing to click. The run stopped here.\nAI assistant: The Done button moved into a menu after the redesign.\nLikely cause: It moved.\nSuggested: Re-record this step.\nThis test was recorded on macOS 15 and ran on Linux. Text can look slightly different on another system, which can fail screen checks.\nWhat to try: If the app changed on purpose, re-record this step. If it looks like a bug in the app, send the report to a developer.",
         "retries": []
       },
-      "stepsOpen": true
+      "stepsOpen": true,
+      "passedText": ""
     }
   ],
   "footer": "Made with Breakpatch 0.1.0-beta.1 on 24 Sep 2026, 15:20 UTC+1.",

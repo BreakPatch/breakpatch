@@ -204,9 +204,16 @@ def test_earlier_tries_are_in_the_report_and_the_junit_xml():
         == "2 of 2 tests passed, 1 on a retry"
 
 
-def test_every_step_opens_for_printing():
-    view = report.all_open(report.build(INPUT["run"]))
-    assert all(s["open"] == s["hasDetail"] for s in view["tests"][0]["steps"])
+def test_the_pdf_lists_steps_only_for_a_test_that_did_not_pass():
+    run = report.print_view(report.build(INPUT["run"]))["tests"][0]
+    assert run["passedText"] == "" and [s["number"] for s in run["steps"] if s["open"]] == ["8"]      # the failed step
+    suite = report.print_view(report.build(INPUT["suite"]))["tests"]
+    assert [t["passedText"] for t in suite] == ["", "2 steps, all passed, 1 fixed automatically", "", ""]
+    assert suite[1]["steps"] == [] and all(t["stepsOpen"] for t in suite)
+    assert [s["number"] for s in suite[0]["steps"] if s["open"]] == ["3"]       # flaky: the step that failed on try 1
+    assert [s["number"] for s in suite[2]["steps"] if s["open"]] == ["2"]
+    html = report.html(report.print_view(report.build(INPUT["suite"])))
+    assert html.count('class="bpr-test bpr-brief"') == 1 and '<p class="bpr-passed-text">2 steps, all passed, 1 fixed automatically</p>' in html
 
 
 # ---------------------------------------------------------------- the template language

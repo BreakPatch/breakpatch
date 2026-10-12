@@ -104,7 +104,8 @@
           "phases": "check before 120 ms · doing the step 300 ms · waiting for the page to settle 450 ms · check after 30 ms",
           "image": null,
           "open": false,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": false
         },
         {
           "number": "2",
@@ -122,7 +123,8 @@
           "phases": "check before 60 ms · doing the step 280 ms · waiting for the page to settle 200 ms · check after 25 ms",
           "image": null,
           "open": false,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": false
         },
         {
           "number": "3",
@@ -140,7 +142,8 @@
           "phases": "check before 45 ms · doing the step 90 ms · waiting for the page to settle 1.8 s · check after 31 ms",
           "image": null,
           "open": false,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": true
         }
       ],
       "junit": {
@@ -158,7 +161,8 @@
           }
         ]
       },
-      "stepsOpen": false
+      "stepsOpen": false,
+      "passedText": ""
     },
     {
       "anchor": "test-2",
@@ -221,7 +225,8 @@
           "phases": "",
           "image": null,
           "open": false,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": false
         },
         {
           "number": "2",
@@ -239,7 +244,8 @@
           "phases": "",
           "image": null,
           "open": false,
-          "hasDetail": false
+          "hasDetail": false,
+          "printOpen": false
         }
       ],
       "junit": {
@@ -251,7 +257,8 @@
         "text": "",
         "retries": []
       },
-      "stepsOpen": false
+      "stepsOpen": false,
+      "passedText": "2 steps, all passed, 1 fixed automatically"
     },
     {
       "anchor": "test-3",
@@ -310,7 +317,8 @@
           "phases": "",
           "image": null,
           "open": false,
-          "hasDetail": false
+          "hasDetail": false,
+          "printOpen": false
         },
         {
           "number": "2",
@@ -328,7 +336,8 @@
           "phases": "",
           "image": null,
           "open": true,
-          "hasDetail": true
+          "hasDetail": true,
+          "printOpen": true
         }
       ],
       "junit": {
@@ -346,7 +355,8 @@
           }
         ]
       },
-      "stepsOpen": true
+      "stepsOpen": true,
+      "passedText": ""
     },
     {
       "anchor": "test-4",
@@ -369,7 +379,8 @@
         "text": "Couldn't run: it was deleted",
         "retries": []
       },
-      "stepsOpen": true
+      "stepsOpen": true,
+      "passedText": ""
     }
   ],
   "footer": "Made with Breakpatch 0.1.0-beta.1 on 24 Sep 2026, 14:20 UTC.",

@@ -396,6 +396,8 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
     v["open"] = state == "failed" and not quiet
     v["_reason"] = str(reason or "") if state == "failed" and headline else ""   # JUnit's failure type; not in the view
     v["hasDetail"] = bool(headline or body or note or system or ex or advice or where or image)
+    # Open when printed: the step that failed, or one that failed on an earlier try.
+    v["printOpen"] = v["hasDetail"] and (v["open"] or bool(again))
     return v
 
 
@@ -464,6 +466,15 @@ def run_meta(run: dict, offset: int, recorded_on: object = None, device: object 
     return [m for m in meta if m["v"]]
 
 
+def passed_text(state: str, views: list[dict], run: dict | None) -> str:
+    """"10 steps, all passed": a test that passed on its first try, as the PDF shows it in place of its steps."""
+    if not run or state not in ("passed", "fixed") or attempts_of(run) > 1 or not views:
+        return ""
+    ran, fixed = sum(1 for v in views if v["result"] in ("passed", "fixed")), _int(run.get("healedCount"))
+    text = f"{plural(len(views), 'step')}, all passed" if ran == len(views) else f"{ran} of {plural(len(views), 'step')} passed"
+    return text + (f", {fixed} fixed automatically" if fixed else "")
+
+
 def test_view(t: dict, index: int, offset: int, screenshots: bool, multi: bool) -> dict:
     run = t.get("run") if isinstance(t.get("run"), dict) else None
     steps = t.get("steps") or []
@@ -483,6 +494,8 @@ def test_view(t: dict, index: int, offset: int, screenshots: bool, multi: bool) 
         "stepsText": plural(len(views), "step"), "steps": views, "junit": j,
         # In a suite, a test that passed starts closed: what didn't pass is what's read first.
         "stepsOpen": state not in ("passed", "fixed"),
+        # A test that passed on its first try prints as this line, without its steps.
+        "passedText": passed_text(state, views, run),
     }
 
 
@@ -586,6 +599,9 @@ def build(inp: dict) -> dict:
     }
 
 
-def all_open(view: dict) -> dict:
-    """The same view with every step open: for printing, where a closed step would print closed."""
-    return {**view, "tests": [{**t, "stepsOpen": True, "steps": [{**s, "open": s["hasDetail"]} for s in t["steps"]]} for t in view["tests"]]}
+def print_view(view: dict) -> dict:
+    """The view as the PDF prints it (the app's printView): a test that passed on its first try is its
+    summary and "10 steps, all passed", without its steps; any other test lists its steps, with the one
+    that failed open (and one that failed on an earlier try)."""
+    return {**view, "tests": [{**t, "stepsOpen": True, "steps": [] if t["passedText"] else [{**s, "open": s["printOpen"]} for s in t["steps"]]}
+                              for t in view["tests"]]}

@@ -2,7 +2,8 @@
 // menu has Save as PDF. Tauri 2 has no print-to-PDF of its own, only the webview's print
 // (window.print(), which on macOS goes through the shell: capability core:webview:allow-print).
 // The report's body and styles are put in the page, hidden on screen and the only thing printed,
-// with every step open. They stay until the next print or until the report screen closes
+// as printView has it: a test that passed is its summary, any other lists its steps with the one
+// that failed open. They stay until the next print or until the report screen closes
 // (removePrinted), because the macOS print sheet renders the page after print() returns.
 import { printableParts } from '.';
 

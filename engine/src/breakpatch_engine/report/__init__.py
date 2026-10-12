@@ -17,9 +17,9 @@ from importlib import resources
 from .images import attach_images, webp_data_uri
 from .junit import junit_xml
 from .render import render
-from .view import all_open, build
+from .view import build, print_view
 
-__all__ = ["attach_images", "all_open", "build", "html", "junit_xml", "render", "template", "webp_data_uri"]
+__all__ = ["attach_images", "build", "html", "junit_xml", "print_view", "render", "template", "webp_data_uri"]
 
 
 @lru_cache(maxsize=1)

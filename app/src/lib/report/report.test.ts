@@ -2,7 +2,7 @@
 // (engine/tests/test_report.py), so the app and CI make the same report from the same template.
 // Write them again after a deliberate change: BP_WRITE_GOLDEN=1 npx vitest run src/lib/report/report.test.ts
 import { describe, expect, it } from 'vitest';
-import { allOpen, buildView, junitXml, printableParts, REPORT_TEMPLATE, reportHtml, type ReportInput } from '.';
+import { buildView, printView, junitXml, printableParts, REPORT_TEMPLATE, reportHtml, type ReportInput } from '.';
 import { parse, render, TemplateError } from './render';
 import { countsText, isoText, reportRows, seconds, shortTime, whenText, type ReportTestInput } from './view';
 import { xmlEscape } from './junit';
@@ -95,7 +95,7 @@ describe('the report', () => {
       { anchor: 'test-3', name: 'Pay an invoice', resultText: 'Failed' }, { anchor: 'test-4', name: 'Refund', resultText: "Couldn't run" },
     ] });
     expect(v.tests.map(t => t.stepsOpen)).toEqual([false, false, true, true]);
-    expect(allOpen(v).tests.every(t => t.stepsOpen)).toBe(true);
+    expect(printView(v).tests.every(t => t.stepsOpen)).toBe(true);
     const html = reportHtml(v);
     expect(html.indexOf('href="#test-3"')).toBeLessThan(html.indexOf('id="test-1"'));
     expect(buildView(INPUT.run).failed).toBeNull();              // a single run says it in its heading
@@ -122,13 +122,41 @@ describe('the report', () => {
     expect(html).not.toContain('<Q4>');
   });
 
-  it('opens every step for printing, and hands the app its printable parts', () => {
-    const view = allOpen(buildView(INPUT.run));
-    expect(view.tests[0].steps.every(s => s.open === s.hasDetail)).toBe(true);
+  it('prints the steps of a test that failed, with the failed step open, and hands the app its printable parts', () => {
+    const view = printView(buildView(INPUT.run));
+    expect(view.tests[0].passedText).toBe('');
+    expect(view.tests[0].steps).toHaveLength(11);
+    expect(view.tests[0].steps.filter(s => s.open).map(s => s.number)).toEqual(['8']);      // not the passed steps' timings
     const { css, body } = printableParts(reportHtml(view));
     expect(css).toContain('@media print');
     expect(body).toContain('<div class="bpr" id="bpr">');
     expect(body).not.toContain('<script');
+  });
+
+  it('prints a test that passed as its summary and a count, and a flaky or failed one with its steps', () => {
+    const v = buildView(INPUT.suite);
+    expect(v.tests.map(t => t.passedText)).toEqual(['', '2 steps, all passed, 1 fixed automatically', '', '']);
+    const p = printView(v);
+    expect(p.tests[1].steps).toEqual([]);
+    expect(p.tests[0].steps.filter(s => s.open).map(s => s.number)).toEqual(['3']);         // failed on try 1
+    expect(p.tests[2].steps.filter(s => s.open).map(s => s.number)).toEqual(['2']);
+    // On screen nothing changes: the HTML export's steps still fold open and closed as before.
+    expect(v.tests.map(t => t.steps.filter(s => s.open).length)).toEqual([0, 0, 1, 0]);
+    const html = reportHtml(p);
+    expect(html.match(/class="bpr-test bpr-brief"/g)).toHaveLength(1);
+    expect(html).toContain('<p class="bpr-passed-text">2 steps, all passed, 1 fixed automatically</p>');
+    expect(REPORT_TEMPLATE).toMatch(/\.bpr-passed-text \{ display: none; \}/);
+    expect(REPORT_TEMPLATE).toMatch(/@media print \{[\s\S]*\.bpr-brief \.bpr-steps, \.bpr-brief \.bpr-test-steps \{ display: none; \}/);
+  });
+
+  it('counts the steps of a single test that passed, and what didn\'t run', () => {
+    const t = INPUT.run.tests[0];
+    const passed = (steps: typeof t.run.steps, healed = 0) => buildView({ ...INPUT.run, tests: [{ ...t, run: { ...t.run!, result: 'pass', healedCount: healed, steps } }] }).tests[0];
+    const all = reportRows(t.steps).map(({ step }) => ({ stepId: step.id, result: 'passed' as const }));
+    expect(passed(all).passedText).toBe('11 steps, all passed');
+    expect(passed(all.slice(0, -1), 1).passedText).toBe('10 of 11 steps passed, 1 fixed automatically');
+    const flaky = buildView({ ...INPUT.run, tests: [{ ...t, run: { ...t.run!, result: 'pass', attempts: 2, steps: all } }] }).tests[0];
+    expect(flaky.passedText).toBe('');
   });
 
   it('stays small without screenshots: 30 steps', () => {
