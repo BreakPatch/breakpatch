@@ -214,7 +214,9 @@
 <p>It's kept in <code>~/Library/Application Support/Breakpatch/models/</code>.</p>
 </section>
 <section id="updates"><h2>Updates</h2>
-<p>Breakpatch checks for updates when it opens, and from Settings → About → <strong>Check for updates</strong>. Updates download in the background. Press <strong>Restart to update</strong>, or they install the next time you restart. Updates never change your tests.</p>
+<p>Breakpatch checks for updates by itself: when it opens (about 10 seconds after, once it has started) and every hour while it's open. To check now, use Settings → About → <strong>Check for updates</strong>.</p>
+<p>A new version downloads in the background, and then a banner says it's ready. Press <strong>Restart to update</strong> when it suits you: Breakpatch installs it and opens again. <strong>Later</strong> puts the banner away; Settings → About keeps <strong>Restart to update</strong>. If you quit without restarting, nothing is installed, and Breakpatch downloads the update again the next time it opens. Updates never change your tests.</p>
+<p>While you record or run a test, or setup downloads the test browser or the AI assistant, the check waits until you're done. If Breakpatch can't reach GitHub (you're offline, for example), it says nothing and tries again an hour later.</p>
 <p>Settings → About also shows your version and edition.</p>
 </section>
 <section id="privacy"><h2>Privacy</h2>

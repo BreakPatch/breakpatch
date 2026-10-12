@@ -13,6 +13,7 @@ import './setup.css';
 import { useSystem } from '../../state/system';
 import { startingText } from '../../components/shell/EngineStarting';
 import { Computer, osText, ThisComputer } from '../../lib/osWords';
+import { holdUpdateChecks } from '../../lib/autoUpdates';
 
 const NAMES: Record<RowKey, string> = { browser: 'Installing the test browser', mac: 'Checking this Mac', model: 'Downloading the AI assistant' };
 const LOOK: Record<TaskState, { icon: string; word: string; cls: string }> = {
@@ -52,6 +53,9 @@ function useSetupRunner() {
     return () => { off(); r.dispose(); };
   }, []);
   useEffect(() => { if (!online) void runner?.pause(); }, [online, runner]);
+  // No update downloads alongside the test browser or the AI assistant (lib/autoUpdates.ts).
+  const working = !snap || ROWS.some(k => snap.rows[k].state === 'busy');
+  useEffect(() => (working ? holdUpdateChecks() : undefined), [working]);
   return { runner, snap };
 }
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, CopyButton, EarMark, Icon, StatusPill, Wordmark } from '../../../components/ui';
 import { appVersion, isTauri } from '../../../platform';
-import { checkForUpdates, restartToUpdate, type CheckResult } from '../../../lib/updates';
+import { checkForUpdates, lastChecked, restartToUpdate, type CheckResult } from '../../../lib/updates';
 import { useSession } from '../../../state/session';
 import { useSystem } from '../../../state/system';
 import { clock, daysAgo, formatDateTime } from '../../../components/common/format';
@@ -12,13 +12,10 @@ import { edition } from '../../../edition';
 import { EditionMismatch, editionLabel } from './edition';
 import { Computer, isMac, osFormat, osText, ThisComputer } from '../../../lib/osWords';
 
-const LAST_KEY = 'breakpatch.updates.lastChecked';
-function readLast(): number | null { try { const v = localStorage.getItem(LAST_KEY); return v ? Number(v) : null; } catch { return null; } }
-function writeLast(t: number) { try { localStorage.setItem(LAST_KEY, String(t)); } catch { /* ignore */ } }
 function lastLine(t: number | null): string {
-  if (!t) return 'Updates also install on restart.';
+  if (!t) return 'Breakpatch also checks when it opens and every hour.';
   const when = daysAgo(t) === 0 ? `today, ${clock(t)}` : formatDateTime(t).replace(/^Yesterday/, 'yesterday');
-  return `Last checked ${when}. Updates also install on restart.`;
+  return `Last checked ${when}. Breakpatch also checks when it opens and every hour.`;
 }
 
 export function AboutSection() {
@@ -29,14 +26,14 @@ export function AboutSection() {
   const updateReady = useSystem(s => s.updateReady);
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<CheckResult | null>(null);
-  const [last, setLast] = useState(readLast);
+  const [last, setLast] = useState(lastChecked);
   const version = appVersion();
   const editionName = editionLabel(edition.name);
 
   const check = async () => {
     setChecking(true); setResult(null);
-    const r = await checkForUpdates();
-    const now = Date.now(); writeLast(now); setLast(now);
+    const r = await checkForUpdates();     // joins an automatic check going on
+    setLast(lastChecked());
     setResult(r); setChecking(false);
   };
 

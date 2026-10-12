@@ -8,6 +8,7 @@ import { UsageNotice } from './components/shell/UsageNotice';
 import { EngineStarting } from './components/shell/EngineStarting';
 import { NotificationReturn } from './components/shell/NotificationReturn';
 import { OpenLinks } from './components/shell/OpenLinks';
+import { AutoUpdates } from './components/shell/AutoUpdates';
 import { getEngine } from './engine';
 import { SecretSitesPrompt } from './components/shell/SecretSitesPrompt';
 import { useSession } from './state/session';
@@ -82,6 +83,7 @@ export default function App() {
           <EngineStarting />
           <NotificationReturn />
           <OpenLinks />
+          <AutoUpdates />
         </HashRouter>
       </Provider>
     </ToastProvider>
