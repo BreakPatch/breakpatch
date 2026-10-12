@@ -485,6 +485,14 @@ if grep -qx "MINISIGN_KEY=$want_key" "$script"; then ok "the minisign key is the
 if grep -qF '$$' "$script"; then bad "site/install makes a name from the process id (guessable)"; else ok "no guessable staging names"; fi
 # shellcheck disable=SC2016
 if grep -qF 'mktemp -d "$dest/' "$script"; then ok "staging folders come from mktemp"; else bad "staging folders don't come from mktemp"; fi
+# macOS's sh is bash 3.2, which in a UTF-8 locale reads a byte past ASCII as part of a name:
+# "$version…" is the unset variable "version…", and set -u stops the script there. A name
+# followed by such a character is written ${name}.
+for f in "$script" "$repo/site/install-ci"; do
+  if LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~[:cntrl:]]' "$f" >/dev/null; then
+    bad "$(basename "$f") has \$name straight before a character past ASCII: $(LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~[:cntrl:]]' "$f" | head -3 | tr '\n' ' ')"
+  else ok "$(basename "$f"): every name before a character past ASCII is in braces"; fi
+done
 
 # ---------------------------------------------------------------- release.yml: which release is Latest
 

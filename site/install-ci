@@ -619,13 +619,13 @@ do_install() {
   find_release
   current=$(installed_version "$home/current")
   if [ ! -e "$home/current" ]; then
-    say "Installing breakpatch-ci $version…"
+    say "Installing breakpatch-ci ${version}…"
   elif [ "$current" = "$version" ]; then
-    say "Reinstalling breakpatch-ci $version…"
+    say "Reinstalling breakpatch-ci ${version}…"
   elif [ -n "$current" ]; then
-    say "Updating breakpatch-ci $current to $version…"
+    say "Updating breakpatch-ci $current to ${version}…"
   else
-    say "Updating breakpatch-ci to $version…"
+    say "Updating breakpatch-ci to ${version}…"
   fi
   case "$platform" in linux-*)
     say "Linux is a preview: breakpatch-ci runs tests there, and they're recorded on a Mac." ;;

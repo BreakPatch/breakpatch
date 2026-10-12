@@ -467,13 +467,13 @@ do_install() {
   choose_folder
   current=$(installed_version "$dest/$APP")
   if [ ! -d "$dest/$APP" ]; then
-    say "Installing Breakpatch $version…"
+    say "Installing Breakpatch ${version}…"
   elif [ "$current" = "$version" ]; then
-    say "Reinstalling Breakpatch $version…"
+    say "Reinstalling Breakpatch ${version}…"
   elif [ -n "$current" ]; then
-    say "Updating Breakpatch $current to $version…"
+    say "Updating Breakpatch $current to ${version}…"
   else
-    say "Updating Breakpatch to $version…"
+    say "Updating Breakpatch to ${version}…"
   fi
 
   download "$archive_url" "$tmp/$archive" \
