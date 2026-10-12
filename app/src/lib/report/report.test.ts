@@ -159,6 +159,21 @@ describe('the report', () => {
     expect(flaky.passedText).toBe('');
   });
 
+  it('keeps every card within the page: one column no wider than the page, long words wrap, screenshots shrink', () => {
+    // Checked in a print render too (A4 and US Letter, long unbroken text, deep loops, full-size
+    // screenshots): with an auto column one long word in a failed step widened every card past the edge.
+    const css = REPORT_TEMPLATE.slice(REPORT_TEMPLATE.indexOf('<style>'), REPORT_TEMPLATE.indexOf('</style>')).replace(/\/\*[\s\S]*?\*\//g, '');
+    const grids = [...css.matchAll(/^([^{}@]+)\{[^}]*display: grid/gm)].flatMap(m => m[1].split(',').map(x => x.trim()));
+    const oneColumn = css.match(/^([^{}]+)\{ grid-template-columns: minmax\(0, 1fr\); \}/m)?.[1].split(',').map(x => x.trim()) ?? [];
+    expect(grids.length).toBeGreaterThan(4);
+    for (const g of grids) expect(oneColumn, g).toContain(g);
+    expect(css).toMatch(/\.bpr \{[^}]*overflow-wrap: break-word; overflow-wrap: anywhere;/);
+    expect(css).toContain('.bpr img { max-width: 100%; }');
+    expect(css).toContain('.bpr *, .bpr *::before, .bpr *::after { box-sizing: border-box; }');
+    expect(css).not.toMatch(/margin[a-z-]*:[^;]*-\d/);                     // no negative margins
+    expect(css).not.toMatch(/(^|[ ;{])width: \d{2,}(px|cm|mm|pt)/m);        // no fixed widths, only max-widths
+  });
+
   it('stays small without screenshots: 30 steps', () => {
     const steps = Array.from({ length: 30 }, (_, i) => ({ id: `s${i}`, action: 'click' as const, label: `Click button ${i}`, target: `Button ${i}` }));
     const run = { ...INPUT.run.tests[0].run!, steps: steps.map(s => ({ stepId: s.id, result: 'passed' as const, timings: { preMs: 100, actionMs: 80, settleMs: 300, postMs: 40 } })) };
