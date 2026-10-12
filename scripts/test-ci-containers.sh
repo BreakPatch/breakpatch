@@ -124,9 +124,7 @@ set -u
 problems=""
 check() { if [ "$1" = "$2" ]; then echo "  ok    $3"; else echo "  FAIL  $3 (got $1, expected $2)"; problems="$problems; $3"; fi; }
 step() { printf '\n=== %s\n' "$*"; }
-cat /tls/cert.pem > /tmp/ca.pem
-if [ -f /extra-ca.pem ]; then cat /extra-ca.pem >> /tmp/ca.pem; fi
-export CURL_CA_BUNDLE=/tmp/ca.pem NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
+export NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
 if [ -f /extra-ca.pem ]; then export PIP_CERT=/extra-ca.pem; fi
 if [ -n "${HTTPS_PROXY:-}" ]; then
   printf 'Acquire::https::Proxy "%s";\n' "$HTTPS_PROXY" > /etc/apt/apt.conf.d/99proxy
@@ -136,6 +134,14 @@ fi
 step "$(. /etc/os-release && echo "$PRETTY_NAME"), $(getconf GNU_LIBC_VERSION), $(command -v python3 || echo 'no python3')"
 if ! { apt-get update -qq && apt-get install -y -qq --no-install-recommends curl ca-certificates; } >/tmp/apt.log 2>&1; then
   tail -3 /tmp/apt.log; echo "FAIL: apt-get couldn't install curl"; exit 1
+fi
+# The fake release's certificate (and the proxy's CA, if any) joins the system's trusted ones, so
+# curl trusts it as it trusts GitHub, and nothing else changes. Not CURL_CA_BUNDLE: pip reads that
+# too (through requests), and with only these in it, it can't check pypi.org's certificate.
+cp /tls/cert.pem /usr/local/share/ca-certificates/breakpatch-test-release.crt
+if [ -f /extra-ca.pem ]; then cp /extra-ca.pem /usr/local/share/ca-certificates/breakpatch-test-extra.crt; fi
+if ! update-ca-certificates >/tmp/ca.log 2>&1; then
+  tail -3 /tmp/ca.log; echo "FAIL: update-ca-certificates couldn't add the test certificate"; exit 1
 fi
 if [ -d /browsers ]; then
   mkdir -p "$HOME/.breakpatch-ci/browsers"
