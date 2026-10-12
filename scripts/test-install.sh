@@ -25,6 +25,9 @@
 # installer uses its real default address, GitHub's asset redirect goes to another host as it
 # does for real, and the server log shows which host got the Authorization header.
 set -euo pipefail
+# The install command reads these before HOME (GitHub's runners set XDG_CONFIG_HOME), and every
+# case runs in its own home.
+unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 script="$repo/site/install"

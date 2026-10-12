@@ -23,6 +23,9 @@
 # objects.githubusercontent.com as scripts/test-install.sh, reached through connect-to lines in the
 # test home's .curlrc, and checks the token only ever goes to api.github.com.
 set -euo pipefail
+# The install command reads these before HOME (GitHub's runners set XDG_CONFIG_HOME), and every
+# case runs in its own home.
+unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 script="$repo/site/install-ci"
@@ -934,7 +937,7 @@ for sh_name in "sh" "bash --posix"; do
   new_case python-download-needs-tar
   notar="$work/no-tar"
   mkdir -p "$notar"
-  for f in "$nopy"/*; do n=$(basename "$f"); case "$n" in tar | gzip) ;; *) ln -sf "$(readlink "$f")" "$notar/$n" ;; esac; done
+  for f in "$nopy"/*; do n=$(basename "$f"); case "$n" in tar | gzip) ;; *) ln -sfn "$(readlink "$f")" "$notar/$n" ;; esac; done
   run BREAKPATCH_PYTHON= PATH="$shims:$notar" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$pbs_sha"
   expect_code 1
   expect_out "The installer needs tar to unpack Python 3.11, and it isn't on this machine's PATH."
