@@ -2,7 +2,7 @@
 // (engine/tests/test_report.py), so the app and CI make the same report from the same template.
 // Write them again after a deliberate change: BP_WRITE_GOLDEN=1 npx vitest run src/lib/report/report.test.ts
 import { describe, expect, it } from 'vitest';
-import { buildView, printView, junitXml, printableParts, REPORT_TEMPLATE, reportHtml, type ReportInput } from '.';
+import { buildView, printView, junitXml, printableParts, REPORT_TEMPLATE, reportHtml, type ReportInput, type ReportStepRun } from '.';
 import { parse, render, TemplateError } from './render';
 import { countsText, isoText, reportRows, seconds, shortTime, whenText, type ReportTestInput } from './view';
 import { xmlEscape } from './junit';
@@ -151,7 +151,7 @@ describe('the report', () => {
 
   it('counts the steps of a single test that passed, and what didn\'t run', () => {
     const t = INPUT.run.tests[0];
-    const passed = (steps: typeof t.run.steps, healed = 0) => buildView({ ...INPUT.run, tests: [{ ...t, run: { ...t.run!, result: 'pass', healedCount: healed, steps } }] }).tests[0];
+    const passed = (steps: ReportStepRun[], healed = 0) => buildView({ ...INPUT.run, tests: [{ ...t, run: { ...t.run!, result: 'pass', healedCount: healed, steps } }] }).tests[0];
     const all = reportRows(t.steps).map(({ step }) => ({ stepId: step.id, result: 'passed' as const }));
     expect(passed(all).passedText).toBe('11 steps, all passed');
     expect(passed(all.slice(0, -1), 1).passedText).toBe('10 of 11 steps passed, 1 fixed automatically');

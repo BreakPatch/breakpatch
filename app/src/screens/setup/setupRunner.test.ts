@@ -47,14 +47,14 @@ describe('SetupRunner', () => {
   it('shows the first task working from the start, while the engine starts, until it says how far it is', async () => {
     const { engine, calls, emit } = fakeEngine();
     const info = deferred<SystemInfo>();
-    const answer = (engine.systemInfo as ReturnType<typeof vi.fn>).getMockImplementation()!;
-    (engine.systemInfo as ReturnType<typeof vi.fn>).mockImplementation(() => info.promise);
+    const answer = await engine.systemInfo();
+    vi.mocked(engine.systemInfo).mockImplementation(() => info.promise);
     const r = new SetupRunner(engine, 0);
     r.start();
     // The engine hasn't answered yet (a packaged engine unpacks itself first): already busy, not "Next".
     expect(states(r)).toEqual(['busy', 'waiting', 'waiting']);
     expect(r.state.rows.browser.starting).toBe(true);
-    info.resolve(await answer()); await tick();
+    info.resolve(answer); await tick();
     expect(calls.browser).toHaveLength(1);
     expect(r.state.rows.browser).toMatchObject({ state: 'busy', starting: true });
     emit({ task: 'browser', state: 'busy' });                             // "Installing the browser": still nothing to count
@@ -73,7 +73,7 @@ describe('SetupRunner', () => {
     expect(r.state.rows.browser.starting).toBeUndefined();
 
     const broken = fakeEngine();
-    (broken.engine.systemInfo as ReturnType<typeof vi.fn>).mockRejectedValue(new EngineError('not_ready', 'The engine is starting. Try again in a moment.'));
+    vi.mocked(broken.engine.systemInfo).mockRejectedValue(new EngineError('not_ready', 'The engine is starting. Try again in a moment.'));
     const b = new SetupRunner(broken.engine, 0);
     b.start(); await tick();
     expect(states(b)).toEqual(['waiting', 'failed', 'waiting']);          // no spinner left turning
