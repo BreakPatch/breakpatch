@@ -1,8 +1,7 @@
 name: Website
 
 # Publishes site/ to https://breakpatch.dev (Firebase Hosting site `breakpatch-web`
-# in the `breakpatch-backoffice` project). Until the first Community release the
-# Deploys only when run by hand.
+# in the `breakpatch-backoffice` project). Deploys only when run by hand.
 #
 # Secret FIREBASE_HOSTING_SERVICE_ACCOUNT, in the `website` environment (deployment branch main
 # only): a service account that can only deploy Hosting (role "Firebase Hosting Admin"), so
@@ -32,6 +31,8 @@ jobs:
           node-version: 22
       - name: Documentation page is up to date
         run: node site/build-manual.mjs --check
+      - name: The site's own tests
+        run: node --test site/*.test.mjs
       # Before the credentials exist: firebase-tools at the version and hashes in
       # site/package-lock.json.
       - name: Install firebase-tools
