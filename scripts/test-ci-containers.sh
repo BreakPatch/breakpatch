@@ -25,7 +25,32 @@ set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 parent=$(dirname "$repo")
-die() { echo "test-ci-containers: $*" >&2; exit 1; }
+work="" server="" current="set-up" why=""
+# On GitHub Actions each failed container (its failed checks, the output before the first, then
+# the end of its output), or where the script stopped, is also an annotation, so it can be read
+# without the job's log. GitHub shows 10 per step, so each container's checks come first.
+failures=() tails=()
+annotation() {
+  local m=$1
+  m=${m//'%'/'%25'}; m=${m//$'\r'/'%0D'}; m=${m//$'\n'/'%0A'}
+  printf '::error title=test-ci-containers::%s\n' "${m:0:3900}"
+}
+annotate() {
+  local code=$1 f
+  [ "${GITHUB_ACTIONS:-}" = true ] || return 0
+  for f in "${failures[@]+"${failures[@]}"}" "${tails[@]+"${tails[@]}"}"; do annotation "$f"; done
+  if [ "$code" -ne 0 ] && [ ${#failures[@]} -eq 0 ]; then
+    annotation "stopped early (exit $code) in: $current${why:+: $why}"
+  fi
+}
+cleanup() {
+  local code=$?
+  annotate "$code"
+  if [ -n "$server" ]; then kill "$server" 2>/dev/null || true; fi
+  if [ -n "$work" ]; then rm -rf "$work"; fi
+}
+trap cleanup EXIT
+die() { why="$*"; echo "test-ci-containers: $*" >&2; exit 1; }
 dist="" seed="" images=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -48,11 +73,10 @@ for f in "$dist"/breakpatch-ci-requirements-linux-*.txt; do [ -f "$f" ] && reqs=
 version=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["version"])' "$repo/app/package.json")
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/bp-ci-containers.XXXXXX")
-server=""
-cleanup() { if [ -n "$server" ]; then kill "$server" 2>/dev/null || true; fi; rm -rf "$work"; }
-trap cleanup EXIT
 
 # ---------------------------------------------------------------- the fake release
+
+current="the fake release"
 
 mkdir -p "$work/tls" "$work/srv/api/releases/tags" "$work/srv/download/v$version"
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$work/tls/key.pem" -out "$work/tls/cert.pem" -days 2 \
@@ -82,10 +106,14 @@ srv.serve_forever()
 PY
 python3 "$work/serve.py" "$port" "$work/srv" "$work/tls" "$version" >"$work/server.log" 2>&1 &
 server=$!
+up=""
 for _ in $(seq 50); do
-  curl -fs --cacert "$work/tls/cert.pem" --noproxy 127.0.0.1 "https://127.0.0.1:$port/api/releases/latest" >/dev/null 2>&1 && break
+  if curl -fs --cacert "$work/tls/cert.pem" --noproxy 127.0.0.1 "https://127.0.0.1:$port/api/releases/latest" >/dev/null 2>&1; then
+    up=1; break
+  fi
   sleep 0.1
 done
+[ -n "$up" ] || die "the fake release's server didn't answer: $(tail -c 2000 "$work/server.log")"
 
 # ---------------------------------------------------------------- inside each container
 
@@ -154,6 +182,7 @@ SH
 failed=()
 for image in "${images[@]}"; do
   echo "test-ci-containers: $image"
+  current="$image"
   args=(--rm --network host -e "PORT=$port" -e "VERSION=$version"
         -v "$work/tls:/tls:ro" -v "$work/inside.sh:/inside.sh:ro" -v "$repo/site/install-ci:/install-ci:ro"
         -v "$team:/team:ro" -v "$repo/engine/tests/site:/site:ro" -v "$seed:/seed:ro")
@@ -168,7 +197,15 @@ for image in "${images[@]}"; do
   else
     cat "$log"
     failed+=("$image")
+    first=$(grep -n -m 1 -E '^  FAIL |^FAIL' "$log" | cut -d: -f1 || true)
+    f="$image: $(tail -n 1 "$log")"$'\n'"$(grep -E '^  FAIL ' "$log" || true)"
+    if [ -n "$first" ]; then
+      f+=$'\n'"--- before the first FAIL:"$'\n'"$(sed -n "$((first > 40 ? first - 40 : 1)),${first}p" "$log" | tail -c 2500)"
+    fi
+    failures+=("$f")
+    tails+=("$image, the end of its output:"$'\n'"$(tail -c 3000 "$log")")
   fi
 done
+current="the end"
 [ ${#failed[@]} -eq 0 ] || die "failed on ${failed[*]}"
 echo "test-ci-containers: all passed (${images[*]})"
