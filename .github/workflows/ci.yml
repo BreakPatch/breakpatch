@@ -29,7 +29,8 @@ permissions:
 # ci-command job: it builds breakpatch-ci's wheels as a release does (scripts/build-ci.sh, Linux,
 # a throwaway licence key) and tries them in a clean Python environment. It needs the Team repo,
 # so it only runs where the secret TEAM_CI_TOKEN is available (pushes and pull requests from this
-# repository, not from forks) and otherwise says why it skipped.
+# repository, not from forks) and otherwise says why it skipped. It uses the Team branch named as
+# this one when there is one (a change made in both repositories), else TEAM_REF or main.
 #
 # Coverage: the ui, engine and shell jobs each report a line coverage total. On pushes to main the
 # badges job writes them as shields.io endpoint files to the orphan branch `badges`
@@ -345,12 +346,34 @@ jobs:
         with:
           path: breakpatch
           persist-credentials: false
+      # The Team branch of the same name as this one when there is one (a change made in both
+      # repositories, like linux), else TEAM_REF or main. The token goes to curl on stdin only.
+      - name: Which Team branch
+        id: team
+        if: env.HAS_TEAM == 'true'
+        env:
+          TOKEN: ${{ secrets.TEAM_CI_TOKEN }}
+          TEAM_REPO: ${{ vars.TEAM_REPO || 'BreakPatch/breakpatch-team' }}
+          FALLBACK: ${{ vars.TEAM_REF || 'main' }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          ref=$FALLBACK
+          case "$BRANCH" in
+            '' | main | *[!A-Za-z0-9._/-]*) ;;
+            *)
+              if printf 'Authorization: Bearer %s\n' "$TOKEN" | curl -fsS -o /dev/null -H @- \
+                   -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$TEAM_REPO/branches/$BRANCH" 2>/dev/null; then
+                ref=$BRANCH
+              fi ;;
+          esac
+          echo "Team module: $TEAM_REPO at $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - name: Check out the Team module
         if: env.HAS_TEAM == 'true'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: ${{ vars.TEAM_REPO || 'BreakPatch/breakpatch-team' }}
-          ref: ${{ vars.TEAM_REF || 'main' }}
+          ref: ${{ steps.team.outputs.ref }}
           token: ${{ secrets.TEAM_CI_TOKEN }}
           path: breakpatch-team
           persist-credentials: false
