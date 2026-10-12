@@ -120,6 +120,9 @@ Linux comes next, then Windows: see the [roadmap](https://github.com/BreakPatch/
 - **Every action a person does.** Click, double, long and right click, hover, swipe, scroll, drag
   and drop, typing, uploads, downloads, tabs and popups, plus checkpoints, loops, shared steps
   (record *Log in* once, use it everywhere) and suites.
+- **Phones, tablets and your API.** Test your site at an iPhone's, a Pixel's or an iPad's size,
+  with taps and swipes, and call your app's API in the middle of a test with a **Call** step, for
+  example to get a one-time code.
 - **Bring your Playwright and Cypress tests.** **Import…** reads a script (never runs it), turns its
   steps into Breakpatch steps, lists what it left out and why, then learns the screens by doing each
   step once.

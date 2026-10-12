@@ -194,6 +194,8 @@ The same test always gives the same file: two-space indents, keys in a fixed ord
 
 Settings → Tests folder shows the folder, how many apps and tests it has, **Show in Finder** and **Change folder**. Changing folders leaves the old one as it is, with all its tests.
 
+**More than one tests folder?** Every folder you open stays in the switcher next to the Breakpatch name, at the top of Apps and Suites. Choose one there, or press ⌘1 to ⌘9, to go back to it, and **Open a tests folder…** in the switcher adds another. See [Workspaces on this Mac](#workspaces-on-this-mac).
+
 ## Links to a test
 
 **Copy link** in a test's **⋯** menu (in the app's **Tests** tab), or in a suite's **⋯** menu in **Suites**, copies a link like `breakpatch://open?ws=folder:3f9a…&path=apps/web-app/tests/log-in`. Paste it in a pull request, an issue or a chat. Clicking it on a Mac with Breakpatch opens Breakpatch, switches to that tests folder or workspace the way the [switcher](#workspaces-on-this-mac) does, and opens the test in the recorder, or the suite.
