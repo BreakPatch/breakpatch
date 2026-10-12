@@ -680,8 +680,12 @@ do_install() {
   if [ "$pbs" -eq 1 ]; then fetch_python; fi
   make_env
   install_browser
-  got=$("$staged/bin/breakpatch-ci" --version 2>/dev/null || true)
-  [ "$got" = "$version" ] || fail "The new breakpatch-ci doesn't start (it says '$got'), so the one before is still in use. Write to support@breakpatch.dev."
+  got=$("$staged/bin/breakpatch-ci" --version 2>"$tmp/version.log" || true)
+  if [ "$got" != "$version" ]; then
+    # Why, for the support request: Python's last lines (a library this system lacks, say).
+    tail -5 "$tmp/version.log" >&2
+    fail "The new breakpatch-ci doesn't start (it says '$got'), so the one before is still in use. Write to support@breakpatch.dev."
+  fi
   switch_to
   prune_pythons
 
