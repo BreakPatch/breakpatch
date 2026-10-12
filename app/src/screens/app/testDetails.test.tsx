@@ -36,11 +36,13 @@ async function recordedTest() {
 }
 
 describe('Test details from the Tests tab', () => {
-  it('is in the ⋯ menu and opens with the test as it is', async () => {
+  it('is first in the ⋯ menu and opens with the test as it is', async () => {
     const t = await recordedTest();
     render(<MemoryRouter><TestsTab app={app} tests={[t]} /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: 'More for Log in' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /Test details/ }));
+    const items = screen.getAllByRole('menuitem');
+    expect(items.slice(0, 2).map(i => i.textContent)).toEqual(['descriptionTest details…', 'editEdit steps']);
+    fireEvent.click(items[0]);
     const dialog = await screen.findByRole('dialog', { name: 'Test details' });
     expect(dialog).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toHaveValue('Log in');
@@ -121,13 +123,19 @@ describe('the Test details dialog', () => {
 });
 
 describe('Test details in the recorder', () => {
-  it('has a Test details button, and the browser stays on the address it opened at', async () => {
+  it('opens from the test\'s name in the title bar, and the browser stays on the address it opened at', async () => {
     const t = await recordedTest();
     const opened = vi.spyOn(getEngine(), 'openBrowser');
     render(<ToastProvider><MemoryRouter initialEntries={[`/apps/${app.id}/tests/${t.id}/record`]}>
       <Routes><Route path="/apps/:appId/tests/:testId/record" element={<RecorderScreen />} /></Routes>
     </MemoryRouter></ToastProvider>);
-    fireEvent.click(await screen.findByRole('button', { name: 'Test details' }));
+    // The name is the button, with a pencil and the tooltip "Test details"; there's no other one to find.
+    const name = await screen.findByRole('button', { name: 'Log in, Test details' });
+    expect(name).toHaveAttribute('title', 'Test details');
+    expect(screen.getByRole('heading', { level: 1 })).toContainElement(name);
+    expect(name.querySelector('.icon')).toHaveTextContent('edit');
+    expect(screen.getAllByRole('button', { name: /Test details/ })).toEqual([name]);
+    fireEvent.click(within(name).getByText('Log in'));
     const dialog = await screen.findByRole('dialog', { name: 'Test details' });
     expect(dialog).toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText('Start address'), { target: { value: 'https://app.example.com/signin' } });

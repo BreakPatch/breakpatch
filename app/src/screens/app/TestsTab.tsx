@@ -113,8 +113,8 @@ function TestRow({ app, test: t, index, flaky, onDelete, onDetails }: { app: App
           <IconButton icon="more_vert" label={`More for ${t.name}`} size={19} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(m => !m)} />
           <Menu open={menu} onClose={() => setMenu(false)} label={`${t.name} actions`} width={200} style={{ top: 'calc(100% + 4px)', right: 0 }}
             items={[
+              { label: 'Test details…', icon: 'description', onSelect: onDetails },
               { label: 'Edit steps', icon: 'edit', onSelect: open },
-              { label: 'Test details', icon: 'description', onSelect: onDetails },
               { label: 'Duplicate', icon: 'content_copy', onSelect: duplicate },
               { label: 'Copy link', icon: 'link', onSelect: () => void copyLink({ kind: 'test', appId: app.id, testId: t.id }, t.name) },
               ...(HISTORY ? [{ label: 'View history', icon: 'history', onSelect: () => navigate(`${base}/history`) }] : []),

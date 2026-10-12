@@ -17,6 +17,14 @@
 .titlebar-title { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
 .titlebar-title h1 { margin: 0; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .titlebar-crumb { font-size: 12px; color: var(--text-faint); white-space: nowrap; }
+/* A title that opens its details (the recorder's test name): the name and a small pencil. */
+.titlebar-name { display: flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; border-radius: 6px; font-weight: inherit; text-align: left; }
+.titlebar-name > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titlebar-name .icon { font-size: 16px; color: var(--text-faint); transition: color var(--t-fast) ease-out; }
+.titlebar-name:hover:not(:disabled) .icon { color: var(--text); }
+.titlebar-name:hover:not(:disabled) > span:first-child { text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.titlebar-name:disabled { cursor: default; }
+.titlebar-name:disabled .icon { opacity: .45; }
 .titlebar-actions { display: flex; align-items: center; gap: 10px; }
 .hairline { height: 3px; flex: none; background: var(--line-soft); }
 .hairline > div { height: 100%; transition: width 400ms ease-out, background var(--t-fast); }

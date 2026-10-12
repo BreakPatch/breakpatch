@@ -225,7 +225,7 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
 
 Screen checks are worked out automatically after every step. There's nothing to draw or approve.
 
-**Test details** (in the test's **⋯** menu on the Tests tab, or from the recorder's title bar) changes a test's name, description and start address after it's made. After a new start address, check the first steps still make sense from there. In Team a new start address on a test with steps saves a new version, so older versions, and a version marked as released, keep starting where they did.
+**Test details** (first in the test's **⋯** menu on the Tests tab; in the recorder, click the test's name in the title bar, the one with a pencil) changes a test's name, description and start address after it's made. After a new start address, check the first steps still make sense from there. In Team a new start address on a test with steps saves a new version, so older versions, and a version marked as released, keep starting where they did.
 
 Select a step to open it. **What to look for** is the plain description of what the step acts on, for example "Done button, bottom right of the Create project dialog". Edit it if it's wrong. **What should happen** says how a run judges the step: a new page opens, something closes or disappears, something appears, text or a value changes, or nothing visible changes. Breakpatch picks one when you record; change it with one click. **+ note** adds a few words, like "closes the What's new dialog": the AI assistant reads them only when the step's check fails, to judge whether the failure is real and to say why.
 

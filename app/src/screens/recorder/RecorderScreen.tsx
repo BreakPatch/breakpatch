@@ -7,7 +7,7 @@ import type { App, RecordedOn, Test } from '../../data/types';
 import { useBackend, useLive } from '../../data/hooks';
 import { findStep, flatRows, numberOf, stripUi } from '../../components/steps';
 import { AppFrame } from '../../components/shell/AppFrame';
-import { Button, EmptyState, IconButton, SharedChip, useToast } from '../../components/ui';
+import { Button, EmptyState, Icon, SharedChip, useToast } from '../../components/ui';
 import { TestDetailsDialog } from '../app/TestDetailsDialog';
 import { RecorderWorkbench } from './RecorderWorkbench';
 import { SaveButton } from './SaveButton';
@@ -190,7 +190,6 @@ export default function RecorderScreen() {
   const published = test?.status === 'published';
   const actions = test && (
     <>
-      <IconButton icon="description" label="Test details" onClick={() => setDetailsOpen(true)} disabled={editorRun.running} />
       {aiTests && <Button icon="auto_awesome" onClick={() => setStoryOpen(true)} disabled={!loaded || !browser.ready || rec.busy || editorRun.running || rec.hand || !!rec.rerecordId}
         title="Write a test from a story">From a story</Button>}
       {hasFeature('collaboration') && <SharedChip published={published} />}
@@ -204,8 +203,13 @@ export default function RecorderScreen() {
     </>
   );
 
+  // The test's name opens Test details: the pencil next to it says it can be changed.
   return (
-    <AppFrame back={() => guard(() => navigate(`/apps/${appId}`))} crumb={app?.name ?? ' '} title={test?.name ?? ' '} actions={actions}>
+    <AppFrame back={() => guard(() => navigate(`/apps/${appId}`))} crumb={app?.name ?? ' '} actions={actions}
+      title={test ? <button type="button" className="titlebar-name" title="Test details" aria-label={`${test.name}, Test details`}
+        onClick={() => setDetailsOpen(true)} disabled={editorRun.running}>
+        <span>{test.name}</span><Icon name="edit" />
+      </button> : ' '}>
       <RecorderWorkbench rec={rec} appId={appId} address={addressOf(openedAt?.url)} viewport={viewport} allowGroups
         loading={!loaded || !browser.ready} onEditGroup={id => guard(() => navigate(`/apps/${appId}/shared/${id}/edit`))} run={runProps} />
       {dialog}
