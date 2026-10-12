@@ -26,8 +26,9 @@ permissions:
 # Community edition only: the private Team module (Breakpatch/breakpatch-team) is not checked
 # out here, so the app builds without app/src/edition/team and the engine without
 # breakpatch_team_engine. The Team repo's own CI tests both together. One exception, the
-# ci-command job: it builds breakpatch-ci's wheels as a release does (scripts/build-ci.sh, Linux,
-# a throwaway licence key) and tries them in a clean Python environment. It needs the Team repo,
+# ci-command job: it builds breakpatch-ci's wheels as a release does (scripts/build-ci.sh in the
+# manylinux_2_28 container, Linux, a throwaway licence key) and tries them in a clean Python
+# environment and in clean Ubuntu and Debian containers. It needs the Team repo,
 # so it only runs where the secret TEAM_CI_TOKEN is available (pushes and pull requests from this
 # repository, not from forks) and otherwise says why it skipped. It uses the Team branch named as
 # this one when there is one (a change made in both repositories), else TEAM_REF or main.
@@ -381,18 +382,18 @@ jobs:
         if: env.HAS_TEAM == 'true'
         with:
           python-version: "3.11"
-      - name: Install the build dependencies (hashed locks)
+      # As the release builds them: in the manylinux_2_28 container (scripts/build-manylinux.sh runs
+      # both phases of build-ci.sh there), so the Team module needs glibc 2.28 at most. Built
+      # straight on the runner (glibc 2.39) it can't load on Ubuntu 22.04 or Debian 12, which the
+      # clean containers below check.
+      - name: Build both wheels with a throwaway key (manylinux_2_28 container)
         if: env.HAS_TEAM == 'true'
         env:
           TEAM_DIR: breakpatch-team
-        run: bash breakpatch/scripts/build-ci.sh --deps-only
-      - name: Build both wheels with a throwaway key
-        if: env.HAS_TEAM == 'true'
-        env:
-          TEAM_DIR: breakpatch-team
+          MANYLINUX_IMAGE: ${{ vars.MANYLINUX_X64_IMAGE || 'quay.io/pypa/manylinux_2_28_x86_64' }}
         run: |
           python breakpatch-team/engine/scripts/smoke_ci_wheel.py keys --seed-file "$RUNNER_TEMP/ci-smoke.seed" > "$RUNNER_TEMP/ci-smoke-keys.json"
-          bash breakpatch/scripts/build-ci.sh --no-deps --keys-file "$RUNNER_TEMP/ci-smoke-keys.json" --out "$RUNNER_TEMP/dist"
+          bash breakpatch/scripts/build-manylinux.sh ci --keys-file "$RUNNER_TEMP/ci-smoke-keys.json" --out "$RUNNER_TEMP/dist"
       - name: The release's check of the requirements file
         if: env.HAS_TEAM == 'true'
         run: bash breakpatch/scripts/check-ci-requirements.sh "$RUNNER_TEMP/dist"
