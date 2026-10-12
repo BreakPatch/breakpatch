@@ -111,7 +111,7 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
    focus ring is drawn on that area, as a small circle round the asterisk. */
 .ai-badge .star::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;translate:-50% -50%;border-radius:999px}
 .ai-badge .star:focus-visible{outline:none}
-.ai-badge .star:focus-visible::after{outline:2px solid var(--accent);outline-offset:-10px}
+.ai-badge .star:focus-visible::after{outline:2px solid var(--accent);outline-offset:-14px}
 /* "12,300 tests run with Breakpatch" (assets/runs-count.js): out of the flow, in the space above the
    screenshot, so it takes no room and moves nothing when it fades in. */
 .runs-count{position:absolute;top:calc(100% + 12px);left:0;right:0;margin:0;font-size:0.8438rem;color:var(--faint);letter-spacing:.01em;animation:edge .6s ease-out both}
@@ -564,3 +564,5 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 }
 /* Long inline code (addresses, commands, variables) wraps in running text instead of widening the page. */
 .content :is(p,li,td,dd) code{overflow-wrap:anywhere}
+/* In a table, a name or code wraps only when it must, so its column stays as wide as its longest word. */
+.content td code{overflow-wrap:break-word}
