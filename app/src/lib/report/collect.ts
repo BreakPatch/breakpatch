@@ -85,7 +85,7 @@ export async function exportReport(input: ReportInput, format: ExportFormat): Pr
   const view = buildView(input);
   if (format === 'pdf') {
     const { printReport } = await import('./print');
-    await printReport(reportHtml(printView(view)));
+    await printReport(reportHtml(printView(view)), fileStem(view.heading, Date.now()));
     return true;
   }
   const f = exportFile(view, format);

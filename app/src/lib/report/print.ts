@@ -5,16 +5,44 @@
 // as printView has it: a test that passed is its summary, any other lists its steps with the one
 // that failed open. They stay until the next print or until the report screen closes
 // (removePrinted), because the macOS print sheet renders the page after print() returns.
+//
+// The print dialog names the PDF after the page's title: on macOS WebKit gives the print operation
+// the main frame's title (document.title) as its job title when the shell starts it, and Save as
+// PDF suggests that. So the title is the HTML export's file name while the report prints, and comes
+// back on afterprint. On macOS window.print() is Tauri's call to the shell, which needn't fire
+// afterprint, so it also comes back when the printed report is removed, or a while after print().
 import { printableParts } from '.';
 
 export const PRINT_ID = 'bp-print-report';
+/** How long after print() the page's own title comes back when no afterprint does. */
+export const TITLE_BACK_MS = 60_000;
+
+/** While the report prints under its file name: the page's own title, and the fallback timer. */
+let printing: { was: string; timer?: ReturnType<typeof setTimeout> } | null = null;
+
+function titleBack(): void {
+  if (!printing) return;
+  clearTimeout(printing.timer);
+  document.title = printing.was;
+  printing = null;
+  window.removeEventListener('afterprint', titleBack);
+}
+
+function printTitle(title: string): void {
+  titleBack();
+  printing = { was: document.title };
+  window.addEventListener('afterprint', titleBack);
+  document.title = title;
+}
 
 export function removePrinted(): void {
+  titleBack();
   document.getElementById(PRINT_ID)?.remove();
   document.getElementById(`${PRINT_ID}-style`)?.remove();
 }
 
-export async function printReport(html: string): Promise<void> {
+/** Prints the report; `title`, the file name the dialog suggests for Save as PDF (without .pdf). */
+export async function printReport(html: string, title?: string): Promise<void> {
   const { css, body } = printableParts(html);
   removePrinted();
   const style = document.createElement('style');
@@ -31,6 +59,12 @@ export async function printReport(html: string): Promise<void> {
   holder.innerHTML = body;          // the template's output: every value in it is escaped
   document.head.appendChild(style);
   document.body.appendChild(holder);
+  if (title) printTitle(title);
   await Promise.all([...holder.querySelectorAll('img')].map(i => i.decode?.().catch(() => undefined)));
-  await Promise.resolve(window.print());
+  await new Promise(r => setTimeout(r, 0));     // the new title reaches the shell before the print does
+  try {
+    await Promise.resolve(window.print());
+  } finally {
+    if (printing) { clearTimeout(printing.timer); printing.timer = setTimeout(titleBack, TITLE_BACK_MS); }
+  }
 }
