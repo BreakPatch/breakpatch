@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "breakpatch-engine"
-version = "0.1.0b1"  # PEP 440 for 0.1.0-beta.1 (breakpatch_engine.__version__, app/package.json)
+version = "0.1.0b2"  # PEP 440 for 0.1.0-beta.2 (breakpatch_engine.__version__, app/package.json)
 description = "Breakpatch engine sidecar: browser automation checked on the screen, screen checks and replay."
 readme = "README.md"
 license = { text = "Apache-2.0" }

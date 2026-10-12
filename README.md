@@ -341,7 +341,10 @@ for `releases/latest`, and the updater reads `releases/latest/download/latest.js
   for `gh`.
 - The tag must match `app/package.json`, `app/src-tauri/Cargo.toml` and
   `engine/src/breakpatch_engine/__init__.py` (the release workflow checks);
-  `engine/pyproject.toml` has the PEP 440 spelling (`0.1.0b1`).
+  `engine/pyproject.toml` has the PEP 440 spelling (`0.1.0b2` for 0.1.0-beta.2;
+  `scripts/build-ci.sh` checks it). So bump them all, with `app/package-lock.json` and
+  `app/src-tauri/Cargo.lock`, and add `docs/releases/<tag>.md`, in the commit you tag
+  (`site/launch.test.mjs` checks they agree).
 
 `BREAKPATCH_GITHUB_TOKEN`, which the install commands take, was for the private beta while the
 repository was private. It isn't needed now.
