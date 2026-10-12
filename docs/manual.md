@@ -76,7 +76,7 @@ Breakpatch Community is a beta: it works, but expect some rough edges. Tell us a
 
 For a given version, put it in front of `sh`: `curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh`.
 
-**Updating.** Breakpatch updates itself (see [Updates](#updates)). Running the command again updates it too: it quits Breakpatch first, then replaces the app. Your tests, saved secrets and the AI assistant stay as they are.
+**Updating.** Settings → About → **Check for updates** gets a new version, and from 0.1.0-beta.3 Breakpatch also checks by itself (see [Updates](#updates)). Running the command again updates it too: it quits Breakpatch first, then replaces the app. Your tests, saved secrets and the AI assistant stay as they are.
 
 **Uninstalling.**
 
@@ -440,17 +440,17 @@ On sites with good page structure (buttons, links and fields that say what they 
 
 Breakpatch comes with one AI model, the **Standard** assistant (Qwen3-VL 4B, about 3 GB), which setup downloads. It works well for almost every team. It's the only model for now: bringing your own local one, through Ollama or LM Studio, isn't available yet. Cloud AI models aren't planned: your screens stay on your Mac. (A Team [runner Mac](#the-local-runner) with 32 GB of memory or more can also download a larger one, about 5 GB, but it's rarely needed.)
 
-Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it to name what you click, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)), explaining a failure ([Why did this fail?](#why-did-this-fail)) and suggesting a test's steps from a story ([Write a test from a story](#write-a-test-from-a-story)) come with Team.
+Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it to name what you click, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)) and explaining a failure ([Why did this fail?](#why-did-this-fail)) come with Team, and suggesting a test's steps from a story ([Write a test from a story](#write-a-test-from-a-story)) comes later.
 
 It's kept in `~/Library/Application Support/Breakpatch/models/`.
 
 ## Updates
 
-Breakpatch checks for updates by itself: when it opens (about 10 seconds after, once it has started) and every hour while it's open. To check now, use Settings → About → **Check for updates**.
+Settings → About → **Check for updates** looks for a new version. From Breakpatch 0.1.0-beta.3 it also checks by itself: when it opens (about 10 seconds after, once it has started) and every hour while it's open. Version 0.1.0-beta.2 and earlier check only when you press **Check for updates**, so press it to get a new version.
 
-A new version downloads in the background, and then a banner says it's ready. Press **Restart to update** when it suits you: Breakpatch installs it and opens again. **Later** puts the banner away; Settings → About keeps **Restart to update**. If you quit without restarting, nothing is installed, and Breakpatch downloads the update again the next time it opens. Updates never change your tests.
+A new version downloads in the background, and then a banner says it's ready. Press **Restart to update** when it suits you: Breakpatch installs it and opens again. **Later** puts the banner away; Settings → About keeps **Restart to update**. If you quit without restarting, nothing is installed, and Breakpatch downloads the update again at its next check. Updates never change your tests.
 
-While you record or run a test, or setup downloads the test browser or the AI assistant, the check waits until you're done. If Breakpatch can't reach GitHub (you're offline, for example), it says nothing and tries again an hour later.
+From 0.1.0-beta.3, while you record or run a test, or setup downloads the test browser or the AI assistant, the automatic check waits until you're done. If Breakpatch can't reach GitHub (you're offline, for example), it says nothing and tries again an hour later.
 
 Settings → About also shows your version and edition.
 
@@ -1020,6 +1020,8 @@ await addDoc(collection(getFirestore(app, 'breakpatch'), 'runRequests'), {
 n8n, Zapier or Make can add a Firestore document on any event: a deploy, a merged pull request, a button in a chat. Use the same path and fields, with `createdAt` set to the server's time. In a hosted workspace they call the run queue instead (below).
 
 ### In a hosted workspace
+
+<!-- soon --> Coming later. The run queue comes with [Hosted by Breakpatch](#hosted-by-breakpatch), which isn't open yet. Until then, start runs from CI or a tool by adding a run request in a workspace of your own (above).
 
 Nothing outside Breakpatch writes to a hosted workspace's database, so it has a **run queue** instead: an address you send a request to, from CI, n8n, a script or anything that can make a web request.
 
