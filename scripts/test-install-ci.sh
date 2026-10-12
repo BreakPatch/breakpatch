@@ -28,7 +28,22 @@ repo=$(cd "$(dirname "$0")/.." && pwd)
 script="$repo/site/install-ci"
 work=$(mktemp -d "${TMPDIR:-/tmp}/bp-test-install-ci.XXXXXX")
 server_pid=""
+# On GitHub Actions, each failure (or where the script stopped) also becomes an annotation, so it
+# can be read without the job's log.
+annotate() {
+  local code=$1 f
+  [ "${GITHUB_ACTIONS:-}" = true ] || return 0
+  for f in "${failures[@]+"${failures[@]}"}"; do
+    f=${f//'%'/'%25'}; f=${f//$'\n'/'%0A'}; f=${f//$'\r'/'%0D'}
+    printf '::error title=test-install-ci::%s\n' "$f"
+  done
+  if [ "$code" -ne 0 ] && [ ${#failures[@]} -eq 0 ]; then
+    printf '::error title=test-install-ci::stopped early (exit %s) in: %s\n' "$code" "${current:-set-up}"
+  fi
+}
 cleanup() {
+  local code=$?
+  annotate "$code"
   if [ -n "$server_pid" ]; then kill "$server_pid" 2>/dev/null || true; fi
   rm -rf "$work"
 }
