@@ -9,6 +9,8 @@ export const ROWS: RowKey[] = ['browser', 'mac', 'model'];
 export interface Row {
   state: TaskState;
   doneBytes?: number; totalBytes?: number; etaSeconds?: number;
+  /** Working, with nothing to count yet: the engine is starting, or hasn't said how far it is. The row says "Starting…". */
+  starting?: boolean;
   /** Plain reason when paused or failed. */
   reason?: string;
   /** Technical details for "Copy details". */
@@ -61,6 +63,7 @@ export class SetupRunner {
   private setRow(k: RowKey, r: Partial<Row>, replace = false) {
     const row: Row = replace ? { state: 'waiting', ...r } : { ...this.snap.rows[k], ...r };
     if (row.state !== 'paused' && row.state !== 'failed') { row.reason = undefined; row.details = undefined; }
+    if (row.state !== 'busy' || row.totalBytes) row.starting = undefined;
     this.set({ rows: { ...this.snap.rows, [k]: row } });
   }
 
@@ -78,6 +81,10 @@ export class SetupRunner {
     const gen = ++this.gen;
     const stale = () => gen !== this.gen;
     let task: RowKey = 'mac';
+    // The engine answers only once it has started, and a packaged engine unpacks itself first: a
+    // few seconds, longer on a Mac's first start. Meanwhile the first task to do shows it's working.
+    const early = this.snap.info ? undefined : ROWS.find(k => this.snap.rows[k].state !== 'done');
+    if (early) this.setRow(early, { state: 'busy', starting: true });
     try {
       const info = this.snap.info ?? await this.engine.systemInfo();
       if (stale()) return;
@@ -87,7 +94,7 @@ export class SetupRunner {
       if (this.snap.rows.browser.state !== 'done') {
         if (info.browser.installed) this.setRow('browser', { state: 'done' });
         else {
-          this.setRow('browser', { state: 'busy', etaSeconds: undefined });
+          this.setRow('browser', { state: 'busy', etaSeconds: undefined, starting: true });
           await this.engine.installBrowser();
           if (stale()) return;
           this.setRow('browser', { state: 'done' });
@@ -120,6 +127,7 @@ export class SetupRunner {
       }
     } catch (e) {
       if (stale() || this.snap.rows[task].state === 'paused') return;
+      if (early && early !== task && this.snap.rows[early].state === 'busy') this.setRow(early, { state: 'waiting' });
       const err = e as { message?: string; code?: string; details?: string };
       this.setRow(task, { state: 'failed', reason: err?.message || "It didn't work.", details: [err?.code && `Code: ${err.code}`, err?.details].filter(Boolean).join('\n') || undefined });
     }
