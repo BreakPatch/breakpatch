@@ -205,10 +205,11 @@ export default function RecorderScreen() {
     </>
   );
 
-  // The test's name opens Test details: the pencil next to it says it can be changed.
+  // The test's name opens Test details: the pencil next to it says it can be changed. Its name is the
+  // test's; what it does is its description, the tooltip "Test details" (said once, not twice).
   return (
     <AppFrame back={() => guard(() => navigate(`/apps/${appId}`))} crumb={app?.name ?? ' '} actions={actions}
-      title={test ? <button type="button" className="titlebar-name" title="Test details" aria-label={`${test.name}, Test details`}
+      title={test ? <button type="button" className="titlebar-name" title="Test details"
         onClick={() => setDetailsOpen(true)} disabled={editorRun.running}>
         <span>{test.name}</span><Icon name="edit" />
       </button> : ' '}>

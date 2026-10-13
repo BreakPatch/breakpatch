@@ -15,7 +15,10 @@
 .titlebar-back:hover { color: var(--text); background: var(--raised); }
 .titlebar-back:active { color: var(--text); background: var(--selected); transform: scale(.96); }
 .titlebar-title { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
-.titlebar-title h1 { margin: 0; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The ellipsis is on the text inside, not on the h1: a button there (the recorder's test name) keeps
+   the focus ring that sits outside it, which the h1 would cut off. */
+.titlebar-title h1 { margin: 0; font-size: 15px; font-weight: 700; }
+.titlebar-text { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .titlebar-crumb { font-size: 12px; color: var(--text-faint); white-space: nowrap; }
 /* A title that opens its details (the recorder's test name): the name and a small pencil. */
 .titlebar-name { display: flex; align-items: center; gap: 5px; max-width: 100%; min-width: 0; border-radius: 6px; font-weight: inherit; text-align: left; }

@@ -72,7 +72,7 @@ export function AppFrame({ nav, back, crumb, title, actions, progress, banners, 
             {back && <button className="titlebar-back" onClick={goBack} aria-label="Back"><Icon name="arrow_back" size={20} /></button>}
             <div className="titlebar-title" data-tauri-drag-region>
               {crumb && <div className="titlebar-crumb">{crumb}</div>}
-              {title && <h1>{title}</h1>}
+              {title && <h1>{typeof title === 'string' ? <span className="titlebar-text">{title}</span> : title}</h1>}
             </div>
           </>
         )}
