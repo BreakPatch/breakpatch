@@ -996,6 +996,37 @@ else
     && grep -q '^setlocal' "$bin/breakpatch-ci.cmd"; then ok "bin\\breakpatch-ci.cmd starts the environment in current.txt"; else bad "the .cmd is: $(cat "$bin/breakpatch-ci.cmd" 2>/dev/null)"; fi
   if [ ! -e "$home/python" ]; then ok "no Python was downloaded (this machine has 3.11)"; else bad "a Python was downloaded"; fi
   if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
+  # In the default bin the .cmd names only its own folder, so any user name in the path works.
+  if grep -qF 'set /p BP_CI_ENV=<"%~dp0..\current.txt"' "$bin/breakpatch-ci.cmd" && grep -qF '"%~dp0..\%BP_CI_ENV%\Scripts\breakpatch-ci.exe" %*' "$bin/breakpatch-ci.cmd" \
+    && ! grep -qF "$home" "$bin/breakpatch-ci.cmd"; then ok "the .cmd finds current.txt and the environment from its own folder"; else bad "the .cmd is: $(cat "$bin/breakpatch-ci.cmd")"; fi
+  if [ "$(head -c 9 "$bin/breakpatch-ci.cmd")" = "@echo off" ] && [ "$(grep -c $'\r$' "$bin/breakpatch-ci.cmd")" -eq 5 ]; then ok "the .cmd has no BOM and CRLF line endings"; else bad "the .cmd starts: $(head -c 12 "$bin/breakpatch-ci.cmd" | od -c | head -1)"; fi
+
+  # A user name with an accent: the default bin needs nothing of the path.
+  ps_case windows-accented-path
+  home="$c/home/Jos"$'\xc3\xa9'"/breakpatch-ci"
+  bin="$home/bin"
+  ps_run
+  expect_code 0
+  ps_version 1.1.0
+  if LC_ALL=C grep -q $'[\x80-\xff]' "$bin/breakpatch-ci.cmd"; then bad "the .cmd has a byte outside ASCII"; else ok "the .cmd is plain ASCII"; fi
+  # Another bin has to name the install folder. On Windows it's written in the OEM code page; on
+  # this Linux machine there's none to read, so ASCII is all it has and the path can't be written:
+  # it says so before anything is installed, rather than leave a .cmd with a ? in the path.
+  rm -rf "$home"
+  ps_run BREAKPATCH_CI_BIN="$c/other-bin"
+  expect_code 1
+  expect_out "The command prompt can't read the install folder's path"
+  ps_none
+  if [ ! -e "$c/other-bin/breakpatch-ci.cmd" ]; then ok "no .cmd was written"; else bad "a .cmd was written: $(cat "$c/other-bin/breakpatch-ci.cmd")"; fi
+
+  # Another bin, with a plain path: the .cmd names the install folder in full.
+  ps_case windows-other-bin
+  ps_run BREAKPATCH_CI_BIN="$c/other-bin"
+  expect_code 0
+  if grep -qF "set /p BP_CI_ENV=<\"$home/current.txt\"" "$c/other-bin/breakpatch-ci.cmd" && grep -qF "\"$home\\%BP_CI_ENV%\\Scripts\\breakpatch-ci.exe\" %*" "$c/other-bin/breakpatch-ci.cmd"; then ok "the .cmd names the install folder"; else bad "the .cmd is: $(cat "$c/other-bin/breakpatch-ci.cmd")"; fi
+  ps_run BREAKPATCH_CI_BIN="$c/other-bin" BREAKPATCH_UNINSTALL=1
+  expect_code 0
+  if [ ! -e "$c/other-bin/breakpatch-ci.cmd" ] && [ -d "$c/other-bin" ] && [ ! -e "$home" ]; then ok "the .cmd and the install folder are gone, the other bin stays"; else bad "left: $(ls -A "$c/other-bin" "$home" 2>&1)"; fi
 
   ps_case update-windows
   ps_run BREAKPATCH_VERSION=1.0.0

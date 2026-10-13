@@ -344,6 +344,7 @@ function Install-BreakpatchCi {
   $bin = if ($env:BREAKPATCH_CI_BIN) { $env:BREAKPATCH_CI_BIN } else { Join-Path $ciHome 'bin' }
   $shim = Join-Path $bin 'breakpatch-ci.cmd'
   $current = Join-Path $ciHome 'current.txt'     # the environment in use: no symbolic links without admin rights
+  $binIsDefault = $bin.TrimEnd('\', '/') -eq (Join-Path $ciHome 'bin').TrimEnd('\', '/')
 
   if (($Arguments -contains '-Uninstall') -or ($Arguments -contains '--uninstall') -or $env:BREAKPATCH_UNINSTALL -eq '1') {
     # irm | iex runs this in the window's own session: BREAKPATCH_UNINSTALL goes once it's done, or
@@ -368,7 +369,7 @@ function Install-BreakpatchCi {
       }
       if (-not $removed) { Say "breakpatch-ci isn't in $(Pretty $ciHome). Nothing to remove."; return }
       if (Test-Path -LiteralPath "$shim.new") { Remove-Item -LiteralPath "$shim.new" -Force }
-      $made = if ($env:BREAKPATCH_CI_BIN) { @($ciHome) } else { @($bin, $ciHome) }
+      $made = if ($binIsDefault) { @($bin, $ciHome) } else { @($ciHome) }
       foreach ($d in $made) {
         if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d -Force }
       }
@@ -379,6 +380,39 @@ function Install-BreakpatchCi {
       Remove-Item Env:\BREAKPATCH_UNINSTALL -ErrorAction SilentlyContinue
     }
   }
+
+  # bin\breakpatch-ci.cmd: cmd.exe reads a .cmd file in the console's code page, never as UTF-16
+  # or (with a BOM) UTF-8, so a path written as ASCII lost every letter outside it (an accented
+  # user name in C:\Users\ became a ?) and the command couldn't start. In the default bin, inside the install folder,
+  # the shim names nothing but its own folder (%~dp0, which cmd fills in itself) and ASCII names,
+  # so any profile path works. Anywhere else it has to name the install folder: it's written in
+  # the system's OEM code page, the one a new console starts in (OEMCP; 65001, UTF-8 without a
+  # BOM, when Windows' "Use Unicode UTF-8" option is on), and a path that code page can't hold
+  # stops the install here, before anything is downloaded, rather than leave a broken command.
+  # .NET's own encodings, so it's the same in Windows PowerShell 5.1 and PowerShell 7.
+  if ($binIsDefault) {
+    $shimLines = @('@echo off', 'rem breakpatch-ci installer: starts the environment named in current.txt', 'setlocal',
+                   'set /p BP_CI_ENV=<"%~dp0..\current.txt"', '"%~dp0..\%BP_CI_ENV%\Scripts\breakpatch-ci.exe" %*')
+  } else {
+    $shimLines = @('@echo off', 'rem breakpatch-ci installer: starts the environment named in current.txt', 'setlocal',
+                   "set /p BP_CI_ENV=<`"$current`"", "`"$ciHome\%BP_CI_ENV%\Scripts\breakpatch-ci.exe`" %*")
+  }
+  $shimText = ($shimLines -join "`r`n") + "`r`n"
+  $shimEncoding = $null
+  if (-not $binIsDefault) {
+    try {
+      $oemCp = [int](Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name OEMCP -ErrorAction Stop).OEMCP
+      if ($oemCp -ne 65001) {
+        $shimEncoding = [Text.Encoding]::GetEncoding($oemCp, [Text.EncoderFallback]::ExceptionFallback, [Text.DecoderFallback]::ExceptionFallback)
+      }
+    } catch { $shimEncoding = $null; $oemCp = 0 }
+    if ($oemCp -eq 65001) { $shimEncoding = New-Object Text.UTF8Encoding($false, $true) }
+  }
+  if (-not $shimEncoding) {    # the default bin (all ASCII), or no OEM code page to be found (not Windows: tests)
+    $shimEncoding = [Text.Encoding]::GetEncoding('us-ascii', [Text.EncoderFallback]::ExceptionFallback, [Text.DecoderFallback]::ExceptionFallback)
+  }
+  try { $null = $shimEncoding.GetBytes($shimText) }
+  catch { Fail "The command prompt can't read the install folder's path, $ciHome, in this PC's language settings. Leave BREAKPATCH_CI_BIN unset, or set BREAKPATCH_CI_HOME to a folder with a plainer name, and run this again." }
 
   $python = Find-Python
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ("breakpatch-ci-install-" + [Guid]::NewGuid().ToString('N'))
@@ -448,9 +482,8 @@ function Install-BreakpatchCi {
     Move-Item -LiteralPath "$current.new" -Destination $current -Force
     $staged = $null
     New-Item -ItemType Directory -Force -Path $bin | Out-Null
-    $lines = @('@echo off', 'rem breakpatch-ci installer: starts the environment named in current.txt', 'setlocal',
-               "set /p BP_CI_ENV=<`"$current`"", "`"$ciHome\%BP_CI_ENV%\Scripts\breakpatch-ci.exe`" %*")
-    Set-Content -LiteralPath "$shim.new" -Value $lines -Encoding ASCII
+    # Bytes, in the encoding worked out above (Set-Content's -Encoding differs between 5.1 and 7).
+    [IO.File]::WriteAllBytes($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath("$shim.new"), $shimEncoding.GetBytes($shimText))
     Move-Item -LiteralPath "$shim.new" -Destination $shim -Force
     if ($old -and $old -ne $name -and $old -like 'env-*') {
       Remove-Item -LiteralPath (Join-Path $ciHome $old) -Recurse -Force -ErrorAction SilentlyContinue
