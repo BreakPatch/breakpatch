@@ -19,10 +19,11 @@
 .period{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;align-self:flex-start;gap:2px;padding:3px;border-radius:var(--r-sm);background:var(--sunk);border:1px solid var(--line)}
 .period button{position:relative;z-index:1;font-family:var(--font);font-size:0.875rem;font-weight:600;color:var(--muted);background:transparent;border:0;border-radius:8px;padding:5px 14px;cursor:pointer;transition:color .15s ease-out,scale .12s ease-out}
 .period button[aria-pressed="true"]{background:var(--raised);color:var(--text)}
-/* One thumb that slides to the period you picked, rather than two backgrounds swapping. */
+/* One thumb that slides to the period you picked, rather than two backgrounds swapping. It moves with
+   transform, which older browsers know, not the newer translate property. */
 @supports selector(:has(*)){
-  .period::before{content:"";position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 4px);border-radius:8px;background:var(--raised);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:translate .3s cubic-bezier(.25,1,.5,1)}
-  .period:has([data-period="month"][aria-pressed="true"])::before,.period:has([data-solo-period="month"][aria-pressed="true"])::before{translate:calc(100% + 2px) 0}
+  .period::before{content:"";position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 4px);border-radius:8px;background:var(--raised);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .3s cubic-bezier(.25,1,.5,1)}
+  .period:has([data-period="month"][aria-pressed="true"])::before,.period:has([data-solo-period="month"][aria-pressed="true"])::before{transform:translateX(calc(100% + 2px))}
   .period button[aria-pressed="true"]{background:transparent}
 }
 @media (prefers-reduced-motion:reduce){.period::before{transition:none}}

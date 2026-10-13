@@ -557,3 +557,10 @@ test('the documentation notes (p.soon) and the pricing cards coming later (.plan
   assert.doesNotMatch(HTML + HOME_PAGE, /class="(?:[^"]*\s)?soon[\s"]/);
   assert.ok(PRICING_CSS.includes('.plans .plan-soon .price{'));
 });
+
+test('the period toggle’s thumb slides with transform, which older browsers know, not the newer translate property', () => {
+  assert.match(PRICING_CSS, /\.period::before\{[^}]*transition:transform \.3s/);
+  assert.match(PRICING_CSS, /\.period:has\(\[data-period="month"\]\[aria-pressed="true"\]\)::before,\.period:has\(\[data-solo-period="month"\]\[aria-pressed="true"\]\)::before\{transform:translateX\(calc\(100% \+ 2px\)\)\}/);
+  assert.doesNotMatch(PRICING_CSS, /\.period[^{]*\{[^}]*[;{]translate:/);
+  assert.doesNotMatch(PRICING_CSS, /\.period::before\{[^}]*transition:[^;}]*\btranslate\b/);
+});
