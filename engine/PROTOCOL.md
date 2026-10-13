@@ -296,6 +296,8 @@ Per action:
   area looks now), `tolerance` and `timeoutMs` (default 10000). No `pre`/`post`.
 - `downloadCheck` without `at` checks for a download since the previous download check (e.g. after
   a "Click Download" step). Without one it fails with `bad_request` "No file was downloaded."
+  A download must start within the step's `timeoutMs` (default 15 s); one that has started is
+  waited for until it finishes, up to 2 minutes more (else "…started but didn't finish…").
 - `upload` clicks `at`, expects a file picker and chooses the bundled `sample` (`docx`, `pdf`, `jpeg`, `mp4`, `xlsx`, `csv`). With `file:
   "files/<name>"` it chooses that file from `filesDir` instead (`record.point` and `run.start` take
   `filesDir`, the tests folder's `files` folder; only a plain name inside it is used). A missing file
