@@ -1,15 +1,19 @@
 // Automatic update checks (lib/autoUpdates.ts, components/shell/AutoUpdates.tsx), with fake timers
 // and the Tauri updater mocked.
 import { StrictMode } from 'react';
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const updater = vi.hoisted(() => ({ check: vi.fn() }));
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: updater.check }));
+// About asks the engine about this Mac: never answered here, and no sidecar is started.
+vi.mock('../engine', async orig => ({ ...await orig<typeof import('../engine')>(), getEngine: () => ({ systemInfo: () => new Promise(() => {}) }) }));
 
 import { CHECK_EVERY_MS, FIRST_CHECK_MS, TICK_MS, holdUpdateChecks, resetAutoUpdatesForTests, startAutoUpdates } from './autoUpdates';
 import { CHECK_DEADLINE_MS, CHECK_TIMEOUT_MS, DOWNLOAD_DEADLINE_MS, DOWNLOAD_TIMEOUT_MS, checkForUpdates, isCheckingForUpdates, lastChecked, resetUpdatesForTests } from './updates';
 import { AutoUpdates } from '../components/shell/AutoUpdates';
+import { AboutSection } from '../screens/settings/sections/AboutSection';
 import { useSystem } from '../state/system';
 
 const MIN = 60_000;
@@ -46,7 +50,7 @@ beforeEach(async () => {
   updater.check.mockResolvedValue(null);
   resetUpdatesForTests();
   resetAutoUpdatesForTests();
-  useSystem.setState({ updateReady: null, updateDismissed: false, error: null });
+  useSystem.setState({ updateReady: null, updateDismissed: false, error: null, updateCheckedAt: null });
   await import('@tauri-apps/plugin-updater');      // loaded once, as in the app after the first check
 });
 afterEach(() => {
@@ -290,6 +294,19 @@ describe('a check that never finishes', () => {
     await wait(0);
     expect(useSystem.getState().updateReady).toBeNull();
     expect(update.install).not.toHaveBeenCalled();
+  });
+});
+
+describe("Settings → About's Last checked", () => {
+  it('shows an automatic check that ends while About is open', async () => {
+    startAutoUpdates();
+    render(<MemoryRouter><AboutSection /></MemoryRouter>);
+    const note = screen.getByRole('status');
+    expect(note).toHaveTextContent(/^Breakpatch also checks when it opens and every hour\.$/);
+    await wait(FIRST_CHECK_MS);
+    expect(updater.check).toHaveBeenCalledTimes(1);
+    expect(note).toHaveTextContent(/^Last checked today, \d\d:\d\d\. Breakpatch also checks/);
+    expect(useSystem.getState().updateCheckedAt).toBe(START + FIRST_CHECK_MS);
   });
 });
 

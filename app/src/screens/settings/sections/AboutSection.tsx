@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Button, CopyButton, EarMark, Icon, StatusPill, Wordmark } from '../../../components/ui';
 import { appVersion, isTauri } from '../../../platform';
-import { checkForUpdates, lastChecked, restartToUpdate, type CheckResult } from '../../../lib/updates';
+import { checkForUpdates, restartToUpdate, type CheckResult } from '../../../lib/updates';
 import { useSession } from '../../../state/session';
 import { useSystem } from '../../../state/system';
 import { clock, daysAgo, formatDateTime } from '../../../components/common/format';
@@ -26,14 +26,13 @@ export function AboutSection() {
   const updateReady = useSystem(s => s.updateReady);
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<CheckResult | null>(null);
-  const [last, setLast] = useState(lastChecked);
+  const last = useSystem(s => s.updateCheckedAt);       // an automatic check ending meanwhile too
   const version = appVersion();
   const editionName = editionLabel(edition.name);
 
   const check = async () => {
     setChecking(true); setResult(null);
     const r = await checkForUpdates();     // joins an automatic check going on
-    setLast(lastChecked());
     setResult(r); setChecking(false);
   };
 

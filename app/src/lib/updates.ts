@@ -3,7 +3,7 @@
 // Settings → About's Check for updates calls it by hand.
 import type { Update } from '@tauri-apps/plugin-updater';
 import { isTauri } from '../platform';
-import { useSystem } from '../state/system';
+import { storedUpdateCheckedAt, UPDATE_CHECKED_KEY, useSystem } from '../state/system';
 
 type Pending = { version: string; install: () => Promise<void> };
 let pending: Pending | null = null;
@@ -99,10 +99,16 @@ async function runCheck(): Promise<CheckResult> {
   }
 }
 
-/** Settings → About's "Last checked": when GitHub last answered a check, on this Mac. */
-const LAST_KEY = 'breakpatch.updates.lastChecked';
-export function lastChecked(): number | null { try { const v = localStorage.getItem(LAST_KEY); return v ? Number(v) : null; } catch { return null; } }
-function noteChecked() { try { localStorage.setItem(LAST_KEY, String(Date.now())); } catch { /* ignore */ } }
+/**
+ * Settings → About's "Last checked": when GitHub last answered a check, on this Mac. Also in
+ * useSystem (updateCheckedAt), so About shows an automatic check that ends while it's open.
+ */
+export function lastChecked(): number | null { return storedUpdateCheckedAt(); }
+function noteChecked() {
+  const now = Date.now();
+  try { localStorage.setItem(UPDATE_CHECKED_KEY, String(now)); } catch { /* About still shows it until the app quits */ }
+  useSystem.getState().setUpdateCheckedAt(now);
+}
 
 export async function restartToUpdate(): Promise<void> {
   if (!pending) return;
