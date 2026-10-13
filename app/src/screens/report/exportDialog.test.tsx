@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Run, Step } from '../../data/types';
 import { ToastProvider } from '../../components/ui';
-import { buildView } from '../../lib/report';
+import { buildView, printView } from '../../lib/report';
 import { exportFile, fileStem, reportInput, withImages, type ExportTest } from '../../lib/report/collect';
 import { PRINT_ID, TITLE_BACK_MS, printReport, removePrinted } from '../../lib/report/print';
 
@@ -83,6 +83,26 @@ describe('printing', () => {
     removePrinted();
     expect(document.getElementById(PRINT_ID)).toBeNull();
     vi.unstubAllGlobals();
+  });
+
+  it('decodes only the screenshots that print: the open steps\', not every step\'s', async () => {
+    vi.stubGlobal('print', vi.fn());
+    const decoded: string[] = [];
+    const proto = HTMLImageElement.prototype as { decode?: () => Promise<void> };
+    const had = proto.decode;
+    proto.decode = function (this: HTMLImageElement) { decoded.push(this.alt); return Promise.resolve(); };
+    try {
+      const reportImages = async (items: { size: string }[]) => items.map(i => IMG(i.size === 'full' ? 1280 : 480));
+      const view = buildView(await reportInput({ kind: 'run', name: 'Edit profile', tests: [TEST], screenshots: true, engine: { reportImages } }));
+      const { reportHtml } = await import('../../lib/report');
+      await printReport(reportHtml(printView(view)));
+      const holder = document.getElementById(PRINT_ID)!;
+      expect(holder.querySelectorAll('img')).toHaveLength(2);         // the fixed step's (closed) and the failed one's
+      expect(decoded).toEqual(['Screenshot: step 2.1, Click Next']);
+    } finally {
+      if (had) proto.decode = had; else delete proto.decode;
+      vi.unstubAllGlobals();
+    }
   });
 
   it('names the PDF as the HTML export, through the page title, and puts the title back after printing', async () => {

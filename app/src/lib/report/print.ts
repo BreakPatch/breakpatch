@@ -41,6 +41,15 @@ export function removePrinted(): void {
   document.getElementById(`${PRINT_ID}-style`)?.remove();
 }
 
+/**
+ * The screenshots that print, to decode before print(): the ones in open steps. A closed step
+ * prints only its summary line, so a report with a screenshot on every step decodes only the few
+ * that show (printView opens the failed step, and one that failed on an earlier try).
+ */
+function printedImages(holder: ParentNode): HTMLImageElement[] {
+  return [...holder.querySelectorAll('img')].filter(i => !i.closest('details:not([open])'));
+}
+
 /** Prints the report; `title`, the file name the dialog suggests for Save as PDF (without .pdf). */
 export async function printReport(html: string, title?: string): Promise<void> {
   const { css, body } = printableParts(html);
@@ -60,7 +69,7 @@ export async function printReport(html: string, title?: string): Promise<void> {
   document.head.appendChild(style);
   document.body.appendChild(holder);
   if (title) printTitle(title);
-  await Promise.all([...holder.querySelectorAll('img')].map(i => i.decode?.().catch(() => undefined)));
+  await Promise.all(printedImages(holder).map(i => i.decode?.().catch(() => undefined)));
   await new Promise(r => setTimeout(r, 0));     // the new title reaches the shell before the print does
   try {
     await Promise.resolve(window.print());
