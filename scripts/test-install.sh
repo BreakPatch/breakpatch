@@ -39,8 +39,10 @@ annotate() {
     printf '::error title=test-install::%s\n' "$f"
   done
   if [ "$code" -ne 0 ] && [ ${#failures[@]} -eq 0 ]; then
-    printf '::error title=test-install::stopped early (exit %s) in: %s, at line %s: %s (bash %s)\n' \
-      "$code" "${current:-set-up}" "${err_line:-?}" "${err_cmd:-?}" "$BASH_VERSION"
+    local why="${setup_msg:-at line ${err_line:-?}: ${err_cmd:-?}}"
+    why=${why//'%'/'%25'}; why=${why//$'\n'/'%0A'}; why=${why//$'\r'/'%0D'}
+    printf '::error title=test-install::stopped early (exit %s) in: %s, %s (bash %s)\n' \
+      "$code" "${current:-set-up}" "$why" "$BASH_VERSION"
   fi
 }
 cleanup() {
@@ -323,8 +325,14 @@ for _ in $(seq 50); do
   if curl -fs "$base/good/releases/latest" >/dev/null 2>&1; then break; fi
   sleep 0.1
 done
-curl -fs "$base/good/releases/latest" >/dev/null || { echo "the test server didn't start" >&2; cat "$work/server.log" >&2; exit 1; }
-curl -fs "http://127.0.0.1:$http_port/good/releases/latest" >/dev/null || { echo "the plain http test server didn't start" >&2; exit 1; }
+if ! curl -fs "$base/good/releases/latest" >/dev/null; then
+  setup_msg="the test server didn't start: $(curl -fsS "$base/good/releases/latest" 2>&1 >/dev/null | tail -c 300) | server.log: $(tail -c 600 "$work/server.log" 2>/dev/null)"
+  echo "$setup_msg" >&2; exit 1
+fi
+if ! curl -fs "http://127.0.0.1:$http_port/good/releases/latest" >/dev/null; then
+  setup_msg="the plain http test server didn't start: $(curl -fsS "http://127.0.0.1:$http_port/good/releases/latest" 2>&1 >/dev/null | tail -c 300)"
+  echo "$setup_msg" >&2; exit 1
+fi
 
 # ---------------------------------------------------------------- macOS stand-ins
 
