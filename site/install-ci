@@ -667,12 +667,17 @@ do_uninstall() {
   fi
   # Only what the installer makes goes: BREAKPATCH_CI_HOME may be a folder with other things in
   # it. The current link, the environments (env-<version>.XXXXXXXX, half-made ones too), the
-  # browsers and the downloaded Pythons (with any .partial unpacking in python/); then the folder
-  # itself, if that leaves it empty.
+  # browsers and the downloaded Pythons (python/cpython-*, with any .partial unpacking); then
+  # python/ and the folder itself, if that leaves them empty. An env-* that isn't a folder, or is
+  # a link, isn't the installer's, and nor is anything else in python/.
   if [ -e "$home/current" ] || [ -L "$home/current" ] || [ -e "$home/browsers" ]; then
-    for d in "$home/current" "$home/browsers" "$home/python" "$home"/env-*; do
+    for d in "$home/current" "$home/browsers" "$home"/python/cpython-* "$home"/env-*; do
+      case "$d" in
+        "$home"/env-*) if [ -L "$d" ] || [ ! -d "$d" ]; then continue; fi ;;
+      esac
       if [ -e "$d" ] || [ -L "$d" ]; then rm -rf "$d" || fail "Couldn't remove $(pretty "$d")."; fi
     done
+    rmdir "$home/python" 2>/dev/null || true
     removed=1
   fi
   if [ "$removed" -eq 1 ]; then rmdir "$home" 2>/dev/null || true; fi

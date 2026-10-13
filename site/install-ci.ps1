@@ -379,14 +379,22 @@ function Install-BreakpatchCi {
       # Only what the installer makes goes, as in site/install-ci: BREAKPATCH_CI_HOME may be a
       # folder with other things in it. current.txt (and a current.txt.new a run left), the
       # environments (env-<version>-<id>, half-made ones too), the browsers and the downloaded
-      # Pythons (with any .partial unpacking in python\); then bin\ (when it's the default one, in
-      # the install folder) and the folder itself, if that leaves them empty.
+      # Pythons (python\cpython-*, with any .partial unpacking); then python\, bin\ (when it's the
+      # default one, in the install folder) and the folder itself, if that leaves them empty. An
+      # env-* that isn't a folder, or is a link (a reparse point), isn't the installer's, and nor is
+      # anything else in python\.
       if ((Test-Path -LiteralPath $current) -or (Test-Path -LiteralPath (Join-Path $ciHome 'browsers'))) {
-        $ours = @($current, "$current.new", (Join-Path $ciHome 'browsers'), (Join-Path $ciHome 'python'))
-        $ours += @(Get-ChildItem -LiteralPath $ciHome -Filter 'env-*' -Force | ForEach-Object { $_.FullName })
+        $pyRoot = Join-Path $ciHome 'python'
+        $ours = @($current, "$current.new", (Join-Path $ciHome 'browsers'))
+        if (Test-Path -LiteralPath $pyRoot -PathType Container) {
+          $ours += @(Get-ChildItem -LiteralPath $pyRoot -Filter 'cpython-*' -Force | ForEach-Object { $_.FullName })
+        }
+        $ours += @(Get-ChildItem -LiteralPath $ciHome -Directory -Filter 'env-*' -Force |
+                   Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | ForEach-Object { $_.FullName })
         foreach ($p in $ours) {
           if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }
         }
+        if ((Test-Path -LiteralPath $pyRoot -PathType Container) -and -not (Get-ChildItem -LiteralPath $pyRoot -Force)) { Remove-Item -LiteralPath $pyRoot -Force }
         $removed = $true
       }
       if (-not $removed) { Say "breakpatch-ci isn't in $(Pretty $ciHome). Nothing to remove."; return }
@@ -490,9 +498,11 @@ function Install-BreakpatchCi {
     $browsers = Join-Path $ciHome 'browsers'
     Say "Installing Chromium into $(Pretty $browsers)..."
     New-Item -ItemType Directory -Force -Path $browsers | Out-Null
+    # Put back as it was afterwards, as with pip's settings above.
+    $browsersWas = $env:PLAYWRIGHT_BROWSERS_PATH
     $env:PLAYWRIGHT_BROWSERS_PATH = $browsers
     try { $code = Invoke-Native (Join-Path $tmp 'browser.log') $py @('-m', 'playwright', 'install', 'chromium', '--no-shell') }
-    finally { Remove-Item Env:\PLAYWRIGHT_BROWSERS_PATH -ErrorAction SilentlyContinue }
+    finally { [Environment]::SetEnvironmentVariable('PLAYWRIGHT_BROWSERS_PATH', $browsersWas, 'Process') }   # $null removes it
     if ($code -ne 0) {
       Get-Content -LiteralPath (Join-Path $tmp 'browser.log') -Tail 5 | Write-Host
       Fail "Couldn't install Chromium. Check your connection and run this again."
@@ -516,12 +526,12 @@ function Install-BreakpatchCi {
     if ($old -and $old -ne $name -and $old -like 'env-*') {
       Remove-Item -LiteralPath (Join-Path $ciHome $old) -Recurse -Force -ErrorAction SilentlyContinue
     }
-    # Downloaded Pythons no environment uses any more.
+    # Downloaded Pythons (python\cpython-*, as in site/install-ci) no environment uses any more.
     $pyRoot = Join-Path $ciHome 'python'
     if (Test-Path -LiteralPath $pyRoot) {
-      Get-ChildItem -LiteralPath $pyRoot -Directory | Where-Object { -not ($pbs -and $_.FullName -eq $script:pbsDir) } |
+      Get-ChildItem -LiteralPath $pyRoot -Directory -Filter 'cpython-*' | Where-Object { -not ($pbs -and $_.FullName -eq $script:pbsDir) } |
         ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
-      if (-not (Get-ChildItem -LiteralPath $pyRoot)) { Remove-Item -LiteralPath $pyRoot -Force }
+      if (-not (Get-ChildItem -LiteralPath $pyRoot -Force)) { Remove-Item -LiteralPath $pyRoot -Force }
     }
 
     Say "breakpatch-ci $version is in $(Pretty $ciHome)."

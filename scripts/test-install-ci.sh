@@ -888,20 +888,33 @@ for sh_name in "sh" "bash --posix"; do
   mkdir -p "$shared/notes"
   echo "keep me" > "$shared/notes/todo.txt"
   echo "keep me too" > "$shared/report.txt"
+  # Things of the user's own with the installer's kind of name: a folder in python/, a file and a
+  # link (to a folder) named env-*.
+  mkdir -p "$shared/python/mine" "$c/elsewhere"
+  echo "my python" > "$shared/python/mine/notes.txt"
+  echo "my notes" > "$shared/env-notes.txt"
+  echo "not here" > "$c/elsewhere/kept.txt"
+  ln -s "$c/elsewhere" "$shared/env-link"
   run BREAKPATCH_CI_HOME="$shared" BREAKPATCH_PYTHON= PATH="$shims:$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$pbs_sha"
   expect_code 0
-  if [ -L "$shared/current" ] && [ -d "$shared/browsers" ] && [ -d "$shared/python" ]; then ok "installed into the shared folder, with a downloaded Python"; else bad "not installed: $(ls -A "$shared")"; fi
+  if [ -L "$shared/current" ] && [ -d "$shared/browsers" ] && [ -d "$shared/python/cpython-$pbs_version+$pbs_release" ]; then ok "installed into the shared folder, with a downloaded Python"; else bad "not installed: $(ls -A "$shared")"; fi
+  if [ "$(cat "$shared/python/mine/notes.txt" 2>/dev/null)" = "my python" ]; then ok "the install leaves the user's folder in python/"; else bad "the install took python/mine"; fi
   mkdir -p "$shared/env-1.0.0.halfmade" "$shared/python/cpython-0.0.0.partial"
   run BREAKPATCH_CI_HOME="$shared" -- --uninstall
   expect_code 0
   expect_out "Removed breakpatch-ci and its browser from $shared."
   if [ "$(cat "$shared/notes/todo.txt" 2>/dev/null)" = "keep me" ] && [ "$(cat "$shared/report.txt" 2>/dev/null)" = "keep me too" ]; then ok "the other file and folder are still there"; else bad "the other things went: $(ls -A "$shared" 2>/dev/null)"; fi
+  if [ "$(cat "$shared/python/mine/notes.txt" 2>/dev/null)" = "my python" ] && [ "$(cat "$shared/env-notes.txt" 2>/dev/null)" = "my notes" ]; then ok "python/mine and env-notes.txt are still there"; else bad "the user's python/mine or env-notes.txt went: $(ls -A "$shared" 2>/dev/null)"; fi
+  if [ -L "$shared/env-link" ] && [ "$(cat "$c/elsewhere/kept.txt" 2>/dev/null)" = "not here" ]; then ok "the env-* link and what it points to are still there"; else bad "the env-link link or its folder went"; fi
   left=$(find "$shared" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ')
-  if [ "$left" = "notes report.txt " ]; then ok "the installer's own files are gone"; else bad "left in the shared folder: $left"; fi
+  if [ "$left" = "env-link env-notes.txt notes python report.txt " ]; then ok "the installer's own files are gone"; else bad "left in the shared folder: $left"; fi
+  left=$(find "$shared/python" -mindepth 1 -maxdepth 1 -exec basename {} \; 2>/dev/null | LC_ALL=C sort | tr '\n' ' ') || true   # no python/ is a failure to report, not one to stop at
+  if [ "$left" = "mine " ]; then ok "only the user's folder is left in python/"; else bad "left in python/: $left"; fi
   if [ ! -e "$bin/breakpatch-ci" ] && [ ! -L "$bin/breakpatch-ci" ]; then ok "the link is gone"; else bad "the link is still there"; fi
-  rm -rf "${shared:?}/notes" "$shared/report.txt"
-  run BREAKPATCH_CI_HOME="$shared"
+  rm -rf "${shared:?}/notes" "$shared/report.txt" "$shared/python/mine" "$shared/env-notes.txt" "$shared/env-link"
+  run BREAKPATCH_CI_HOME="$shared" BREAKPATCH_PYTHON= PATH="$shims:$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$pbs_sha"
   expect_code 0
+  mkdir -p "$shared/env-1.0.0.halfmade" "$shared/python/cpython-0.0.0.partial"
   run BREAKPATCH_CI_HOME="$shared" -- --uninstall
   expect_code 0
   if [ ! -e "$shared" ]; then ok "an install folder left empty goes"; else bad "left: $(ls -A "$shared")"; fi
@@ -1155,35 +1168,57 @@ else
 
   # BREAKPATCH_CI_HOME pointed at a folder with other things in it: only the installer's go.
   ps_case windows-uninstall-leaves-the-rest
-  mkdir -p "$home/notes"
+  mkdir -p "$home/notes" "$home/python/mine" "$c/elsewhere"
   echo "keep me" > "$home/notes/todo.txt"
   echo "keep me too" > "$home/report.txt"
+  echo "my python" > "$home/python/mine/notes.txt"
+  echo "my notes" > "$home/env-notes.txt"
+  echo "not here" > "$c/elsewhere/kept.txt"
+  ln -s "$c/elsewhere" "$home/env-link"
+  win_sha=$(sha256sum "$srv/pbs/$pbs_release/cpython-$pbs_version+$pbs_release-x86_64-pc-windows-msvc-install_only_stripped.tar.gz" | awk '{ print $1 }')
+  ps_run BREAKPATCH_PYTHON= PATH="$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$win_sha"
+  expect_code 0
   ps_run
   expect_code 0
-  mkdir -p "$home/env-1.0.0-halfmade"
+  if [ ! -e "$home/python/cpython-$pbs_version+$pbs_release" ] && [ "$(cat "$home/python/mine/notes.txt" 2>/dev/null)" = "my python" ]; then ok "the install prunes the downloaded Python and leaves the user's folder in python/"; else bad "python/ after the install: $(ls -A "$home/python" 2>/dev/null)"; fi
+  mkdir -p "$home/env-1.0.0-halfmade" "$home/python/cpython-0.0.0.partial"
   ps_run BREAKPATCH_UNINSTALL=1
   expect_code 0
   expect_out "Removed breakpatch-ci and its browser from"
   if [ "$(cat "$home/notes/todo.txt" 2>/dev/null)" = "keep me" ] && [ "$(cat "$home/report.txt" 2>/dev/null)" = "keep me too" ]; then ok "the other file and folder are still there"; else bad "the other things went: $(ls -A "$home" 2>/dev/null)"; fi
+  if [ "$(cat "$home/python/mine/notes.txt" 2>/dev/null)" = "my python" ] && [ "$(cat "$home/env-notes.txt" 2>/dev/null)" = "my notes" ]; then ok "python/mine and env-notes.txt are still there"; else bad "the user's python/mine or env-notes.txt went: $(ls -A "$home" 2>/dev/null)"; fi
+  if [ -L "$home/env-link" ] && [ "$(cat "$c/elsewhere/kept.txt" 2>/dev/null)" = "not here" ]; then ok "the env-* link and what it points to are still there"; else bad "the env-link link or its folder went"; fi
   left=$(find "$home" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ')
-  if [ "$left" = "notes report.txt " ]; then ok "the installer's own files are gone"; else bad "left in the install folder: $left"; fi
+  if [ "$left" = "env-link env-notes.txt notes python report.txt " ]; then ok "the installer's own files are gone"; else bad "left in the install folder: $left"; fi
+  left=$(find "$home/python" -mindepth 1 -maxdepth 1 -exec basename {} \; 2>/dev/null | LC_ALL=C sort | tr '\n' ' ') || true
+  if [ "$left" = "mine " ]; then ok "only the user's folder is left in python/"; else bad "left in python/: $left"; fi
+  # With nothing of the user's left, python\ and the install folder go too.
+  rm -rf "${home:?}/notes" "$home/report.txt" "$home/python/mine" "$home/env-notes.txt" "$home/env-link"
+  ps_run BREAKPATCH_PYTHON= PATH="$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$win_sha"
+  expect_code 0
+  mkdir -p "$home/env-1.0.0-halfmade" "$home/python/cpython-0.0.0.partial"
+  ps_run BREAKPATCH_UNINSTALL=1
+  expect_code 0
+  if [ ! -e "$home" ]; then ok "an install folder left empty goes"; else bad "left: $(find "$home" -mindepth 1 | tr '\n' ' ')"; fi
 
   # irm … | iex runs in the window's own session: what the installer sets there for itself goes,
   # and after an uninstall the next run in that window installs again.
   ps_case windows-session-left-as-it-was
   set +e
   out=$(env -u GITHUB_PATH -u BREAKPATCH_UNINSTALL -u PIP_DISABLE_PIP_VERSION_CHECK HOME="$c/home" TMPDIR="$c/tmp" FAKE_STATE="$c/state" \
-        PIP_NO_INDEX=1 PIP_NO_INPUT=mine OS=Windows_NT PROCESSOR_ARCHITECTURE=AMD64 SSL_CERT_FILE="$tls/cert.pem" BREAKPATCH_CI_HOME="$home" \
+        PLAYWRIGHT_BROWSERS_PATH="$c/my-browsers" PIP_NO_INDEX=1 PIP_NO_INPUT=mine OS=Windows_NT PROCESSOR_ARCHITECTURE=AMD64 SSL_CERT_FILE="$tls/cert.pem" BREAKPATCH_CI_HOME="$home" \
         BREAKPATCH_API="$base/good" BREAKPATCH_DOWNLOADS="$base/good/download/" BREAKPATCH_PYTHON="$py311" \
         "$pwsh" -NoProfile -NonInteractive -Command "
           iex (Get-Content -Raw '$ps1')
           'after install: PIP_NO_INPUT=[' + \$env:PIP_NO_INPUT + '] PIP_DISABLE_PIP_VERSION_CHECK=[' + \$env:PIP_DISABLE_PIP_VERSION_CHECK + ']'
+          'after install: PLAYWRIGHT_BROWSERS_PATH=[' + \$env:PLAYWRIGHT_BROWSERS_PATH + ']'
           \$env:BREAKPATCH_UNINSTALL = '1'
           iex (Get-Content -Raw '$ps1')
           'after uninstall: BREAKPATCH_UNINSTALL=[' + \$env:BREAKPATCH_UNINSTALL + ']'
           iex (Get-Content -Raw '$ps1')" 2>&1)
   set -e
   expect_out "after install: PIP_NO_INPUT=[mine] PIP_DISABLE_PIP_VERSION_CHECK=[]"
+  expect_out "after install: PLAYWRIGHT_BROWSERS_PATH=[$c/my-browsers]"
   expect_out "Removed breakpatch-ci and its browser from"
   expect_out "after uninstall: BREAKPATCH_UNINSTALL=[]"
   if [ "$(grep -c '^Installing breakpatch-ci 1.1.0...$' <<< "$out")" -eq 2 ]; then ok "the run after the uninstall installs again"; else bad "it didn't install again. Output:"$'\n'"$out"; fi
