@@ -405,9 +405,9 @@ function Install-BreakpatchCi {
 
   # bin\breakpatch-ci.cmd: cmd.exe reads a .cmd file in the console's code page, never as UTF-16
   # or (with a BOM) UTF-8, so a path written as ASCII lost every letter outside it (an accented
-  # user name in C:\Users\ became a ?) and the command couldn't start. In the default bin, inside the install folder,
-  # the shim names nothing but its own folder (%~dp0, which cmd fills in itself) and ASCII names,
-  # so any profile path works. Anywhere else it has to name the install folder: it's written in
+  # user name in C:\Users\ became a ?) and the command couldn't start. In the default bin,
+  # inside the install folder, the shim names nothing but its own folder (%~dp0, which cmd fills
+  # in itself) and ASCII names, so any profile path works. Anywhere else it has to name the install folder: it's written in
   # the system's OEM code page, the one a new console starts in (OEMCP; 65001, UTF-8 without a
   # BOM, when Windows' "Use Unicode UTF-8" option is on), and a path that code page can't hold
   # stops the install here, before anything is downloaded, rather than leave a broken command.
