@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests the install command (site/install, served at https://breakpatch.dev/install) on Linux.
+# Tests the install command (site/install, served at https://breakpatch.dev/install) on Linux,
+# and on a Mac (CI's install-script-macos job), where it runs under the Mac's own /bin/sh.
 #
 #   scripts/test-install.sh
 #
@@ -7,9 +8,11 @@
 # holding a dummy Breakpatch.app, its .sig and SHA256SUMS; a throwaway certificate that curl is
 # told to trust), stands in for the macOS-only commands with small scripts on PATH (uname,
 # sw_vers, sysctl, osascript, open, xattr, codesign, and id so the tests don't run as root), and
-# runs the installer with /bin/sh and with bash --posix (macOS runs sh as bash). It also lints
-# it with shellcheck, installing shellcheck with apt when it's missing. Needs python3, node,
-# curl, tar, shasum and openssl.
+# runs the installer with /bin/sh and with bash --posix (macOS runs sh as bash). On a Mac those
+# are /bin/sh and /bin/bash, bash 3.2 as users have it, never a newer bash first on PATH. It also
+# lints it with shellcheck, installing shellcheck with apt (or Homebrew on a Mac) when it's
+# missing. Needs python3, node, curl, tar, shasum and openssl (one with req -addext: OpenSSL
+# 1.1.1 or later). The fakes stand in for the Mac's own commands on a Mac too.
 #
 # It also runs release.yml's publish script against a stand-in for gh, for which release becomes
 # GitHub's Latest (what the plain command and the in-app updater get): the newest beta until
@@ -41,7 +44,8 @@ bad() { failures+=("$current: $1"); printf '  FAIL  %s\n' "$1"; }
 
 if ! command -v shellcheck >/dev/null; then
   echo "installing shellcheck"
-  if [ "$(id -u)" -eq 0 ]; then apt-get install -y -qq shellcheck >/dev/null; else sudo apt-get install -y -qq shellcheck >/dev/null; fi
+  if command -v brew >/dev/null; then brew install -q shellcheck >/dev/null
+  elif [ "$(id -u)" -eq 0 ]; then apt-get install -y -qq shellcheck >/dev/null; else sudo apt-get install -y -qq shellcheck >/dev/null; fi
 fi
 echo "shellcheck site/install"
 shellcheck "$script"
@@ -113,7 +117,9 @@ make_release() {
   if [ "$nosums" -eq 0 ]; then
     (cd "$dl" && shasum -a 256 Breakpatch_* latest.json > SHA256SUMS)
     if [ "$badsum" -eq 1 ]; then
-      sed -i 's/^[0-9a-f]\{64\}\(  Breakpatch_aarch64.app.tar.gz\)$/0000000000000000000000000000000000000000000000000000000000000000\1/' "$dl/SHA256SUMS"
+      # Not sed -i: macOS's sed needs an argument after it that GNU sed would read as the script.
+      sed 's/^[0-9a-f]\{64\}\(  Breakpatch_aarch64.app.tar.gz\)$/0000000000000000000000000000000000000000000000000000000000000000\1/' \
+        "$dl/SHA256SUMS" > "$dl/SHA256SUMS.new" && mv "$dl/SHA256SUMS.new" "$dl/SHA256SUMS"
     fi
   fi
   # The latest release as one line (like api.github.com), the tagged one indented: the
@@ -375,7 +381,7 @@ cat > "$cshims/curl" <<EOF
 #!/bin/sh
 printf 'curl %s\n' "\$*" >> "\$FAKE_STATE/curl-args"
 env >> "\$FAKE_STATE/curl-env"
-for a in "\$@"; do case "\$a" in @*) stat -c '%a' "\${a#@}" >> "\$FAKE_STATE/auth-mode" ;; esac; done
+for a in "\$@"; do case "\$a" in @*) { stat -c '%a' "\${a#@}" 2>/dev/null || stat -f '%Lp' "\${a#@}"; } >> "\$FAKE_STATE/auth-mode" ;; esac; done
 if [ "\$1" = --version ] && [ -n "\${FAKE_CURL_VERSION:-}" ]; then echo "curl \$FAKE_CURL_VERSION (x86_64-apple-darwin23.0)"; exit 0; fi
 exec $real_curl "\$@"
 EOF
@@ -387,7 +393,7 @@ chmod +x "$shims"/* "$mshims"/* "$cshims"/*
 new_case() {
   current="$sh_name: $1"
   echo "$current"
-  c="$work/cases/${sh_name// /}-$1"
+  c="$work/cases/$(printf '%s' "$sh_name" | tr -d ' /')-$1"
   mkdir -p "$c/home" "$c/Applications" "$c/tmp" "$c/state"
   : > "$c/state/log"
   apps="$c/Applications"
@@ -568,7 +574,14 @@ publish v0.1.0-beta.2 fail ""
 expect_code 1
 if [ -z "$created" ]; then ok "the release list failed: nothing published"; else bad "published although the release list failed: $created"; fi
 
-for sh_name in "sh" "bash --posix"; do
+# The shells `curl … | sh` meets. On a Mac, its own: /bin/sh and /bin/bash are bash 3.2 (a runner
+# has a newer bash first on PATH), and that's where "$name…" stopped the script (see above).
+shells=("sh" "bash --posix")
+if [ "$(uname -s)" = Darwin ]; then
+  shells=("/bin/sh" "/bin/bash --posix")
+  echo "macOS: /bin/sh is $(/bin/sh -c 'echo "bash ${BASH_VERSION:-?}"'), in the locale ${LC_ALL:-${LC_CTYPE:-${LANG:-C}}}"
+fi
+for sh_name in "${shells[@]}"; do
   read -r -a shell_cmd <<< "$sh_name"
 
   new_case fresh-install
