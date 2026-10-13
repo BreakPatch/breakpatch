@@ -730,6 +730,8 @@ export function useRecorder({ viewport, onError, appUrl, filesDir, appId }: {
     ask: askBase && [askBase, careful ? CAREFUL_NOTE : null, toCheck ? CHECK_NOTE : null].filter(Boolean).join(' '),
     notFound: ai.state === 'notfound' ? ai.message ?? (ai.plan !== undefined ? planNotFoundText(ai.what) : notFoundText(ai.what)) : null,
     busy: busyId !== null,
+    /** A step being recorded, or the AI assistant working one out: automatic update checks wait. */
+    working: busyId !== null || ai.state === 'thinking',
     /** While a Wait for an email step is recorded: ends its wait (engine `record.stop`); the step isn't added. */
     stopWaiting: busyId !== null && busyAction === 'emailWait' && engine.stopWaiting ? () => { void engine.stopWaiting?.().catch(() => {}); } : undefined,
   };

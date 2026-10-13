@@ -1,8 +1,7 @@
 // Automatic update checks (lib/autoUpdates.ts, components/shell/AutoUpdates.tsx), with fake timers
 // and the Tauri updater mocked.
-import { StrictMode, useEffect } from 'react';
+import { StrictMode } from 'react';
 import { act, render } from '@testing-library/react';
-import { MemoryRouter, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const updater = vi.hoisted(() => ({ check: vi.fn() }));
@@ -10,7 +9,7 @@ vi.mock('@tauri-apps/plugin-updater', () => ({ check: updater.check }));
 
 import { CHECK_EVERY_MS, FIRST_CHECK_MS, TICK_MS, holdUpdateChecks, resetAutoUpdatesForTests, startAutoUpdates } from './autoUpdates';
 import { checkForUpdates, lastChecked, resetUpdatesForTests } from './updates';
-import { AutoUpdates, BUSY_PATH } from '../components/shell/AutoUpdates';
+import { AutoUpdates } from '../components/shell/AutoUpdates';
 import { useSystem } from '../state/system';
 
 const MIN = 60_000;
@@ -215,11 +214,7 @@ describe('automatic update checks', () => {
 });
 
 describe('AutoUpdates in the app shell', () => {
-  let navigate: NavigateFunction;
-  function Nav() { const n = useNavigate(); useEffect(() => { navigate = n; }); return null; }
-  const shell = (path = '/') => (
-    <StrictMode><MemoryRouter initialEntries={[path]}><AutoUpdates /><Nav /></MemoryRouter></StrictMode>
-  );
+  const shell = () => <StrictMode><AutoUpdates /></StrictMode>;
 
   it("StrictMode's double mount leaves one timer and one check", async () => {
     render(shell());
@@ -251,21 +246,5 @@ describe('AutoUpdates in the app shell', () => {
     expect(vi.getTimerCount()).toBe(0);
     await wait(3 * CHECK_EVERY_MS);
     expect(updater.check).toHaveBeenCalledTimes(1);
-  });
-
-  it('waits while a test is recorded, and checks when the recorder closes', async () => {
-    render(shell('/apps/a1/tests/t1/record'));
-    await wait(FIRST_CHECK_MS + CHECK_EVERY_MS);
-    expect(updater.check).not.toHaveBeenCalled();
-    act(() => { void navigate('/apps/a1?tab=tests'); });
-    await wait(0);
-    expect(updater.check).toHaveBeenCalledTimes(1);
-  });
-
-  it('counts the recorder, the shared steps editor and runs going on as busy', () => {
-    for (const p of ['/apps/a/tests/t/record', '/apps/a/tests/t/run', '/apps/a/run-all', '/suites/s/run', '/apps/a/shared/g/edit'])
-      expect(BUSY_PATH.test(p), p).toBe(true);
-    for (const p of ['/', '/apps/a', '/apps/a/runs/r1', '/suites', '/suites/new', '/settings/runner', '/settings/about', '/setup'])
-      expect(BUSY_PATH.test(p), p).toBe(false);
   });
 });

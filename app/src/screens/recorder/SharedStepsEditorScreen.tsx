@@ -11,6 +11,7 @@ import { RecorderWorkbench } from './RecorderWorkbench';
 import { SaveButton } from './SaveButton';
 import { useLeaveGuard } from './useLeaveGuard';
 import { useRecorder } from './useRecorder';
+import { useHoldUpdateChecks } from '../../lib/useHoldUpdateChecks';
 import { addressOf, useBrowserSession } from './browserSession';
 import { useFeature } from '../../edition';
 
@@ -29,6 +30,7 @@ export default function SharedStepsEditorScreen() {
   const group = groups?.find(g => g.id === groupId);
   const viewport = app?.defaultViewport ?? VP;
   const rec = useRecorder({ viewport, onError: m => toast(m, { error: true }), appUrl: app?.baseUrl });
+  useHoldUpdateChecks(rec.working);                      // recording a step, not just open
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showTests, setShowTests] = useState(false);

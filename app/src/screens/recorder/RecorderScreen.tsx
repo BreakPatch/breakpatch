@@ -18,6 +18,7 @@ import { hasFeature, useFeature } from '../../edition';
 import { StoryDialog } from './StoryDialog';
 import { filesDir } from '../../lib/testFiles';
 import { addStepHint, editorStatuses, useEditorRun, type EditorRunDone } from './editorRun';
+import { useHoldUpdateChecks } from '../../lib/useHoldUpdateChecks';
 import { checksNothing, UNCHECKED_NOTE } from '../run/reasons';
 import { preorder } from '../run/resolve';
 import { getEngine } from '../../engine';
@@ -49,6 +50,7 @@ export default function RecorderScreen() {
   if (test && openedAt?.id !== test.id) setOpenedAt({ id: test.id, url: test.startUrl });
   const browser = useBrowserSession(openedAt?.url, test ? viewport : undefined, m => toast(m, { error: true }));
   const editorRun = useEditorRun({ test, steps: () => rec.stepsRef.current });
+  useHoldUpdateChecks(rec.working || editorRun.running);   // recording a step or playing the test, not just open
   const [done, setDone] = useState<EditorRunDone | null>(null);
   // The floating line over the page while steps play for Play this step ("Playing steps 1–9 first…").
   const [banner, setBanner] = useState<{ text: string; tone?: 'ok' | 'bad'; ms?: number; icon?: string; action?: { label: string; onClick: () => void } } | null>(null);
