@@ -373,8 +373,9 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
         elif state == "fixed":
             headline, body = fixed_title(step, r), FIXED_TEXT
     note = ""
+    unchecked = bool(r and state == "passed" and r.get("unchecked"))
     if r and state == "passed":
-        note = UNCHECKED_NOTE if r.get("unchecked") else pass_note(r)
+        note = UNCHECKED_NOTE if unchecked else pass_note(r)
     again = retried_note(r, step, state)
     if again:
         note = f"{note} {again}".strip()
@@ -396,8 +397,9 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
     v["open"] = state == "failed" and not quiet
     v["_reason"] = str(reason or "") if state == "failed" and headline else ""   # JUnit's failure type; not in the view
     v["hasDetail"] = bool(headline or body or note or system or ex or advice or where or image)
-    # Open when printed: the step that failed, or one that failed on an earlier try.
-    v["printOpen"] = v["hasDetail"] and (v["open"] or bool(again))
+    # Open when printed: the step that failed, one that failed on an earlier try, or one with a
+    # warning to read (its check covers nothing).
+    v["printOpen"] = v["hasDetail"] and (v["open"] or bool(again) or unchecked)
     return v
 
 
@@ -467,8 +469,9 @@ def run_meta(run: dict, offset: int, recorded_on: object = None, device: object 
 
 
 def passed_text(state: str, views: list[dict], run: dict | None) -> str:
-    """"10 steps, all passed": a test that passed on its first try, as the PDF shows it in place of its steps."""
-    if not run or state not in ("passed", "fixed") or attempts_of(run) > 1 or not views:
+    """"10 steps, all passed": a test that passed on its first try, as the PDF shows it in place of its
+    steps. Not when a step prints open (a warning to read): the short form would leave it out."""
+    if not run or state not in ("passed", "fixed") or attempts_of(run) > 1 or not views or any(v["printOpen"] for v in views):
         return ""
     ran, fixed = sum(1 for v in views if v["result"] in ("passed", "fixed")), _int(run.get("healedCount"))
     text = f"{plural(len(views), 'step')}, all passed" if ran == len(views) else f"{ran} of {plural(len(views), 'step')} passed"
@@ -494,7 +497,7 @@ def test_view(t: dict, index: int, offset: int, screenshots: bool, multi: bool) 
         "stepsText": plural(len(views), "step"), "steps": views, "junit": j,
         # In a suite, a test that passed starts closed: what didn't pass is what's read first.
         "stepsOpen": state not in ("passed", "fixed"),
-        # A test that passed on its first try prints as this line, without its steps.
+        # A test that passed on its first try prints as this line, without its steps (unless one has a warning).
         "passedText": passed_text(state, views, run),
     }
 
@@ -602,6 +605,6 @@ def build(inp: dict) -> dict:
 def print_view(view: dict) -> dict:
     """The view as the PDF prints it (the app's printView): a test that passed on its first try is its
     summary and "10 steps, all passed", without its steps; any other test lists its steps, with the one
-    that failed open (and one that failed on an earlier try)."""
+    that failed open (and one that failed on an earlier try, or one whose check covers nothing)."""
     return {**view, "tests": [{**t, "stepsOpen": True, "steps": [] if t["passedText"] else [{**s, "open": s["printOpen"]} for s in t["steps"]]}
                               for t in view["tests"]]}

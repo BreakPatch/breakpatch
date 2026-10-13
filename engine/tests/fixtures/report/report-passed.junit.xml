@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Archive a project" tests="1" failures="0" errors="0" skipped="0" time="9.400">
+  <testsuite name="Archive a project" tests="1" failures="0" errors="0" skipped="0" time="9.400" timestamp="2026-09-24T14:00:00">
+    <testcase name="Archive a project" classname="Web app" time="9.400"/>
+  </testsuite>
+</testsuites>

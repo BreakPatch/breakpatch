@@ -224,7 +224,7 @@
           "image": null,
           "open": false,
           "hasDetail": true,
-          "printOpen": false
+          "printOpen": true
         },
         {
           "number": "6",

@@ -6,7 +6,7 @@ import { buildView, printView, junitXml, printableParts, REPORT_TEMPLATE, report
 import { parse, render, TemplateError } from './render';
 import { countsText, isoText, reportRows, seconds, shortTime, whenText, type ReportTestInput } from './view';
 import { xmlEscape } from './junit';
-import { whereText } from '../runWords';
+import { UNCHECKED_NOTE, whereText } from '../runWords';
 import { setOsForTests } from '../osWords';
 
 const fsModule = 'node:fs', urlModule = 'node:url', pathModule = 'node:path';
@@ -126,7 +126,8 @@ describe('the report', () => {
     const view = printView(buildView(INPUT.run));
     expect(view.tests[0].passedText).toBe('');
     expect(view.tests[0].steps).toHaveLength(11);
-    expect(view.tests[0].steps.filter(s => s.open).map(s => s.number)).toEqual(['8']);      // not the passed steps' timings
+    // The failed step, and one whose check covers nothing; not the passed steps' timings.
+    expect(view.tests[0].steps.filter(s => s.open).map(s => s.number)).toEqual(['5', '8']);
     const { css, body } = printableParts(reportHtml(view));
     expect(css).toContain('@media print');
     expect(body).toContain('<div class="bpr" id="bpr">');
@@ -147,6 +148,25 @@ describe('the report', () => {
     expect(html).toContain('<p class="bpr-passed-text">2 steps, all passed, 1 fixed automatically</p>');
     expect(REPORT_TEMPLATE).toMatch(/\.bpr-passed-text \{ display: none; \}/);
     expect(REPORT_TEMPLATE).toMatch(/@media print \{[\s\S]*\.bpr-brief \.bpr-steps, \.bpr-brief \.bpr-test-steps \{ display: none; \}/);
+  });
+
+  it('prints a test that passed with a warning in full, the warned step open, not as "all passed"', () => {
+    // The golden "passed": its step 2's check covers nothing, which the short form would leave out.
+    const v = buildView(INPUT.passed);
+    expect(v.tests[0].result).toBe('passed');
+    expect(v.tests[0].passedText).toBe('');
+    expect(v.tests[0].steps.map(s => [s.number, s.stepNote, s.printOpen])).toEqual([
+      ['1', '', false], ['2', UNCHECKED_NOTE, true], ['3', '', false]]);
+    const p = printView(v);
+    expect(p.tests[0].steps.filter(s => s.open).map(s => s.number)).toEqual(['2']);
+    const { body } = printableParts(reportHtml(p));
+    expect(body).not.toContain('bpr-brief');
+    expect(body).not.toContain('bpr-passed-text');
+    expect(body.match(/data-bpr-print/g)).toHaveLength(1);
+    // Without the warning, it's the short form again.
+    const plain = structuredClone(INPUT.passed);
+    delete plain.tests[0].run!.steps[1].unchecked;
+    expect(buildView(plain).tests[0].passedText).toBe('3 steps, all passed');
   });
 
   it('counts the steps of a single test that passed, and what didn\'t run', () => {

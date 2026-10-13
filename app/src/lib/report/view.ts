@@ -53,7 +53,10 @@ export interface StepView {
   advice: string; took: string; phases: string;
   image: (ReportImage & { size: 'full' | 'small'; alt: string; caption: string }) | null;
   open: boolean; hasDetail: boolean;
-  /** Open when printed: the step that failed, or one that failed on an earlier try. */
+  /**
+   * Open when printed: the step that failed, one that failed on an earlier try, or one with a
+   * warning to read (its check covers nothing).
+   */
   printOpen: boolean;
 }
 export interface JunitCase {
@@ -68,7 +71,8 @@ export interface TestView {
   stepsOpen: boolean;
   /**
    * A test that passed on its first try: "10 steps, all passed", which the PDF shows in place of
-   * its steps. '' when it didn't pass, or passed only on a retry: then its steps print.
+   * its steps. '' when it didn't pass, passed only on a retry, or has a step with a warning to read
+   * (printOpen): then its steps print, with that step open.
    */
   passedText: string;
 }
@@ -192,6 +196,7 @@ function stepView(step: Step, number: string, depth: number, r: ReportStepRun | 
     else if (state === 'fixed') { headline = fixedTitle(step, r); body = FIXED_TEXT; }
   }
   const again = retriedNote(r, step, state);
+  const unchecked = !!(r && state === 'passed' && r.unchecked?.length);
   const stepNote = [r && state === 'passed' ? (r.unchecked?.length ? UNCHECKED_NOTE : passNote(r) ?? '') : '', again].filter(Boolean).join(' ');
   const [took, where] = phases(r?.timings);
   const img = screenshots && !container ? r?.image : undefined;
@@ -209,7 +214,7 @@ function stepView(step: Step, number: string, depth: number, r: ReportStepRun | 
   return {
     number, depth, label: String(step.label ?? ''), result: state, resultText: RESULT_TEXT[state],
     headline, body, stepNote, system, explanation, advice, took, phases: where, image,
-    open, hasDetail, printOpen: hasDetail && (open || !!again),
+    open, hasDetail, printOpen: hasDetail && (open || !!again || unchecked),
     reasonCode: state === 'failed' && headline ? String(reason ?? '') : '',
   };
 }
@@ -272,9 +277,12 @@ function junitCase(state: StepState, steps: StepViewX[], t: ReportTestInput, run
   return { ...base, status: 'failed', type: s.reasonCode || 'failed', message: `Step ${s.number}: ${s.label}: ${s.headline}`, text: lines.filter(Boolean).join('\n') };
 }
 
-/** "10 steps, all passed": a test that passed on its first try, as the PDF shows it in place of its steps. */
+/**
+ * "10 steps, all passed": a test that passed on its first try, as the PDF shows it in place of its
+ * steps. Not when a step prints open (a warning to read): the short form would leave it out.
+ */
 function passedText(state: StepState, steps: StepView[], run: ReportRun | null): string {
-  if (!run || (state !== 'passed' && state !== 'fixed') || attemptsOf(run) > 1 || !steps.length) return '';
+  if (!run || (state !== 'passed' && state !== 'fixed') || attemptsOf(run) > 1 || !steps.length || steps.some(s => s.printOpen)) return '';
   const ran = steps.filter(s => s.result === 'passed' || s.result === 'fixed').length, fixed = int(run.healedCount);
   const all = ran === steps.length ? `${plural(steps.length, 'step')}, all passed` : `${ran} of ${plural(steps.length, 'step')} passed`;
   return all + (fixed ? `, ${fixed} fixed automatically` : '');
@@ -351,7 +359,7 @@ export function buildView(inp: ReportInput): ReportView {
 /**
  * The view as the PDF prints it: a test that passed on its first try is its summary and
  * "10 steps, all passed", without its steps; any other test lists its steps, with the one that
- * failed open (and one that failed on an earlier try). The template's print styles hide the
+ * failed open (and one that failed on an earlier try, or one whose check covers nothing). The template's print styles hide the
  * steps of a test that passed, and its script opens the same steps when the HTML is printed.
  */
 export function printView(view: ReportView): ReportView {
