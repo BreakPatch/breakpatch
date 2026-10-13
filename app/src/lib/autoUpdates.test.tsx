@@ -8,7 +8,7 @@ const updater = vi.hoisted(() => ({ check: vi.fn() }));
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: updater.check }));
 
 import { CHECK_EVERY_MS, FIRST_CHECK_MS, TICK_MS, holdUpdateChecks, resetAutoUpdatesForTests, startAutoUpdates } from './autoUpdates';
-import { checkForUpdates, lastChecked, resetUpdatesForTests } from './updates';
+import { CHECK_DEADLINE_MS, CHECK_TIMEOUT_MS, DOWNLOAD_DEADLINE_MS, DOWNLOAD_TIMEOUT_MS, checkForUpdates, isCheckingForUpdates, lastChecked, resetUpdatesForTests } from './updates';
 import { AutoUpdates } from '../components/shell/AutoUpdates';
 import { useSystem } from '../state/system';
 
@@ -19,7 +19,7 @@ const realTimeout = globalThis.setTimeout;                         // taken befo
 
 /** An update the updater offers: download and install do nothing. */
 function anUpdate(version = '0.2.0') {
-  return { version, download: vi.fn(async () => {}), install: vi.fn(async () => {}) };
+  return { version, download: vi.fn(async () => {}), install: vi.fn(async () => {}), close: vi.fn(async () => {}) };
 }
 /** A check that answers only when told to. */
 function heldCheck() {
@@ -117,11 +117,11 @@ describe('automatic update checks', () => {
     const byHand = checkForUpdates();                              // 2 s before the first automatic one
     await settle();
     expect(updater.check).toHaveBeenCalledTimes(1);
-    await wait(5 * MIN);                                           // still going on: nothing more
+    await wait(30_000);                                            // still going on: nothing more
     expect(updater.check).toHaveBeenCalledTimes(1);
     held.answer(null);
     await expect(byHand).resolves.toEqual({ state: 'upToDate' });
-    await wait(CHECK_EVERY_MS - 5 * MIN - MIN);                    // an hour after About's started, less a minute
+    await wait(CHECK_EVERY_MS - 30_000 - MIN);                     // an hour after About's started, less a minute
     expect(updater.check).toHaveBeenCalledTimes(1);
     await wait(MIN);
     expect(updater.check).toHaveBeenCalledTimes(2);
@@ -210,6 +210,86 @@ describe('automatic update checks', () => {
     expect(vi.getTimerCount()).toBe(0);
     await wait(3 * CHECK_EVERY_MS);
     expect(updater.check).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** A check whose request never ends: the updater never answers, nor gives up. */
+function stalledCheck() { updater.check.mockImplementationOnce(() => new Promise(() => {})); }
+
+describe('a check that never finishes', () => {
+  it('passes the updater its own timeouts', async () => {
+    const update = anUpdate('0.2.0');
+    updater.check.mockResolvedValueOnce(update);
+    await act(async () => { await checkForUpdates(); });
+    expect(updater.check).toHaveBeenCalledWith({ timeout: CHECK_TIMEOUT_MS });
+    expect(update.download).toHaveBeenCalledWith(undefined, { timeout: DOWNLOAD_TIMEOUT_MS });
+  });
+
+  it('gives up at its deadline, and the automatic checks go on every hour', async () => {
+    stalledCheck();
+    startAutoUpdates();
+    await wait(FIRST_CHECK_MS);
+    expect(updater.check).toHaveBeenCalledTimes(1);
+    await wait(CHECK_DEADLINE_MS - 1);
+    expect(isCheckingForUpdates()).toBe(true);
+    await wait(1);
+    expect(isCheckingForUpdates()).toBe(false);
+    expect(lastChecked()).toBeNull();                              // GitHub never answered
+    expect(useSystem.getState().error).toBeNull();                 // an automatic one shows nothing
+    await wait(CHECK_EVERY_MS - CHECK_DEADLINE_MS - 1);
+    expect(updater.check).toHaveBeenCalledTimes(1);
+    await wait(1);                                                 // an hour after the stalled one started
+    expect(updater.check).toHaveBeenCalledTimes(2);
+    await wait(CHECK_EVERY_MS);
+    expect(updater.check).toHaveBeenCalledTimes(3);
+  });
+
+  it("About's button, joining it, settles as failed at the deadline; pressed again it checks afresh", async () => {
+    stalledCheck();
+    startAutoUpdates();
+    await wait(FIRST_CHECK_MS);
+    const byHand = checkForUpdates();
+    let settled = false;
+    void byHand.then(() => { settled = true; });
+    await wait(CHECK_DEADLINE_MS - 1);
+    expect(settled).toBe(false);
+    await wait(1);
+    await expect(byHand).resolves.toEqual({ state: 'failed', reason: "GitHub didn't answer in time. Breakpatch tries again within the hour." });
+    const again = checkForUpdates();
+    await settle();
+    expect(updater.check).toHaveBeenCalledTimes(2);
+    await expect(again).resolves.toEqual({ state: 'upToDate' });
+  });
+
+  it('an answer that comes after it gave up changes nothing: the update it offers is not downloaded', async () => {
+    const held = heldCheck();
+    const byHand = checkForUpdates();
+    await wait(CHECK_DEADLINE_MS);
+    await expect(byHand).resolves.toMatchObject({ state: 'failed' });
+    const update = anUpdate('0.2.0');
+    held.answer(update);
+    await wait(0);
+    expect(update.download).not.toHaveBeenCalled();
+    expect(update.close).toHaveBeenCalledTimes(1);                 // let go of
+    expect(useSystem.getState().updateReady).toBeNull();
+    expect(lastChecked()).toBeNull();
+  });
+
+  it('a download that never finishes gives up too, and finishing late makes nothing ready', async () => {
+    let done!: () => void;
+    const update = { ...anUpdate('0.2.0'), download: vi.fn(() => new Promise<void>(r => { done = r; })) };
+    updater.check.mockResolvedValueOnce(update);
+    const byHand = checkForUpdates();
+    await wait(DOWNLOAD_DEADLINE_MS - 1);
+    expect(isCheckingForUpdates()).toBe(true);
+    await wait(1);
+    await expect(byHand).resolves.toEqual({ state: 'failed', reason: 'Breakpatch 0.2.0 took too long to download. Breakpatch tries again within the hour.' });
+    expect(isCheckingForUpdates()).toBe(false);
+    expect(lastChecked()).toBe(START);                             // GitHub did answer
+    done();
+    await wait(0);
+    expect(useSystem.getState().updateReady).toBeNull();
+    expect(update.install).not.toHaveBeenCalled();
   });
 });
 
