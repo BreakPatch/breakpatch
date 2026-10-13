@@ -346,18 +346,38 @@ function Install-BreakpatchCi {
   $current = Join-Path $ciHome 'current.txt'     # the environment in use: no symbolic links without admin rights
 
   if (($Arguments -contains '-Uninstall') -or ($Arguments -contains '--uninstall') -or $env:BREAKPATCH_UNINSTALL -eq '1') {
-    $removed = $false
-    if (Test-Path -LiteralPath $shim) {
-      if ((Get-Content -Raw -LiteralPath $shim) -match 'breakpatch-ci installer') { Remove-Item -LiteralPath $shim -Force; $removed = $true }
+    # irm | iex runs this in the window's own session: BREAKPATCH_UNINSTALL goes once it's done, or
+    # the next install in that window would uninstall again.
+    try {
+      $removed = $false
+      if (Test-Path -LiteralPath $shim) {
+        if ((Get-Content -Raw -LiteralPath $shim) -match 'breakpatch-ci installer') { Remove-Item -LiteralPath $shim -Force; $removed = $true }
+      }
+      # Only what the installer makes goes, as in site/install-ci: BREAKPATCH_CI_HOME may be a
+      # folder with other things in it. current.txt (and a current.txt.new a run left), the
+      # environments (env-<version>-<id>, half-made ones too), the browsers and the downloaded
+      # Pythons (with any .partial unpacking in python\); then bin\ (when it's the default one, in
+      # the install folder) and the folder itself, if that leaves them empty.
+      if ((Test-Path -LiteralPath $current) -or (Test-Path -LiteralPath (Join-Path $ciHome 'browsers'))) {
+        $ours = @($current, "$current.new", (Join-Path $ciHome 'browsers'), (Join-Path $ciHome 'python'))
+        $ours += @(Get-ChildItem -LiteralPath $ciHome -Filter 'env-*' -Force | ForEach-Object { $_.FullName })
+        foreach ($p in $ours) {
+          if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }
+        }
+        $removed = $true
+      }
+      if (-not $removed) { Say "breakpatch-ci isn't in $(Pretty $ciHome). Nothing to remove."; return }
+      if (Test-Path -LiteralPath "$shim.new") { Remove-Item -LiteralPath "$shim.new" -Force }
+      $made = if ($env:BREAKPATCH_CI_BIN) { @($ciHome) } else { @($bin, $ciHome) }
+      foreach ($d in $made) {
+        if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d -Force }
+      }
+      Say "Removed breakpatch-ci and its browser from $(Pretty $ciHome)."
+      Say "The machine licence is still in Breakpatch's data folder. Run breakpatch-ci licence release first to give the seat back, or free it in the back office."
+      return
+    } finally {
+      Remove-Item Env:\BREAKPATCH_UNINSTALL -ErrorAction SilentlyContinue
     }
-    if ((Test-Path -LiteralPath $current) -or (Test-Path -LiteralPath (Join-Path $ciHome 'browsers'))) {
-      Remove-Item -LiteralPath $ciHome -Recurse -Force
-      $removed = $true
-    }
-    if (-not $removed) { Say "breakpatch-ci isn't in $(Pretty $ciHome). Nothing to remove."; return }
-    Say "Removed breakpatch-ci and its browser from $(Pretty $ciHome)."
-    Say "The machine licence is still in Breakpatch's data folder. Run breakpatch-ci licence release first to give the seat back, or free it in the back office."
-    return
   }
 
   $python = Find-Python

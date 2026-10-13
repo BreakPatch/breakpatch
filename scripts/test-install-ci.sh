@@ -861,6 +861,30 @@ for sh_name in "sh" "bash --posix"; do
   expect_code 0
   expect_out "breakpatch-ci isn't in ~/.breakpatch-ci. Nothing to remove."
 
+  # BREAKPATCH_CI_HOME pointed at a folder with other things in it: only the installer's go.
+  new_case uninstall-leaves-the-rest
+  shared="$c/shared"
+  mkdir -p "$shared/notes"
+  echo "keep me" > "$shared/notes/todo.txt"
+  echo "keep me too" > "$shared/report.txt"
+  run BREAKPATCH_CI_HOME="$shared" BREAKPATCH_PYTHON= PATH="$shims:$nopy" BREAKPATCH_PYTHON_DOWNLOADS="$base/pbs/" BREAKPATCH_PYTHON_SHA256="$pbs_sha"
+  expect_code 0
+  if [ -L "$shared/current" ] && [ -d "$shared/browsers" ] && [ -d "$shared/python" ]; then ok "installed into the shared folder, with a downloaded Python"; else bad "not installed: $(ls -A "$shared")"; fi
+  mkdir -p "$shared/env-1.0.0.halfmade" "$shared/python/cpython-0.0.0.partial"
+  run BREAKPATCH_CI_HOME="$shared" -- --uninstall
+  expect_code 0
+  expect_out "Removed breakpatch-ci and its browser from $shared."
+  if [ "$(cat "$shared/notes/todo.txt" 2>/dev/null)" = "keep me" ] && [ "$(cat "$shared/report.txt" 2>/dev/null)" = "keep me too" ]; then ok "the other file and folder are still there"; else bad "the other things went: $(ls -A "$shared" 2>/dev/null)"; fi
+  left=$(find "$shared" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ')
+  if [ "$left" = "notes report.txt " ]; then ok "the installer's own files are gone"; else bad "left in the shared folder: $left"; fi
+  if [ ! -e "$bin/breakpatch-ci" ] && [ ! -L "$bin/breakpatch-ci" ]; then ok "the link is gone"; else bad "the link is still there"; fi
+  rm -rf "${shared:?}/notes" "$shared/report.txt"
+  run BREAKPATCH_CI_HOME="$shared"
+  expect_code 0
+  run BREAKPATCH_CI_HOME="$shared" -- --uninstall
+  expect_code 0
+  if [ ! -e "$shared" ]; then ok "an install folder left empty goes"; else bad "left: $(ls -A "$shared")"; fi
+
   new_case help-and-unknown-options
   run -- --help
   expect_code 0
@@ -1069,6 +1093,22 @@ else
   if [ ! -e "$home" ]; then ok "the install folder is gone"; else bad "something is left: $(ls -A "$home")"; fi
   ps_run BREAKPATCH_UNINSTALL=1
   expect_out "Nothing to remove."
+
+  # BREAKPATCH_CI_HOME pointed at a folder with other things in it: only the installer's go.
+  ps_case windows-uninstall-leaves-the-rest
+  mkdir -p "$home/notes"
+  echo "keep me" > "$home/notes/todo.txt"
+  echo "keep me too" > "$home/report.txt"
+  ps_run
+  expect_code 0
+  mkdir -p "$home/env-1.0.0-halfmade"
+  ps_run BREAKPATCH_UNINSTALL=1
+  expect_code 0
+  expect_out "Removed breakpatch-ci and its browser from"
+  if [ "$(cat "$home/notes/todo.txt" 2>/dev/null)" = "keep me" ] && [ "$(cat "$home/report.txt" 2>/dev/null)" = "keep me too" ]; then ok "the other file and folder are still there"; else bad "the other things went: $(ls -A "$home" 2>/dev/null)"; fi
+  left=$(find "$home" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ')
+  if [ "$left" = "notes report.txt " ]; then ok "the installer's own files are gone"; else bad "left in the install folder: $left"; fi
+
   # irm … | iex: a failure is printed, and doesn't close the window (no exit).
   set +e
   out=$(env HOME="$c/home" OS= "$pwsh" -NoProfile -NonInteractive -Command "iex (Get-Content -Raw '$ps1'); 'still here'" 2>&1)
