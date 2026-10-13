@@ -408,6 +408,19 @@ class BrowserSession:
     def last_seq(self) -> int:
         return self._seq
 
+    async def shown_frame(self, timeout: float) -> int | None:
+        """The seq of the live view frame the app is showing now. Right after the browser opens the
+        stream's first frame is still on its way (a moment after the page loads; longer on a slow
+        machine): this waits up to `timeout` for it. None when there's no stream, or no frame came
+        in time. A seq without its frame (0 before the first one, or one from before the browser
+        reopened) would make the step recorded with it fail as `stale`."""
+        end = time.monotonic() + timeout
+        while self._seq not in self._frames:
+            if self._stream is None or time.monotonic() >= end:
+                return None
+            await asyncio.sleep(0.02)
+        return self._seq
+
     def remember_frame(self, seq: int, b64: str) -> None:
         self._frames[seq] = b64
         while len(self._frames) > config.FRAMES_KEPT:

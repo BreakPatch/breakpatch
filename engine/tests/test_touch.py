@@ -9,7 +9,7 @@ import threading
 import pytest
 
 from conftest import needs_browser
-from test_e2e import Handler, Harness, SITE
+from test_e2e import Handler, Harness, SITE, _latest_frame
 from breakpatch_engine import labels
 from breakpatch_engine.actions import Context, perform
 from breakpatch_engine.config import Timings
@@ -48,7 +48,7 @@ async def test_a_phone_test_opens_as_the_phone_at_scale_1(site):
         assert (got["w"], got["h"], got["dpr"]) == (393, 659, 1)
         assert "iPhone" in got["ua"] and got["coarse"] and got["points"] > 0
         assert (await b.shoot()).shape == (659, 393, 3)                # screen checks: viewport px at DPR 1
-        await asyncio.sleep(0.3)
+        await _latest_frame(hx)                                         # the first frame can come late (CI)
         frame = hx.of("frame")[-1]
         assert (frame["width"], frame["height"]) == (393, 659)
     finally:

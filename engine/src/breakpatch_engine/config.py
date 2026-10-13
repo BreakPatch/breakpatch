@@ -123,6 +123,7 @@ class Timings:
     http_timeout: float = 30.0
     reload_diff: bool = True          # §10.3.5 background reload while recording
     frame_min_gap: float = 0.1        # at most ~10 frames per second
+    first_frame: float = 3.0          # recording: how long record.locate waits for the live view's first frame
     retry_budget: float = 300.0       # retry.py: no retry starts once a run has taken this long
     retry_pause: float = 1.0          # retry.py: the pause before a retry (a network blip passes)
 

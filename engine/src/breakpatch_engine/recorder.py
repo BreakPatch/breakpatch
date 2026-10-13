@@ -645,11 +645,18 @@ class Recorder:
         if not description or not description.strip():
             raise EngineError("bad_request", "Describe what to look for.")
         self.b.require()
-        seq = self.b.last_seq               # the frame the live view shows as the page is looked at
+        # The frame the live view shows as the page is looked at: the app records the step with it,
+        # and the engine checks the page still looks like that. Called straight after
+        # browser.open (a described step, an imported test) the first frame may not be there yet:
+        # wait a moment for it. Without one the answer names no frame, and nothing is checked
+        # against one, rather than a frame the engine doesn't have, which would be `stale`.
+        seq = await self.b.shown_frame(self.t.first_frame)
         found = await self.finder.locate(description.strip(), absence=absence, near=near, shows=shows)
         if found.box is None:
             return NULL
-        out = {"box": found.box, "at": found.at, "target": description.strip(), "frame": seq, "path": found.path}
+        out = {"box": found.box, "at": found.at, "target": description.strip(), "path": found.path}
+        if seq is not None:
+            out["frame"] = seq
         if found.s0_score is not None:
             out["s0Score"] = found.s0_score
         return out
