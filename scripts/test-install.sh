@@ -321,12 +321,15 @@ python3 "$work/serve.py" "$port" "$http_port" "$gh_port" "$srv" "$tls" "$token" 
 server_pid=$!
 no_proxy_hosts="127.0.0.1,localhost,api.github.com,objects.githubusercontent.com"
 export CURL_CA_BUNDLE="$tls/cert.pem" NO_PROXY="$no_proxy_hosts" no_proxy="$no_proxy_hosts"
-for _ in $(seq 50); do
+# Up to 30 s: a cold Python on a CI Mac can take a while to start.
+for _ in $(seq 300); do
   if curl -fs "$base/good/releases/latest" >/dev/null 2>&1; then break; fi
+  kill -0 "$server_pid" 2>/dev/null || break
   sleep 0.1
 done
 if ! curl -fs "$base/good/releases/latest" >/dev/null; then
-  setup_msg="the test server didn't start: $(curl -fsS "$base/good/releases/latest" 2>&1 >/dev/null | tail -c 300) | server.log: $(tail -c 600 "$work/server.log" 2>/dev/null)"
+  if kill -0 "$server_pid" 2>/dev/null; then server_state="still running"; else server_state="exited ($(wait "$server_pid" 2>/dev/null; echo $?))"; fi
+  setup_msg="the test server didn't start (python3 $(python3 -c 'import sys; print(sys.version.split()[0])' 2>&1), $server_state): $(curl -fsS "$base/good/releases/latest" 2>&1 >/dev/null | tail -c 300) | server.log: $(tail -c 600 "$work/server.log" 2>/dev/null)"
   echo "$setup_msg" >&2; exit 1
 fi
 if ! curl -fs "http://127.0.0.1:$http_port/good/releases/latest" >/dev/null; then
