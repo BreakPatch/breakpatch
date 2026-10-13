@@ -39,7 +39,8 @@ annotate() {
     printf '::error title=test-install::%s\n' "$f"
   done
   if [ "$code" -ne 0 ] && [ ${#failures[@]} -eq 0 ]; then
-    printf '::error title=test-install::stopped early (exit %s) in: %s\n' "$code" "${current:-set-up}"
+    printf '::error title=test-install::stopped early (exit %s) in: %s, at line %s: %s (bash %s)\n' \
+      "$code" "${current:-set-up}" "${err_line:-?}" "${err_cmd:-?}" "$BASH_VERSION"
   fi
 }
 cleanup() {
@@ -49,6 +50,9 @@ cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
+# Where set -e stopped the script, for the annotation above.
+set -E
+trap 'err_line=$LINENO err_cmd=$BASH_COMMAND' ERR
 
 pass=0
 failures=()
