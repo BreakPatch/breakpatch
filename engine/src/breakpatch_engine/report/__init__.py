@@ -17,9 +17,11 @@ from importlib import resources
 from .images import attach_images, webp_data_uri
 from .junit import junit_xml
 from .render import render
-from .view import build, print_view
+from .view import all_open, build, print_view
 
-__all__ = ["attach_images", "build", "html", "junit_xml", "print_view", "render", "template", "webp_data_uri"]
+# all_open is deprecated (print_view replaced it in 0.1.0-beta.2): kept for one release, until
+# 0.1.0-beta.3, then removed.
+__all__ = ["all_open", "attach_images", "build", "html", "junit_xml", "print_view", "render", "template", "webp_data_uri"]
 
 
 @lru_cache(maxsize=1)

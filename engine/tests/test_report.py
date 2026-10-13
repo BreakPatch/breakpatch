@@ -234,6 +234,17 @@ def test_a_test_that_passed_with_a_warning_prints_its_steps_with_the_warning_ope
     assert report.build(plain)["tests"][0]["passedText"] == "3 steps, all passed"
 
 
+def test_all_open_is_kept_for_one_release_and_says_it_is_deprecated():
+    assert "all_open" in report.__all__
+    view = report.build(INPUT["suite"])
+    with pytest.warns(DeprecationWarning, match="print_view"):
+        opened = report.all_open(view)
+    # As 0.1.0-beta.1 had it: every test's steps open, and every step with something to show.
+    assert all(t["stepsOpen"] for t in opened["tests"])
+    assert [[s["open"] for s in t["steps"]] for t in opened["tests"]] == [[s["hasDetail"] for s in t["steps"]] for t in view["tests"]]
+    assert opened["tests"][1]["steps"] and view["tests"][1]["stepsOpen"] is False      # the view itself is unchanged
+
+
 # ---------------------------------------------------------------- the template language
 
 def test_render_sections_and_lookups():

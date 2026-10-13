@@ -18,6 +18,7 @@ one try has `attempts`, and its steps the earlier tries' failures (`retried`, en
 from __future__ import annotations
 
 import sys
+import warnings
 from datetime import datetime, timedelta, timezone
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -608,3 +609,13 @@ def print_view(view: dict) -> dict:
     that failed open (and one that failed on an earlier try, or one whose check covers nothing)."""
     return {**view, "tests": [{**t, "stepsOpen": True, "steps": [] if t["passedText"] else [{**s, "open": s["printOpen"]} for s in t["steps"]]}
                               for t in view["tests"]]}
+
+
+def all_open(view: dict) -> dict:
+    """Deprecated: use print_view. The same view with every step open, as 0.1.0-beta.1 printed it.
+
+    print_view replaced it in 0.1.0-beta.2. It stays for one more release (0.1.0-beta.3) so code
+    written against beta.1's report.all_open keeps working, and goes after that."""
+    warnings.warn("report.all_open is deprecated and goes after 0.1.0-beta.3: use report.print_view",
+                  DeprecationWarning, stacklevel=2)
+    return {**view, "tests": [{**t, "stepsOpen": True, "steps": [{**s, "open": s["hasDetail"]} for s in t["steps"]]} for t in view["tests"]]}
