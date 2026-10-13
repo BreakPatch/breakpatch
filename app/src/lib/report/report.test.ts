@@ -179,8 +179,10 @@ describe('the report', () => {
     expect(flaky.passedText).toBe('');
   });
 
-  it('keeps every card within the page: one column no wider than the page, long words wrap, screenshots shrink', () => {
-    // Checked in a print render too (A4 and US Letter, long unbroken text, deep loops, full-size
+  it('lint: the template\'s CSS keeps every card within the page (one column, long words wrap, screenshots shrink)', () => {
+    // A lint-style guard of the CSS rules, not a layout check: jsdom lays nothing out, so this only
+    // reads the stylesheet for the rules that keep cards on the page. The layout itself was checked
+    // once in a print render (A4 and US Letter, long unbroken text, deep loops, full-size
     // screenshots): with an auto column one long word in a failed step widened every card past the edge.
     const css = REPORT_TEMPLATE.slice(REPORT_TEMPLATE.indexOf('<style>'), REPORT_TEMPLATE.indexOf('</style>')).replace(/\/\*[\s\S]*?\*\//g, '');
     const grids = [...css.matchAll(/^([^{}@]+)\{[^}]*display: grid/gm)].flatMap(m => m[1].split(',').map(x => x.trim()));
