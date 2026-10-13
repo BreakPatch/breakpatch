@@ -320,11 +320,15 @@ jobs:
           brew list --versions openssl@3 >/dev/null || brew install -q openssl@3
           echo "$(brew --prefix openssl@3)/bin" >> "$GITHUB_PATH"
           command -v shellcheck >/dev/null || brew install -q shellcheck
+          # The test harness itself needs a newer bash than macOS's 3.2; the install command it
+          # tests still runs under /bin/sh and /bin/bash --posix, macOS's own 3.2.
+          brew list --versions bash >/dev/null || brew install -q bash
+          echo "BP_TEST_BASH=$(brew --prefix)/bin/bash" >> "$GITHUB_ENV"
           /bin/sh -c 'echo "/bin/sh is bash $BASH_VERSION"'
       - name: Test the install command against fake releases
         env:
           TMPDIR: ${{ runner.temp }}   # rather than /var/folders/…, a path through the /var link
-        run: bash scripts/test-install.sh
+        run: '"$BP_TEST_BASH" scripts/test-install.sh'
 
   # breakpatch-ci as a release builds it, Linux only (the macOS wheel is built by release.yml on
   # a tag, never here). Both wheels are built with a throwaway licence key made in this job
