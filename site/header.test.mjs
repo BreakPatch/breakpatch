@@ -49,6 +49,9 @@ test('the hero badge keeps its dot with the words after it, and on a phone has n
   // The asterisk is a 44 px target without moving the words: an out-of-flow ::after, not padding on the
   // link, so the link stays plain inline text and its line keeps the same height and baseline.
   assert.match(CSS, /\.ai-badge \.star::after\{content:"";position:absolute;[^}]*width:44px;height:44px/);
+  // Centred with transform, which older browsers know, not the newer translate property.
+  assert.match(CSS, /\.ai-badge \.star::after\{[^}]*transform:translate\(-50%,-50%\)/);
+  assert.doesNotMatch(CSS, /\.ai-badge \.star::after\{[^}]*[;{]translate:/);
   assert.doesNotMatch(CSS, /\.ai-badge \.star\{[^}]*(display:inline-block|padding|line-height)/);
   assert.ok(CSS.includes('.ai-badge .star:focus-visible::after{outline:2px solid var(--accent)'));
   // Both parts share one baseline (centring boxes of different heights puts them at different heights),

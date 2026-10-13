@@ -109,7 +109,7 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
    of the flow, answers the tap. The link itself stays plain inline text, so it can't make its line any
    taller or move the words' baseline. Positioned, so the area sits above the letters next to it. The
    focus ring is drawn on that area, as a small circle round the asterisk. */
-.ai-badge .star::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;translate:-50% -50%;border-radius:999px}
+.ai-badge .star::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%);border-radius:999px}
 .ai-badge .star:focus-visible{outline:none}
 .ai-badge .star:focus-visible::after{outline:2px solid var(--accent);outline-offset:-14px}
 /* "12,300 tests run with Breakpatch" (assets/runs-count.js): out of the flow, in the space above the
