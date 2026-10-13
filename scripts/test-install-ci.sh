@@ -91,6 +91,12 @@ if [ "$got" = "$(bp_platform Darwin arm64)" ]; then ok "Darwin x86_64 under Rose
 if grep -q "\$Platform = '$(bp_platform MINGW64_NT-10.0 x86_64)'" "$repo/site/install-ci.ps1"; then
   ok "install-ci.ps1 installs $(bp_platform MINGW64_NT-10.0 x86_64)"
 else bad "install-ci.ps1's \$Platform isn't platform.sh's Windows name"; fi
+# The user's PATH is read and written in the registry as it is, so %VARS% in it stay variables
+# (pwsh on Linux has no registry: this much is checked here, the rest on Windows).
+ps1_src="$repo/site/install-ci.ps1"
+if grep -q 'GetValue(.Path., .*DoNotExpandEnvironmentNames' "$ps1_src" && grep -q "SetValue('Path', .*RegistryValueKind\]::ExpandString" "$ps1_src" \
+  && ! grep -qi "EnvironmentVariable('Path', *'User')" "$ps1_src"; then ok "install-ci.ps1 keeps the user's PATH as written (%VARS% unexpanded)"
+else bad "install-ci.ps1 reads or writes the user's PATH with its %VARS% expanded"; fi
 
 # ---------------------------------------------------------------- fake releases
 
@@ -1125,6 +1131,13 @@ else
   ps_run BREAKPATCH_UNINSTALL=1
   expect_out "Nothing to remove."
 
+  # irm … | iex: a failure is printed, and doesn't close the window (no exit).
+  set +e
+  out=$(env HOME="$c/home" OS= "$pwsh" -NoProfile -NonInteractive -Command "iex (Get-Content -Raw '$ps1'); 'still here'" 2>&1)
+  set -e
+  expect_out "This isn't Windows"
+  expect_out "still here"
+
   # BREAKPATCH_CI_HOME pointed at a folder with other things in it: only the installer's go.
   ps_case windows-uninstall-leaves-the-rest
   mkdir -p "$home/notes"
@@ -1140,12 +1153,26 @@ else
   left=$(find "$home" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ')
   if [ "$left" = "notes report.txt " ]; then ok "the installer's own files are gone"; else bad "left in the install folder: $left"; fi
 
-  # irm … | iex: a failure is printed, and doesn't close the window (no exit).
+  # irm … | iex runs in the window's own session: what the installer sets there for itself goes,
+  # and after an uninstall the next run in that window installs again.
+  ps_case windows-session-left-as-it-was
   set +e
-  out=$(env HOME="$c/home" OS= "$pwsh" -NoProfile -NonInteractive -Command "iex (Get-Content -Raw '$ps1'); 'still here'" 2>&1)
+  out=$(env -u GITHUB_PATH -u BREAKPATCH_UNINSTALL -u PIP_DISABLE_PIP_VERSION_CHECK HOME="$c/home" TMPDIR="$c/tmp" FAKE_STATE="$c/state" \
+        PIP_NO_INDEX=1 PIP_NO_INPUT=mine OS=Windows_NT PROCESSOR_ARCHITECTURE=AMD64 SSL_CERT_FILE="$tls/cert.pem" BREAKPATCH_CI_HOME="$home" \
+        BREAKPATCH_API="$base/good" BREAKPATCH_DOWNLOADS="$base/good/download/" BREAKPATCH_PYTHON="$py311" \
+        "$pwsh" -NoProfile -NonInteractive -Command "
+          iex (Get-Content -Raw '$ps1')
+          'after install: PIP_NO_INPUT=[' + \$env:PIP_NO_INPUT + '] PIP_DISABLE_PIP_VERSION_CHECK=[' + \$env:PIP_DISABLE_PIP_VERSION_CHECK + ']'
+          \$env:BREAKPATCH_UNINSTALL = '1'
+          iex (Get-Content -Raw '$ps1')
+          'after uninstall: BREAKPATCH_UNINSTALL=[' + \$env:BREAKPATCH_UNINSTALL + ']'
+          iex (Get-Content -Raw '$ps1')" 2>&1)
   set -e
-  expect_out "This isn't Windows"
-  expect_out "still here"
+  expect_out "after install: PIP_NO_INPUT=[mine] PIP_DISABLE_PIP_VERSION_CHECK=[]"
+  expect_out "Removed breakpatch-ci and its browser from"
+  expect_out "after uninstall: BREAKPATCH_UNINSTALL=[]"
+  if [ "$(grep -c '^Installing breakpatch-ci 1.1.0...$' <<< "$out")" -eq 2 ]; then ok "the run after the uninstall installs again"; else bad "it didn't install again. Output:"$'\n'"$out"; fi
+  ps_version 1.1.0
 fi
 
 echo

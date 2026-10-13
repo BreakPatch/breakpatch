@@ -86,6 +86,28 @@ function Install-BreakpatchCi {
     return $p
   }
 
+  # Adds a folder to this user's PATH, as written in the registry. [Environment]'s
+  # Get/SetEnvironmentVariable(..., 'User') would read the value with %VARS% expanded and write it
+  # back as a plain string (REG_SZ), so an entry like %USERPROFILE%\.cargo\bin would be fixed to
+  # one profile's path for good, and %JAVA_HOME%-style entries would stop following their
+  # variable. Read without expanding, written back as REG_EXPAND_SZ. Then a variable that isn't
+  # there is removed the .NET way, only for the WM_SETTINGCHANGE that sends: windows opened after
+  # this, from Explorer too, get the new PATH. Windows only; tests on Linux have no registry.
+  function Add-UserPath([string] $dir) {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+    try {
+      $userPath = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+      $entries = @($userPath -split ';' | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') })
+      if ($entries -contains $dir.TrimEnd('\')) { return }
+      $new = $(if ($userPath.TrimEnd(';')) { $userPath.TrimEnd(';') + ';' } else { '' }) + $dir
+      $key.SetValue('Path', $new, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+    } finally {
+      $key.Dispose()
+    }
+    [Environment]::SetEnvironmentVariable('BREAKPATCH_CI_PATH_CHANGED', $null, 'User')
+  }
+
   # ------------------------------------------------------------ checks
 
   function Test-Platform {
@@ -449,10 +471,16 @@ function Install-BreakpatchCi {
     if ((Invoke-Native (Join-Path $tmp 'venv.log') $python @('-m', 'venv', $staged)) -ne 0) { Fail "$python couldn't make a Python environment in $(Pretty $ciHome)." }
     $py = Get-VenvPython $staged
     Say 'Installing the Python packages (checked against their hashes)...'
+    # For pip only: irm | iex runs this in the window's own session, so they go back to what they
+    # were (unset, usually) once pip is done.
+    $pipWas = @{ PIP_DISABLE_PIP_VERSION_CHECK = $env:PIP_DISABLE_PIP_VERSION_CHECK; PIP_NO_INPUT = $env:PIP_NO_INPUT }
     $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'; $env:PIP_NO_INPUT = '1'
     Push-Location $files
     try { $code = Invoke-Native (Join-Path $tmp 'pip.log') $py @('-m', 'pip', 'install', '-q', '--require-hashes', '--only-binary=:all:', '-r', $script:reqs) }
-    finally { Pop-Location }
+    finally {
+      Pop-Location
+      foreach ($k in $pipWas.Keys) { [Environment]::SetEnvironmentVariable($k, $pipWas[$k], 'Process') }   # $null removes it
+    }
     if ($code -ne 0) {
       Get-Content -LiteralPath (Join-Path $tmp 'pip.log') -Tail 8 | Write-Host
       Fail "Couldn't install breakpatch-ci's Python packages. Check this PC can reach pypi.org (or your PIP_INDEX_URL), and run this again."
@@ -502,10 +530,7 @@ function Install-BreakpatchCi {
       Add-Content -LiteralPath $env:GITHUB_PATH -Value $bin
       Say "Added $(Pretty $bin) to GITHUB_PATH: the next steps of this job can run breakpatch-ci."
     } elseif (-not $onPath) {
-      $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-      if (-not (($userPath -split ';') -contains $bin)) {
-        [Environment]::SetEnvironmentVariable('Path', ($(if ($userPath) { "$userPath;" } else { '' }) + $bin), 'User')
-      }
+      Add-UserPath $bin
       Say "Added $(Pretty $bin) to your PATH. Open a new terminal, then run: breakpatch-ci run --test path\to\test.json"
     } else {
       Say 'Run it with: breakpatch-ci run --test path\to\test.json'
