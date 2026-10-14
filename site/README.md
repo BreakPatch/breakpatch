@@ -108,6 +108,8 @@ The script keeps the classes the CSS and JS rely on: `.docs`, `.toc`, `.content`
 
 In the Markdown, `# ` headings are parts (Getting started, Community, Team), `## ` headings are sections and `### ` are subsections. Sections in the Team part get a *Team* tag. Everything before the first `---` is the intro: its paragraphs become the lead, and the contents list is left out because the page makes its own.
 
+The page describes only what a release has. The Linux desktop app and breakpatch-ci's container image open with a `<!-- soon -->` "Coming later" note until a release has them (the Linux app needs `LINUX_DESKTOP` on, which release.yml refuses until site/install pins the release key; the image needs a release that pushes it, made public). breakpatch-ci's library check is marked "from 0.1.0-beta.3". Take the notes and markers out when that changes: `manual-releases.test.mjs` checks them.
+
 ## Tests run with Breakpatch
 
 Home shows "12,300 tests run with Breakpatch" under the install command (`assets/runs-count.js`). It asks the back office's `GET /api/test-runs` (the private repo's `backoffice/README.md`, "Usage"), which answers `{ "runs": 12300 }`: the test runs every edition has reported, rounded down (to the 10 below 1,000, to the 100 below 100,000, then to the 1,000), cached for 5 minutes. The page shows it only from 100 runs, and never when the answer doesn't come within 5 s (`assets/get-json.js`, the same helper as the Solo domain check). The line sits outside the layout and fades in, so nothing moves.

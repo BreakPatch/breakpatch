@@ -62,7 +62,7 @@ Breakpatch is **Community** for now: free and open source, for one person on one
 
 ## Install
 
-You need a Mac with Apple Silicon, 16 GB of memory and macOS 14 or later. Linux is in preview: see [Breakpatch on Linux (preview)](#breakpatch-on-linux-preview). Windows comes after that: see the [roadmap](https://github.com/BreakPatch/breakpatch/issues/48).
+You need a Mac with Apple Silicon, 16 GB of memory and macOS 14 or later. Linux comes next, then Windows: see the [roadmap](https://github.com/BreakPatch/breakpatch/issues/48).
 
 Open Terminal and paste this:
 
@@ -90,7 +90,9 @@ This removes the app only. Your tests stay in the folder you picked, saved secre
 
 ### Breakpatch on Linux (preview)
 
-The Linux app is a preview. Expect rough edges, and tell us what you find: [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20on%20Linux). Not every release has it yet.
+<!-- soon --> Coming later. No release has the Linux app yet. This is how it will work.
+
+The Linux app will be a preview. Expect rough edges, and tell us what you find: [support@breakpatch.dev](mailto:support@breakpatch.dev?subject=Breakpatch%20on%20Linux).
 
 You need 64-bit Linux on an Intel or AMD processor (x86_64), with glibc 2.35 or later: Ubuntu 22.04 or later, Debian 12 or later, or Fedora 36 or later. Arm (a Raspberry Pi) isn't supported for the app. For running tests there, see [breakpatch-ci on Linux](#breakpatch-ci-on-linux).
 
@@ -100,24 +102,19 @@ You need 64-bit Linux on an Intel or AMD processor (x86_64), with glibc 2.35 or 
 curl -fsSL https://breakpatch.dev/install | sh
 ```
 
-It downloads the AppImage from [GitHub Releases](https://github.com/BreakPatch/breakpatch/releases) and checks it against the release's checksums. If you have `gpg`, it also checks the checksums are signed by Breakpatch's release key, which is built into the install command; until that key is published, it says plainly that it couldn't check who published the download. If you have `minisign`, it also checks the signature with Breakpatch's update key. Nothing it downloads runs before those checks pass. It puts Breakpatch in `~/.local/bin/breakpatch` and adds it to your apps menu. It doesn't need your password, and it refuses to run with `sudo`.
+It downloads the AppImage from [GitHub Releases](https://github.com/BreakPatch/breakpatch/releases) and checks it against the release's checksums. If you have `gpg`, it also checks the checksums are signed by Breakpatch's release key, which is built into the install command. If you have `minisign`, it also checks the signature with Breakpatch's update key. Nothing it downloads runs before those checks pass. It puts Breakpatch in `~/.local/bin/breakpatch` and adds it to your apps menu. It doesn't need your password, and it refuses to run with `sudo`.
 
 **FUSE.** An AppImage needs FUSE to start: the `fusermount3` command, from the `fuse3` package. Most desktops have it. If yours doesn't, the install command says so. Install it with `sudo apt install fuse3` (Ubuntu, Debian) or `sudo dnf install fuse3` (Fedora), then open Breakpatch.
 
-**Or the .deb package.** Each Linux release also has a `.deb` for Ubuntu and Debian. Download it from the release and install it with `sudo apt install ./breakpatch_<version>_amd64.deb`. Use one or the other, not both. The install command leaves a `.deb` install alone and tells you how to update it.
-
-**Updating.** The AppImage updates itself, as on a Mac (see [Updates](#updates)), and running the install command again updates it too. The `.deb` belongs to your package manager, so Breakpatch doesn't check for updates or download them there: to update, download the new `.deb` from [GitHub Releases](https://github.com/BreakPatch/breakpatch/releases) and install it with `sudo apt install ./<file>.deb`. Settings → About says so.
-
-**Links and workspace files.** `breakpatch://` links and `.bpworkspace` files open in Breakpatch. If Breakpatch is already open, they go to the open window. The `.deb` sets this up when it's installed. The AppImage sets it up for your account each time it starts.
+**Links and workspace files.** `breakpatch://` links and `.bpworkspace` files open in Breakpatch. If Breakpatch is already open, they go to the open window. Breakpatch sets this up for your account each time it starts.
 
 **What's different from the Mac.**
 
 - Saved secrets go in your keyring (GNOME Keyring or KWallet). Without one, Breakpatch says: "Install or unlock a keyring such as GNOME Keyring or KWallet, then try again." It never saves them in a file instead.
 - Shortcuts use Ctrl, not ⌘.
-- The AI assistant doesn't run on Linux yet. It needs Apple Silicon for now.
 - Breakpatch's data and the test browser are in `~/.local/share/Breakpatch`.
 
-**Uninstalling.** `curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall` removes the AppImage, the apps menu entry and the link and workspace file defaults it set for your account. Your tests stay in their folder, saved secrets stay in your keyring, and Breakpatch's data stays in `~/.local/share/Breakpatch` and `~/.local/share/dev.breakpatch.app`. For the `.deb`, use `sudo apt remove breakpatch`.
+**Uninstalling.** `curl -fsSL https://breakpatch.dev/install | sh -s -- --uninstall` removes the AppImage, the apps menu entry and the link and workspace file defaults it set for your account. Your tests stay in their folder, saved secrets stay in your keyring, and Breakpatch's data stays in `~/.local/share/Breakpatch` and `~/.local/share/dev.breakpatch.app`.
 
 
 ## Start on this Mac
@@ -482,8 +479,6 @@ Settings → About → **Check for updates** looks for a new version. From Break
 A new version downloads in the background, and then a banner says it's ready. Press **Restart to update** when it suits you: Breakpatch installs it and opens again. **Later** puts the banner away; Settings → About keeps **Restart to update**. If you quit without restarting, nothing is installed, and Breakpatch downloads the update again at its next check. Updates never change your tests.
 
 From 0.1.0-beta.3, while you record or run a test, or setup downloads the test browser or the AI assistant, the automatic check waits until you're done. If Breakpatch can't reach GitHub (you're offline, for example), it says nothing and tries again an hour later.
-
-On Linux, this is the AppImage: Breakpatch installed from the `.deb` is updated with a new `.deb` (see [Breakpatch on Linux](#breakpatch-on-linux-preview)).
 
 Settings → About also shows your version and edition.
 
@@ -1160,7 +1155,7 @@ Shared steps are read from `apps/<app>/shared/` next to `tests/`. The run isn't 
 |---|---|
 | `0` | The test or suite passed (a suite *passed with fixes* too, and, with `--retries`, a test that passed on a retry). |
 | `1` | A test failed: a check didn't match, or something wasn't there. The JSON says which step and why. |
-| `2` | Nothing ran, or not all of it could: the test file or its shared steps, the workspace file, the suite or test couldn't be read, the CI account couldn't sign in, the workspace was saved by a newer Breakpatch (`code: "newer_workspace"`: update `breakpatch-ci`), a secret isn't allowed on a test's sites, the browser can't start because Linux is missing system libraries (`code: "libraries"`), or something went wrong inside `breakpatch-ci` (`code: "internal"`). The JSON has a `code` and a message. |
+| `2` | Nothing ran, or not all of it could: the test file or its shared steps, the workspace file, the suite or test couldn't be read, the CI account couldn't sign in, the workspace was saved by a newer Breakpatch (`code: "newer_workspace"`: update `breakpatch-ci`), a secret isn't allowed on a test's sites, the browser can't start because Linux is missing system libraries (`code: "libraries"`, from 0.1.0-beta.3), or something went wrong inside `breakpatch-ci` (`code: "internal"`). The JSON has a `code` and a message. |
 | `3` | There's no usable licence, or it's for another workspace. The JSON and the log say why. |
 
 If a run can't be saved in the workspace (for example the security rules are out of date), the log says so and the JSON has `"saved": false`. The exit code is still the test's result.
@@ -1176,7 +1171,7 @@ breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a --junit result
 - `BREAKPATCH_LICENCE_KEY`: your licence key, stored as a CI secret. It's used to take a machine licence and is never saved or typed into a page. A CI token, the machine key or the recovery code put there by mistake is refused and never sent: `breakpatch-ci` says which it is and where it goes.
 - `BREAKPATCH_WORKSPACE`: your workspace's Firebase project ID, for example `acme-breakpatch`. Or pass `--workspace team.bpworkspace` (then you don't need it). For a workspace [hosted by Breakpatch](#a-runner-mac-and-ci), `hosted:<workspace>`, as Settings → Local runner → **Add a CI token** shows it.
 - `BREAKPATCH_MACHINE_ID`: a fixed name for this pipeline, for example `github-acme-web`. CI machines are often new for every job; with a fixed name every job reuses the same machine licence instead of taking a new one. It isn't a secret.
-- `BREAKPATCH_LICENCE_FILE`: where the licence is kept between runs. Keep this file between jobs, with your CI's cache: then most runs don't need to check online, and the usage counts it collects get sent with the next check (see [Licences and seats](#licences-and-seats)). Keep that cache from jobs that don't have your licence key, such as pull requests from forks: the file lets a machine use your machine licence. The GitHub Action seals it with your licence key and skips the cache on pull requests from forks.
+- `BREAKPATCH_LICENCE_FILE`: where the licence is kept between runs. Keep this file between jobs, with your CI's cache: then most runs don't need to check online, and the usage counts it collects get sent with the next check (see [Licences and seats](#licences-and-seats)). Keep that cache from jobs that don't have your licence key, such as pull requests from forks: the file lets a machine use your machine licence. The [GitHub Action](https://github.com/BreakPatch/breakpatch/blob/main/action/README.md), a draft for now, seals it with your licence key and skips the cache on pull requests from forks.
 
 `breakpatch-ci licence status` shows the licence (and takes a machine licence if needed). `breakpatch-ci licence release` gives the machine licence back, for example before you stop using a pipeline. An admin can also free it in the [back office](#the-back-office).
 
@@ -1274,8 +1269,8 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 - **Exit code 3 after the clock changed or a long time offline**: the machine checks its licence online at least once a week. Make sure it can reach `https://account.breakpatch.dev`.
 - **"The saved secret STAGING_PASSWORD isn't on this Mac"**: set `BP_SECRET_STAGING_PASSWORD` in the job, and add the name to `--secret` if you use it. Or, in a workspace, an admin turns on **breakpatch-ci can use** for the workspace's secret of that name.
 - **"The browser isn't installed yet"**: run the install command again. If `BP_BROWSERS_PATH` or `PLAYWRIGHT_BROWSERS_PATH` is set in the job, `breakpatch-ci` looks there instead: unset it.
-- **Linux: "The browser can't start: this machine is missing system libraries it needs"**: install them once with the command in the message, `sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium`. That works on Ubuntu and Debian. On another Linux, install the packages that have the libraries the message names. Or use the [container image](#breakpatch-ci-in-a-container), which has them.
-- **Linux: "breakpatch-ci needs a Linux with glibc 2.28 or later"**: the system is too old, or it's Alpine (musl). Use Ubuntu 22.04, Debian 12 or later, or the [container image](#breakpatch-ci-in-a-container).
+- **Linux: "The browser can't start: this machine is missing system libraries it needs"** (from 0.1.0-beta.3; before that, the first step fails because the browser can't start): install them once with the command in the message, `sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium`. That works on Ubuntu and Debian. On another Linux, install the packages that have the libraries the message names.
+- **Linux: "breakpatch-ci needs a Linux with glibc 2.28 or later"**: the system is too old, or it's Alpine (musl). Use Ubuntu 22.04, Debian 12 or later. A [container image](#breakpatch-ci-in-a-container) comes with a later release.
 - **Exit code 2 with "wrong email or password"**: check `BREAKPATCH_CI_EMAIL` and `BREAKPATCH_CI_PASSWORD` in the job's secrets.
 - **Exit code 2 with "not CI"** or "isn't a member of this workspace": the account needs the *CI* role. Sign in to Breakpatch with it once, then an admin changes its role in Settings → Members.
 - **Exit code 2 with "The workspace refused the CI account"**: publish the latest security rules (Settings → Workspace → **Copy security rules**).
@@ -1290,15 +1285,17 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 
 The install command is the same. When the machine has no Python 3.11 (Ubuntu 24.04 and Raspberry Pi OS come with a newer one), it downloads Python 3.11 into `~/.breakpatch-ci` and checks it against the checksum written in the install command. To use your own, set `BREAKPATCH_PYTHON`.
 
-Chromium needs some system libraries. At the end, the install command checks they're there. When some are missing, it names them and the command that adds them. Run it once per machine, as an administrator:
+Chromium needs some system libraries. At the end, the install command gives the command that adds them. From 0.1.0-beta.3, it checks they're there first, and when some are missing, it names them. Run the command once per machine, as an administrator:
 
 ```sh
 sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium
 ```
 
-That command works on Ubuntu and Debian (and Raspberry Pi OS). On Fedora or another Linux, install the packages that have the libraries named.
+That command works on Ubuntu and Debian (and Raspberry Pi OS). On Fedora or another Linux, install the packages that have the libraries Chromium needs.
 
-`breakpatch-ci setup` makes the same check at any time, and installs the test browser again if it's missing. It needs no licence. It ends with exit code `0` when Chromium can start and `2` when it can't, and its JSON lists what's missing (`libraries.missing`). A `run` makes the check too, before it takes a licence: when a library is missing, nothing runs and it ends with exit code `2` and `code: "libraries"`, not as a failed test.
+`breakpatch-ci setup` installs the test browser again if it's missing. It needs no licence.
+
+From 0.1.0-beta.3, `setup` also makes the library check, at any time. It ends with exit code `0` when Chromium can start and `2` when it can't, and its JSON lists what's missing (`libraries.missing`). A `run` makes the check too, before it takes a licence: when a library is missing, nothing runs and it ends with exit code `2` and `code: "libraries"`, not as a failed test.
 
 On Linux, Chromium's own sandbox is off by default, because containers and most CI machines can't start it. On a machine that can (your own Linux server, a Raspberry Pi), turn it on with `BP_SANDBOX=1`.
 
@@ -1337,7 +1334,9 @@ Set `BREAKPATCH_LICENCE_KEY`, `BREAKPATCH_CI_EMAIL`, `BREAKPATCH_CI_PASSWORD` an
 
 ### breakpatch-ci in a container
 
-Releases after 0.1.0 also come as a container image, `ghcr.io/breakpatch/ci`, for x86_64 and arm64. It has `breakpatch-ci`, the test browser and the system libraries the browser needs, so a job needs no install step. Each version has its own tag, for example `ghcr.io/breakpatch/ci:1.2.3`, and `latest` is the Latest release on GitHub (never a beta). Use a version's tag in CI, so a new release doesn't change your pipeline without you knowing.
+<!-- soon --> Coming later. No release has the container image yet: it comes with a later release. Until then, install `breakpatch-ci` in the job with the install command, as in [breakpatch-ci on Linux](#breakpatch-ci-on-linux).
+
+The container image, `ghcr.io/breakpatch/ci`, will be for x86_64 and arm64. It has `breakpatch-ci`, the test browser and the system libraries the browser needs, so a job needs no install step. Every release from then on comes as an image, betas included, each with its own tag, for example `ghcr.io/breakpatch/ci:1.2.3`. `latest` is the Latest release on GitHub (never a beta). Use a version's tag in CI, so a new release doesn't change your pipeline without you knowing.
 
 The image keeps the machine licence in `/var/lib/breakpatch`. Point `BREAKPATCH_LICENCE_FILE` at a folder your CI keeps between jobs instead.
 

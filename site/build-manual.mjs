@@ -18,7 +18,8 @@
 // One that starts with <!-- solo-soon --> becomes a Solo "Coming later" note, in the same style,
 // shown only while Solo isn't on sale (no <html data-solo>: assets/paddle-config.js asks the back office).
 // One that starts with <!-- soon --> is a note in the same style that always shows (Team and
-// Business aren't on sale yet, Hosted by Breakpatch is coming later): delete it when that changes.
+// Business aren't on sale yet; Hosted by Breakpatch, the Linux app and breakpatch-ci's container
+// image are coming later): delete it when that changes.
 // Everything before the first "---" is the intro: its paragraphs become the lead, and its
 // contents list is skipped (the page builds its own). Ids match GitHub's heading anchors, so
 // links like docs/#run-requests work on both.
