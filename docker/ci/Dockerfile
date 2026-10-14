@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.10
+# syntax=docker/dockerfile:1.10.0@sha256:865e5dd094beca432e8c0a1d5e1c465db5f998dca4e439981029b3b81fb39ed5
 # ghcr.io/breakpatch/ci: breakpatch-ci with its Chromium and Chromium's system libraries, for CI
 # jobs that run in a container (GitLab CI, GitHub Actions `container:`, Jenkins, Buildkite).
 # linux/amd64 and linux/arm64; release.yml builds it on a tag, on a machine of each kind (no
@@ -16,8 +16,10 @@
 # Build arguments:
 #   BREAKPATCH_VERSION  the release to install (1.2.3 or 0.1.0-beta.1). Required.
 #   BASE                the base image; a release passes it pinned by digest (ubuntu:24.04@sha256:…)
-# Build secret (while BreakPatch/breakpatch is private): github_token, a token that can read its
-# releases, read by install-ci as BREAKPATCH_GITHUB_TOKEN. It's never in a layer.
+# No token: BreakPatch/breakpatch is public, so install-ci reads its releases without one, and
+# nothing in the build can see the registry credentials release.yml pushes with.
+# The first line pins the Dockerfile frontend (BuildKit's parser) by digest: the tag alone could be
+# moved. To update it, take the new version's index digest from Docker Hub (docker/dockerfile).
 ARG BASE=ubuntu:24.04
 FROM ${BASE}
 
@@ -35,8 +37,7 @@ RUN apt-get update \
 COPY site/install-ci /usr/local/share/breakpatch/install-ci
 
 # One layer: breakpatch-ci, Chromium, its libraries, and the check that it can start.
-RUN --mount=type=secret,id=github_token,env=BREAKPATCH_GITHUB_TOKEN \
-    test -n "${BREAKPATCH_VERSION}" || { echo "Set --build-arg BREAKPATCH_VERSION=…" >&2; exit 1; }; \
+RUN test -n "${BREAKPATCH_VERSION}" || { echo "Set --build-arg BREAKPATCH_VERSION=…" >&2; exit 1; }; \
     sh /usr/local/share/breakpatch/install-ci \
  && apt-get update \
  && /opt/breakpatch-ci/current/bin/python -m playwright install-deps chromium \

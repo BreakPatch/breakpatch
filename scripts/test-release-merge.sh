@@ -4,7 +4,8 @@
 # scripts/release-put-sums.sh (both): the first run, a re-run with the same files (as when the
 # Linux desktop build is re-run, which re-runs publish-linux and publish-ci after it), and the
 # cases they must refuse. Then release.yml itself: with LINUX_DESKTOP off, skipping the Linux
-# desktop jobs skips nothing else (publish-ci, sign-sums and the rest still run).
+# desktop jobs skips nothing else (publish-ci, sign-sums and the rest still run); and the images
+# the release builds from are pinned by digest, with no token in the container image's build.
 # Needs jq, awk, sha256sum and python3.
 #
 #   bash scripts/test-release-merge.sh
@@ -197,6 +198,22 @@ else bad "publish-ci doesn't use release-add-files.sh, release-put-sums.sh and -
 if [ "$(grep -cE 'gh release upload .*SHA256SUMS([^.]|$)' "$wf")" -eq 0 ]; then
   ok "SHA256SUMS is only ever uploaded by release-put-sums.sh"
 else bad "release.yml uploads SHA256SUMS itself: $(grep -nE 'gh release upload .*SHA256SUMS[^.]' "$wf")"; fi
+
+
+echo
+echo "release.yml and docker/ci/Dockerfile: images pinned, no token in the image build"
+df="$repo/docker/ci/Dockerfile"
+if head -n 1 "$df" | grep -Eq '^# syntax=docker/dockerfile:[0-9.]+@sha256:[0-9a-f]{64}$'; then ok "the Dockerfile frontend is pinned by digest"; else bad "the Dockerfile's syntax line isn't pinned: $(head -n 1 "$df")"; fi
+if ! grep -q 'type=secret\|GITHUB_TOKEN' "$df"; then ok "no secret or token in the Dockerfile"; else bad "the Dockerfile mounts a secret or reads a token"; fi
+job_of() { awk -v j="  $1:" '$0 == j { on = 1; print; next } on && /^  [a-z]/ { exit } on' "$wf"; }
+img=$(job_of ci-image-build)
+if ! grep -q -- '--secret\|github-token' <<< "$img"; then ok "ci-image-build gives the build no token"; else bad "ci-image-build passes a secret to the build"; fi
+if grep -q 'CI_IMAGE_BASE must name the base image by digest' <<< "$img" && ! grep -q "CI_IMAGE_BASE || " <<< "$img"; then
+  ok "ci-image-build fails without a pinned CI_IMAGE_BASE, with no moving default"
+else bad "ci-image-build doesn't require CI_IMAGE_BASE pinned"; fi
+app=$(job_of app-linux-x64)
+first=$(grep -m 1 -- '- name:' <<< "$app" | sed 's/.*- name: //')
+if [ "$first" = "Container pinned" ] && grep -q 'UBUNTU_2204_IMAGE must name' <<< "$app"; then ok "app-linux-x64 first checks UBUNTU_2204_IMAGE is pinned"; else bad "app-linux-x64's first step is '$first'"; fi
 
 echo
 if [ ${#failures[@]} -eq 0 ]; then echo "test-release-merge: all $pass checks passed"; exit 0; fi

@@ -83,8 +83,10 @@ name: Release
 #               ghcr.io/breakpatch/ci:<version> (docker/ci/Dockerfile), amd64 and arm64, each on its
 #               own runner, joined into one tag; `latest` only when this release is GitHub's
 #               Latest release (never a prerelease, nor an older version's fix). The only jobs
-#               with packages: write. Repository variable CI_IMAGE_BASE: the base image, pinned
-#               by digest (ubuntu:24.04@sha256:…); without it, the moving ubuntu:24.04.
+#               with packages: write, which only docker login and the push use (no token goes
+#               into the build). Repository variable CI_IMAGE_BASE: the base image, pinned by
+#               digest (ubuntu:24.04@sha256:…); without it ci-image-build fails (only the image:
+#               the app and breakpatch-ci are published before it, and nothing waits on it).
 #   test-build  manual runs (workflow_dispatch): an unsigned Community build on macOS, with no
 #               secrets at all (not even the Team repo token), kept as a workflow artifact for
 #               3 days. It tries the macOS build, the AI assistant bundle and the hardened
@@ -113,7 +115,10 @@ name: Release
 #                                 without them the jobs use the moving tag and warn
 #                      CI_MANYLINUX  off: ci-linux builds on the runner, not in the container
 #                      UBUNTU_2204_IMAGE  the Linux desktop build's container, pinned by digest
-#                                 (ubuntu:22.04@sha256:…); default ubuntu:22.04
+#                                 (ubuntu:22.04@sha256:…). Required by app-linux-x64 (a tag build with
+#                                 LINUX_DESKTOP on); test-build-linux defaults to ubuntu:22.04
+#                      CI_IMAGE_BASE  the container image's base, pinned by digest
+#                                 (ubuntu:24.04@sha256:…). Required by ci-image-build
 #                      LINUX_DESKTOP  on: build and publish the Linux desktop app (app-linux-x64,
 #                                 publish-linux). TODO(owner): turn on once runtimes.py and the
 #                                 GGUF model in models.py are pinned.
@@ -363,7 +368,8 @@ jobs:
     runs-on: ubuntu-24.04
     environment: release
     # Ubuntu 22.04 (glibc 2.35, WebKitGTK 4.1), so the app runs on 22.04 and later and on Debian 12.
-    # The repository variable UBUNTU_2204_IMAGE pins it by digest (ubuntu:22.04@sha256:…).
+    # The repository variable UBUNTU_2204_IMAGE pins it by digest (ubuntu:22.04@sha256:…); the
+    # first step fails without it.
     container:
       image: ${{ vars.UBUNTU_2204_IMAGE || 'ubuntu:22.04' }}
     env:
@@ -375,6 +381,17 @@ jobs:
         shell: bash
         working-directory: breakpatch
     steps:
+      # First, before anything is installed or built: a tag build only from a container pinned by
+      # digest (this job runs only with LINUX_DESKTOP on, so it never holds up a Mac-only release).
+      - name: Container pinned
+        working-directory: /
+        env:
+          IMAGE: ${{ vars.UBUNTU_2204_IMAGE }}
+        run: |
+          if [[ "$IMAGE" != *@sha256:* ]]; then
+            echo "::error::The repository variable UBUNTU_2204_IMAGE must name the build's container by digest (ubuntu:22.04@sha256:…), not '${IMAGE:-unset}': the Linux desktop app isn't built."
+            exit 1
+          fi
       # Before the checkout: git (a real clone), lsb-release (setup-python reads it to pick its
       # Ubuntu 22.04 build), the WebKitGTK and GTK libraries, and the tools the bundles need.
       - name: System packages (Ubuntu 22.04)
@@ -922,22 +939,36 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      # The base image and the Dockerfile frontend must be pinned by digest: a moved tag would
+      # go straight into the published image. This job never runs before publish-ci, so it can't
+      # hold up the app or breakpatch-ci (test-release-merge.sh checks nothing they need waits on it).
+      - name: Base image and frontend pinned
+        env:
+          BASE: ${{ vars.CI_IMAGE_BASE }}
+        run: |
+          if [[ "$BASE" != *@sha256:* ]]; then
+            echo "::error::The repository variable CI_IMAGE_BASE must name the base image by digest (ubuntu:24.04@sha256:…), not '${BASE:-unset}': the container image isn't built."
+            exit 1
+          fi
+          if ! head -n 1 docker/ci/Dockerfile | grep -Eq '^# syntax=[^ ]+@sha256:[0-9a-f]{64}$'; then
+            echo "::error::docker/ci/Dockerfile's syntax line must pin the frontend by digest"
+            exit 1
+          fi
+      # No token goes into the build (the repository is public); the one that can push to ghcr.io
+      # is used by docker login and buildx's push only, never by a RUN.
       - name: Build and push by digest
         env:
           GH_TOKEN: ${{ github.token }}
           PLATFORM: ${{ matrix.platform }}
-          BASE: ${{ vars.CI_IMAGE_BASE || 'ubuntu:24.04' }}   # pin it: ubuntu:24.04@sha256:…
+          BASE: ${{ vars.CI_IMAGE_BASE }}
         run: |
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-          (umask 077 && printf '%s' "$GH_TOKEN" > "$RUNNER_TEMP/github-token")
           docker buildx create --use --driver docker-container >/dev/null
           docker buildx build . -f docker/ci/Dockerfile --platform "$PLATFORM" \
             --build-arg "BREAKPATCH_VERSION=${GITHUB_REF_NAME#v}" --build-arg "BASE=$BASE" \
-            --secret "id=github_token,src=$RUNNER_TEMP/github-token" \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             --output "type=image,name=$IMAGE,push-by-digest=true,name-canonical=true,push=true" \
             --metadata-file "$RUNNER_TEMP/metadata.json"
-          rm -f "$RUNNER_TEMP/github-token"
           mkdir -p "$RUNNER_TEMP/digests"
           digest=$(sed -n 's/.*"containerimage.digest": *"\(sha256:[0-9a-f]\{64\}\)".*/\1/p' "$RUNNER_TEMP/metadata.json" | head -n 1)
           [ -n "$digest" ] || { echo "::error::no digest in the build's metadata"; exit 1; }
