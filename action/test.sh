@@ -13,8 +13,27 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/bp-action-test.XXXXXX")
 server=""
+# On GitHub Actions, each failure (or where the script stopped) also becomes an annotation, so it
+# can be read without the job's log.
+err_line="" err_cmd=""
+trap 'err_line=$LINENO err_cmd=$BASH_COMMAND' ERR
 # shellcheck disable=SC2317  # run by the EXIT trap
-cleanup() { if [ -n "$server" ]; then kill "$server" 2>/dev/null || true; fi; rm -rf "$work"; }
+annotate() {
+  local code=$1 f
+  [ "${GITHUB_ACTIONS:-}" = true ] || return 0
+  for f in "${failures[@]+"${failures[@]}"}"; do
+    f=${f//'%'/'%25'}; f=${f//$'\n'/'%0A'}
+    printf '::error title=action/test.sh::%s\n' "$f"
+  done
+  if [ "$code" -ne 0 ] && [ ${#failures[@]} -eq 0 ]; then
+    f="stopped early (exit $code) at line ${err_line:-?}: ${err_cmd:-?}${why:+ ($why)}"
+    f=${f//'%'/'%25'}; f=${f//$'\n'/'%0A'}
+    printf '::error title=action/test.sh::%s\n' "$f"
+  fi
+}
+# shellcheck disable=SC2317
+cleanup() { local code=$?; annotate "$code"; if [ -n "$server" ]; then kill "$server" 2>/dev/null || true; fi; rm -rf "$work"; }
+why=""
 trap cleanup EXIT; [ -z "${KEEP:-}" ] || trap - EXIT
 py=$(command -v python3.11) || { echo "action/test.sh: needs python3.11" >&2; exit 1; }
 pass=0 failures=()
@@ -297,12 +316,19 @@ if ! "$cpy" -c 'from cryptography.hazmat.primitives.ciphers.aead import AESGCM' 
   lock="$here/../engine/locks/linux-$(uname -m | sed 's/aarch64/arm64/').dev.txt"
   awk '/^(cryptography|cffi|pycparser)==/ { on = 1 } on && /^[^ ]/ && !/^(cryptography|cffi|pycparser)==/ { on = 0 } on && !/^ *#/' "$lock" > "$work/crypto-reqs.txt"
   "$py" -m venv "$work/cryptovenv"
-  "$work/cryptovenv/bin/python" -m pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: -r "$work/crypto-reqs.txt"
+  if ! "$work/cryptovenv/bin/python" -m pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: \
+       -r "$work/crypto-reqs.txt" > "$work/pip.log" 2>&1; then
+    cat "$work/pip.log"
+    why="pip couldn't install cryptography from $lock: $(tail -n 3 "$work/pip.log" | tr '\n' ' ')"
+    exit 1
+  fi
   cpy="$work/cryptovenv/bin/python"
 fi
-lc() {   # KEY MACHINE-ID open|seal ARGS…: licence-cache.py's output in $work/lclog
-  local key=$1 mid=$2; shift 2
-  env BREAKPATCH_LICENCE_KEY="$key" BREAKPATCH_MACHINE_ID="$mid" "$cpy" "$here/scripts/licence-cache.py" "$@" > "$work/lclog" 2>&1
+lc() {   # KEY MACHINE-ID open|seal ARGS…: licence-cache.py's output in $work/lclog; a failure is a check
+  local key=$1 mid=$2 code=0; shift 2
+  env BREAKPATCH_LICENCE_KEY="$key" BREAKPATCH_MACHINE_ID="$mid" "$cpy" "$here/scripts/licence-cache.py" "$@" > "$work/lclog" 2>&1 || code=$?
+  if [ "$code" -ne 0 ]; then bad "licence-cache.py $1 exited $code: $(tail -n 5 "$work/lclog" | tr '\n' ' ')"; fi
+  return 0
 }
 mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 lic="$work/lic/licence/licence.json" sealed="$work/lic/sealed"
@@ -328,11 +354,10 @@ lc KEY-1 github-456 open "$sealed" "$lic"
 if [ ! -e "$lic" ]; then ok "another machine ID opens nothing"; else bad "another machine ID opened it"; fi
 cp "$sealed/licence.sealed" "$work/lic/good.sealed"
 "$py" -c 'import sys; p = sys.argv[1]; b = bytearray(open(p, "rb").read()); b[-1] ^= 1; open(p, "wb").write(b)' "$sealed/licence.sealed"
-code=0; lc KEY-1 github-123 open "$sealed" "$lic" || code=$?
-if [ ! -e "$lic" ] && [ "$code" -eq 0 ]; then ok "a changed sealed file opens nothing (and isn't an error)"; else bad "a changed file: exit $code, $(cat "$work/lclog")"; fi
+lc KEY-1 github-123 open "$sealed" "$lic"
+if [ ! -e "$lic" ]; then ok "a changed sealed file opens nothing (and isn't an error)"; else bad "a changed file opened: $(cat "$work/lclog")"; fi
 rm -rf "$sealed"
-code=0; lc KEY-1 github-123 open "$sealed" "$lic" || code=$?
-expect "no cache: exit 0" "$code" 0
+lc KEY-1 github-123 open "$sealed" "$lic"
 contains "and it checks online" "$work/lclog" "No machine licence in the cache"
 cp "$work/lic/original.json" "$lic"
 lc "" github-123 seal "$lic" "$sealed"
