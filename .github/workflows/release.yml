@@ -40,6 +40,8 @@ name: Release
 #               Linux platforms into latest.json and adds their lines to SHA256SUMS. Safe to re-run:
 #               a file the release already has must have the same SHA-256 (it's uploaded again
 #               with --clobber), and a Linux platform already in latest.json the same entry.
+#               SHA256SUMS is uploaded only when its lines change, and then the release's
+#               SHA256SUMS.asc goes first (scripts/release-put-sums.sh): never a stale signature.
 #   sign-sums   last: downloads every file of the release, checks it against SHA256SUMS and signs
 #               SHA256SUMS with GPG (SHA256SUMS.asc). Without the GPG_SIGNING_KEY secret it says so
 #               and signs nothing.
@@ -56,7 +58,10 @@ name: Release
 #               macos-15; both in the `release` environment for TEAM_REPO_TOKEN, installing their
 #               dependencies from the hashed locks first, with no secret in the environment.
 #               publish-ci adds the files to the release and their lines to SHA256SUMS; the
-#               macOS, arm64 and Windows files only when their job worked.
+#               macOS, arm64 and Windows files only when their job worked. Safe to re-run (a
+#               re-run of the Linux desktop build re-runs it too): a file the release already
+#               lists must have the same SHA-256, and is uploaded again with --clobber
+#               (scripts/release-add-files.sh, scripts/release-put-sums.sh).
 #               The Linux jobs build inside a manylinux_2_28 container
 #               (scripts/build-manylinux.sh), so the Team wheel is tagged manylinux_2_28_<arch>
 #               and loads on glibc 2.28 and later (Debian 12, Raspberry Pi OS, Ubuntu 22.04):
@@ -445,7 +450,9 @@ jobs:
         if: steps.built.outputs.ok == '1'
         with:
           path: merge
-          sparse-checkout: scripts/linux-release-merge.sh
+          sparse-checkout: |
+            scripts/linux-release-merge.sh
+            scripts/release-put-sums.sh
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -467,7 +474,8 @@ jobs:
           cat merged/SHA256SUMS
           mapfile -t files < merged/upload.txt
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
-          gh release upload "$GITHUB_REF_NAME" merged/latest.json merged/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+          # Only when SHA256SUMS changes, and then without the old SHA256SUMS.asc.
+          bash merge/scripts/release-put-sums.sh old/SHA256SUMS merged/SHA256SUMS merged/latest.json
 
   # SHA256SUMS signed with GPG (SHA256SUMS.asc), once every file is in the release: after the
   # macOS, Linux and breakpatch-ci files. Every file is downloaded and checked against it first.
@@ -714,12 +722,15 @@ jobs:
     permissions:
       contents: write   # adds files to the release made by publish
     steps:
-      # Only for scripts/check-ci-requirements.sh, the check below.
+      # Only for the scripts below.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           path: breakpatch
           persist-credentials: false
-          sparse-checkout: scripts/check-ci-requirements.sh
+          sparse-checkout: |
+            scripts/check-ci-requirements.sh
+            scripts/release-add-files.sh
+            scripts/release-put-sums.sh
           sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -741,9 +752,11 @@ jobs:
           name: breakpatch-ci-windows-x86_64
           path: ci
       # SHA256SUMS: the release's own (the app's lines stay as they are) merged with a line per
-      # new file from every platform that was built; a name already in it fails the job. Every
-      # requirements file must name the two wheels, with LF line endings, and each must be here
-      # with the hash it gives (scripts/check-ci-requirements.sh).
+      # new file from every platform that was built. Safe to re-run: a name already in it must
+      # have the same SHA-256 (then it's uploaded again with --clobber), and another file under
+      # it fails the job (scripts/release-add-files.sh). Every requirements file must name the
+      # two wheels, with LF line endings, and each must be here with the hash it gives
+      # (scripts/check-ci-requirements.sh).
       - name: Check and publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -758,14 +771,12 @@ jobs:
           done
           bash breakpatch/scripts/check-ci-requirements.sh ci
           gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir old
-          (cd ci && sha256sum -- *) > new-sums.txt
-          if awk '{ print $2 }' old/SHA256SUMS new-sums.txt | sort | uniq -d | grep .; then
-            echo "::error::the release already has files with these names"; exit 1
-          fi
-          cat old/SHA256SUMS new-sums.txt > SHA256SUMS
-          cat new-sums.txt
-          gh release upload "$GITHUB_REF_NAME" ci/* --repo "$GITHUB_REPOSITORY"
-          gh release upload "$GITHUB_REF_NAME" SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+          bash breakpatch/scripts/release-add-files.sh old/SHA256SUMS ci merged
+          cat merged/SHA256SUMS
+          mapfile -t files < merged/upload.txt
+          gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          # Only when SHA256SUMS changes, and then without the old SHA256SUMS.asc.
+          bash breakpatch/scripts/release-put-sums.sh old/SHA256SUMS merged/SHA256SUMS
 
   # ---------------------------------------------------------------- after breakpatch-ci is published
 

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Tests scripts/linux-release-merge.sh (the release workflow's publish-linux job): the first run,
-# a re-run with the same files, and the cases it must refuse. Needs jq, awk and sha256sum.
+# Tests the scripts the release workflow's jobs that add files to a release use:
+# scripts/linux-release-merge.sh (publish-linux), scripts/release-add-files.sh (publish-ci) and
+# scripts/release-put-sums.sh (both): the first run, a re-run with the same files (as when the
+# Linux desktop build is re-run, which re-runs publish-linux and publish-ci after it), and the
+# cases they must refuse. Then release.yml itself: with LINUX_DESKTOP off, skipping the Linux
+# desktop jobs skips nothing else (publish-ci, sign-sums and the rest still run).
+# Needs jq, awk, sha256sum and python3.
 #
 #   bash scripts/test-release-merge.sh
 set -euo pipefail
@@ -53,6 +58,145 @@ if grep -q "other files with these names: Breakpatch_amd64.AppImage" "$work/log"
 jq '.platforms["linux-x86_64"].signature = "other"' "$work/out1/latest.json" > "$work/old2/latest.json"
 code=0; bash "$merge" "$work/old2" "$work/linux" "$work/out4" > "$work/log" 2>&1 || code=$?
 expect "a different Linux entry in latest.json is refused" "$code" 1
+
+echo
+echo "release-add-files.sh (publish-ci)"
+add="$repo/scripts/release-add-files.sh"
+mkdir -p "$work/ci"
+printf 'engine' > "$work/ci/breakpatch_engine-1.2.3-py3-none-any.whl"
+printf 'team' > "$work/ci/breakpatch_team_engine-1.2.3-cp311-manylinux.whl"
+printf 'reqs' > "$work/ci/breakpatch-ci-requirements-linux-x86_64.txt"
+code=0; bash "$add" "$work/out1/SHA256SUMS" "$work/ci" "$work/ci1" > "$work/log" 2>&1 || code=$?
+expect "the first run works" "$code" 0
+expect "SHA256SUMS: the release's lines as they were, then the new files'" "$(awk '{ print $2 }' "$work/ci1/SHA256SUMS" | tr '\n' ' ')" \
+  "mac.tar.gz Breakpatch_amd64.AppImage breakpatch_1.2.3_amd64.deb latest.json breakpatch-ci-requirements-linux-x86_64.txt breakpatch_engine-1.2.3-py3-none-any.whl breakpatch_team_engine-1.2.3-cp311-manylinux.whl "
+expect "upload.txt lists every new file" "$(wc -l < "$work/ci1/upload.txt" | tr -d ' ')" 3
+# A re-run: the release has them already, with the same SHA-256.
+code=0; bash "$add" "$work/ci1/SHA256SUMS" "$work/ci" "$work/ci2" > "$work/log" 2>&1 || code=$?
+expect "a re-run with the same files works" "$code" 0
+if cmp -s "$work/ci1/SHA256SUMS" "$work/ci2/SHA256SUMS"; then ok "and leaves SHA256SUMS as it was (no line twice)"; else bad "a re-run changed SHA256SUMS"; diff "$work/ci1/SHA256SUMS" "$work/ci2/SHA256SUMS" || true; fi
+expect "and uploads them again (--clobber)" "$(wc -l < "$work/ci2/upload.txt" | tr -d ' ')" 3
+# A re-run where one platform is new (it failed the first time and was re-run): only its line is added.
+printf 'mac reqs' > "$work/ci/breakpatch-ci-requirements-macos-arm64.txt"
+code=0; bash "$add" "$work/ci1/SHA256SUMS" "$work/ci" "$work/ci3" > "$work/log" 2>&1 || code=$?
+expect "a re-run with one more file works" "$code" 0
+expect "and adds only its line" "$(diff "$work/ci1/SHA256SUMS" "$work/ci3/SHA256SUMS" | grep -c '^>' || true)" 1
+rm "$work/ci/breakpatch-ci-requirements-macos-arm64.txt"
+# Another build under a name the release has: refused, nothing written.
+printf 'another team build' > "$work/ci/breakpatch_team_engine-1.2.3-cp311-manylinux.whl"
+code=0; bash "$add" "$work/ci1/SHA256SUMS" "$work/ci" "$work/ci4" > "$work/log" 2>&1 || code=$?
+expect "a different file under a name the release has is refused" "$code" 1
+if grep -q "other files with these names: breakpatch_team_engine-1.2.3-cp311-manylinux.whl" "$work/log" && [ ! -e "$work/ci4" ]; then ok "and says which, writing nothing"; else bad "no message, or it wrote"; fi
+printf 'team' > "$work/ci/breakpatch_team_engine-1.2.3-cp311-manylinux.whl"
+
+echo
+echo "release-put-sums.sh (publish-linux, publish-ci)"
+put="$repo/scripts/release-put-sums.sh"
+mkdir -p "$work/bin"
+cat > "$work/bin/gh" <<'GH'
+#!/bin/sh
+echo "gh $*" >> "$GH_LOG"
+case "$*" in
+  "release view"*) printf '%s\n' $FAKE_ASSETS ;;
+  "release delete-asset"* | "release upload"*) ;;
+  *) echo "gh: unexpected $*" >&2; exit 2 ;;
+esac
+GH
+chmod +x "$work/bin/gh"
+put_sums() {   # ASSETS OLD NEW [FILE…]: sets $code and $gh (gh's calls, one per line)
+  local assets=$1; shift
+  : > "$work/gh.log"
+  code=0
+  env PATH="$work/bin:$PATH" GH_LOG="$work/gh.log" FAKE_ASSETS="$assets" GITHUB_REF_NAME=v1.2.3 GITHUB_REPOSITORY=BreakPatch/breakpatch \
+    bash "$put" "$@" > "$work/log" 2>&1 || code=$?
+  gh=$(cat "$work/gh.log")
+}
+# A re-run of publish-ci after sign-sums: the same lines, so nothing is uploaded and SHA256SUMS.asc stays.
+put_sums "SHA256SUMS SHA256SUMS.asc" "$work/ci1/SHA256SUMS" "$work/ci2/SHA256SUMS"
+expect "unchanged: works" "$code" 0
+expect "unchanged: gh isn't asked for anything" "$gh" ""
+# The same lines in another order (publish-linux re-run after publish-ci): unchanged too.
+mkdir -p "$work/reordered"
+{ grep -v 'AppImage\|_amd64\.deb' "$work/ci1/SHA256SUMS"; grep 'AppImage\|_amd64\.deb' "$work/ci1/SHA256SUMS"; } > "$work/reordered/SHA256SUMS"
+put_sums "SHA256SUMS SHA256SUMS.asc" "$work/ci1/SHA256SUMS" "$work/reordered/SHA256SUMS" "$work/out1/latest.json"
+expect "the same lines in another order: nothing uploaded" "$gh" ""
+# Changed, after sign-sums: the old signature goes before the new SHA256SUMS goes up.
+put_sums "SHA256SUMS SHA256SUMS.asc latest.json" "$work/out1/SHA256SUMS" "$work/ci1/SHA256SUMS"
+expect "changed: works" "$code" 0
+expect "changed: SHA256SUMS.asc deleted, then SHA256SUMS uploaded" "$(printf '%s\n' "$gh" | sed 1d | tr '\n' ';')" \
+  "gh release delete-asset v1.2.3 SHA256SUMS.asc --yes --repo BreakPatch/breakpatch;gh release upload v1.2.3 $work/ci1/SHA256SUMS --clobber --repo BreakPatch/breakpatch;"
+# Changed, with latest.json, before sign-sums ever ran: nothing to delete; latest.json goes up first.
+put_sums "SHA256SUMS latest.json" "$work/old/SHA256SUMS" "$work/out1/SHA256SUMS" "$work/out1/latest.json"
+expect "first run: latest.json, then SHA256SUMS, nothing deleted" "$(printf '%s\n' "$gh" | sed 1d | tr '\n' ';')" \
+  "gh release upload v1.2.3 $work/out1/latest.json --clobber --repo BreakPatch/breakpatch;gh release upload v1.2.3 $work/out1/SHA256SUMS --clobber --repo BreakPatch/breakpatch;"
+cp "$work/ci1/SHA256SUMS" "$work/sums.txt"
+put_sums "" "$work/out1/SHA256SUMS" "$work/sums.txt"
+expect "a new file not named SHA256SUMS is refused" "$code" 1
+
+echo
+echo "release.yml: with LINUX_DESKTOP off, only the Linux desktop jobs are skipped"
+wf="$repo/.github/workflows/release.yml"
+code=0
+python3 - "$wf" > "$work/log" 2>&1 <<'PY' || code=$?
+import re, sys
+jobs, cur = {}, None
+for line in open(sys.argv[1]):
+    m = re.match(r"^  ([a-z0-9-]+):\s*$", line)
+    if m:
+        cur = jobs.setdefault(m.group(1), {"needs": [], "if": ""})
+        continue
+    if cur is None or not line.startswith("    ") or line.startswith("     "):
+        continue
+    m = re.match(r"^    needs:\s*(.*)$", line)
+    if m:
+        cur["needs"] = [x.strip() for x in m.group(1).strip("[] \n").split(",") if x.strip()]
+    m = re.match(r"^    if:\s*(.*)$", line)
+    if m:
+        cur["if"] = m.group(1).strip()
+gated = {j for j, d in jobs.items() if "vars.LINUX_DESKTOP == 'on'" in d["if"]}
+assert gated == {"app-linux-x64", "publish-linux"}, f"jobs gated by LINUX_DESKTOP: {sorted(gated)}"
+# A job is skipped when its `if` needs LINUX_DESKTOP, or when a job it needs is skipped and its
+# `if` has no status function (always(), !cancelled(), failure()) or wants that job's success.
+skipped, changed = set(gated), True
+while changed:
+    changed = False
+    for j, d in jobs.items():
+        if j in skipped:
+            continue
+        cond = d["if"]
+        status = any(f in cond for f in ("always()", "cancelled()", "failure()"))
+        wants = any(f"needs.{n}.result == 'success'" in cond for n in d["needs"] if n in skipped)
+        if any(n in skipped for n in d["needs"]) and (not status or wants):
+            skipped.add(j); changed = True
+tag_jobs = {j for j, d in jobs.items() if "workflow_dispatch" not in d["if"]}
+must_run = {"build", "publish", "sign-sums", "ci-linux", "ci-macos", "ci-linux-arm64", "ci-windows-x64",
+            "publish-ci", "smoke-ci-linux", "ci-image-build", "ci-image"}
+assert must_run <= set(jobs), f"missing jobs: {sorted(must_run - set(jobs))}"
+assert skipped == gated, f"also skipped with LINUX_DESKTOP off: {sorted(skipped - gated)}"
+assert tag_jobs - skipped >= must_run
+# Nothing the Mac app or breakpatch-ci is published by waits on the container image, whose
+# checks (a pinned CI_IMAGE_BASE) can fail it.
+for j in ("publish", "publish-ci", "sign-sums", "smoke-ci-linux"):
+    seen, todo = set(), [j]
+    while todo:
+        n = todo.pop()
+        for m in jobs[n]["needs"]:
+            if m not in seen:
+                seen.add(m); todo.append(m)
+    assert not seen & {"ci-image-build", "ci-image"}, f"{j} waits on the container image"
+print("skipped:", sorted(skipped))
+PY
+expect "the workflow's needs and ifs" "$code" 0
+[ "$code" -eq 0 ] || cat "$work/log"
+if grep -q "^skipped: \['app-linux-x64', 'publish-linux'\]$" "$work/log"; then ok "publish-ci, sign-sums and the rest run on a Mac-only release"; else bad "$(cat "$work/log")"; fi
+step=$(awk '/^  publish-ci:/ { j = 1 } j && /^  [a-z]/ && !/^  publish-ci:/ { exit } j' "$wf")
+# shellcheck disable=SC2016  # the literal ${files[@]} in the workflow
+if grep -q 'release-add-files.sh' <<< "$step" && grep -q 'release-put-sums.sh' <<< "$step" && grep -q -- '"${files\[@\]}" --clobber' <<< "$step"; then
+  ok "publish-ci adds its files with release-add-files.sh and uploads with --clobber"
+else bad "publish-ci doesn't use release-add-files.sh, release-put-sums.sh and --clobber"; fi
+if [ "$(grep -cE 'gh release upload .*SHA256SUMS([^.]|$)' "$wf")" -eq 0 ]; then
+  ok "SHA256SUMS is only ever uploaded by release-put-sums.sh"
+else bad "release.yml uploads SHA256SUMS itself: $(grep -nE 'gh release upload .*SHA256SUMS[^.]' "$wf")"; fi
 
 echo
 if [ ${#failures[@]} -eq 0 ]; then echo "test-release-merge: all $pass checks passed"; exit 0; fi
