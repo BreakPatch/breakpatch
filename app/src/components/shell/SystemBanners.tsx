@@ -4,6 +4,8 @@ import { Button, Icon } from '../ui';
 import { useSession } from '../../state/session';
 import { useSystem } from '../../state/system';
 import { checkForUpdates, restartToUpdate } from '../../lib/updates';
+import { RELEASES_URL, useUpdateSource } from '../../lib/useUpdateSource';
+import { openExternal } from '../../platform';
 import './systemStates.css';
 import { osText } from '../../lib/osWords';
 
@@ -26,12 +28,16 @@ export function SystemBanners() {
   // A tests folder on this Mac works the same offline; its files can be edited outside the app.
   const local = useSession(s => !!s.local);
   const { updateReady, updateDismissed, dismissUpdate, readOnly, warnings, warningsDismissed, dismissWarnings } = useSystem();
+  // A .deb is updated by its package manager (lib/updates.ts updateSource).
+  const fromPackage = useUpdateSource() === 'package';
   return (
     <>
       {readOnly && (
         <SysBanner tone="fixed" icon="lock" title="Update Breakpatch to save changes."
           text={local ? 'This folder was saved by a newer Breakpatch.' : 'Someone on your team uses a newer version.'}
-          actions={<Button kind="primary" className="sys-banner-btn" onClick={() => void checkForUpdates()}>Check for updates</Button>} />
+          actions={fromPackage
+            ? <Button kind="primary" className="sys-banner-btn" iconAfter="open_in_new" onClick={() => void openExternal(RELEASES_URL).catch(() => undefined)}>Get the new .deb</Button>
+            : <Button kind="primary" className="sys-banner-btn" onClick={() => void checkForUpdates()}>Check for updates</Button>} />
       )}
       {warnings.length > 0 && !warningsDismissed && (
         <SysBanner tone="fixed" icon="warning"

@@ -444,6 +444,38 @@ fn system_memory_gb() -> u32 {
     runner::memory_gb()
 }
 
+/// How this copy is updated: `"self"`, by the updater (the Mac app, a Linux AppImage, Windows), or
+/// `"package"`, by the package manager that installed it (Linux, not an AppImage: the .deb). A
+/// .deb's files belong to dpkg, so there the updater isn't even registered (`run`), and the UI
+/// neither checks nor downloads: Settings, About says to install the new .deb instead.
+fn update_source(linux: bool, appimage: bool) -> &'static str {
+    if linux && !appimage {
+        "package"
+    } else {
+        "self"
+    }
+}
+
+/// An AppImage's runtime sets `APPIMAGE` (the path of the file it runs from); tauri reads it the same
+/// way for `app.env()`.
+#[cfg(target_os = "linux")]
+fn running_appimage() -> bool {
+    tauri::Env::default().appimage.is_some()
+}
+#[cfg(not(target_os = "linux"))]
+fn running_appimage() -> bool {
+    false
+}
+
+fn this_update_source() -> &'static str {
+    update_source(cfg!(target_os = "linux"), running_appimage())
+}
+
+#[tauri::command]
+fn app_update_source() -> &'static str {
+    this_update_source()
+}
+
 /// POSTs a suite result message to the suite's result address (https only, one try with a
 /// timeout; the Team runner retries) and returns the HTTP status. The webview never posts them
 /// itself, so the CSP keeps connect-src to Firebase.
@@ -555,7 +587,7 @@ pub fn run() {
     #[cfg(not(target_os = "macos"))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(second_launch));
 
-    let app = builder
+    let builder = builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(log::LevelFilter::Info)
@@ -571,8 +603,14 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         // After fs: restores the folders picked in earlier sessions into its scope.
         .plugin(tauri_plugin_persisted_scope::init())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+    // The updater only where this copy updates itself: never for a .deb (update_source).
+    let builder = if this_update_source() == "self" {
+        builder.plugin(tauri_plugin_updater::Builder::new().build())
+    } else {
+        builder
+    };
+    let app = builder
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
         // Local notifications when a run finishes in the background (Settings, Notifications).
         .plugin(tauri_plugin_notification::init())
@@ -666,6 +704,7 @@ pub fn run() {
             runner_open_at_login,
             runner_open_at_login_enabled,
             system_memory_gb,
+            app_update_source,
             runner_post_result,
             runner_post_message,
             screenshot_read,
@@ -734,6 +773,21 @@ pub fn run() {
         }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod update_source_tests {
+    use super::update_source;
+
+    /// A .deb belongs to the package manager: no updater, no checks, no downloads. An AppImage,
+    /// the Mac app and Windows update themselves.
+    #[test]
+    fn only_a_linux_copy_that_isnt_an_appimage_is_updated_by_its_package() {
+        assert_eq!(update_source(true, false), "package");
+        assert_eq!(update_source(true, true), "self");
+        assert_eq!(update_source(false, false), "self");
+        assert_eq!(update_source(false, true), "self");
+    }
 }
 
 #[cfg(test)]

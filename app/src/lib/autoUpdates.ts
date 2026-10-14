@@ -11,13 +11,14 @@
 // whether an hour has passed since the last check started. Timers stand still while the Mac
 // sleeps, so after a three-hour sleep the next tick finds one check due, not three.
 //
-// Not in a browser (the preview) or with the demo engine (`?demo`). Not while one is going on
+// Not in a browser (the preview) or with the demo engine (`?demo`), nor for a copy its package
+// manager updates (a Linux .deb: updates.ts updateSource). Not while one is going on
 // (About's button included: that one counts as the hour's check), nor once an update is waiting
 // for a restart. While the app is busy (holdUpdateChecks: recording, a run, setup's downloads) a
 // check that falls due waits until it isn't, or for a later tick.
 import { isTauri, wantsDemo } from '../platform';
 import { useSystem } from '../state/system';
-import { checkForUpdates, isCheckingForUpdates, lastCheckStarted } from './updates';
+import { checkForUpdates, isCheckingForUpdates, knownUpdateSource, lastCheckStarted, updateSource } from './updates';
 
 /** After the app opens: long enough for the engine to start first. */
 export const FIRST_CHECK_MS = 10_000;
@@ -52,6 +53,7 @@ function tick() {
 
 function checkIfDue() {
   if (starts === 0 || holds > 0 || Date.now() < dueAt()) return;
+  if (knownUpdateSource() === 'package') return;   // a .deb: its package manager updates it
   if (useSystem.getState().updateReady || isCheckingForUpdates()) return;
   void checkForUpdates();               // a failure shows nothing: the next one is an hour on
 }
@@ -63,7 +65,7 @@ export function autoUpdatesApply(): boolean { return isTauri() && !wantsDemo(); 
 export function startAutoUpdates(): () => void {
   if (!autoUpdatesApply()) return () => {};
   starts++;
-  if (starts === 1) { openedAt ??= Date.now(); schedule(); }
+  if (starts === 1) { openedAt ??= Date.now(); void updateSource(); schedule(); }
   let undone = false;
   return () => {
     if (undone) return;

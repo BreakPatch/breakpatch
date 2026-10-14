@@ -106,7 +106,7 @@ It downloads the AppImage from [GitHub Releases](https://github.com/BreakPatch/b
 
 **Or the .deb package.** Each Linux release also has a `.deb` for Ubuntu and Debian. Download it from the release and install it with `sudo apt install ./breakpatch_<version>_amd64.deb`. Use one or the other, not both. The install command leaves a `.deb` install alone and tells you how to update it.
 
-**Updating.** Breakpatch updates itself, as on a Mac (see [Updates](#updates)). With the `.deb`, installing an update asks for your password. Running the install command again updates the AppImage too.
+**Updating.** The AppImage updates itself, as on a Mac (see [Updates](#updates)), and running the install command again updates it too. The `.deb` belongs to your package manager, so Breakpatch doesn't check for updates or download them there: to update, download the new `.deb` from [GitHub Releases](https://github.com/BreakPatch/breakpatch/releases) and install it with `sudo apt install ./<file>.deb`. Settings → About says so.
 
 **Links and workspace files.** `breakpatch://` links and `.bpworkspace` files open in Breakpatch. If Breakpatch is already open, they go to the open window. The `.deb` sets this up when it's installed. The AppImage sets it up for your account each time it starts.
 
@@ -482,6 +482,8 @@ Settings → About → **Check for updates** looks for a new version. From Break
 A new version downloads in the background, and then a banner says it's ready. Press **Restart to update** when it suits you: Breakpatch installs it and opens again. **Later** puts the banner away; Settings → About keeps **Restart to update**. If you quit without restarting, nothing is installed, and Breakpatch downloads the update again at its next check. Updates never change your tests.
 
 From 0.1.0-beta.3, while you record or run a test, or setup downloads the test browser or the AI assistant, the automatic check waits until you're done. If Breakpatch can't reach GitHub (you're offline, for example), it says nothing and tries again an hour later.
+
+On Linux, this is the AppImage: Breakpatch installed from the `.deb` is updated with a new `.deb` (see [Breakpatch on Linux](#breakpatch-on-linux-preview)).
 
 Settings → About also shows your version and edition.
 

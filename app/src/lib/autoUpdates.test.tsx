@@ -1,12 +1,20 @@
 // Automatic update checks (lib/autoUpdates.ts, components/shell/AutoUpdates.tsx), with fake timers
 // and the Tauri updater mocked.
 import { StrictMode } from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const updater = vi.hoisted(() => ({ check: vi.fn() }));
 vi.mock('@tauri-apps/plugin-updater', () => ({ check: updater.check }));
+// The shell: how this copy is updated (app_update_source), 'self' unless a test says 'package'
+// (a Linux .deb). openExternal goes through the shell plugin.
+const shellSays = vi.hoisted(() => ({ source: 'self', opened: [] as string[] }));
+vi.mock('@tauri-apps/api/core', async orig => ({
+  ...await orig<typeof import('@tauri-apps/api/core')>(),
+  invoke: vi.fn(async (cmd: string) => { if (cmd === 'app_update_source') return shellSays.source; throw new Error(`unexpected ${cmd}`); }),
+}));
+vi.mock('@tauri-apps/plugin-shell', () => ({ open: vi.fn(async (url: string) => { shellSays.opened.push(url); }) }));
 // About asks the engine about this Mac: never answered here, and no sidecar is started.
 vi.mock('../engine', async orig => ({ ...await orig<typeof import('../engine')>(), getEngine: () => ({ systemInfo: () => new Promise(() => {}) }) }));
 
@@ -15,6 +23,7 @@ import { CHECK_DEADLINE_MS, CHECK_TIMEOUT_MS, DOWNLOAD_DEADLINE_MS, DOWNLOAD_TIM
 import { AutoUpdates } from '../components/shell/AutoUpdates';
 import { AboutSection } from '../screens/settings/sections/AboutSection';
 import { useSystem } from '../state/system';
+import { SystemBanners } from '../components/shell/SystemBanners';
 
 const MIN = 60_000;
 const START = new Date('2026-10-12T09:00:00Z').getTime();
@@ -48,12 +57,15 @@ beforeEach(async () => {
   localStorage.clear();
   updater.check.mockReset();
   updater.check.mockResolvedValue(null);
+  shellSays.source = 'self';
+  shellSays.opened = [];
   resetUpdatesForTests();
   resetAutoUpdatesForTests();
-  useSystem.setState({ updateReady: null, updateDismissed: false, error: null, updateCheckedAt: null });
+  useSystem.setState({ updateReady: null, updateDismissed: false, error: null, updateCheckedAt: null, readOnly: false });
   await import('@tauri-apps/plugin-updater');      // loaded once, as in the app after the first check
 });
 afterEach(() => {
+  cleanup();
   resetAutoUpdatesForTests();
   delete win.__TAURI_INTERNALS__;
   vi.useRealTimers();
@@ -343,5 +355,51 @@ describe('AutoUpdates in the app shell', () => {
     expect(vi.getTimerCount()).toBe(0);
     await wait(3 * CHECK_EVERY_MS);
     expect(updater.check).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a copy installed from the .deb (Linux): its package manager updates it', () => {
+  beforeEach(() => { shellSays.source = 'package'; });
+
+  it('never checks or downloads, automatically or from About', async () => {
+    updater.check.mockResolvedValue(anUpdate());
+    startAutoUpdates();
+    await wait(FIRST_CHECK_MS + 3 * CHECK_EVERY_MS);
+    expect(updater.check).not.toHaveBeenCalled();
+    expect(await checkForUpdates()).toEqual({ state: 'package' });
+    expect(updater.check).not.toHaveBeenCalled();
+    expect(useSystem.getState().updateReady).toBeNull();
+    expect(lastChecked()).toBeNull();
+  });
+
+  it('About says updates come with a new .deb, with no Check for updates', async () => {
+    render(<MemoryRouter><AboutSection /></MemoryRouter>);
+    await act(settle);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      "Breakpatch was installed from its .deb package, so it doesn't update itself. To update, download the new .deb from GitHub Releases and install it with sudo apt install ./<file>.deb.");
+    expect(screen.queryByRole('button', { name: /Check for updates/ })).toBeNull();
+    expect(screen.queryByText('Up to date')).toBeNull();
+    await act(async () => { screen.getByRole('button', { name: /GitHub Releases/ }).click(); await settle(); });
+    expect(shellSays.opened).toEqual(['https://github.com/BreakPatch/breakpatch/releases']);
+    expect(updater.check).not.toHaveBeenCalled();
+  });
+
+  it('the newer-version banner points to the new .deb instead of a check', async () => {
+    useSystem.setState({ readOnly: true });
+    render(<MemoryRouter><SystemBanners /></MemoryRouter>);
+    await act(settle);
+    expect(screen.queryByRole('button', { name: 'Check for updates' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Get the new \.deb/ })).toBeInTheDocument();
+  });
+});
+
+describe('an AppImage, the Mac app and Windows update themselves', () => {
+  it('About keeps Check for updates, and the banner too', async () => {
+    shellSays.source = 'self';
+    useSystem.setState({ readOnly: true });
+    render(<MemoryRouter><AboutSection /><SystemBanners /></MemoryRouter>);
+    await act(settle);
+    expect(screen.getAllByRole('button', { name: 'Check for updates' })).toHaveLength(2);
+    expect(screen.queryByText(/installed from its \.deb package/)).toBeNull();
   });
 });

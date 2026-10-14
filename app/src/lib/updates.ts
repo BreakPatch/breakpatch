@@ -1,6 +1,11 @@
 // Auto-update through the Tauri updater (spec §17). Endpoint and public key live in tauri.conf.json.
 // lib/autoUpdates.ts calls checkForUpdates on its own (when the app opens, then every hour);
 // Settings → About's Check for updates calls it by hand.
+//
+// Not for a copy its package manager updates (updateSource 'package': Linux, installed from the
+// .deb, which the shell tells apart from an AppImage by its APPIMAGE variable). There a check is
+// never made and nothing is downloaded (the shell doesn't even register the updater), and About
+// says to install the new .deb instead.
 import type { Update } from '@tauri-apps/plugin-updater';
 import { isTauri } from '../platform';
 import { storedUpdateCheckedAt, UPDATE_CHECKED_KEY, useSystem } from '../state/system';
@@ -8,7 +13,35 @@ import { storedUpdateCheckedAt, UPDATE_CHECKED_KEY, useSystem } from '../state/s
 type Pending = { version: string; install: () => Promise<void> };
 let pending: Pending | null = null;
 
-export type CheckResult = { state: 'upToDate' } | { state: 'ready'; version: string } | { state: 'failed'; reason: string };
+export type CheckResult = { state: 'upToDate' } | { state: 'ready'; version: string } | { state: 'failed'; reason: string }
+  | { state: 'package' };
+
+/** 'self': the updater updates this copy. 'package': its package manager does (a Linux .deb). */
+export type UpdateSource = 'self' | 'package';
+let source: Promise<UpdateSource> | null = null;
+let knownSource: UpdateSource | null = null;
+
+/**
+ * How this copy is updated, from the shell (app_update_source), asked once. 'self' in a browser,
+ * and when the shell can't say (the shell gives a .deb no updater anyway, so nothing downloads).
+ */
+export function updateSource(): Promise<UpdateSource> {
+  source ??= (async (): Promise<UpdateSource> => {
+    let s: UpdateSource = 'self';
+    if (isTauri()) {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        if (await invoke<string>('app_update_source') === 'package') s = 'package';
+      } catch { /* an answer we can't read: the updater's own way */ }
+    }
+    knownSource = s;
+    return s;
+  })();
+  return source;
+}
+
+/** updateSource's answer once it has come, else null. */
+export function knownUpdateSource(): UpdateSource | null { return knownSource; }
 
 /** How long GitHub has to answer a check, and an update to download: the updater's own timeouts. */
 export const CHECK_TIMEOUT_MS = 30_000;
@@ -79,6 +112,7 @@ async function runCheck(): Promise<CheckResult> {
     noteChecked();
     return { state: 'upToDate' };
   }
+  if (await updateSource() === 'package') return { state: 'package' };     // never checked or downloaded
   let update: Update | null = null;
   try {
     const { check } = await import('@tauri-apps/plugin-updater');
@@ -118,4 +152,4 @@ export async function restartToUpdate(): Promise<void> {
 }
 
 /** For tests only. */
-export function resetUpdatesForTests(): void { pending = null; inflight = null; lastStarted = null; }
+export function resetUpdatesForTests(): void { pending = null; inflight = null; lastStarted = null; source = null; knownSource = null; }

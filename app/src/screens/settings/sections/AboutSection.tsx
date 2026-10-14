@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Button, CopyButton, EarMark, Icon, StatusPill, Wordmark } from '../../../components/ui';
-import { appVersion, isTauri } from '../../../platform';
+import { appVersion, isTauri, openExternal } from '../../../platform';
 import { checkForUpdates, restartToUpdate, type CheckResult } from '../../../lib/updates';
+import { RELEASES_URL, useUpdateSource } from '../../../lib/useUpdateSource';
 import { useSession } from '../../../state/session';
 import { useSystem } from '../../../state/system';
 import { clock, daysAgo, formatDateTime } from '../../../components/common/format';
@@ -27,6 +28,8 @@ export function AboutSection() {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<CheckResult | null>(null);
   const last = useSystem(s => s.updateCheckedAt);       // an automatic check ending meanwhile too
+  // A .deb is updated by its package manager: no checks here, and About says how instead.
+  const fromPackage = useUpdateSource() === 'package';
   const version = appVersion();
   const editionName = editionLabel(edition.name);
 
@@ -62,23 +65,33 @@ export function AboutSection() {
           <Wordmark size={19} ear={false} />
           <div className="set-card-sub">Version {version} · {editionName}{edition.name === 'community' ? ' · Open source' : ''}</div>
         </div>
-        {checking ? <StatusPill status="running">Checking…</StatusPill>
+        {fromPackage ? null
+          : checking ? <StatusPill status="running">Checking…</StatusPill>
           : ready ? <span className="pill pill-accent"><Icon name="system_update" />{ready} is ready</span>
           : result?.state === 'failed' ? <StatusPill status="failed">Couldn't check</StatusPill>
           : <StatusPill status="passed">Up to date</StatusPill>}
       </div>
 
-      <div className="row" style={{ gap: 12 }}>
-        {ready
-          ? <Button kind="primary" icon="restart_alt" onClick={() => void restartToUpdate()}>Restart to update</Button>
-          : <Button icon="refresh" busy={checking} onClick={() => void check()}>{checking ? 'Checking…' : 'Check for updates'}</Button>}
-        <span className="set-note" role="status">
-          {result?.state === 'failed' ? result.reason
-            : result?.state === 'upToDate' ? `You have the latest version. ${lastLine(last)}`
-            : ready ? `Breakpatch ${ready} is downloaded. Runs in progress finish first.`
-            : lastLine(last)}
-        </span>
-      </div>
+      {fromPackage ? (
+        <div className="row" style={{ gap: 12 }}>
+          <Button iconAfter="open_in_new" onClick={() => void openExternal(RELEASES_URL).catch(() => undefined)}>GitHub Releases</Button>
+          <span className="set-note" role="status">
+            Breakpatch was installed from its .deb package, so it doesn't update itself. To update, download the new .deb from GitHub Releases and install it with sudo apt install ./&lt;file&gt;.deb.
+          </span>
+        </div>
+      ) : (
+        <div className="row" style={{ gap: 12 }}>
+          {ready
+            ? <Button kind="primary" icon="restart_alt" onClick={() => void restartToUpdate()}>Restart to update</Button>
+            : <Button icon="refresh" busy={checking} onClick={() => void check()}>{checking ? 'Checking…' : 'Check for updates'}</Button>}
+          <span className="set-note" role="status">
+            {result?.state === 'failed' ? result.reason
+              : result?.state === 'upToDate' ? `You have the latest version. ${lastLine(last)}`
+              : ready ? `Breakpatch ${ready} is downloaded. Runs in progress finish first.`
+              : lastLine(last)}
+          </span>
+        </div>
+      )}
 
       <EditionMismatch app={edition.name} engine={info?.edition} />
 
