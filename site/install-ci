@@ -9,10 +9,11 @@
 # What it does:
 #   1. Checks this is a Mac with Apple Silicon and macOS 14 or later, or 64-bit Linux with glibc
 #      2.28 or later on x86_64 or arm64 (a Raspberry Pi 4 or 5, for example; it runs tests there;
-#      record them on a Mac), and finds Python 3.11 (BREAKPATCH_PYTHON, python3.11 or python3). When the machine has no
-#      Python 3.11 (Raspberry Pi OS and Ubuntu 24.04 come with 3.12 or 3.13), it downloads a
-#      pinned build of it from python-build-standalone (github.com/astral-sh/python-build-standalone),
-#      checks it against the SHA-256 written in this script, and keeps it in ~/.breakpatch-ci/python.
+#      record them on a Mac), and finds Python 3.11 (BREAKPATCH_PYTHON, python3.11 or python3).
+#      When the machine has no Python 3.11 (Raspberry Pi OS and Ubuntu 24.04 come with 3.12 or
+#      3.13), it downloads a pinned build of it from python-build-standalone
+#      (github.com/astral-sh/python-build-standalone), checks it against the SHA-256 written in
+#      this script, and keeps it in ~/.breakpatch-ci/python.
 #      On Windows, use install-ci.ps1 instead.
 #   2. Asks GitHub for the latest release of BreakPatch/breakpatch (or BREAKPATCH_VERSION, or with
 #      BREAKPATCH_CHANNEL=beta the newest release, betas included).
@@ -33,6 +34,7 @@
 #      GITHUB_PATH for the next steps; anywhere else it says how when it isn't on PATH.
 #   7. On Linux, asks breakpatch-ci setup whether the system has the libraries Chromium needs,
 #      and when it hasn't, names them and the one command (run as an administrator) that adds them.
+#      breakpatch-ci 0.1.0-beta.2 and earlier don't check: then it gives that command only.
 #
 # --uninstall removes only what the installer made in those two folders. With
 # BREAKPATCH_LICENCE_KEY set, it first gives this machine's licence back (breakpatch-ci licence
@@ -156,9 +158,12 @@ check_platform() {
 # Linux: glibc 2.28 or later (Ubuntu 22.04, Debian 12, Raspberry Pi OS Bookworm, and later). The
 # Team engine is built for manylinux_2_28, and the wheels on PyPI are glibc builds. musl (Alpine)
 # can't load them. When it can't tell, it goes on: pip says so if a wheel doesn't fit.
+# The container image (docs: breakpatch-ci in a container) isn't offered here until a release has
+# it and anyone can pull it.
 check_libc() {
   case "$platform" in linux-*) ;; *) return 0 ;; esac
-  libc_need="breakpatch-ci needs a Linux with glibc 2.28 or later (Ubuntu 22.04, Debian 12, Raspberry Pi OS Bookworm, Fedora, or later), or the container image ghcr.io/breakpatch/ci."
+  libc_need="breakpatch-ci needs a Linux with glibc 2.28 or later (Ubuntu 22.04, Debian 12, Raspberry Pi OS Bookworm, Fedora, or later)."
+  libc_later="A container image with breakpatch-ci in it comes with a later release."
   glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null || true)
   case "$glibc" in
     "glibc "[0-9]*.[0-9]*)
@@ -167,11 +172,11 @@ check_libc() {
       gmin=${gmin%%[!0-9]*}
       case "$gmaj$gmin" in '' | *[!0-9]*) return 0 ;; esac
       if [ "$gmaj" -lt 2 ] || { [ "$gmaj" -eq 2 ] && [ "$gmin" -lt 28 ]; }; then
-        fail "$libc_need This machine has glibc $glibc."
+        fail "$libc_need This machine has glibc $glibc. $libc_later"
       fi ;;
     *)
       if (ldd --version 2>&1 || true) | grep -qi musl; then
-        fail "$libc_need This machine uses musl (Alpine, for example), not glibc."
+        fail "$libc_need This machine uses musl (Alpine, for example), not glibc. $libc_later"
       fi ;;
   esac
 }
@@ -629,16 +634,34 @@ switch_to() {
   ln -sfn "$home/current/bin/breakpatch-ci" "$bin/breakpatch-ci" || fail "Couldn't link breakpatch-ci into $(pretty "$bin")."
 }
 
+# The text in $1 with each "$HOME/" in it written as ~/, for messages. A plain string match, not a
+# pattern: a home folder may have any character in its name.
+tilde_home() {
+  todo=$1 said=""
+  case "$HOME" in '' | /) printf '%s\n' "$todo"; return 0 ;; esac
+  while :; do
+    case "$todo" in
+      *"$HOME"/*)
+        pre=${todo%%"$HOME"/*}
+        said=$said$pre'~/'
+        todo=${todo#*"$HOME"/} ;;
+      *) break ;;
+    esac
+  done
+  printf '%s\n' "$said$todo"
+}
+
 # Linux: breakpatch-ci setup checks Chromium has the system libraries it needs (it's installed by
 # now, so setup only looks) and says what's missing and the command that adds them. That command
 # needs an administrator, so the installer only says it. Its last line is passed on, ~ for home.
+# breakpatch-ci 0.1.0-beta.2 and earlier don't check: then the installer gives the command.
 check_libraries() {
   case "$platform" in linux-*) ;; *) return 0 ;; esac
   "$home/current/bin/breakpatch-ci" setup >"$tmp/setup.json" 2>"$tmp/setup.log" || true
   line=$(sed -n 's/^breakpatch-ci: //p' "$tmp/setup.log" | tail -n 1)
   case "$line" in
     "The browser can't start:"* | "Chromium has the system libraries"*)
-      say "$line" | sed "s#$HOME/#~/#g" ;;
+      tilde_home "$line" ;;
     *)
       say "If Chromium can't start, install the libraries it needs: sudo $(pretty "$home")/current/bin/python -m playwright install-deps chromium" ;;
   esac

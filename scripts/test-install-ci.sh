@@ -919,17 +919,35 @@ for sh_name in "sh" "bash --posix"; do
   expect_out "If Chromium can't start, install the libraries it needs: sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium"
   expect_clean
 
+  # A home folder whose name a pattern would misread (# . * [ ]): its paths in the message are
+  # still written with ~, as plain text.
+  new_case home-folder-name
+  odd="$c/my.home*[1]#x"
+  mkdir -p "$odd"
+  home="$odd/.breakpatch-ci" bin="$odd/.local/bin"
+  run HOME="$odd" FAKE_LIBS="libnss3.so"
+  expect_code 0
+  expect_out "missing system libraries it needs (libnss3.so). Install them once, as an administrator: sudo ~/.breakpatch-ci/current/bin/python -m playwright install-deps chromium."
+  libline=$(grep "missing system libraries" <<< "$out" || true)
+  if [[ "$libline" != *"$odd"* ]]; then ok "the message has no home folder path in it"; else bad "the home folder is in the message: $libline"; fi
+  expect_version 1.1.0
+  expect_clean
+
   new_case glibc-and-musl
-  libc_need="breakpatch-ci needs a Linux with glibc 2.28 or later (Ubuntu 22.04, Debian 12, Raspberry Pi OS Bookworm, Fedora, or later), or the container image ghcr.io/breakpatch/ci."
+  libc_need="breakpatch-ci needs a Linux with glibc 2.28 or later (Ubuntu 22.04, Debian 12, Raspberry Pi OS Bookworm, Fedora, or later)."
+  libc_later="A container image with breakpatch-ci in it comes with a later release."
   run FAKE_GLIBC=2.27
   expect_code 1
-  expect_out "$libc_need This machine has glibc 2.27."
+  expect_out "$libc_need This machine has glibc 2.27. $libc_later"
+  # No release has the image yet, and it can't be pulled: nothing sends anyone to it now.
+  expect_no_out "ghcr.io"
   run FAKE_GLIBC=1.99
   expect_code 1
   expect_out "This machine has glibc 1.99."
   run FAKE_GLIBC=none FAKE_MUSL=1
   expect_code 1
-  expect_out "$libc_need This machine uses musl (Alpine, for example), not glibc."
+  expect_out "$libc_need This machine uses musl (Alpine, for example), not glibc. $libc_later"
+  expect_no_out "ghcr.io"
   expect_none
   run FAKE_GLIBC=2.28
   expect_code 0
