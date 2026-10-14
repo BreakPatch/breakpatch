@@ -688,7 +688,10 @@ echo "gh $*" >> "$PUB_LOG"
 case "$*" in
   *"releases?per_page=100"*) [ "$FAKE_RELEASES" != fail ] || exit 1; for t in $FAKE_RELEASES; do echo "$t"; done ;;
   *contents/docs/releases/*) if [ -n "$FAKE_NOTES" ]; then echo "$FAKE_NOTES"; else echo '{"message":"Not Found"}'; exit 1; fi ;;
+  *contents/site/install*) if [ -n "$FAKE_INSTALL" ]; then cat "$FAKE_INSTALL"; else echo '{"message":"Not Found"}'; exit 1; fi ;;
   "release create"*) ;;
+  "release edit"*) ;;
+  "release upload"*) ;;
   *releases/latest*) if [ -n "$FAKE_LATEST" ]; then echo "$FAKE_LATEST"; else exit 1; fi ;;
   *) echo "gh: unexpected $*" >&2; exit 2 ;;
 esac
@@ -697,17 +700,20 @@ chmod +x "$pub/bin/gh"
 echo app > "$pub/release/Breakpatch_aarch64.app.tar.gz"
 (cd "$pub/release" && shasum -a 256 Breakpatch_aarch64.app.tar.gz > SHA256SUMS)
 # publish TAG "PUBLISHED TAGS" LATEST-AFTERWARDS [NOTES]: sets $out, $code, and $created (the
-# gh release create line).
+# gh release create line). FAKE_INSTALL (a file) is site/install at the tag; unset, the API has
+# none. $outputs is what the step wrote to GITHUB_OUTPUT.
 publish() {
   : > "$pub/log"
+  : > "$pub/output"
   rm -f "$pub/notes.md"
   set +e
   out=$(cd "$pub/release" && env PATH="$pub/bin:$PATH" PUB_LOG="$pub/log" GITHUB_REF_NAME="$1" FAKE_RELEASES="$2" \
-        FAKE_LATEST="$3" FAKE_NOTES="${4:-}" GITHUB_REPOSITORY=BreakPatch/breakpatch GITHUB_SHA=0123abc \
-        RUNNER_TEMP="$pub" bash -e "$pub/step.sh" 2>&1)
+        FAKE_LATEST="$3" FAKE_NOTES="${4:-}" FAKE_INSTALL="${FAKE_INSTALL-$script}" GITHUB_REPOSITORY=BreakPatch/breakpatch \
+        GITHUB_SHA=0123abc GITHUB_OUTPUT="$pub/output" RUNNER_TEMP="$pub" bash -e "$pub/step.sh" 2>&1)
   code=$?
   set -e
   created=$(grep '^gh release create' "$pub/log" || true)
+  outputs=$(cat "$pub/output")
 }
 expect_created() { if [[ "$created" == *"$1" ]]; then ok "created with:$1"; else bad "created: '$created', expected it to end with:$1"; fi; }
 if grep -q 'gh release create' "$pub/step.sh"; then ok "found the publish script"; else bad "couldn't read the publish step from release.yml"; fi
@@ -737,6 +743,116 @@ expect_created " --notes-file $pub/notes.md"           # stable: GitHub makes th
 publish v0.1.0-beta.2 fail ""
 expect_code 1
 if [ -z "$created" ]; then ok "the release list failed: nothing published"; else bad "published although the release list failed: $created"; fi
+# The tagged site/install above has the placeholder release key: nothing waits for sign-sums.
+if grep -qx "GPG_FINGERPRINT=TODO-owner" "$script"; then
+  publish v0.1.0-beta.1 "" v0.1.0-beta.1
+  if [ -z "$outputs" ]; then ok "release key TODO-owner: Latest straight away, as before"; else bad "outputs with the placeholder key: $outputs"; fi
+fi
+# Once it's pinned, a release that would be Latest isn't yet: sign-sums makes it Latest once
+# SHA256SUMS.asc is up, so Linux installs with gpg never meet a Latest release without it.
+FAKE_INSTALL="$work/install-gpg" publish v0.1.0-beta.1 "" ""
+expect_code 0
+expect_created " --latest=false"
+expect_out "it becomes the Latest release once sign-sums has signed SHA256SUMS"
+if [ "$outputs" = "latest-at-end=1" ]; then ok "release key pinned: latest-at-end=1"; else bad "outputs: '$outputs'"; fi
+FAKE_INSTALL="$work/install-gpg" publish v0.1.0 "v0.1.0-beta.2" v0.0.9
+expect_code 0
+expect_created " --latest=false"
+FAKE_INSTALL="$work/install-gpg" publish v0.2.0-beta.1 "v0.1.0" v0.1.0
+expect_code 0
+expect_created " --prerelease --latest=false"
+if [ -z "$outputs" ]; then ok "a prerelease is never Latest: nothing waits"; else bad "outputs for a prerelease: $outputs"; fi
+FAKE_INSTALL="" publish v0.1.0 "v0.1.0-beta.2" ""
+expect_code 0
+expect_created " --latest=false"
+if [ "$outputs" = "latest-at-end=1" ]; then ok "site/install unreadable: Latest waits for sign-sums too"; else bad "outputs: '$outputs'"; fi
+
+# ---------------------------------------------------------------- release.yml: sign-sums
+
+# The sign-sums job's "Sign SHA256SUMS" and "Make it the Latest release" scripts, with bash -eo
+# pipefail (as Actions runs them), a stand-in gh and the tagged site/install: the placeholder
+# (as now) or the test release key built in.
+current="release.yml sign-sums"
+echo "$current"
+sgn="$work/sign"
+mkdir -p "$sgn/release"
+step_of() {   # JOB STEP-NAME: that step's run script
+  awk -v job="  $1:" -v step="- name: $2" '
+    $0 == job { j = 1; next }
+    j && /^  [a-z]/ { exit }
+    j && index($0, step) { s = 1; next }
+    s && /^        run: \|/ { on = 1; next }
+    on && /^          / { print substr($0, 11); next }
+    on && /^ *$/ { print ""; next }
+    on { exit }' "$repo/.github/workflows/release.yml"
+}
+step_of sign-sums "Sign SHA256SUMS" > "$sgn/sign.sh"
+step_of sign-sums "Make it the Latest release" > "$sgn/latest.sh"
+if grep -q 'detach-sign' "$sgn/sign.sh" && grep -q 'release edit' "$sgn/latest.sh"; then ok "found the sign-sums scripts"; else bad "couldn't read the sign-sums steps from release.yml"; fi
+echo app > "$sgn/release/Breakpatch_aarch64.app.tar.gz"
+(cd "$sgn/release" && shasum -a 256 Breakpatch_aarch64.app.tar.gz > SHA256SUMS)
+release_key=$(GNUPGHOME="$gpg_home" gpg --batch --armor --export-secret-keys "$gpg_fpr")
+other_key=$(GNUPGHOME="$gpg_home/other" gpg --batch --armor --export-secret-keys)
+# sign INSTALL KEY: sets $out and $code; $uploaded is the gh release upload line, if any.
+sign() {
+  : > "$pub/log"
+  rm -rf "$sgn/tmp" "$sgn/release/SHA256SUMS.asc"
+  mkdir -p "$sgn/tmp"
+  set +e
+  out=$(cd "$sgn/release" && env PATH="$pub/bin:$PATH" PUB_LOG="$pub/log" GITHUB_REF_NAME=v1.2.3 \
+        GITHUB_REPOSITORY=BreakPatch/breakpatch RUNNER_TEMP="$sgn/tmp" INSTALL="$1" GPG_SIGNING_KEY="$2" \
+        GPG_SIGNING_KEY_PASSPHRASE= bash -eo pipefail "$sgn/sign.sh" 2>&1)
+  code=$?
+  set -e
+  uploaded=$(grep '^gh release upload' "$pub/log" || true)
+}
+sign "$script" ""
+expect_code 0
+expect_out "::warning::The secret GPG_SIGNING_KEY isn't set, so SHA256SUMS isn't signed"
+if [ -z "$uploaded" ]; then ok "release key TODO-owner, no secret: nothing signed, as before"; else bad "uploaded: $uploaded"; fi
+sign "$script" "$release_key"
+expect_code 0
+expect_out "doesn't pin a release key yet"
+if [[ "$uploaded" == *"SHA256SUMS.asc --clobber"* ]]; then ok "release key TODO-owner, with the secret: signed"; else bad "not uploaded: $out"; fi
+sign "$work/install-gpg" ""
+expect_code 1
+expect_out "::error::The secret GPG_SIGNING_KEY isn't set, but this tag's site/install pins the release key $gpg_fpr"
+if [ -z "$uploaded" ]; then ok "release key pinned, no secret: fails, nothing uploaded"; else bad "uploaded: $uploaded"; fi
+sign "$work/install-gpg" "$other_key"
+expect_code 1
+expect_out "but this tag's site/install trusts $gpg_fpr"
+if [ -z "$uploaded" ] && [ ! -e "$sgn/release/SHA256SUMS.asc" ]; then ok "another key: fails, nothing signed"; else bad "signed with another key: $uploaded"; fi
+sign "$work/install-gpg" "$release_key"
+expect_code 0
+expect_out "Signed SHA256SUMS with $gpg_fpr"
+if [[ "$uploaded" == *"SHA256SUMS.asc --clobber"* ]]; then ok "release key pinned and the secret is that key: signed and uploaded"; else bad "not uploaded: $out"; fi
+if GNUPGHOME="$gpg_home" gpg --batch --quiet --verify "$sgn/release/SHA256SUMS.asc" "$sgn/release/SHA256SUMS" 2>/dev/null; then ok "SHA256SUMS.asc checks"; else bad "SHA256SUMS.asc doesn't check"; fi
+# The fingerprint pinned, the public key left out (GPG_PUBLIC_KEY='' as in the placeholder).
+sed "s/^GPG_FINGERPRINT=.*/GPG_FINGERPRINT=$gpg_fpr/" "$script" > "$sgn/install-nokey"
+if grep -qx "GPG_PUBLIC_KEY=''" "$sgn/install-nokey" && grep -qx "GPG_FINGERPRINT=$gpg_fpr" "$sgn/install-nokey"; then
+  sign "$sgn/install-nokey" "$release_key"
+  expect_code 1
+  expect_out "The GPG_PUBLIC_KEY in this tag's site/install can't be read"
+  if [ -z "$uploaded" ]; then ok "fingerprint pinned, no public key: fails"; else bad "uploaded: $uploaded"; fi
+else bad "couldn't make the copy without a public key"; fi
+sed "s/^GPG_FINGERPRINT=.*/GPG_FINGERPRINT=abc123/" "$script" > "$sgn/install-badfpr"
+sign "$sgn/install-badfpr" "$release_key"
+expect_code 1
+expect_out "is neither TODO-owner nor a fingerprint"
+# Latest, once signed.
+: > "$pub/log"
+set +e
+out=$(env PATH="$pub/bin:$PATH" PUB_LOG="$pub/log" GITHUB_REF_NAME=v1.2.3 GITHUB_REPOSITORY=BreakPatch/breakpatch FAKE_LATEST=v1.2.3 \
+      bash -eo pipefail "$sgn/latest.sh" 2>&1); code=$?
+set -e
+expect_code 0
+if grep -qx "gh release edit v1.2.3 --latest --repo BreakPatch/breakpatch" "$pub/log"; then ok "made the release Latest"; else bad "log: $(tr '\n' ';' < "$pub/log")"; fi
+set +e
+out=$(env PATH="$pub/bin:$PATH" PUB_LOG="$pub/log" GITHUB_REF_NAME=v1.2.3 GITHUB_REPOSITORY=BreakPatch/breakpatch FAKE_LATEST=v1.2.2 \
+      bash -eo pipefail "$sgn/latest.sh" 2>&1); code=$?
+set -e
+expect_code 1
+expect_out "isn't the Latest release (Latest is v1.2.2)"
 
 # The shells `curl … | sh` meets. On a Mac, its own: /bin/sh and /bin/bash are bash 3.2 (a runner
 # has a newer bash first on PATH), and that's where "$name…" stopped the script (see above).
@@ -1261,6 +1377,23 @@ for sh_name in "${shells[@]}"; do
   expect_code 0
   expect_out "Install gpg to also check the checksums are signed by Breakpatch's release key."
   expect_linux_app 1.7.0
+
+  # A fingerprint without its public key, or one that isn't a fingerprint: nothing installed,
+  # with or without gpg (never "the publisher wasn't checked").
+  new_case linux-publisher-half-pinned
+  nogpg=$(nogpg_path)
+  for half in "$sgn/install-nokey" "$sgn/install-badfpr"; do
+    script="$half" run_linux BREAKPATCH_API="$base/signed" BREAKPATCH_DOWNLOADS="$base/signed/download/"
+    expect_code 1
+    expect_out "This installer's release key is incomplete, so nothing was installed."
+    expect_no_out "publisher wasn't checked"
+    script="$half" run_linux BREAKPATCH_API="$base/signed" BREAKPATCH_DOWNLOADS="$base/signed/download/" PATH="$nogpg"
+    expect_code 1
+    expect_out "This installer's release key is incomplete, so nothing was installed."
+  done
+  expect_no_log "extracted"
+  expect_no_linux_app
+  expect_linux_clean
 
   new_case linux-release-without-linux
   run_linux BREAKPATCH_API="$base/maconly" BREAKPATCH_DOWNLOADS="$base/maconly/download/"

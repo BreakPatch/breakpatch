@@ -43,8 +43,12 @@ name: Release
 #               SHA256SUMS is uploaded only when its lines change, and then the release's
 #               SHA256SUMS.asc goes first (scripts/release-put-sums.sh): never a stale signature.
 #   sign-sums   last: downloads every file of the release, checks it against SHA256SUMS and signs
-#               SHA256SUMS with GPG (SHA256SUMS.asc). Without the GPG_SIGNING_KEY secret it says so
-#               and signs nothing.
+#               SHA256SUMS with GPG (SHA256SUMS.asc). The tagged site/install's GPG_FINGERPRINT
+#               decides: while it's TODO-owner, without the GPG_SIGNING_KEY secret it says so and
+#               signs nothing, as before. Once it's pinned, a missing key or another key fails
+#               the job, and the release becomes Latest only here, once SHA256SUMS.asc is up
+#               (publish makes it Latest straight away only while the fingerprint is TODO-owner):
+#               Linux installs with gpg never meet a Latest release without its signature.
 #   ci-linux, ci-macos, ci-linux-arm64, ci-windows-x64, publish-ci
 #               breakpatch-ci (Team, for CI machines), built and published after the app: they
 #               need publish, so the app and Community never wait for them, and a failure here
@@ -256,6 +260,8 @@ jobs:
     name: Publish the release
     needs: build
     runs-on: ubuntu-latest
+    outputs:
+      latest-at-end: ${{ steps.publish.outputs.latest-at-end }}
     permissions:
       contents: write   # creates the release; the only job in this workflow that can write
     steps:
@@ -275,12 +281,22 @@ jobs:
       #     never see it. It installs with BREAKPATCH_CHANNEL=beta or BREAKPATCH_VERSION.
       # The notes are docs/releases/<tag>.md at the tagged commit when it exists (read through the
       # API: this job has no checkout), else a line on how to install.
+      # Once the tagged site/install pins the release key (GPG_FINGERPRINT isn't TODO-owner), a
+      # release that would be Latest is published as not Latest, and sign-sums makes it Latest
+      # once SHA256SUMS.asc is up (latest-at-end=1): Linux installs check that signature, so the
+      # Latest release must never be without it. While it's TODO-owner, nothing changes.
       - name: Check and publish
+        id: publish
         working-directory: release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha256sum --check --strict SHA256SUMS
+          # Read through the API at the tagged commit; when it can't be read, Latest waits too.
+          pin=$(gh api "repos/$GITHUB_REPOSITORY/contents/site/install?ref=$GITHUB_SHA" \
+                  -H 'Accept: application/vnd.github.raw' 2>/dev/null | sed -n 's/^GPG_FINGERPRINT=//p' | head -n 1 || true)
+          at_end=0
+          if [ "$pin" != TODO-owner ]; then at_end=1; fi
           version=${GITHUB_REF_NAME#v}
           install="Install or update from Terminal: \`curl -fsSL https://breakpatch.dev/install | sh\` (Apple Silicon, macOS 14 or later). Installed copies update themselves."
           case "$GITHUB_REF_NAME" in
@@ -308,13 +324,21 @@ jobs:
           else
             printf '%s\n' "$install" > "$notes"
           fi
+          if [ "$at_end" -eq 1 ] && [ "$kind" != prerelease ]; then
+            flags=(--latest=false)
+            echo "latest-at-end=1" >> "$GITHUB_OUTPUT"
+          else
+            at_end=0
+          fi
           gh release create "$GITHUB_REF_NAME" ./* \
             --repo "$GITHUB_REPOSITORY" \
             --title "Breakpatch $GITHUB_REF_NAME" \
             --notes-file "$notes" \
             "${flags[@]}"
           latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
-          if [ "$kind" = stable ]; then
+          if [ "$at_end" -eq 1 ]; then
+            echo "Published $GITHUB_REF_NAME; it becomes the Latest release once sign-sums has signed SHA256SUMS (Latest is ${latest:-none} until then)."
+          elif [ "$kind" = stable ]; then
             echo "Published $GITHUB_REF_NAME; Latest is ${latest:-none}."
           elif [ "$kind" = prerelease ]; then
             # The stable feed must still be the stable release.
@@ -480,7 +504,11 @@ jobs:
   # SHA256SUMS signed with GPG (SHA256SUMS.asc), once every file is in the release: after the
   # macOS, Linux and breakpatch-ci files. Every file is downloaded and checked against it first.
   # The key is the `release` environment's secret GPG_SIGNING_KEY (an ASCII-armoured secret key;
-  # GPG_SIGNING_KEY_PASSPHRASE if it has one). Without it the job says so and signs nothing.
+  # GPG_SIGNING_KEY_PASSPHRASE if it has one). The tagged site/install says whether one is
+  # required: while its GPG_FINGERPRINT is TODO-owner, without the key the job says so and signs
+  # nothing; once it's pinned, the key must be there and be that key, and the signature must
+  # check with site/install's GPG_PUBLIC_KEY, or the job fails (and the release isn't made Latest).
+  # Re-run whenever a job that writes SHA256SUMS is (they're in its needs).
   sign-sums:
     name: Sign SHA256SUMS (GPG)
     needs: [publish, publish-linux, publish-ci]
@@ -488,8 +516,15 @@ jobs:
     runs-on: ubuntu-latest
     environment: release
     permissions:
-      contents: write   # adds SHA256SUMS.asc to the release
+      contents: write   # adds SHA256SUMS.asc to the release, and makes it Latest
     steps:
+      # The tagged installer: its GPG_FINGERPRINT and GPG_PUBLIC_KEY.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: tagged
+          sparse-checkout: site/install
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       - name: Download the release and check every file
         env:
           GH_TOKEN: ${{ github.token }}
@@ -506,17 +541,35 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
           GPG_SIGNING_KEY_PASSPHRASE: ${{ secrets.GPG_SIGNING_KEY_PASSPHRASE }}
+          INSTALL: ${{ github.workspace }}/tagged/site/install
         run: |
+          # The release key this tag's installer trusts: none yet (TODO-owner), or 40 hex digits.
+          want=$(sed -n 's/^GPG_FINGERPRINT=//p' "$INSTALL" | head -n 1)
+          if [ "$want" = TODO-owner ]; then
+            want=""
+          elif ! [[ "$want" =~ ^[0-9A-F]{40}$ ]]; then
+            echo "::error::GPG_FINGERPRINT in this tag's site/install is neither TODO-owner nor a fingerprint (40 hex digits, upper case): '$want'"
+            exit 1
+          fi
           if [ -z "$GPG_SIGNING_KEY" ]; then
+            if [ -n "$want" ]; then
+              echo "::error::The secret GPG_SIGNING_KEY isn't set, but this tag's site/install pins the release key $want: Linux installs with gpg refuse this release until SHA256SUMS.asc is up. Add the secret to the release environment and re-run this job."
+              exit 1
+            fi
             echo "::warning::The secret GPG_SIGNING_KEY isn't set, so SHA256SUMS isn't signed: this release has no SHA256SUMS.asc."
             exit 0
           fi
           export GNUPGHOME="$RUNNER_TEMP/gnupg"
-          mkdir -m 700 "$GNUPGHOME"
-          trap 'gpgconf --kill gpg-agent; rm -rf "$GNUPGHOME"' EXIT
+          mkdir -m 700 "$GNUPGHOME" "$RUNNER_TEMP/gnupg-check"
+          trap 'gpgconf --kill gpg-agent; GNUPGHOME="$RUNNER_TEMP/gnupg-check" gpgconf --kill all; rm -rf "$GNUPGHOME" "$RUNNER_TEMP/gnupg-check"' EXIT
           printf '%s\n' "$GPG_SIGNING_KEY" | gpg --batch --quiet --import
           fpr=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')
           if [ -z "$fpr" ]; then echo "::error::GPG_SIGNING_KEY holds no secret key"; exit 1; fi
+          if [ -n "$want" ] && [ "$fpr" != "$want" ]; then
+            echo "::error::GPG_SIGNING_KEY is the key $fpr, but this tag's site/install trusts $want: Linux installs would refuse its signature. Nothing was signed."
+            exit 1
+          fi
+          if [ -z "$want" ]; then echo "::notice::This tag's site/install doesn't pin a release key yet (TODO-owner): installs don't check this signature."; fi
           sign=(gpg --batch --local-user "$fpr" --armor --detach-sign --output SHA256SUMS.asc)
           if [ -n "$GPG_SIGNING_KEY_PASSPHRASE" ]; then
             printf '%s' "$GPG_SIGNING_KEY_PASSPHRASE" | "${sign[@]}" --pinentry-mode loopback --passphrase-fd 0 SHA256SUMS
@@ -524,8 +577,32 @@ jobs:
             "${sign[@]}" SHA256SUMS
           fi
           gpg --batch --verify SHA256SUMS.asc SHA256SUMS
+          if [ -n "$want" ]; then
+            # As the installer checks it: a keyring holding only its GPG_PUBLIC_KEY, a VALIDSIG by $want.
+            awk -v q="'" '
+              !on && index($0, "GPG_PUBLIC_KEY=" q) == 1 { on = 1; $0 = substr($0, 17) }
+              on { if (substr($0, length($0)) == q) { print substr($0, 1, length($0) - 1); exit } print }' "$INSTALL" > "$RUNNER_TEMP/release-key.asc"
+            GNUPGHOME="$RUNNER_TEMP/gnupg-check" gpg --batch --quiet --import "$RUNNER_TEMP/release-key.asc" \
+              || { echo "::error::The GPG_PUBLIC_KEY in this tag's site/install can't be read"; exit 1; }
+            GNUPGHOME="$RUNNER_TEMP/gnupg-check" gpg --batch --status-fd 1 --verify SHA256SUMS.asc SHA256SUMS 2>/dev/null \
+              | awk -v f="$want" '$1 == "[GNUPG:]" && $2 == "VALIDSIG" && ($3 == f || $NF == f) { ok = 1 } END { exit !ok }' \
+              || { echo "::error::The signature doesn't check with the GPG_PUBLIC_KEY in this tag's site/install"; exit 1; }
+          fi
           echo "Signed SHA256SUMS with $fpr"
           gh release upload "$GITHUB_REF_NAME" SHA256SUMS.asc --clobber --repo "$GITHUB_REPOSITORY"
+      # publish left it for here once the release key is pinned: Latest only with its signature up.
+      - name: Make it the Latest release
+        if: needs.publish.outputs.latest-at-end == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "$GITHUB_REF_NAME" --latest --repo "$GITHUB_REPOSITORY"
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          if [ "$latest" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::$GITHUB_REF_NAME isn't the Latest release (Latest is ${latest:-none}), so the install command and the updater don't see it: mark it as Latest in the release's settings"
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME is the Latest release."
 
   # ---------------------------------------------------------------- breakpatch-ci (after the app)
 
@@ -874,7 +951,9 @@ jobs:
 
   ci-image:
     name: Container image (multi-arch tag)
-    needs: ci-image-build
+    # After sign-sums too: once the release key is pinned, the release becomes Latest there, and
+    # `latest` follows the Latest release. Its result doesn't matter here.
+    needs: [ci-image-build, sign-sums]
     if: ${{ !cancelled() && needs.ci-image-build.result != 'skipped' }}
     runs-on: ubuntu-24.04
     permissions:
