@@ -6,7 +6,10 @@ import hashlib
 import io
 import json
 import os
+import socket
+import stat
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -99,7 +102,12 @@ def test_the_pinned_command_line_and_a_private_key(make, files, monkeypatch):
 
     def val(name):
         return a[a.index(name) + 1]
-    assert val("--host") == "127.0.0.1" and int(val("--port")) == s.port
+    # A Unix socket in a private folder of ours, never a port.
+    assert val("--host") == str(s.socket_path) and s.socket_path.name == "llama.sock"
+    assert "--port" not in a
+    assert stat.S_IMODE(os.stat(s.socket_path.parent).st_mode) == 0o700
+    assert Path(val("--api-key-file")).parent == s.socket_path.parent
+    assert llamacpp.own_socket(s.socket_path)
     assert val("-c") == "4096" and val("--parallel") == "1" and val("-ngl") == "0" and val("--threads") == "6"
     assert "--jinja" in a and "--no-webui" in a and "--image-max-tokens" not in a
     # The key is in a 0600 file, never on the command line.
@@ -107,8 +115,111 @@ def test_the_pinned_command_line_and_a_private_key(make, files, monkeypatch):
     assert start["keyMode"] == 0o600
     assert start["key"] == s.api_key            # what the server read from the file at start
     assert not Path(val("--api-key-file")).exists()   # gone once the server was ready
+    # /health is never sent the key.
+    assert files.lines(".health.jsonl") and not [h for h in files.lines(".health.jsonl") if "Authorization" in h["headers"]]
     # Only the variables it needs: no secrets.
     assert not [k for k in start["env"] if k.startswith(("BP_SECRET", "BREAKPATCH_", "HTTPS_PROXY", "HTTP_PROXY"))]
+
+
+class Impostor:
+    """Another local process listening on a port, answering everything with 200, as one that took
+    the engine's port before llama-server bound it would."""
+
+    def __init__(self):
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        seen = self.seen = []
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def answer(self):
+                n = int(self.headers.get("Content-Length") or 0)
+                seen.append({"path": self.path, "headers": dict(self.headers), "body": self.rfile.read(n)})
+                body = b'{"status": "ok"}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            do_GET = do_POST = answer
+
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.port = self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+
+
+@pytest.fixture
+def impostor(monkeypatch):
+    imp = Impostor()
+    # The old way: the port the engine picked, which the impostor already holds.
+    monkeypatch.setattr(llamacpp, "free_port", lambda: imp.port, raising=False)
+    yield imp
+    imp.close()
+
+
+def test_an_impostor_on_a_local_port_is_never_trusted(make, files, impostor):
+    """Our llama-server isn't ready yet (it's loading), and another process answers 200 on a local
+    port: it's never asked, so never sent the key or a screenshot, and the start times out."""
+    files.set(load_s=60)
+    s = make(start_timeout_s=1.0)
+    with pytest.raises(EngineError) as e:
+        s.chat(body(), 10)
+    assert e.value.code == "not_ready" and "too long to start" in e.value.message
+    assert impostor.seen == [] and not files.requests
+
+
+def test_a_child_that_exits_never_leads_to_trusting_a_responder(make, files, impostor):
+    files.set(exit_at_start=1)
+    s = make()
+    with pytest.raises(EngineError) as e:
+        s.chat(body(), 10)
+    assert e.value.code == "not_ready" and "couldn't start" in e.value.message
+    assert impostor.seen == []
+
+
+def test_only_a_socket_of_ours_is_asked(tmp_path):
+    assert not llamacpp.own_socket(tmp_path / "none.sock")
+    (tmp_path / "file.sock").write_text("")
+    assert not llamacpp.own_socket(tmp_path / "file.sock")       # not a socket
+    with socket.socket(socket.AF_UNIX) as u:
+        u.bind(str(tmp_path / "real.sock"))
+        assert llamacpp.own_socket(tmp_path / "real.sock")
+
+
+def test_the_private_folder_is_short_enough_for_a_socket(monkeypatch, tmp_path):
+    deep = tmp_path / ("x" * 120)
+    deep.mkdir()
+    monkeypatch.setattr(llamacpp.tempfile, "tempdir", str(deep))
+    d = llamacpp.private_dir()
+    try:
+        assert len(os.fsencode(str(d / llamacpp.SOCKET_NAME))) <= llamacpp.SOCKET_PATH_MAX
+        assert stat.S_IMODE(os.stat(d).st_mode) == 0o700
+        assert not list(deep.iterdir())                        # the long one was removed again
+    finally:
+        d.rmdir()
+
+
+def test_without_unix_sockets_it_doesnt_start(make, files, monkeypatch):
+    monkeypatch.delattr(llamacpp.socket, "AF_UNIX")
+    s = make()
+    with pytest.raises(EngineError) as e:
+        s.ensure()
+    assert e.value.code == "not_ready" and "can't run on this computer" in e.value.message
+    assert not files.starts
+
+
+def test_the_socket_folder_goes_when_the_server_stops(make, files):
+    s = make()
+    s.ensure()
+    folder = s.socket_path.parent
+    assert folder.is_dir()
+    s.stop()
+    assert not folder.exists()
 
 
 def test_a_new_key_at_every_start(make, files):
@@ -127,6 +238,16 @@ def test_the_child_environment_keeps_only_what_it_needs(tmp_path):
     assert set(env) <= {"PATH", "HOME", "VK_ICD_FILENAMES", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"}
     if sys.platform.startswith("linux"):
         assert env["LD_LIBRARY_PATH"] == f"{tmp_path}{os.pathsep}/old"
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="LD_LIBRARY_PATH")
+def test_the_packaged_engine_doesnt_hand_on_its_own_libraries(tmp_path):
+    """PyInstaller puts its folder on LD_LIBRARY_PATH and keeps the user's in LD_LIBRARY_PATH_ORIG."""
+    base = {"PATH": "/bin", "LD_LIBRARY_PATH": "/tmp/_MEI123", "LD_LIBRARY_PATH_ORIG": "/user/lib"}
+    assert llamacpp.child_env(tmp_path, base, frozen=True)["LD_LIBRARY_PATH"] == f"{tmp_path}{os.pathsep}/user/lib"
+    base.pop("LD_LIBRARY_PATH_ORIG")                  # the user had none
+    assert llamacpp.child_env(tmp_path, base, frozen=True)["LD_LIBRARY_PATH"] == str(tmp_path)
+    assert llamacpp.child_env(None, base, frozen=True).get("LD_LIBRARY_PATH") is None
 
 
 def test_a_chat_request_is_the_engines_request(make, files):
@@ -424,8 +545,8 @@ def test_the_model_test_sends_the_same_request():
     lc = model_test.LlamaCppRuntime.__new__(model_test.LlamaCppRuntime)
     lc.exe, lc.gguf, lc.mmproj, lc.api_key, lc.ctx, lc.ngl, lc.threads, lc.image_max_tokens = (
         "llama-server", Path("m.gguf"), Path("mm.gguf"), "K", 4096, 0, None, None)
-    engine = LlamaServer("llama-server", Path("m.gguf"), Path("mm.gguf")).command(1234, Path("keyfile"))
+    engine = LlamaServer("llama-server", Path("m.gguf"), Path("mm.gguf")).command(Path("d/llama.sock"), Path("keyfile"))
     theirs = lc.command(1234)
-    # The same flags, but the engine passes its key in a file.
-    strip = lambda c, flag: [x for i, x in enumerate(c) if x != flag and (i == 0 or c[i - 1] != flag)]  # noqa: E731
-    assert strip(engine, "--api-key-file") == strip(theirs, "--api-key")
+    # The same flags, but the engine listens on a Unix socket and passes its key in a file.
+    strip = lambda c, *flags: [x for i, x in enumerate(c) if x not in flags and (i == 0 or c[i - 1] not in flags)]  # noqa: E731
+    assert strip(engine, "--api-key-file", "--host") == strip(theirs, "--api-key", "--host", "--port")

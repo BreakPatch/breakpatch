@@ -7,13 +7,20 @@ no new dependency: the stdlib's `http.client`, as the Team engine uses.
 
 The server:
 
-- starts on first use, on 127.0.0.1 and a free port, with the flags in `LlamaServer.command`
-  (pinned with the runtime's build: check them against `llama-server --help` when the build moves);
-- needs an API key, new at every start, because loopback isn't private on a shared machine: any
-  local user could otherwise use it. The key goes in a 0600 file in a 0700 folder
-  (`--api-key-file`), never on the command line, which every user can read (`ps`), and the file is
-  deleted as soon as the server is ready (it reads it once, at start);
-- is ready when `GET /health` says 200 (it says 503 while the model loads);
+- starts on first use, with the flags in `LlamaServer.command` (pinned with the runtime's build:
+  check them against `llama-server --help` when the build moves);
+- listens on a Unix socket in a new 0700 folder of ours (`--host <folder>/llama.sock`; llama-server
+  binds a Unix socket when the host ends in `.sock`, in every build since mid-2025), never on a
+  local port. A port isn't private: any local process could take it between our choosing it and
+  llama-server binding it, then answer `/health` and be sent the screenshots. Nobody else can
+  create, replace or connect to a socket in that folder. Where there are no Unix sockets
+  (`socket.AF_UNIX`), it doesn't start at all;
+- also needs an API key, new at every start (defence in depth). The key goes in a 0600 file in the
+  same folder (`--api-key-file`), never on the command line, which every user can read (`ps`), and
+  the file is deleted as soon as the server is ready (it reads it once, at start);
+- is ready when `GET /health` says 200 (it says 503 while the model loads), asked only while the
+  child is running and only once the socket is there, a socket, and ours. `/health` is never sent
+  the key;
 - gets only the environment it needs (`ENV_KEEP`): never the engine's secrets (`BP_SECRET_*`);
 - dies with the engine: stopped on engine shutdown, at exit (service.py's locator factory), and on
   Linux by the kernel when the engine goes (`PR_SET_PDEATHSIG`); on Windows the shell's Job Object
@@ -43,6 +50,7 @@ import secrets
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -70,6 +78,8 @@ HEALTH_POLL_S = 0.2
 MAX_CRASHES = 3
 CRASH_WINDOW_S = 600.0
 LOG_LINES = 40              # the end of the server's output kept for the error's details
+SOCKET_NAME = "llama.sock"  # llama-server binds a Unix socket when --host ends in ".sock"
+SOCKET_PATH_MAX = 100       # bytes: sun_path is 108 on Linux, 104 on macOS
 
 # The only variables llama-server is given (by name or prefix). Not the engine's secrets, licence
 # key or proxy settings: it talks to nobody but the engine.
@@ -115,14 +125,18 @@ def physical_cores() -> int | None:
     return cores or None
 
 
-def child_env(exe_dir: Path | None, base=None) -> dict:
+def child_env(exe_dir: Path | None, base=None, frozen: bool | None = None) -> dict:
     """llama-server's environment: the variables in ENV_KEEP, and its own folder on the library
-    path (the build's shared libraries sit next to it)."""
+    path (the build's shared libraries sit next to it). In the packaged engine (frozen),
+    PyInstaller has put its own folder first on LD_LIBRARY_PATH (DYLD_LIBRARY_PATH on a Mac) and
+    kept the user's in `<name>_ORIG`: the child gets the user's, or none, never the engine's
+    bundled libraries."""
     base = os.environ if base is None else base
+    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
     env = {k: v for k, v in base.items() if k in ENV_KEEP or k.startswith(ENV_KEEP_PREFIXES)}
     if exe_dir is not None:
         var = {"win32": "PATH", "darwin": "DYLD_LIBRARY_PATH"}.get(sys.platform, "LD_LIBRARY_PATH")
-        old = base.get(var)
+        old = base.get(f"{var}_ORIG") if frozen and var != "PATH" else base.get(var)
         env[var] = os.pathsep.join([str(exe_dir)] + ([old] if old else []))
     return env
 
@@ -149,10 +163,43 @@ def _die_with_parent() -> Callable[[], None] | None:
     return run
 
 
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+def private_dir() -> Path:
+    """A new 0700 folder for the key file and the socket, short enough for a socket path (a long
+    TMPDIR, as on a Mac, falls back to /tmp)."""
+    d = Path(tempfile.mkdtemp(prefix="bp-llama-"))
+    if len(os.fsencode(str(d / SOCKET_NAME))) > SOCKET_PATH_MAX and os.path.isdir("/tmp"):
+        d.rmdir()
+        d = Path(tempfile.mkdtemp(prefix="bp-llama-", dir="/tmp"))
+    os.chmod(d, 0o700)
+    return d
+
+
+def own_socket(path: Path) -> bool:
+    """`path` is a Unix socket owned by this user (in our 0700 folder nobody else could have made
+    it, but llama-server is only trusted once it's there)."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return stat.S_ISSOCK(st.st_mode) and (not hasattr(os, "getuid") or st.st_uid == os.getuid())
+
+
+class _UnixHTTPConnection(http.client.HTTPConnection):
+    """http.client over a Unix socket (and never through a proxy)."""
+
+    def __init__(self, path: str, timeout: float):
+        super().__init__("localhost", timeout=timeout)
+        self.socket_path = path
+
+    def connect(self) -> None:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            s.settimeout(self.timeout)
+            s.connect(self.socket_path)
+        except BaseException:
+            s.close()
+            raise
+        self.sock = s
 
 
 class LlamaServer:
@@ -171,7 +218,7 @@ class LlamaServer:
         self.before_start = before_start
         self.clock = clock
         self.proc: subprocess.Popen | None = None
-        self.port: int | None = None
+        self.socket_path: Path | None = None
         self.api_key: str | None = None
         self._key_dir: Path | None = None
         self._tail: deque[str] = deque(maxlen=LOG_LINES)
@@ -190,12 +237,12 @@ class LlamaServer:
 
     # ------------------------------------------------------------ the process
 
-    def command(self, port: int, key_file: Path) -> list[str]:
-        """The pinned command line (plan §2.3). `--api-key-file` rather than `--api-key`: the key
-        mustn't show in `ps`."""
+    def command(self, socket_path: Path, key_file: Path) -> list[str]:
+        """The pinned command line (plan §2.3). `--host <path>.sock`: a Unix socket, not a port.
+        `--api-key-file` rather than `--api-key`: the key mustn't show in `ps`."""
         cmd = self.launcher + [
             "-m", str(self.model), "--mmproj", str(self.mmproj),
-            "--host", "127.0.0.1", "--port", str(port), "--api-key-file", str(key_file),
+            "--host", str(socket_path), "--api-key-file", str(key_file),
             "-c", str(self.context), "--parallel", "1", "-ngl", str(self.gpu_layers),
             "--jinja", "--no-webui"]
         if self.threads:
@@ -235,28 +282,24 @@ class LlamaServer:
             if len([t for t in self._crashes if self.clock() - t < CRASH_WINDOW_S]) >= MAX_CRASHES:
                 raise EngineError("not_ready", "The AI assistant keeps stopping on this computer. Restart Breakpatch "
                                   "to try again.", self.tail())
+            if not hasattr(socket, "AF_UNIX"):
+                # No Unix sockets, no private way to reach llama-server: a local port isn't one.
+                raise EngineError("not_ready", "The AI assistant can't run on this computer yet.",
+                                  "llama-server is only reached through a Unix socket, and this system has none")
             if self.before_start is not None:
                 self.before_start()                   # the model's files are checked at every start
-            for attempt in range(2):                  # once more on another port if this one was taken
-                try:
-                    self._start_once()
-                    return
-                except _PortTaken:
-                    if attempt:
-                        raise EngineError("not_ready", "The AI assistant couldn't start on this computer.",
-                                          self.tail()) from None
+            self._start_once()
 
     def _start_once(self) -> None:
         self._cleanup()
-        self._key_dir = Path(tempfile.mkdtemp(prefix="bp-llama-"))
-        os.chmod(self._key_dir, 0o700)
+        self._key_dir = private_dir()
         key_file = self._key_dir / "key"
+        self.socket_path = self._key_dir / SOCKET_NAME
         self.api_key = secrets.token_urlsafe(32)
         fd = os.open(key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(self.api_key)
-        self.port = free_port()
-        cmd = self.command(self.port, key_file)
+        cmd = self.command(self.socket_path, key_file)
         self._tail.clear()
         log.info("starting llama-server: %s", " ".join(cmd))
         kwargs: dict = {}
@@ -271,17 +314,14 @@ class LlamaServer:
         self._drainer = threading.Thread(target=self._drain, args=(self.proc,), name="llama-server-log", daemon=True)
         self._drainer.start()
         while True:
-            code = self.proc.poll()
+            code = self.proc.poll()               # our child first: one that has gone is never trusted
             if code is not None:
                 self._drainer.join(2)               # its last words, for the details
                 tail = self.tail()
                 self._cleanup()
-                if "address already in use" in tail.lower() or "couldn't bind" in tail.lower():
-                    raise _PortTaken()
                 raise EngineError("not_ready", "The AI assistant couldn't start on this computer.",
                                   f"llama-server exited with {code}:\n{tail}")
-            status, _ = self._get("/health", 5.0)
-            if status == 200:
+            if own_socket(self.socket_path) and self._get("/health", 5.0)[0] == 200:
                 break
             if self.clock() - started > self.start_timeout_s:
                 tail = self.tail()
@@ -292,7 +332,7 @@ class LlamaServer:
         self._remove_key_file()
         self.load_seconds = round(self.clock() - started, 2)
         self._last_used = self.clock()
-        log.info("llama-server ready on port %s after %.1f s", self.port, self.load_seconds)
+        log.info("llama-server ready on %s after %.1f s", self.socket_path, self.load_seconds)
         self._watch_idle()
 
     # ------------------------------------------------------------ the supervisor thread
@@ -354,14 +394,22 @@ class LlamaServer:
         return "\n".join(self._tail)
 
     def _remove_key_file(self) -> None:
+        """The key file goes once the server has read it; the folder stays for the socket."""
+        if self._key_dir is not None:
+            try:
+                (self._key_dir / "key").unlink()
+            except OSError:
+                pass
+
+    def _cleanup(self) -> None:
+        """Forgets a process that has exited (and its folder: the key file and the socket)."""
+        if self.proc is not None and self.proc.poll() is None:
+            self._remove_key_file()                  # still running (stop() ends it first)
+            return
         if self._key_dir is not None:
             shutil.rmtree(self._key_dir, ignore_errors=True)
             self._key_dir = None
-
-    def _cleanup(self) -> None:
-        """Forgets a process that has exited (and its key file)."""
-        self._remove_key_file()
-        if self.proc is not None and self.proc.poll() is not None:
+        if self.proc is not None:
             if self.proc.stdout is not None:
                 try:
                     self.proc.stdout.close()
@@ -416,14 +464,15 @@ class LlamaServer:
     # ------------------------------------------------------------ HTTP
 
     def _connection(self, timeout: float) -> http.client.HTTPConnection:
-        # Loopback, straight to the server: http.client never goes through a proxy.
-        return http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
+        # Our Unix socket, straight to the server: never a port, never a proxy.
+        return _UnixHTTPConnection(str(self.socket_path), timeout)
 
     def _get(self, path: str, timeout: float) -> tuple[int | None, bytes]:
+        """A GET without the key: only /health is asked this way, and it needs none."""
         try:
             c = self._connection(timeout)
             try:
-                c.request("GET", path, headers={"Authorization": f"Bearer {self.api_key}"})
+                c.request("GET", path)
                 r = c.getresponse()
                 return r.status, r.read()
             finally:
@@ -488,10 +537,6 @@ class LlamaServer:
             with self._lock:
                 self._busy -= 1
                 self._last_used = self.clock()
-
-
-class _PortTaken(Exception):
-    pass
 
 
 # ---------------------------------------------------------------- the request

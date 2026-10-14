@@ -1,7 +1,8 @@
 """A stand-in for llama.cpp's `llama-server`, for the engine's LlamaServer tests (plan P2.2).
 
 Takes the same command line the engine gives the real one, serves `/health` and
-`/v1/chat/completions` on 127.0.0.1, and checks the API key from `--api-key-file`. Nothing is
+`/v1/chat/completions` on the Unix socket `--host <path>.sock` names (as llama-server does), or on
+127.0.0.1 and `--port`, and checks the API key from `--api-key-file` (`/health` needs none). Nothing is
 loaded: what it does comes from `<model>.fake.json`, read again for every request, so a test can
 change it while the server runs:
 
@@ -15,10 +16,11 @@ change it while the server runs:
      "exit_at_start": null}    exit with this code before listening (a model that won't load)
 
 It appends one JSON line per start to `<model>.starts.jsonl` (argv, the key's file mode) and per
-chat request to `<model>.requests.jsonl` (headers and body).
+request to `<model>.requests.jsonl` (chat: headers and body; `/health`: its path and headers).
 """
 import json
 import os
+import socketserver
 import stat
 import sys
 import time
@@ -32,7 +34,8 @@ def arg(name, default=None):
 
 
 MODEL = Path(arg("-m"))
-PORT = int(arg("--port"))
+HOST = arg("--host", "127.0.0.1")
+PORT = int(arg("--port", "8080"))
 KEY_FILE = Path(arg("--api-key-file"))
 KEY = KEY_FILE.read_text().strip()
 STARTED = time.monotonic()
@@ -60,7 +63,7 @@ def start_number() -> int:
 append(".starts.jsonl", {"argv": sys.argv[1:], "keyMode": stat.S_IMODE(os.stat(KEY_FILE).st_mode), "pid": os.getpid(), "key": KEY,
                          "env": sorted(os.environ)})
 START = start_number()
-print(f"fake llama-server start {START} on port {PORT}", flush=True)
+print(f"fake llama-server start {START} on {HOST if HOST.endswith('.sock') else PORT}", flush=True)
 if conf().get("exit_at_start") is not None:
     print("error: failed to load model", flush=True)
     sys.exit(int(conf()["exit_at_start"]))
@@ -79,8 +82,12 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def address_string(self):
+        return "unix" if HOST.endswith(".sock") else super().address_string()
+
     def do_GET(self):
         if self.path == "/health":
+            append(".health.jsonl", {"headers": dict(self.headers), "start": START})
             if time.monotonic() - STARTED < float(conf().get("load_s") or 0):
                 return self.send(503, b'{"error": {"code": 503, "message": "Loading model"}}')
             return self.send(200, b'{"status": "ok"}')
@@ -111,7 +118,10 @@ class H(BaseHTTPRequestHandler):
         self.send(int(c.get("status") or 200), json.dumps(doc).encode())
 
 
-srv = ThreadingHTTPServer(("127.0.0.1", PORT), H)
+if HOST.endswith(".sock"):
+    srv = socketserver.ThreadingUnixStreamServer(HOST, H)
+else:
+    srv = ThreadingHTTPServer((HOST, PORT), H)
 srv.daemon_threads = True
 try:
     srv.serve_forever()

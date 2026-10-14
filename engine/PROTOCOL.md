@@ -112,10 +112,13 @@ and `"llamacpp"` everywhere else. There, the AI assistant is a GGUF model run by
   stay inside it (no absolute paths, `..` or links pointing out; plain files, folders and links
   only), or the call fails with `bad_request` and nothing is installed. Only the pinned build
   counts as installed (`system.info` `llamacpp`); other builds' folders are removed once it's in.
-- The engine starts `llama-server` on first use, on 127.0.0.1 and a free port, with a new random
-  API key each start, passed in a 0600 file (`--api-key-file`), never on the command line. It gets
-  only the environment variables it needs (never `BP_SECRET_*` or the licence key). It's ready
-  when `/health` answers 200; it's stopped after 10 minutes without a request, at engine shutdown,
+- The engine starts `llama-server` on first use, listening on a Unix socket in a new 0700 folder
+  (`--host <folder>/llama.sock`), never on a local port, which another local process could take
+  first and answer for it. Without Unix sockets it isn't started (`not_ready`). It also gets a new
+  random API key each start, passed in a 0600 file in that folder (`--api-key-file`), never on the
+  command line. It gets only the environment variables it needs (never `BP_SECRET_*` or the
+  licence key). It's ready when `/health` answers 200 on that socket while the child is running
+  (`/health` is never sent the key); it's stopped after 10 minutes without a request, at engine shutdown,
   and (Linux) by the kernel if the engine dies.
 - Each question is `POST /v1/chat/completions`: the screenshot as a base64 PNG `data:` URL, then
   the same prompt as on the Mac, `temperature: 0`, `max_tokens: 96`, `seed: 7` (tools/model-test
