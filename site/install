@@ -277,6 +277,25 @@ asset_url() {
   if [ -n "$auth" ]; then field "assets.$1.url"; else field "assets.$1.browser_download_url"; fi
 }
 
+# newest_linux: the tag of the newest release (not a draft) that has the Linux AppImage, among
+# the newest 30; "none" when none of them has it; nothing when the list can't be read.
+newest_linux() {
+  [ "$(fetch "$API/releases?per_page=30" "$tmp/linux-list.json")" = 200 ] || return 0
+  json_flat "$tmp/linux-list.json" >"$tmp/linux-list.txt"
+  LC_ALL=C awk -F '\t' -v re="$ARCHIVE_RE" '
+    { i = $1; sub(/\..*/, "", i) }
+    $1 ~ /^[0-9]+\.tag_name$/ && !(i in seen) { seen[i] = 1; order[++m] = i; tag[i] = $2 }
+    $1 ~ /^[0-9]+\.draft$/ && $2 == "true" { draft[i] = 1 }
+    $1 ~ /^[0-9]+\.assets\.[0-9]+\.name$/ && $2 ~ re { has[i] = 1 }
+    END {
+      for (x = 1; x <= m; x++) {
+        j = order[x]
+        if (!(j in draft) && (j in has) && tag[j] ~ /^v[0-9][0-9A-Za-z.-]*$/) { print tag[j]; exit }
+      }
+      print "none"
+    }' "$tmp/linux-list.txt"
+}
+
 find_release() {
   channel=${BREAKPATCH_CHANNEL:-stable}
   case "$channel" in
@@ -347,7 +366,14 @@ find_release() {
   archive_i=$(awk -v re="$ARCHIVE_RE" '$2 ~ re { print $1; exit }' "$tmp/assets.txt")
   sums_i=$(awk '$2 == "SHA256SUMS" { print $1; exit }' "$tmp/assets.txt")
   if [ "$linux" -eq 1 ] && [ -z "$archive_i" ] && [ -n "$sums_i" ]; then
-    fail "Breakpatch $version has no Linux version. The Linux app is a preview, and not every release has it yet. Try BREAKPATCH_CHANNEL=beta, or see $RELEASES."
+    other=$(newest_linux)
+    case "$other" in
+      v*)
+        other=${other#v}
+        fail "Breakpatch $version has no Linux version. The Linux app is a preview, and the newest release that has it is $other: curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=$other sh" ;;
+      none) fail "Breakpatch for Linux isn't released yet: no release has it so far. See $RELEASES." ;;
+      *) fail "Breakpatch $version has no Linux version. The Linux app is a preview, and not every release has it yet. See $RELEASES." ;;
+    esac
   fi
   if [ -z "$archive_i" ] || [ -z "$sums_i" ]; then
     fail "Breakpatch $version can't be installed with this command. Try an older version with BREAKPATCH_VERSION, or write to support@breakpatch.dev."
@@ -636,9 +662,35 @@ linux_paths() {
   icon="$data_dir/icons/hicolor/128x128/apps/breakpatch.png"
 }
 
-# The app is open: `pgrep` where there is one (procps), else unknown, so not open.
+# The app is open for this account: `pgrep` where there is one (procps), else unknown, so not
+# open. Only this account's: another user's Breakpatch isn't this one.
 linux_running() {
-  command -v pgrep >/dev/null 2>&1 && pgrep -x breakpatch >/dev/null 2>&1
+  command -v pgrep >/dev/null 2>&1 && pgrep -u "$(id -u)" -x breakpatch >/dev/null 2>&1
+}
+
+# Opens the installed app in the background. What its first start prints goes to a log file, and
+# when it stops at once with an error, the installer says so and where that file is.
+open_linux() {
+  start_log="${XDG_STATE_HOME:-$HOME/.local/state}/breakpatch/first-start.log"
+  if ! mkdir -p "${start_log%/*}" 2>/dev/null || ! : >"$start_log" 2>/dev/null; then start_log=/dev/null; fi
+  say "Opening it now."
+  nohup "$dest_bin" >"$start_log" 2>&1 &
+  pid=$!
+  # A moment to see whether it stays up (a window opening) or stops straight away.
+  i=0
+  while [ "$i" -lt 10 ] && kill -0 "$pid" 2>/dev/null; do
+    sleep 0.3 2>/dev/null || sleep 1
+    i=$((i + 1))
+  done
+  kill -0 "$pid" 2>/dev/null && return 0
+  started=0
+  wait "$pid" || started=$?
+  [ "$started" -eq 0 ] && return 0
+  if [ "$start_log" = /dev/null ]; then
+    say "Breakpatch stopped as it started (exit $started). Open it from your apps menu, or run $(pretty "$dest_bin") in a terminal to see why."
+  else
+    say "Breakpatch stopped as it started (exit $started). What it said is in $(pretty "$start_log")."
+  fi
 }
 
 # A desktop entry's Exec line takes the path in double quotes; these characters would need escapes.
@@ -804,8 +856,7 @@ do_install_linux() {
   if linux_running; then
     say "Breakpatch is open: quit it and open it again to use $version."
   elif [ "$fuse" -eq 0 ] && { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; }; then
-    say "Opening it now."
-    nohup "$dest_bin" >/dev/null 2>&1 &
+    open_linux
   elif [ "$fuse" -eq 0 ]; then
     say "Open it from your apps menu."
   fi

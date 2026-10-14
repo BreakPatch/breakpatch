@@ -120,10 +120,12 @@ EOF
 
 # $1 file, $2 version: a stand-in for the Linux AppImage. Started, it logs "started <version>";
 # --appimage-extract PATTERN unpacks the icon into ./squashfs-root, as the real one does, and logs
-# "extracted <version>" (the installer runs it only once every check has passed).
+# "extracted <version>" (the installer runs it only once every check has passed). With
+# FAKE_START_FAIL, starting it prints an error and exits 1 (no display it can use, say).
 make_appimage() {
   cat > "$1" <<EOF
 #!/bin/sh
+if [ -n "\${FAKE_START_FAIL:-}" ] && [ "\$1" != --appimage-extract ]; then echo "Gtk-WARNING: cannot open display: :99"; exit 1; fi
 if [ "\$1" = --appimage-extract ]; then
   echo "extracted $2" >> "\$FAKE_STATE/log"
   mkdir -p squashfs-root/usr/share/icons/hicolor/128x128/apps
@@ -237,6 +239,10 @@ make_release nosums 1.3.0 latest no-sums
 make_release foreign 1.4.0 latest foreign
 make_release dotdot 1.5.0 latest dotdot
 make_release maconly 1.6.0 latest mac-only
+# The latest release has no AppImage, an older one does: the installer names that one.
+make_release linuxolder 1.5.0
+make_release linuxolder 1.6.0 latest mac-only
+make_list linuxolder v1.6.0 v1.5.0
 make_release signed 1.7.0 latest signed
 make_release badsig 1.7.0 latest signed-by-other
 make_release signedbadsum 1.7.0 latest signed bad-sum
@@ -483,6 +489,7 @@ printf 'ii '
 EOF
 cat > "$shims/pgrep" <<'EOF'
 #!/bin/sh
+echo "pgrep $*" >> "$FAKE_STATE/log"
 [ -f "$FAKE_STATE/running" ]
 EOF
 for t in fusermount3 update-desktop-database update-mime-database; do
@@ -1303,6 +1310,22 @@ for sh_name in "${shells[@]}"; do
   expect_log "started 1.1.0"
   expect_linux_clean
 
+  # Its first start's output goes to a log file, and a start that fails at once says where it is.
+  if [ -f "$c/home/.local/state/breakpatch/first-start.log" ]; then
+    ok "the first start's output goes to ~/.local/state/breakpatch/first-start.log"
+  else bad "no first-start.log"; fi
+
+  new_case linux-open-fails
+  run_linux DISPLAY=:99 FAKE_START_FAIL=1
+  expect_code 0
+  expect_out "Opening it now."
+  expect_out "Breakpatch stopped as it started (exit 1). What it said is in ~/.local/state/breakpatch/first-start.log."
+  if grep -qF "cannot open display" "$c/home/.local/state/breakpatch/first-start.log" 2>/dev/null; then ok "and the log has what it said"; else bad "first-start.log: $(cat "$c/home/.local/state/breakpatch/first-start.log" 2>&1)"; fi
+  expect_linux_app 1.1.0
+  run_linux DISPLAY=:99 FAKE_START_FAIL=1 XDG_STATE_HOME=/proc/nowhere
+  expect_code 0
+  expect_out "Breakpatch stopped as it started (exit 1). Open it from your apps menu, or run ~/.local/bin/breakpatch in a terminal to see why."
+
   new_case linux-update-while-open
   run_linux
   touch "$c/state/running"
@@ -1310,6 +1333,7 @@ for sh_name in "${shells[@]}"; do
   run_linux WAYLAND_DISPLAY=wayland-0
   expect_code 0
   expect_out "Breakpatch is open: quit it and open it again to use 1.1.0."
+  expect_log "pgrep -u 501 -x breakpatch"            # only this account's Breakpatch
   expect_no_out "Opening it now."
   sleep 0.2
   expect_no_log "started"
@@ -1398,8 +1422,15 @@ for sh_name in "${shells[@]}"; do
   new_case linux-release-without-linux
   run_linux BREAKPATCH_API="$base/maconly" BREAKPATCH_DOWNLOADS="$base/maconly/download/"
   expect_code 1
-  expect_out "Breakpatch 1.6.0 has no Linux version. The Linux app is a preview"
+  expect_out "Breakpatch for Linux isn't released yet: no release has it so far."
   expect_no_linux_app
+  run_linux BREAKPATCH_API="$base/linuxolder" BREAKPATCH_DOWNLOADS="$base/linuxolder/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.6.0 has no Linux version. The Linux app is a preview, and the newest release that has it is 1.5.0: curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.5.0 sh"
+  expect_no_linux_app
+  run_linux BREAKPATCH_API="$base/linuxolder" BREAKPATCH_DOWNLOADS="$base/linuxolder/download/" BREAKPATCH_VERSION=1.5.0
+  expect_code 0
+  expect_linux_app 1.5.0
 
   new_case linux-files-from-elsewhere
   run_linux BREAKPATCH_API="$base/foreign" BREAKPATCH_DOWNLOADS="$base/foreign/download/"
