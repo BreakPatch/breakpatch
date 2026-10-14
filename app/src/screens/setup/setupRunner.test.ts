@@ -64,7 +64,8 @@ describe('SetupRunner', () => {
   });
 
   it('shows nothing working once the engine answers that all is there, or when it can\'t start', async () => {
-    const { engine } = fakeEngine({ browser: { installed: true }, model: { installed: true, repo: MODELS.standard.repo } });
+    // All there: the standard assistant at the revision this release loads (another one is downloaded again).
+    const { engine } = fakeEngine({ browser: { installed: true }, model: { installed: true, repo: MODELS.standard.repo, revision: MODELS.standard.revision } });
     const r = new SetupRunner(engine, 0);
     r.start();
     expect(r.state.rows.browser.state).toBe('busy');
