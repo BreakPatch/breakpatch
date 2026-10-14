@@ -48,6 +48,7 @@ class Files:
         self.blobs: dict[str, bytes] = {}
         self.ranges: list[str] = []
         self.refuse_ranges = False          # answer every Range request 416, as a confused server might
+        self.sent = 0                       # bytes of bodies written, all requests
         self.chunk, self.delay = chunk, delay
         files = self
 
@@ -84,6 +85,7 @@ class Files:
                 try:
                     for i in range(0, len(part), files.chunk):
                         self.wfile.write(part[i:i + files.chunk])
+                        files.sent += len(part[i:i + files.chunk])
                         time.sleep(files.delay)
                 except (BrokenPipeError, ConnectionResetError):
                     pass
@@ -161,6 +163,19 @@ async def test_a_damaged_download_is_refused_and_nothing_is_unpacked(served, mon
     assert "didn't check out" in e.value.message
     assert not (config.runtimes_dir() / "llamacpp-b9999-cpu").exists()
     assert not list((config.runtimes_dir() / runtimes.PARTIAL_DIR).glob("*.part"))   # fetched afresh next time
+
+
+async def test_a_download_past_its_pinned_size_stops_there(served, monkeypatch):
+    """A server that sends more than the pinned size (another file, or one that never ends) isn't
+    read to the end: the download stops once it's past the size, and nothing is kept."""
+    body = build_archive(big=4 * 1024 * 1024)
+    pin(monkeypatch, served, body, size=64 * 1024)
+    with pytest.raises(EngineError) as e:
+        await install.Setup(lambda e: None).install_runtime("cpu")
+    assert "didn't check out" in e.value.message and "larger than its pinned size" in (e.value.details or "")
+    assert served.sent < len(body) // 4, served.sent        # stopped early, not at the end
+    assert not list((config.runtimes_dir() / runtimes.PARTIAL_DIR).glob("*.part"))
+    assert not (config.runtimes_dir() / "llamacpp-b9999-cpu").exists()
 
 
 async def test_another_build_isnt_installed_and_is_removed(served, monkeypatch):

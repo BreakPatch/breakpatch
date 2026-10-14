@@ -260,12 +260,20 @@ def download_main(spec: str) -> int:
                                                    **({"Range": f"bytes={have}-"} if have else {})})
         with opener.open(req, timeout=60) as r:
             mode = "ab" if have and r.status == 206 else "wb"     # the server ignored the Range: start over
+            got, too_large = (have if mode == "ab" else 0), False
             with open(part, mode) as f:
                 while True:
                     chunk = r.read(256 * 1024)
                     if not chunk:
                         break
+                    got += len(chunk)
+                    if size and got > size:                       # stop: never more than the pinned size
+                        too_large = True
+                        break
                     f.write(chunk)
+        if too_large:
+            part.unlink(missing_ok=True)
+            raise RuntimeError(f"the download is larger than its pinned size ({size} bytes)")
 
     try:
         part.parent.mkdir(parents=True, exist_ok=True)
