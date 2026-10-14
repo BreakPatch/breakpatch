@@ -316,7 +316,9 @@ if ! "$cpy" -c 'from cryptography.hazmat.primitives.ciphers.aead import AESGCM' 
   lock="$here/../engine/locks/linux-$(uname -m | sed 's/aarch64/arm64/').dev.txt"
   awk '/^(cryptography|cffi|pycparser)==/ { on = 1 } on && /^[^ ]/ && !/^(cryptography|cffi|pycparser)==/ { on = 0 } on && !/^ *#/' "$lock" > "$work/crypto-reqs.txt"
   "$py" -m venv "$work/cryptovenv"
-  if ! "$work/cryptovenv/bin/python" -m pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: \
+  # Not with CURL_CA_BUNDLE (exported above, for the fake release's certificate): pip reads it too,
+  # and would then trust nothing but that certificate on its way to PyPI.
+  if ! env -u CURL_CA_BUNDLE "$work/cryptovenv/bin/python" -m pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: \
        -r "$work/crypto-reqs.txt" > "$work/pip.log" 2>&1; then
     cat "$work/pip.log"
     why="pip couldn't install cryptography from $lock: $(tail -n 3 "$work/pip.log" | tr '\n' ' ')"
