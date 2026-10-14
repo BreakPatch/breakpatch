@@ -18,6 +18,7 @@ import { RunPage } from '../run/RunStage';
 import { runInfo, runStrip, type Strip } from '../run/strip';
 import { reasonTitle } from '../run/reasons';
 import { useTestRun } from '../run/useTestRun';
+import { useHoldUpdateChecks } from '../../lib/useHoldUpdateChecks';
 import { useElapsed } from '../run/useElapsed';
 import { preorder } from '../run/resolve';
 import {
@@ -75,6 +76,7 @@ export default function SuiteRunScreen() {
   const info = useMemo(() => (run.steps ? runInfo(run.steps) : null), [run.steps]);
 
   const [view, setView] = useState<SuiteRunView>(INITIAL_SUITE);
+  useHoldUpdateChecks(view.phase === 'running');         // from the first test to the last, not once it has ended
   const state = useRef(view);
   const act = useCallback((a: SuiteAction) => { state.current = suiteReducer(state.current, a); setView(state.current); }, []);
   const alive = useRef(true);

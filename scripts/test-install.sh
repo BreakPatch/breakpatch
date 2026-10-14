@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests the install command (site/install, served at https://breakpatch.dev/install) on Linux.
+# Tests the install command (site/install, served at https://breakpatch.dev/install) on Linux,
+# and on a Mac (CI's install-script-macos job), where it runs under the Mac's own /bin/sh.
 #
 #   scripts/test-install.sh
 #
@@ -7,9 +8,11 @@
 # holding a dummy Breakpatch.app, its .sig and SHA256SUMS; a throwaway certificate that curl is
 # told to trust), stands in for the macOS-only commands with small scripts on PATH (uname,
 # sw_vers, sysctl, osascript, open, xattr, codesign, and id so the tests don't run as root), and
-# runs the installer with /bin/sh and with bash --posix (macOS runs sh as bash). It also lints
-# it with shellcheck, installing shellcheck with apt when it's missing. Needs python3, node,
-# curl, tar, shasum and openssl.
+# runs the installer with /bin/sh and with bash --posix (macOS runs sh as bash). On a Mac those
+# are /bin/sh and /bin/bash, bash 3.2 as users have it, never a newer bash first on PATH. It also
+# lints it with shellcheck, installing shellcheck with apt (or Homebrew on a Mac) when it's
+# missing. Needs python3, node, curl, tar, shasum and openssl (one with req -addext: OpenSSL
+# 1.1.1 or later). The fakes stand in for the Mac's own commands on a Mac too.
 #
 # The Linux desktop app (a preview) installs on Linux x86_64: the fake releases carry a stand-in
 # AppImage, and getconf (glibc), dpkg-query (a .deb install), pgrep, fusermount and the desktop
@@ -43,16 +46,22 @@ annotate() {
     printf '::error title=test-install::%s\n' "$f"
   done
   if [ "$code" -ne 0 ] && [ ${#failures[@]} -eq 0 ]; then
-    printf '::error title=test-install::stopped early (exit %s) in: %s\n' "$code" "${current:-set-up}"
+    local why="${setup_msg:-at line ${err_line:-?}: ${err_cmd:-?}}"
+    why=${why//'%'/'%25'}; why=${why//$'\n'/'%0A'}; why=${why//$'\r'/'%0D'}
+    printf '::error title=test-install::stopped early (exit %s) in: %s, %s (bash %s)\n' \
+      "$code" "${current:-set-up}" "$why" "$BASH_VERSION"
   fi
 }
 cleanup() {
-  local code=$?
+  local code=${1:-$?}
   annotate "$code"
   if [ -n "$server_pid" ]; then kill "$server_pid" 2>/dev/null || true; fi
   rm -rf "$work"
 }
 trap cleanup EXIT
+# Where set -e stopped the script, for the annotation above.
+set -E
+trap 'err_line=$LINENO err_cmd=$BASH_COMMAND' ERR
 
 pass=0
 failures=()
@@ -63,7 +72,8 @@ bad() { failures+=("$current: $1"); printf '  FAIL  %s\n' "$1"; }
 
 if ! command -v shellcheck >/dev/null; then
   echo "installing shellcheck"
-  if [ "$(id -u)" -eq 0 ]; then apt-get install -y -qq shellcheck >/dev/null; else sudo apt-get install -y -qq shellcheck >/dev/null; fi
+  if command -v brew >/dev/null; then brew install -q shellcheck >/dev/null
+  elif [ "$(id -u)" -eq 0 ]; then apt-get install -y -qq shellcheck >/dev/null; else sudo apt-get install -y -qq shellcheck >/dev/null; fi
 fi
 echo "shellcheck site/install"
 shellcheck "$script"
@@ -136,7 +146,8 @@ gpg_fpr=$(GNUPGHOME="$gpg_home" gpg --batch --with-colons --list-secret-keys | a
 GNUPGHOME="$gpg_home" gpg --batch --armor --export "$gpg_fpr" > "$work/release-key.asc"
 # shellcheck disable=SC2329  # run by the EXIT trap
 stop_gpg() { GNUPGHOME="$gpg_home" gpgconf --kill all 2>/dev/null || true; GNUPGHOME="$gpg_home/other" gpgconf --kill all 2>/dev/null || true; }
-trap 'stop_gpg; cleanup' EXIT
+# cleanup is given the script's exit status, which stop_gpg would otherwise replace.
+trap 'code=$?; stop_gpg; cleanup "$code"' EXIT
 
 # $1 API root name, $2 version, then options: latest (also releases/latest), bad-sum, no-sums,
 # foreign (the files are listed on another host), dotdot (listed with ../ in their address),
@@ -173,7 +184,9 @@ make_release() {
   if [ "$nosums" -eq 0 ]; then
     (cd "$dl" && shasum -a 256 -- * > SHA256SUMS)   # expanded before SHA256SUMS exists
     if [ "$badsum" -eq 1 ]; then
-      sed -i 's/^[0-9a-f]\{64\}\(  Breakpatch_\(aarch64.app.tar.gz\|amd64.AppImage\)\)$/0000000000000000000000000000000000000000000000000000000000000000\1/' "$dl/SHA256SUMS"
+      # Not sed -i: macOS's sed needs an argument after it that GNU sed would read as the script.
+      sed -E 's/^[0-9a-f]{64}(  Breakpatch_(aarch64\.app\.tar\.gz|amd64\.AppImage))$/0000000000000000000000000000000000000000000000000000000000000000\1/' \
+        "$dl/SHA256SUMS" > "$dl/SHA256SUMS.new" && mv "$dl/SHA256SUMS.new" "$dl/SHA256SUMS"
     fi
     if [ -n "$signer" ]; then
       GNUPGHOME="$signer" gpg --batch --quiet --yes --armor --detach-sign --output "$dl/SHA256SUMS.asc" "$dl/SHA256SUMS"
@@ -361,12 +374,21 @@ python3 "$work/serve.py" "$port" "$http_port" "$gh_port" "$srv" "$tls" "$token" 
 server_pid=$!
 no_proxy_hosts="127.0.0.1,localhost,api.github.com,objects.githubusercontent.com"
 export CURL_CA_BUNDLE="$tls/cert.pem" NO_PROXY="$no_proxy_hosts" no_proxy="$no_proxy_hosts"
-for _ in $(seq 50); do
+# Up to 30 s: a cold Python on a CI Mac can take a while to start.
+for _ in $(seq 300); do
   if curl -fs "$base/good/releases/latest" >/dev/null 2>&1; then break; fi
+  kill -0 "$server_pid" 2>/dev/null || break
   sleep 0.1
 done
-curl -fs "$base/good/releases/latest" >/dev/null || { echo "the test server didn't start" >&2; cat "$work/server.log" >&2; exit 1; }
-curl -fs "http://127.0.0.1:$http_port/good/releases/latest" >/dev/null || { echo "the plain http test server didn't start" >&2; exit 1; }
+if ! curl -fs "$base/good/releases/latest" >/dev/null; then
+  if kill -0 "$server_pid" 2>/dev/null; then server_state="still running"; else server_state="exited ($(wait "$server_pid" 2>/dev/null; echo $?))"; fi
+  setup_msg="the test server didn't start (python3 $(python3 -c 'import sys; print(sys.version.split()[0])' 2>&1), $server_state): $(curl -fsS "$base/good/releases/latest" 2>&1 >/dev/null | tail -c 300) | server.log: $(tail -c 600 "$work/server.log" 2>/dev/null)"
+  echo "$setup_msg" >&2; exit 1
+fi
+if ! curl -fs "http://127.0.0.1:$http_port/good/releases/latest" >/dev/null; then
+  setup_msg="the plain http test server didn't start: $(curl -fsS "http://127.0.0.1:$http_port/good/releases/latest" 2>&1 >/dev/null | tail -c 300)"
+  echo "$setup_msg" >&2; exit 1
+fi
 
 # ---------------------------------------------------------------- macOS stand-ins
 
@@ -442,7 +464,7 @@ cat > "$cshims/curl" <<EOF
 #!/bin/sh
 printf 'curl %s\n' "\$*" >> "\$FAKE_STATE/curl-args"
 env >> "\$FAKE_STATE/curl-env"
-for a in "\$@"; do case "\$a" in @*) stat -c '%a' "\${a#@}" >> "\$FAKE_STATE/auth-mode" ;; esac; done
+for a in "\$@"; do case "\$a" in @*) { stat -c '%a' "\${a#@}" 2>/dev/null || stat -f '%Lp' "\${a#@}"; } >> "\$FAKE_STATE/auth-mode" ;; esac; done
 if [ "\$1" = --version ] && [ -n "\${FAKE_CURL_VERSION:-}" ]; then echo "curl \$FAKE_CURL_VERSION (x86_64-apple-darwin23.0)"; exit 0; fi
 exec $real_curl "\$@"
 EOF
@@ -475,7 +497,7 @@ chmod +x "$shims"/* "$mshims"/* "$cshims"/*
 new_case() {
   current="$sh_name: $1"
   echo "$current"
-  c="$work/cases/${sh_name// /}-$1"
+  c="$work/cases/$(printf '%s' "$sh_name" | tr -d ' /')-$1"
   mkdir -p "$c/home" "$c/Applications" "$c/tmp" "$c/state"
   : > "$c/state/log"
   apps="$c/Applications"
@@ -615,6 +637,14 @@ if grep -qx "MINISIGN_KEY=$want_key" "$script"; then ok "the minisign key is the
 if grep -qF '$$' "$script"; then bad "site/install makes a name from the process id (guessable)"; else ok "no guessable staging names"; fi
 # shellcheck disable=SC2016
 if grep -qF 'mktemp -d "$dest/' "$script"; then ok "staging folders come from mktemp"; else bad "staging folders don't come from mktemp"; fi
+# macOS's sh is bash 3.2, which in a UTF-8 locale reads a byte past ASCII as part of a name:
+# "$version…" is the unset variable "version…", and set -u stops the script there. A name
+# followed by such a character is written ${name}.
+for f in "$script" "$repo/site/install-ci"; do
+  if LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~[:cntrl:]]' "$f" >/dev/null; then
+    bad "$(basename "$f") has \$name straight before a character past ASCII: $(LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~[:cntrl:]]' "$f" | head -3 | tr '\n' ' ')"
+  else ok "$(basename "$f"): every name before a character past ASCII is in braces"; fi
+done
 
 # A copy of the installer with the test release key built in (the real one has a placeholder).
 python3 - "$script" "$work/install-gpg" "$gpg_fpr" "$work/release-key.asc" <<'PY'
@@ -708,7 +738,14 @@ publish v0.1.0-beta.2 fail ""
 expect_code 1
 if [ -z "$created" ]; then ok "the release list failed: nothing published"; else bad "published although the release list failed: $created"; fi
 
-for sh_name in "sh" "bash --posix"; do
+# The shells `curl … | sh` meets. On a Mac, its own: /bin/sh and /bin/bash are bash 3.2 (a runner
+# has a newer bash first on PATH), and that's where "$name…" stopped the script (see above).
+shells=("sh" "bash --posix")
+if [ "$(uname -s)" = Darwin ]; then
+  shells=("/bin/sh" "/bin/bash --posix")
+  echo "macOS: /bin/sh is $(/bin/sh -c 'echo "bash ${BASH_VERSION:-?}"'), in the locale ${LC_ALL:-${LC_CTYPE:-${LANG:-C}}}"
+fi
+for sh_name in "${shells[@]}"; do
   read -r -a shell_cmd <<< "$sh_name"
 
   new_case fresh-install

@@ -13,6 +13,7 @@ import './setup.css';
 import { useSystem } from '../../state/system';
 import { startingText } from '../../components/shell/EngineStarting';
 import { Computer, osText, ThisComputer } from '../../lib/osWords';
+import { useHoldUpdateChecks } from '../../lib/useHoldUpdateChecks';
 
 const NAMES: Record<RowKey, string> = { browser: 'Installing the test browser', mac: 'Checking this Mac', model: 'Downloading the AI assistant' };
 const LOOK: Record<TaskState, { icon: string; word: string; cls: string }> = {
@@ -53,6 +54,8 @@ function useSetupRunner() {
     return () => { off(); r.dispose(); };
   }, []);
   useEffect(() => { if (!online) void runner?.pause(); }, [online, runner]);
+  // No update downloads alongside the test browser or the AI assistant (lib/autoUpdates.ts).
+  useHoldUpdateChecks(!snap || ROWS.some(k => snap.rows[k].state === 'busy'));
   return { runner, snap };
 }
 
@@ -124,7 +127,7 @@ export default function SetupScreen() {
         {ROWS.map(k => {
           const r = rows[k], look = LOOK[r.state], n = note(k, r);
           const withBar = k === 'model' && (r.state === 'busy' || r.state === 'paused') && !!r.totalBytes;
-          const word = r.state === 'busy' ? (r.totalBytes ? `${Math.floor(pct(r) * 100)}%` : '') : look.word;
+          const word = r.state === 'busy' ? (r.totalBytes ? `${Math.floor(pct(r) * 100)}%` : r.starting ? 'Starting…' : '') : look.word;
           return (
             <li key={k} className={'su-row ' + look.cls}>
               <Icon name={look.icon} className="su-icon" label={look.word || 'Working'} />

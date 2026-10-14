@@ -6,6 +6,11 @@ export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
+/** `?demo` in the address: the simulated engine (engine/index.ts), in the app as in a browser. */
+export function wantsDemo(): boolean {
+  return typeof location !== 'undefined' && new URLSearchParams(location.search).has('demo');
+}
+
 async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   const { invoke } = await import('@tauri-apps/api/core');
   return invoke<T>(cmd, args);

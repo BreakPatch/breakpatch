@@ -18,6 +18,7 @@ one try has `attempts`, and its steps the earlier tries' failures (`retried`, en
 from __future__ import annotations
 
 import sys
+import warnings
 from datetime import datetime, timedelta, timezone
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -373,8 +374,9 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
         elif state == "fixed":
             headline, body = fixed_title(step, r), FIXED_TEXT
     note = ""
+    unchecked = bool(r and state == "passed" and r.get("unchecked"))
     if r and state == "passed":
-        note = UNCHECKED_NOTE if r.get("unchecked") else pass_note(r)
+        note = UNCHECKED_NOTE if unchecked else pass_note(r)
     again = retried_note(r, step, state)
     if again:
         note = f"{note} {again}".strip()
@@ -396,6 +398,9 @@ def step_view(step: dict, number: str, depth: int, r: dict | None, run: dict, by
     v["open"] = state == "failed" and not quiet
     v["_reason"] = str(reason or "") if state == "failed" and headline else ""   # JUnit's failure type; not in the view
     v["hasDetail"] = bool(headline or body or note or system or ex or advice or where or image)
+    # Open when printed: the step that failed, one that failed on an earlier try, or one with a
+    # warning to read (its check covers nothing).
+    v["printOpen"] = v["hasDetail"] and (v["open"] or bool(again) or unchecked)
     return v
 
 
@@ -464,6 +469,16 @@ def run_meta(run: dict, offset: int, recorded_on: object = None, device: object 
     return [m for m in meta if m["v"]]
 
 
+def passed_text(state: str, views: list[dict], run: dict | None) -> str:
+    """"10 steps, all passed": a test that passed on its first try, as the PDF shows it in place of its
+    steps. Not when a step prints open (a warning to read): the short form would leave it out."""
+    if not run or state not in ("passed", "fixed") or attempts_of(run) > 1 or not views or any(v["printOpen"] for v in views):
+        return ""
+    ran, fixed = sum(1 for v in views if v["result"] in ("passed", "fixed")), _int(run.get("healedCount"))
+    text = f"{plural(len(views), 'step')}, all passed" if ran == len(views) else f"{ran} of {plural(len(views), 'step')} passed"
+    return text + (f", {fixed} fixed automatically" if fixed else "")
+
+
 def test_view(t: dict, index: int, offset: int, screenshots: bool, multi: bool) -> dict:
     run = t.get("run") if isinstance(t.get("run"), dict) else None
     steps = t.get("steps") or []
@@ -483,6 +498,8 @@ def test_view(t: dict, index: int, offset: int, screenshots: bool, multi: bool) 
         "stepsText": plural(len(views), "step"), "steps": views, "junit": j,
         # In a suite, a test that passed starts closed: what didn't pass is what's read first.
         "stepsOpen": state not in ("passed", "fixed"),
+        # A test that passed on its first try prints as this line, without its steps (unless one has a warning).
+        "passedText": passed_text(state, views, run),
     }
 
 
@@ -586,6 +603,19 @@ def build(inp: dict) -> dict:
     }
 
 
+def print_view(view: dict) -> dict:
+    """The view as the PDF prints it (the app's printView): a test that passed on its first try is its
+    summary and "10 steps, all passed", without its steps; any other test lists its steps, with the one
+    that failed open (and one that failed on an earlier try, or one whose check covers nothing)."""
+    return {**view, "tests": [{**t, "stepsOpen": True, "steps": [] if t["passedText"] else [{**s, "open": s["printOpen"]} for s in t["steps"]]}
+                              for t in view["tests"]]}
+
+
 def all_open(view: dict) -> dict:
-    """The same view with every step open: for printing, where a closed step would print closed."""
+    """Deprecated: use print_view. The same view with every step open, as 0.1.0-beta.1 printed it.
+
+    print_view replaced it in 0.1.0-beta.2. It stays for one more release (0.1.0-beta.3) so code
+    written against beta.1's report.all_open keeps working, and goes after that."""
+    warnings.warn("report.all_open is deprecated and goes after 0.1.0-beta.3: use report.print_view",
+                  DeprecationWarning, stacklevel=2)
     return {**view, "tests": [{**t, "stepsOpen": True, "steps": [{**s, "open": s["hasDetail"]} for s in t["steps"]]} for t in view["tests"]]}

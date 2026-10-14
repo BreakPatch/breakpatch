@@ -244,7 +244,7 @@ A device name the engine doesn't know (a test from a newer Breakpatch) fails wit
 | Method | Params | Result |
 |---|---|---|
 | `record.point` | `{ action, at?, from?, to?, direction?, distance?, text?, secretRef?, generated?, sample?, durationMs?, region?, timeoutMs?, nav?, url?, fileType?, minBytes?, label?, target?, secrets?, frame?, valueRef?, call?, appUrl?, passStatus?, keep?, email?, inbox? }` | `{ step: Step }` |
-| `record.locate` | `{ description, absence?, near?, shows? }` | `{ box, at, target, frame, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below). `shows: true`: what to find may be text on the screen, not a control (a checkpoint, a Wait until; below) |
+| `record.locate` | `{ description, absence?, near?, shows? }` | `{ box, at, target, frame?, path, s0Score? } \| null` — the fast locator, then the AI assistant (below); `null` means not found. `near`: `{ control: "increase"\|"decrease", of }`, a stepper's "+" or "−" next to `of` (below). `shows: true`: what to find may be text on the screen, not a control (a checkpoint, a Wait until; below) |
 | `record.intent` | `{ sentence }` | `{ action, repeat, target?, text?, direction?, seconds? } \| null` — what a described step means, from the AI assistant (below); `null` without it or when it can't tell. An empty sentence is `bad_request`; only its first 300 characters are read |
 | `record.checkpoint` | `{ region, frame? }` | `{ step: Step }` |
 | `record.plan` | `{ story, secrets? }` | `{ steps: PlanStep[], note?, dropped?, overLimit? }` — Breakpatch Team: the steps a user story asks for, proposed and not done (below). Community: `not_ready` |
@@ -284,7 +284,8 @@ switch off no step has `element`, and a step that has one replays exactly as one
 for healing (Replay below). Apps keep it as it is: it isn't a format change.
 
 `frame` is the `seq` of the live view frame the user clicked or drew on (`record.locate` returns
-the one it found the box on). Right before acting, and at its first look, the engine checks that
+the one it found the box on; called straight after `browser.open` it waits up to 3 s for the first
+frame, and without one it has no `frame`). Right before acting, and at its first look, the engine checks that
 the page still looks like that frame around the click (96 × 96 px) or inside the drawn box; if it
 doesn't, the call fails with `stale` ("The page changed before your click reached it, so nothing
 was clicked…") and nothing is sent to the page. A frame too old to be kept (the last 200) or from
@@ -347,6 +348,8 @@ Per action:
   area looks now), `tolerance` and `timeoutMs` (default 10000). No `pre`/`post`.
 - `downloadCheck` without `at` checks for a download since the previous download check (e.g. after
   a "Click Download" step). Without one it fails with `bad_request` "No file was downloaded."
+  A download must start within the step's `timeoutMs` (default 15 s); one that has started is
+  waited for until it finishes, up to 2 minutes more (else "…started but didn't finish…").
 - `upload` clicks `at`, expects a file picker and chooses the bundled `sample` (`docx`, `pdf`, `jpeg`, `mp4`, `xlsx`, `csv`). With `file:
   "files/<name>"` it chooses that file from `filesDir` instead (`record.point` and `run.start` take
   `filesDir`, the tests folder's `files` folder; only a plain name inside it is used). A missing file

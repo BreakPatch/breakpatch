@@ -46,8 +46,19 @@ test('the hero badge keeps its dot with the words after it, and on a phone has n
   assert.ok(home.includes('AI on your Mac</span><span class="soft"><span>no cloud<a class="star" href="#no-cloud"'));
   assert.match(phone, /\.ai-badge\{[^}]*flex-direction:column/);
   assert.ok(phone.includes('.ai-badge .soft::before{display:none}'));
-  // The asterisk is a 44 px target without moving the words: padding, taken back by a negative margin.
-  assert.match(CSS, /\.ai-badge \.star\{position:relative;display:inline-block;padding:12px 19px;margin:-12px -19px -12px calc\(1px - 19px\);line-height:20px/);
+  // The asterisk is a 44 px target without moving the words: an out-of-flow ::after, not padding on the
+  // link, so the link stays plain inline text and its line keeps the same height and baseline.
+  assert.match(CSS, /\.ai-badge \.star::after\{content:"";position:absolute;[^}]*width:44px;height:44px/);
+  // Centred with transform, which older browsers know, not the newer translate property.
+  assert.match(CSS, /\.ai-badge \.star::after\{[^}]*transform:translate\(-50%,-50%\)/);
+  assert.doesNotMatch(CSS, /\.ai-badge \.star::after\{[^}]*[;{]translate:/);
+  assert.doesNotMatch(CSS, /\.ai-badge \.star\{[^}]*(display:inline-block|padding|line-height)/);
+  assert.ok(CSS.includes('.ai-badge .star:focus-visible::after{outline:2px solid var(--accent)'));
+  // Both parts share one baseline (centring boxes of different heights puts them at different heights),
+  // and the badge's first part isn't .lead, the Documentation's 19 px intro paragraph.
+  assert.match(CSS, /\.ai-badge\{[^}]*align-items:baseline/);
+  assert.ok(home.includes('<p class="ai-badge"><span class="ai-lead">'));
+  assert.match(phone, /\.ai-badge\{[^}]*flex-direction:column;align-items:center/);
   // The asterisk on "no cloud" leads to the note that says where the cloud does come in.
   assert.ok(home.includes('<p class="cloud-note" id="no-cloud">'));
   assert.doesNotMatch(home, /class="sep"/);

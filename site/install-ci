@@ -34,8 +34,9 @@
 #   7. On Linux, asks breakpatch-ci setup whether the system has the libraries Chromium needs,
 #      and when it hasn't, names them and the one command (run as an administrator) that adds them.
 #
-# --uninstall removes both folders' breakpatch-ci. With BREAKPATCH_LICENCE_KEY set, it first gives
-# this machine's licence back (breakpatch-ci licence release).
+# --uninstall removes only what the installer made in those two folders. With
+# BREAKPATCH_LICENCE_KEY set, it first gives this machine's licence back (breakpatch-ci licence
+# release).
 # No sudo, nothing outside those two folders is changed. It runs as root too (CI containers).
 #
 # Everything happens in main(), called on the last line: if the download of this script is
@@ -718,10 +719,22 @@ do_uninstall() {
       "$home"/*) rm -f "$bin/breakpatch-ci" && removed=1 ;;
     esac
   fi
-  if [ -e "$home/current" ] || [ -e "$home/browsers" ]; then
-    rm -rf "${home:?}" || fail "Couldn't remove $(pretty "$home")."
+  # Only what the installer makes goes: BREAKPATCH_CI_HOME may be a folder with other things in
+  # it. The current link, the environments (env-<version>.XXXXXXXX, half-made ones too), the
+  # browsers and the downloaded Pythons (python/cpython-*, with any .partial unpacking); then
+  # python/ and the folder itself, if that leaves them empty. An env-* that isn't a folder, or is
+  # a link, isn't the installer's, and nor is anything else in python/.
+  if [ -e "$home/current" ] || [ -L "$home/current" ] || [ -e "$home/browsers" ]; then
+    for d in "$home/current" "$home/browsers" "$home"/python/cpython-* "$home"/env-*; do
+      case "$d" in
+        "$home"/env-*) if [ -L "$d" ] || [ ! -d "$d" ]; then continue; fi ;;
+      esac
+      if [ -e "$d" ] || [ -L "$d" ]; then rm -rf "$d" || fail "Couldn't remove $(pretty "$d")."; fi
+    done
+    rmdir "$home/python" 2>/dev/null || true
     removed=1
   fi
+  if [ "$removed" -eq 1 ]; then rmdir "$home" 2>/dev/null || true; fi
   if [ "$removed" -eq 0 ]; then
     say "breakpatch-ci isn't in $(pretty "$home"). Nothing to remove."
     return 0

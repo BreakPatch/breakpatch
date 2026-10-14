@@ -1,4 +1,4 @@
-// The public beta (v0.1.0-beta.1): no pre-launch notes are left anywhere, and Community carries a
+// The public beta (from v0.1.0-beta.1): no pre-launch notes are left anywhere, and Community carries a
 // small Beta label where it's offered (site/README.md, "Launch day"). No browser, nothing to install.
 //   node --test site/launch.test.mjs
 import { test } from 'node:test';
@@ -83,12 +83,27 @@ test('the Documentation and the README say what beta means, where to report prob
   assert.match(README, /alt="Community: beta"/);
 });
 
-test('the release notes for v0.1.0-beta.1 are there (release.yml publishes docs/releases/<tag>.md)', () => {
-  const notes = read('docs/releases/v0.1.0-beta.1.md');
+test('every beta has its release notes, the app\'s version too (release.yml publishes docs/releases/<tag>.md)', () => {
   assert.ok(read('.github/workflows/release.yml').includes('contents/docs/releases/$GITHUB_REF_NAME.md'));
-  assert.match(notes, /curl -fsSL https:\/\/breakpatch\.dev\/install \| sh/);
-  assert.match(notes, /Apple Silicon/);
-  assert.match(notes, /macOS 14/);
-  assert.match(notes, /support@breakpatch\.dev/);
-  assert.equal(JSON.parse(read('app/package.json')).version, '0.1.0-beta.1');
+  const version = JSON.parse(read('app/package.json')).version;
+  for (const tag of ['v0.1.0-beta.1', 'v0.1.0-beta.2', `v${version}`]) {
+    const notes = read(`docs/releases/${tag}.md`);
+    assert.match(notes, /curl -fsSL https:\/\/breakpatch\.dev\/install \| sh/, tag);
+    assert.match(notes, /Apple Silicon/, tag);
+    assert.match(notes, /macOS 14/, tag);
+    assert.match(notes, /support@breakpatch\.dev/, tag);
+  }
+});
+
+test('the version is the same everywhere the release checks it (release.yml, build-ci.sh)', () => {
+  const version = JSON.parse(read('app/package.json')).version;
+  const lock = JSON.parse(read('app/package-lock.json'));
+  assert.equal(lock.version, version, 'app/package-lock.json');
+  assert.equal(lock.packages[''].version, version, 'app/package-lock.json packages[""]');
+  assert.match(read('app/src-tauri/Cargo.toml'), new RegExp(`^version = "${version}"$`, 'm'), 'Cargo.toml');
+  assert.match(read('app/src-tauri/Cargo.lock'), new RegExp(`name = "breakpatch"\nversion = "${version}"\n`), 'Cargo.lock');
+  assert.match(read('engine/src/breakpatch_engine/__init__.py'), new RegExp(`^__version__ = "${version}"$`, 'm'), 'the engine');
+  // PEP 440: 0.1.0-beta.2 is 0.1.0b2 (the Team repo's make_wheel.py pep440).
+  const pep = version.replace(/-beta\.(\d+)$/, 'b$1').replace(/-alpha\.(\d+)$/, 'a$1').replace(/-rc\.(\d+)$/, 'rc$1');
+  assert.match(read('engine/pyproject.toml'), new RegExp(`^version = "${pep.replace(/\./g, '\\.')}"`, 'm'), 'engine/pyproject.toml');
 });

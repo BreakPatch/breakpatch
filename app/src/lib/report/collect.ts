@@ -6,7 +6,7 @@ import type { RecordedOn, Run, Step, Viewport } from '../../data/types';
 import type { Engine } from '../../engine/engine';
 import { appVersion, saveTextFile } from '../../platform';
 import { junitXml } from './junit';
-import { allOpen, buildView, type ReportInput, type ReportStepRun, type ReportView } from './view';
+import { buildView, printView, type ReportInput, type ReportStepRun, type ReportView } from './view';
 import { reportHtml } from '.';
 import { screenName } from '../../data/devices';
 
@@ -85,7 +85,7 @@ export async function exportReport(input: ReportInput, format: ExportFormat): Pr
   const view = buildView(input);
   if (format === 'pdf') {
     const { printReport } = await import('./print');
-    await printReport(reportHtml(allOpen(view)));
+    await printReport(reportHtml(printView(view)), fileStem(view.heading, Date.now()));
     return true;
   }
   const f = exportFile(view, format);

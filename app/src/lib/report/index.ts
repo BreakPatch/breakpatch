@@ -6,7 +6,7 @@ import template from '../../../../engine/src/breakpatch_engine/report/template.h
 import { render } from './render';
 import type { ReportView } from './view';
 
-export { buildView, allOpen } from './view';
+export { buildView, printView } from './view';
 export type { ReportInput, ReportTestInput, ReportView, ReportImage, ReportRun, ReportStepRun } from './view';
 export { junitXml } from './junit';
 

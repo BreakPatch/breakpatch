@@ -7,7 +7,7 @@ import type { App, RecordedOn, Test } from '../../data/types';
 import { useBackend, useLive } from '../../data/hooks';
 import { findStep, flatRows, numberOf, stripUi } from '../../components/steps';
 import { AppFrame } from '../../components/shell/AppFrame';
-import { Button, EmptyState, IconButton, SharedChip, useToast } from '../../components/ui';
+import { Button, EmptyState, Icon, SharedChip, useToast } from '../../components/ui';
 import { TestDetailsDialog } from '../app/TestDetailsDialog';
 import { RecorderWorkbench } from './RecorderWorkbench';
 import { SaveButton } from './SaveButton';
@@ -18,6 +18,7 @@ import { hasFeature, useFeature } from '../../edition';
 import { StoryDialog } from './StoryDialog';
 import { filesDir } from '../../lib/testFiles';
 import { addStepHint, editorStatuses, useEditorRun, type EditorRunDone } from './editorRun';
+import { useHoldUpdateChecks } from '../../lib/useHoldUpdateChecks';
 import { checksNothing, UNCHECKED_NOTE } from '../run/reasons';
 import { preorder } from '../run/resolve';
 import { getEngine } from '../../engine';
@@ -49,6 +50,7 @@ export default function RecorderScreen() {
   if (test && openedAt?.id !== test.id) setOpenedAt({ id: test.id, url: test.startUrl });
   const browser = useBrowserSession(openedAt?.url, test ? viewport : undefined, m => toast(m, { error: true }));
   const editorRun = useEditorRun({ test, steps: () => rec.stepsRef.current });
+  useHoldUpdateChecks(rec.working || editorRun.running);   // recording a step or playing the test, not just open
   const [done, setDone] = useState<EditorRunDone | null>(null);
   // The floating line over the page while steps play for Play this step ("Playing steps 1–9 first…").
   const [banner, setBanner] = useState<{ text: string; tone?: 'ok' | 'bad'; ms?: number; icon?: string; action?: { label: string; onClick: () => void } } | null>(null);
@@ -190,7 +192,6 @@ export default function RecorderScreen() {
   const published = test?.status === 'published';
   const actions = test && (
     <>
-      <IconButton icon="description" label="Test details" onClick={() => setDetailsOpen(true)} disabled={editorRun.running} />
       {aiTests && <Button icon="auto_awesome" onClick={() => setStoryOpen(true)} disabled={!loaded || !browser.ready || rec.busy || editorRun.running || rec.hand || !!rec.rerecordId}
         title="Write a test from a story">From a story</Button>}
       {hasFeature('collaboration') && <SharedChip published={published} />}
@@ -204,8 +205,14 @@ export default function RecorderScreen() {
     </>
   );
 
+  // The test's name opens Test details: the pencil next to it says it can be changed. Its name is the
+  // test's; what it does is its description, the tooltip "Test details" (said once, not twice).
   return (
-    <AppFrame back={() => guard(() => navigate(`/apps/${appId}`))} crumb={app?.name ?? ' '} title={test?.name ?? ' '} actions={actions}>
+    <AppFrame back={() => guard(() => navigate(`/apps/${appId}`))} crumb={app?.name ?? ' '} actions={actions}
+      title={test ? <button type="button" className="titlebar-name" title="Test details"
+        onClick={() => setDetailsOpen(true)} disabled={editorRun.running}>
+        <span>{test.name}</span><Icon name="edit" />
+      </button> : ' '}>
       <RecorderWorkbench rec={rec} appId={appId} address={addressOf(openedAt?.url)} viewport={viewport} allowGroups
         loading={!loaded || !browser.ready} onEditGroup={id => guard(() => navigate(`/apps/${appId}/shared/${id}/edit`))} run={runProps} />
       {dialog}

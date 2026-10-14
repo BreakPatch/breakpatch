@@ -17,6 +17,7 @@
   background: var(--bpr-bg); color: var(--bpr-text);
   font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-text-size-adjust: 100%;
+  overflow-wrap: break-word; overflow-wrap: anywhere;   /* break-word where anywhere is too new (Safari before 15.4) */
 }
 .bpr[data-theme="dark"] {
   --bpr-bg: #171412; --bpr-surface: #211C19; --bpr-raised: #2C2521; --bpr-line: #3A322C;
@@ -37,6 +38,10 @@
 body.bpr-page { margin: 0; }
 .bpr *, .bpr *::before, .bpr *::after { box-sizing: border-box; }
 .bpr h1, .bpr h2, .bpr p, .bpr dl, .bpr dd, .bpr ol, .bpr figure { margin: 0; }
+/* One column no wider than the page: a long word, a URL or a screenshot wraps or shrinks in its card
+   instead of widening every card past the page's edge (most of all when printed). */
+.bpr-head, .bpr-test-head, .bpr-steps, .bpr-detail, .bpr-ai, .bpr-shot { grid-template-columns: minmax(0, 1fr); }
+.bpr img { max-width: 100%; }
 .bpr-head { display: grid; gap: 12px; padding-bottom: 20px; border-bottom: 1px solid var(--bpr-line); }
 .bpr-kind { color: var(--bpr-faint); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
 .bpr h1 { font-size: 28px; line-height: 1.2; font-weight: 700; }
@@ -95,6 +100,7 @@ body.bpr-page { margin: 0; }
 .bpr-shot-full img { width: 100%; }
 .bpr-shot-small img { width: 100%; max-width: 360px; }
 .bpr-shot figcaption { font-size: 12px; color: var(--bpr-faint); }
+.bpr-passed-text { display: none; }
 .bpr-foot { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--bpr-line); color: var(--bpr-faint); font-size: 12px; }
 @media (max-width: 600px) {
   .bpr { padding: 20px 16px 36px; }
@@ -115,6 +121,8 @@ body.bpr-page { margin: 0; }
   .bpr-step summary::after { display: none; }
   .bpr-step, .bpr-shot, .bpr-ai, .bpr-callout { break-inside: avoid; }
   .bpr-test { break-before: auto; }
+  .bpr-passed-text { display: block; }
+  .bpr-brief .bpr-steps, .bpr-brief .bpr-test-steps { display: none; }
   .bpr-shot-full img { max-height: 16cm; object-fit: contain; object-position: left top; }
 }
 @page { margin: 14mm 12mm; }
@@ -159,7 +167,7 @@ body.bpr-page { margin: 0; }
 </div>
 </details></li>
 <li class="bpr-step bpr-passed bpr-d0"><div class="bpr-row"><span class="bpr-no">4</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Repeat 2 times</span><span class="bpr-status">Passed</span></div></li>
-<li class="bpr-step bpr-passed bpr-d1"><details><summary><span class="bpr-no">5</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Click Add row</span><span class="bpr-status">Passed</span></summary>
+<li class="bpr-step bpr-passed bpr-d1"><details data-bpr-print><summary><span class="bpr-no">5</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Click Add row</span><span class="bpr-status">Passed</span></summary>
 <div class="bpr-detail">
 <p class="bpr-muted">This step&#39;s check covers nothing. Re-record it.</p>
 </div>
@@ -170,7 +178,7 @@ body.bpr-page { margin: 0; }
 </div>
 </details></li>
 <li class="bpr-step bpr-passed bpr-d0"><div class="bpr-row"><span class="bpr-no">7</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Write &lt;Q4&gt; &amp; friends</span><span class="bpr-status">Passed</span></div></li>
-<li class="bpr-step bpr-failed bpr-d0"><details open><summary><span class="bpr-no">8</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Click Done</span><span class="bpr-status">Failed</span><span class="bpr-took">5.0 s</span></summary>
+<li class="bpr-step bpr-failed bpr-d0"><details open data-bpr-print><summary><span class="bpr-no">8</span><span class="bpr-dot" aria-hidden="true"></span><span class="bpr-label">Click Done</span><span class="bpr-status">Failed</span><span class="bpr-took">5.0 s</span></summary>
 <div class="bpr-detail">
 <p class="bpr-headline">Couldn&#39;t find the Done button</p>
 <p>It wasn&#39;t where it was when this step was recorded, so there was nothing to click. The run stopped here.</p>
@@ -209,12 +217,17 @@ body.bpr-page { margin: 0; }
     if (what === 'open' || what === 'close') all().forEach(function (d) { d.open = what === 'open'; });
     if (what === 'theme') setTheme(theme === 'auto' ? 'light' : theme === 'light' ? 'dark' : 'auto');
   });
-  var closed = [];
+  // Printed as the app's PDF: a test's steps open, and in them only the step that failed (or
+  // failed on an earlier try). A test that passed prints without its steps (the print styles).
+  var was = [];
   window.addEventListener('beforeprint', function () {
-    closed = [];
-    all().forEach(function (d) { if (!d.open) { closed.push(d); d.open = true; } });
+    was = [];
+    all().forEach(function (d) {
+      was.push([d, d.open]);
+      d.open = d.classList.contains('bpr-test-steps') || d.hasAttribute('data-bpr-print');
+    });
   });
-  window.addEventListener('afterprint', function () { closed.forEach(function (d) { d.open = false; }); closed = []; });
+  window.addEventListener('afterprint', function () { was.forEach(function (w) { w[0].open = w[1]; }); was = []; });
 })();
 </script>
 </body>

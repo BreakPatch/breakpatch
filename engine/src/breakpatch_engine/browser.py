@@ -108,6 +108,7 @@ class DownloadInfo:
     path: str | None
     size: int
     failure: str | None = None
+    done: bool = True          # False while the file is still coming
 
 
 class BrowserSession:
@@ -339,33 +340,44 @@ class BrowserSession:
     # ---------- downloads ----------
 
     def _on_download(self, download) -> None:
-        task = asyncio.ensure_future(self._track_download(download))
+        # Counted from the moment it starts, not when it's finished: a check waits for a file that
+        # is still coming, and the downloads a check has seen are marked in the order they began.
+        info = DownloadInfo(download.suggested_filename, None, 0, done=False)
+        self.downloads.append(info)
+        task = asyncio.ensure_future(self._track_download(download, info))
         self._download_tasks.add(task)
         task.add_done_callback(self._download_tasks.discard)
 
-    async def _track_download(self, download) -> None:
-        failure = None
-        path = None
-        size = 0
+    @staticmethod
+    async def _track_download(download, info: DownloadInfo) -> None:
         try:
-            path = str(await download.path())
-            size = Path(path).stat().st_size
+            info.path = str(await download.path())
+            info.size = Path(info.path).stat().st_size
         except Exception as e:  # noqa: BLE001
-            failure = str(e)
+            info.failure = str(e)
         try:
-            failure = failure or await download.failure()
+            info.failure = info.failure or await download.failure()
         except Exception:  # noqa: BLE001
             pass
-        self.downloads.append(DownloadInfo(download.suggested_filename, path, size, failure))
+        info.done = True
 
-    async def wait_download(self, since: int, timeout: float) -> DownloadInfo | None:
+    async def wait_download(self, since: int, timeout: float, finish: float) -> DownloadInfo | None:
+        """The newest download after the first `since` that finished without failing. One must
+        start within `timeout` seconds; one that has started by then gets up to `finish` seconds
+        more to finish (a big export, a slow server, a busy machine): until then it isn't "no
+        file". None when none started; at `finish`, the one still coming (`done` False)."""
         end = time.monotonic() + timeout
         while True:
-            done = [d for d in self.downloads[since:] if d.failure is None]
+            started = self.downloads[since:]
+            done = [d for d in started if d.done and d.failure is None]
             if done:
                 return done[-1]
-            if time.monotonic() >= end:
+            coming = [d for d in started if not d.done]
+            now = time.monotonic()
+            if now >= end and not coming:
                 return None
+            if now >= end + finish:
+                return coming[-1]
             await asyncio.sleep(0.1)
 
     # ---------- screen ----------
@@ -404,6 +416,19 @@ class BrowserSession:
 
     @property
     def last_seq(self) -> int:
+        return self._seq
+
+    async def shown_frame(self, timeout: float) -> int | None:
+        """The seq of the live view frame the app is showing now. Right after the browser opens the
+        stream's first frame is still on its way (a moment after the page loads; longer on a slow
+        machine): this waits up to `timeout` for it. None when there's no stream, or no frame came
+        in time. A seq without its frame (0 before the first one, or one from before the browser
+        reopened) would make the step recorded with it fail as `stale`."""
+        end = time.monotonic() + timeout
+        while self._seq not in self._frames:
+            if self._stream is None or time.monotonic() >= end:
+                return None
+            await asyncio.sleep(0.02)
         return self._seq
 
     def remember_frame(self, seq: int, b64: str) -> None:

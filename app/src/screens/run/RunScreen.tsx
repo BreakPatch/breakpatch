@@ -12,6 +12,7 @@ import { RunPage, RunSteps } from './RunStage';
 import { hairline, runInfo } from './strip';
 import { useTestRun } from './useTestRun';
 import { useElapsed } from './useElapsed';
+import { useHoldUpdateChecks } from '../../lib/useHoldUpdateChecks';
 import './run.css';
 
 const DEFAULT_VP = { width: 1440, height: 900 };
@@ -27,6 +28,7 @@ export default function RunScreen() {
   const r = useTestRun();
   const { view } = r;
   const info = useMemo(() => (r.steps ? runInfo(r.steps) : null), [r.steps]);
+  useHoldUpdateChecks(r.busy);                           // not once it has ended
 
   const go = (t: Test) => { r.start(t).catch(() => { /* shown in the strip */ }); };
   const started = useRef(false);

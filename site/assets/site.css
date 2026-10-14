@@ -104,12 +104,14 @@ code{font-family:var(--mono);font-size:.88em;background:var(--raised);padding:.1
 .reqs{margin:0;font-size:0.8438rem;color:var(--faint);letter-spacing:.01em}
 .cloud-note{margin:6px auto 0;max-width:52ch;font-size:0.8125rem;line-height:1.5;color:var(--faint)}
 .cloud-note b{color:var(--muted);font-weight:600}
-.ai-badge .star{color:var(--accent);font-weight:700;margin-left:1px;text-decoration:none}
-/* The asterisk is one character, but its tap target is 44 × 44: padding grows the area that answers a
-   tap, and the same negative margin takes the room back, so the words don't move. Positioned, so the
-   padding sits above the letters next to it. */
-.ai-badge .star{position:relative;display:inline-block;padding:12px 19px;margin:-12px -19px -12px calc(1px - 19px);line-height:20px;border-radius:999px}
-.ai-badge .star:focus-visible{outline:2px solid var(--accent);outline-offset:-10px}
+.ai-badge .star{position:relative;color:var(--accent);font-weight:700;margin-left:1px;text-decoration:none}
+/* The asterisk is one character, but its tap target is 44 × 44: an empty ::after, centred on it and out
+   of the flow, answers the tap. The link itself stays plain inline text, so it can't make its line any
+   taller or move the words' baseline. Positioned, so the area sits above the letters next to it. The
+   focus ring is drawn on that area, as a small circle round the asterisk. */
+.ai-badge .star::after{content:"";position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%);border-radius:999px}
+.ai-badge .star:focus-visible{outline:none}
+.ai-badge .star:focus-visible::after{outline:2px solid var(--accent);outline-offset:-14px}
 /* "12,300 tests run with Breakpatch" (assets/runs-count.js): out of the flow, in the space above the
    screenshot, so it takes no room and moves nothing when it fades in. */
 .runs-count{position:absolute;top:calc(100% + 12px);left:0;right:0;margin:0;font-size:0.8438rem;color:var(--faint);letter-spacing:.01em;animation:edge .6s ease-out both}
@@ -137,12 +139,15 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 .caption{margin:14px 0 0;font-size:0.8438rem;color:var(--faint);text-align:center;letter-spacing:.01em}
 
 /* "AI on your Mac" badge in the hero */
-.ai-badge{display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px 9px;margin:0;padding:6px 15px 6px 11px;border-radius:999px;background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);color:var(--text);font-size:0.875rem;font-weight:600;line-height:1.35}
-.ai-badge svg{width:16px;height:16px;fill:var(--accent);flex:none}
-.ai-badge .lead{display:inline-flex;align-items:center;gap:9px}
-.ai-badge .soft{display:inline-flex;align-items:center;gap:9px;color:var(--muted);font-weight:500}
+/* One line of text: the two parts share a baseline (not centred boxes, which can differ in height), and
+   the icon and the dot are each centred on the line of text they sit in. */
+.ai-badge{display:inline-flex;flex-wrap:wrap;justify-content:center;align-items:baseline;gap:6px 9px;margin:0;padding:6px 15px 6px 11px;border-radius:999px;background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);color:var(--text);font-size:0.875rem;font-weight:600;line-height:1.35}
+.ai-badge svg{width:16px;height:16px;fill:var(--accent);flex:none;align-self:center}
+/* .ai-lead, not .lead: that's the Documentation's intro paragraph (19 px, 16 px margin below). */
+.ai-badge .ai-lead{display:inline-flex;align-items:baseline;gap:9px}
+.ai-badge .soft{display:inline-flex;align-items:baseline;gap:9px;color:var(--muted);font-weight:500}
 /* The dot goes with the words after it, so a badge that wraps starts its second line with it, never ends the first. */
-.ai-badge .soft::before{content:"";width:4px;height:4px;border-radius:50%;background:var(--faint);flex:none}
+.ai-badge .soft::before{content:"";width:4px;height:4px;border-radius:50%;background:var(--faint);flex:none;align-self:center}
 .sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
 .band{padding:112px 0}
@@ -493,7 +498,7 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
   .ai-text,.ai-card.wide .ai-text{padding:22px 20px 24px}
   .spec{padding:20px;grid-template-columns:1fr}
   /* On a phone the badge is two lines, always: the second line starts with its words, not a lone dot. */
-  .ai-badge{font-size:0.8438rem;flex-direction:column;gap:2px;padding:7px 18px;border-radius:20px}
+  .ai-badge{font-size:0.8438rem;flex-direction:column;align-items:center;gap:2px;padding:7px 18px;border-radius:20px}
   .ai-badge .soft::before{display:none}
   .matrix.vs{font-size:0.875rem}
   .matrix.vs th,.matrix.vs td{padding:10px 10px}
@@ -559,3 +564,5 @@ html:not([data-solo]) .solo-only,[data-solo] .solo-off{display:none!important}
 }
 /* Long inline code (addresses, commands, variables) wraps in running text instead of widening the page. */
 .content :is(p,li,td,dd) code{overflow-wrap:anywhere}
+/* In a table, a name or code wraps only when it must, so its column stays as wide as its longest word. */
+.content td code{overflow-wrap:break-word}

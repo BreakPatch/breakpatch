@@ -123,12 +123,14 @@ class Timings:
     popup_timeout: float = 10.0
     chooser_timeout: float = 5.0
     download_timeout: float = 15.0
+    download_finish: float = 120.0    # how much longer a download that started in time may take to finish
     navigate_timeout: float = 30.0
     start_timeout: float = 15.0       # the start page (browser.open, a run's startUrl)
     chooser_window: float = 3.0       # recording: how long after a click a page's file picker may still open
     http_timeout: float = 30.0
     reload_diff: bool = True          # §10.3.5 background reload while recording
     frame_min_gap: float = 0.1        # at most ~10 frames per second
+    first_frame: float = 3.0          # recording: how long record.locate waits for the live view's first frame
     retry_budget: float = 300.0       # retry.py: no retry starts once a run has taken this long
     retry_pause: float = 1.0          # retry.py: the pause before a retry (a network blip passes)
 
@@ -147,7 +149,8 @@ class Timings:
     def fast(cls) -> "Timings":
         return cls(noise_watch=0.5, noise_interval=0.1, settle_interval=0.08, settle_timeout=3.0,
                    late_change=0.6, pre_wait=0.6, pre_interval=0.1, long_click=0.3, popup_timeout=3.0, chooser_timeout=2.0,
-                   download_timeout=3.0, navigate_timeout=10.0, start_timeout=3.0, chooser_window=1.5, http_timeout=5.0,
+                   download_timeout=3.0, download_finish=10.0, navigate_timeout=10.0, start_timeout=3.0,
+                   chooser_window=1.5, http_timeout=5.0,
                    retry_budget=60.0, retry_pause=0.2)
 
     def with_(self, **kw) -> "Timings":

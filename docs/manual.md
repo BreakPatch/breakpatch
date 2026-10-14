@@ -76,7 +76,7 @@ Breakpatch Community is a beta: it works, but expect some rough edges. Tell us a
 
 For a given version, put it in front of `sh`: `curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh`.
 
-**Updating.** Breakpatch updates itself (see [Updates](#updates)). Running the command again updates it too: it quits Breakpatch first, then replaces the app. Your tests, saved secrets and the AI assistant stay as they are.
+**Updating.** Settings → About → **Check for updates** gets a new version, and from 0.1.0-beta.3 Breakpatch also checks by itself (see [Updates](#updates)). Running the command again updates it too: it quits Breakpatch first, then replaces the app. Your tests, saved secrets and the AI assistant stay as they are.
 
 **Uninstalling.**
 
@@ -225,6 +225,8 @@ The same test always gives the same file: two-space indents, keys in a fixed ord
 
 Settings → Tests folder shows the folder, how many apps and tests it has, **Show in Finder** and **Change folder**. Changing folders leaves the old one as it is, with all its tests.
 
+**More than one tests folder?** Every folder you open stays in the switcher next to the Breakpatch name, at the top of Apps and Suites. Choose one there, or press ⌘1 to ⌘9, to go back to it, and **Open a tests folder…** in the switcher adds another. See [Workspaces on this Mac](#workspaces-on-this-mac).
+
 ## Links to a test
 
 **Copy link** in a test's **⋯** menu (in the app's **Tests** tab), or in a suite's **⋯** menu in **Suites**, copies a link like `breakpatch://open?ws=folder:3f9a…&path=apps/web-app/tests/log-in`. Paste it in a pull request, an issue or a chat. Clicking it on a Mac with Breakpatch opens Breakpatch, switches to that tests folder or workspace the way the [switcher](#workspaces-on-this-mac) does, and opens the test in the recorder, or the suite.
@@ -254,7 +256,7 @@ Settings → Tests folder shows the folder, how many apps and tests it has, **Sh
 
 Screen checks are worked out automatically after every step. There's nothing to draw or approve.
 
-**Test details** (in the test's **⋯** menu on the Tests tab, or from the recorder's title bar) changes a test's name, description and start address after it's made. After a new start address, check the first steps still make sense from there. In Team a new start address on a test with steps saves a new version, so older versions, and a version marked as released, keep starting where they did.
+**Test details** (first in the test's **⋯** menu on the Tests tab; in the recorder, click the test's name in the title bar, the one with a pencil) changes a test's name, description and start address after it's made. After a new start address, check the first steps still make sense from there. In Team a new start address on a test with steps saves a new version, so older versions, and a version marked as released, keep starting where they did.
 
 Select a step to open it. **What to look for** is the plain description of what the step acts on, for example "Done button, bottom right of the Create project dialog". Edit it if it's wrong. **What should happen** says how a run judges the step: a new page opens, something closes or disappears, something appears, text or a value changes, or nothing visible changes. Breakpatch picks one when you record; change it with one click. **+ note** adds a few words, like "closes the What's new dialog": the AI assistant reads them only when the step's check fails, to judge whether the failure is real and to say why.
 
@@ -363,12 +365,12 @@ In Team, a failed step also has **Why did this fail?**: the AI assistant says in
 **Export** on a run's report saves it for people who don't have Breakpatch. A finished suite run, and **Run all**, have **Export** too: one report with every test in it.
 
 - **Web page (HTML).** One file that opens in any browser, offline, without Breakpatch or a sign-in. Attach it to a ticket or an email, or drop it in a chat. It has the summary (with the device, for a phone or tablet test), every step with its result, the reason and where the time went, and the AI assistant's explanation when there is one. Steps open and close with a click, the one that failed is open, and it follows the reader's light or dark setting (**Theme** switches it). It never loads anything from the internet.
-- **PDF.** Opens the print dialog with the same report, every step open. Choose **PDF → Save as PDF**. A saved web page prints the same way from any browser.
+- **PDF.** Opens the print dialog with the same report, made for paper. A test that passed has its summary and a line such as "10 steps, all passed", without the steps, unless a step has a warning to read (its check covers nothing): then it lists its steps, with that one open. A test that failed, or passed only on a [retry](#retries), lists its steps, with the step that failed open and its screenshot. Choose **PDF → Save as PDF**: it suggests the web page's file name, such as `create-a-project-2026-09-24.pdf`. A saved web page prints the same way from any browser.
 - **JUnit XML.** For CI dashboards: GitHub, GitLab and Jenkins read it. One test case per test, with the failed step and why. A test that passed on a [retry](#retries) passes, with a `flakyFailure` for each earlier try, as Maven Surefire writes it (Jenkins and others show it as flaky); one that failed every try has the first try's failure as its `failure` and a `rerunFailure` for each later try, as Surefire writes it too. It has no screenshots.
 
 A suite's report starts with the tests that didn't pass, each a link to it; tests that passed start closed (**Open all steps** opens everything).
 
-**Screenshots.** The web page and the PDF include the screenshots the run took: full size for the step that failed, small for the others (steps that were fixed automatically). A 30-step run stays under about 5 MB. Screenshots can show personal data, like names, email addresses or account details on the page, so the dialog says so while they're included: turn off **Include screenshots** when the report goes to people who shouldn't see that. A run from another Mac has no screenshots on this one, so its report goes without them.
+**Screenshots.** The web page and the PDF include the screenshots the run took: full size for the step that failed, small for the others (steps that were fixed automatically). The PDF has the screenshots of the steps it shows open. A 30-step run stays under about 5 MB. Screenshots can show personal data, like names, email addresses or account details on the page, so the dialog says so while they're included: turn off **Include screenshots** when the report goes to people who shouldn't see that. A run from another Mac has no screenshots on this one, so its report goes without them.
 
 ### Recorded on another system
 
@@ -469,13 +471,17 @@ On sites with good page structure (buttons, links and fields that say what they 
 
 Breakpatch comes with one AI model, the **Standard** assistant (Qwen3-VL 4B, about 3 GB), which setup downloads. It works well for almost every team. It's the only model for now: bringing your own local one, through Ollama or LM Studio, isn't available yet. Cloud AI models aren't planned: your screens stay on your Mac. (A Team [runner Mac](#the-local-runner) with 32 GB of memory or more can also download a larger one, about 5 GB, but it's rarely needed.)
 
-Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it to name what you click, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)), explaining a failure ([Why did this fail?](#why-did-this-fail)) and suggesting a test's steps from a story ([Write a test from a story](#write-a-test-from-a-story)) come with Team.
+Settings → AI assistant shows which one you have, the space it takes and your Mac's memory, and lets you remove it. Recording needs it to name what you click, so setup downloads it before your first test. Finding buttons that moved during a run ([Fixed automatically](#fixed-automatically)) and explaining a failure ([Why did this fail?](#why-did-this-fail)) come with Team, and suggesting a test's steps from a story ([Write a test from a story](#write-a-test-from-a-story)) comes later.
 
 It's kept in `~/Library/Application Support/Breakpatch/models/`.
 
 ## Updates
 
-Breakpatch checks for updates when it opens, and from Settings → About → **Check for updates**. Updates download in the background. Press **Restart to update**, or they install the next time you restart. Updates never change your tests.
+Settings → About → **Check for updates** looks for a new version. From Breakpatch 0.1.0-beta.3 it also checks by itself: when it opens (about 10 seconds after, once it has started) and every hour while it's open. Version 0.1.0-beta.2 and earlier check only when you press **Check for updates**, so press it to get a new version.
+
+A new version downloads in the background, and then a banner says it's ready. Press **Restart to update** when it suits you: Breakpatch installs it and opens again. **Later** puts the banner away; Settings → About keeps **Restart to update**. If you quit without restarting, nothing is installed, and Breakpatch downloads the update again at its next check. Updates never change your tests.
+
+From 0.1.0-beta.3, while you record or run a test, or setup downloads the test browser or the AI assistant, the automatic check waits until you're done. If Breakpatch can't reach GitHub (you're offline, for example), it says nothing and tries again an hour later.
 
 Settings → About also shows your version and edition.
 
@@ -1045,6 +1051,8 @@ await addDoc(collection(getFirestore(app, 'breakpatch'), 'runRequests'), {
 n8n, Zapier or Make can add a Firestore document on any event: a deploy, a merged pull request, a button in a chat. Use the same path and fields, with `createdAt` set to the server's time. In a hosted workspace they call the run queue instead (below).
 
 ### In a hosted workspace
+
+<!-- soon --> Coming later. The run queue comes with [Hosted by Breakpatch](#hosted-by-breakpatch), which isn't open yet. Until then, start runs from CI or a tool by adding a run request in a workspace of your own (above).
 
 Nothing outside Breakpatch writes to a hosted workspace's database, so it has a **run queue** instead: an address you send a request to, from CI, n8n, a script or anything that can make a web request.
 

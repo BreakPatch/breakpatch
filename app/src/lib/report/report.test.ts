@@ -2,11 +2,11 @@
 // (engine/tests/test_report.py), so the app and CI make the same report from the same template.
 // Write them again after a deliberate change: BP_WRITE_GOLDEN=1 npx vitest run src/lib/report/report.test.ts
 import { describe, expect, it } from 'vitest';
-import { allOpen, buildView, junitXml, printableParts, REPORT_TEMPLATE, reportHtml, type ReportInput } from '.';
+import { buildView, printView, junitXml, printableParts, REPORT_TEMPLATE, reportHtml, type ReportInput, type ReportStepRun } from '.';
 import { parse, render, TemplateError } from './render';
 import { countsText, isoText, reportRows, seconds, shortTime, whenText, type ReportTestInput } from './view';
 import { xmlEscape } from './junit';
-import { whereText } from '../runWords';
+import { UNCHECKED_NOTE, whereText } from '../runWords';
 import { setOsForTests } from '../osWords';
 
 const fsModule = 'node:fs', urlModule = 'node:url', pathModule = 'node:path';
@@ -95,7 +95,7 @@ describe('the report', () => {
       { anchor: 'test-3', name: 'Pay an invoice', resultText: 'Failed' }, { anchor: 'test-4', name: 'Refund', resultText: "Couldn't run" },
     ] });
     expect(v.tests.map(t => t.stepsOpen)).toEqual([false, false, true, true]);
-    expect(allOpen(v).tests.every(t => t.stepsOpen)).toBe(true);
+    expect(printView(v).tests.every(t => t.stepsOpen)).toBe(true);
     const html = reportHtml(v);
     expect(html.indexOf('href="#test-3"')).toBeLessThan(html.indexOf('id="test-1"'));
     expect(buildView(INPUT.run).failed).toBeNull();              // a single run says it in its heading
@@ -122,13 +122,78 @@ describe('the report', () => {
     expect(html).not.toContain('<Q4>');
   });
 
-  it('opens every step for printing, and hands the app its printable parts', () => {
-    const view = allOpen(buildView(INPUT.run));
-    expect(view.tests[0].steps.every(s => s.open === s.hasDetail)).toBe(true);
+  it('prints the steps of a test that failed, with the failed step open, and hands the app its printable parts', () => {
+    const view = printView(buildView(INPUT.run));
+    expect(view.tests[0].passedText).toBe('');
+    expect(view.tests[0].steps).toHaveLength(11);
+    // The failed step, and one whose check covers nothing; not the passed steps' timings.
+    expect(view.tests[0].steps.filter(s => s.open).map(s => s.number)).toEqual(['5', '8']);
     const { css, body } = printableParts(reportHtml(view));
     expect(css).toContain('@media print');
     expect(body).toContain('<div class="bpr" id="bpr">');
     expect(body).not.toContain('<script');
+  });
+
+  it('prints a test that passed as its summary and a count, and a flaky or failed one with its steps', () => {
+    const v = buildView(INPUT.suite);
+    expect(v.tests.map(t => t.passedText)).toEqual(['', '2 steps, all passed, 1 fixed automatically', '', '']);
+    const p = printView(v);
+    expect(p.tests[1].steps).toEqual([]);
+    expect(p.tests[0].steps.filter(s => s.open).map(s => s.number)).toEqual(['3']);         // failed on try 1
+    expect(p.tests[2].steps.filter(s => s.open).map(s => s.number)).toEqual(['2']);
+    // On screen nothing changes: the HTML export's steps still fold open and closed as before.
+    expect(v.tests.map(t => t.steps.filter(s => s.open).length)).toEqual([0, 0, 1, 0]);
+    const html = reportHtml(p);
+    expect(html.match(/class="bpr-test bpr-brief"/g)).toHaveLength(1);
+    expect(html).toContain('<p class="bpr-passed-text">2 steps, all passed, 1 fixed automatically</p>');
+    expect(REPORT_TEMPLATE).toMatch(/\.bpr-passed-text \{ display: none; \}/);
+    expect(REPORT_TEMPLATE).toMatch(/@media print \{[\s\S]*\.bpr-brief \.bpr-steps, \.bpr-brief \.bpr-test-steps \{ display: none; \}/);
+  });
+
+  it('prints a test that passed with a warning in full, the warned step open, not as "all passed"', () => {
+    // The golden "passed": its step 2's check covers nothing, which the short form would leave out.
+    const v = buildView(INPUT.passed);
+    expect(v.tests[0].result).toBe('passed');
+    expect(v.tests[0].passedText).toBe('');
+    expect(v.tests[0].steps.map(s => [s.number, s.stepNote, s.printOpen])).toEqual([
+      ['1', '', false], ['2', UNCHECKED_NOTE, true], ['3', '', false]]);
+    const p = printView(v);
+    expect(p.tests[0].steps.filter(s => s.open).map(s => s.number)).toEqual(['2']);
+    const { body } = printableParts(reportHtml(p));
+    expect(body).not.toContain('bpr-brief');
+    expect(body).not.toContain('bpr-passed-text');
+    expect(body.match(/data-bpr-print/g)).toHaveLength(1);
+    // Without the warning, it's the short form again.
+    const plain = structuredClone(INPUT.passed);
+    delete plain.tests[0].run!.steps[1].unchecked;
+    expect(buildView(plain).tests[0].passedText).toBe('3 steps, all passed');
+  });
+
+  it('counts the steps of a single test that passed, and what didn\'t run', () => {
+    const t = INPUT.run.tests[0];
+    const passed = (steps: ReportStepRun[], healed = 0) => buildView({ ...INPUT.run, tests: [{ ...t, run: { ...t.run!, result: 'pass', healedCount: healed, steps } }] }).tests[0];
+    const all = reportRows(t.steps).map(({ step }) => ({ stepId: step.id, result: 'passed' as const }));
+    expect(passed(all).passedText).toBe('11 steps, all passed');
+    expect(passed(all.slice(0, -1), 1).passedText).toBe('10 of 11 steps passed, 1 fixed automatically');
+    const flaky = buildView({ ...INPUT.run, tests: [{ ...t, run: { ...t.run!, result: 'pass', attempts: 2, steps: all } }] }).tests[0];
+    expect(flaky.passedText).toBe('');
+  });
+
+  it('lint: the template\'s CSS keeps every card within the page (one column, long words wrap, screenshots shrink)', () => {
+    // A lint-style guard of the CSS rules, not a layout check: jsdom lays nothing out, so this only
+    // reads the stylesheet for the rules that keep cards on the page. The layout itself was checked
+    // once in a print render (A4 and US Letter, long unbroken text, deep loops, full-size
+    // screenshots): with an auto column one long word in a failed step widened every card past the edge.
+    const css = REPORT_TEMPLATE.slice(REPORT_TEMPLATE.indexOf('<style>'), REPORT_TEMPLATE.indexOf('</style>')).replace(/\/\*[\s\S]*?\*\//g, '');
+    const grids = [...css.matchAll(/^([^{}@]+)\{[^}]*display: grid/gm)].flatMap(m => m[1].split(',').map(x => x.trim()));
+    const oneColumn = css.match(/^([^{}]+)\{ grid-template-columns: minmax\(0, 1fr\); \}/m)?.[1].split(',').map(x => x.trim()) ?? [];
+    expect(grids.length).toBeGreaterThan(4);
+    for (const g of grids) expect(oneColumn, g).toContain(g);
+    expect(css).toMatch(/\.bpr \{[^}]*overflow-wrap: break-word; overflow-wrap: anywhere;/);
+    expect(css).toContain('.bpr img { max-width: 100%; }');
+    expect(css).toContain('.bpr *, .bpr *::before, .bpr *::after { box-sizing: border-box; }');
+    expect(css).not.toMatch(/margin[a-z-]*:[^;]*-\d/);                     // no negative margins
+    expect(css).not.toMatch(/(^|[ ;{])width: \d{2,}(px|cm|mm|pt)/m);        // no fixed widths, only max-widths
   });
 
   it('stays small without screenshots: 30 steps', () => {

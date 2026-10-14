@@ -41,6 +41,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if first:
                 import time
                 time.sleep(4)
+        # /slow-download/<name>.csv: the download starts at once and its last bytes come 4 s later
+        # (longer than Timings.fast()'s download_timeout).
+        if self.path.startswith("/slow-download/"):
+            import time
+            body = b"name,count\nAlpha,1\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Disposition", f'attachment; filename="{self.path.rsplit("/", 1)[-1]}"')
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body[:5])
+            self.wfile.flush()
+            time.sleep(4)
+            self.wfile.write(body[5:])
+            return
         super().do_GET()
 
     def do_POST(self):
@@ -488,6 +503,39 @@ async def test_locate_maps_box_and_handles_not_found(site):
         await hx.call("browser.close")
 
 
+async def test_locate_names_a_frame_the_engine_has_waiting_for_the_first_one(site):
+    # The step is recorded with the frame record.locate names, and a frame the engine doesn't have
+    # is `stale`. Straight after browser.open on a slow machine (CI) there's none yet: no frames
+    # kept is that moment, on a page that sits still.
+    hx = Harness(FakeLocator([100, 200, 240, 244]))      # the Add button
+    await hx.call("browser.open", {"url": site + "/still.html", "viewport": VIEWPORT})
+    try:
+        b = hx.engine.browser
+        before = await _latest_frame(hx)
+        # No frame comes in time: the answer names none, and the step is recorded without a check.
+        hx.engine.recorder.t = Timings.fast().with_(first_frame=0.3)
+        b._frames.clear()
+        got = await hx.call("record.locate", {"description": "the Add button"})
+        assert got["box"] == [100, 200, 240, 244] and "frame" not in got
+        # The first frame comes a moment later: it waits for it, and names it.
+        hx.engine.recorder.t = Timings.fast()
+        assert Timings.fast().first_frame >= 1.0
+
+        async def paint_later():
+            await asyncio.sleep(0.5)
+            await b.page.evaluate("document.body.style.background = '#eee'")
+        painting = asyncio.ensure_future(paint_later())
+        got = await hx.call("record.locate", {"description": "the Add button"})
+        await painting
+        assert got["frame"] > before and b.seen_frame(got["frame"]) is not None
+        step = (await hx.call("record.point", {"action": "click", "at": got["at"], "target": got["target"],
+                                               "frame": got["frame"]}))["step"]
+        assert step["action"] == "click"
+        assert await b.page.text_content("#n") == "Clicks: 1"
+    finally:
+        await hx.call("browser.close")
+
+
 async def test_record_wait_until_and_download_check_after_a_click(site):
     hx = Harness()
     await hx.call("browser.open", {"url": site + "/index.html", "viewport": VIEWPORT})
@@ -513,6 +561,32 @@ async def test_record_wait_until_and_download_check_after_a_click(site):
         await hx.call("browser.close")
     ended = await hx.run([wait, click, check], site + "/index.html")
     assert ended["result"] == "pass", ended
+
+
+async def test_a_download_check_waits_for_a_download_that_started_in_time_to_finish(site):
+    # A busy machine or a slow server: the file starts coming within the check's time, and is
+    # still being written when that time is up. It's a download, not "No file was downloaded".
+    hx = Harness()
+    await hx.call("browser.open", {"url": site + "/index.html", "viewport": VIEWPORT})
+    try:
+        assert Timings.fast().download_timeout < 4
+        await hx.engine.browser.page.evaluate("""() => document.body.insertAdjacentHTML('beforeend',
+            '<a id="slow" href="/slow-download/slow.csv" download style="position:absolute;left:600px;top:400px">Slow report</a>')""")
+        check = (await hx.call("record.point", {"action": "downloadCheck", "at": [630, 408], "fileType": "csv"}))["step"]
+        assert check["action"] == "downloadCheck"
+        got = hx.engine.browser.downloads[-1]
+        assert got.done and got.failure is None and got.filename == "slow.csv" and got.size == 19
+        # One that hasn't started in time is still no file, and says so as before.
+        with pytest.raises(EngineError) as e:
+            await hx.call("record.point", {"action": "downloadCheck"})
+        assert "No file was downloaded" in e.value.message
+        # One that started but doesn't finish in the time it's given says that.
+        hx.engine.recorder.t = Timings.fast().with_(download_finish=0.5)
+        with pytest.raises(EngineError) as e:
+            await hx.call("record.point", {"action": "downloadCheck", "at": [630, 408]})
+        assert "The download of slow.csv started but didn't finish in 4 seconds." in e.value.message
+    finally:
+        await hx.call("browser.close")
 
 
 async def test_nested_loops_use_the_innermost_repeat_number(site):
@@ -1129,7 +1203,10 @@ async def test_run_in_the_recorder_starts_clean_and_play_this_step_keeps_the_pag
         # Recording goes on in that fresh browser, with live view frames of the viewport's size.
         n = len(hx.of("frame"))
         await fresh.evaluate("localStorage.setItem('dismissed', 'again'); document.body.style.background = '#eee'")
-        await asyncio.sleep(0.5)
+        for _ in range(100):                     # the fresh browser's frames can come late (CI)
+            if len(hx.of("frame")) > n:
+                break
+            await asyncio.sleep(0.05)
         later = hx.of("frame")[n:]
         assert later and (later[-1]["width"], later[-1]["height"]) == (VIEWPORT["width"], VIEWPORT["height"])
         # Play this step keeps the page as it is: what it stored stays.

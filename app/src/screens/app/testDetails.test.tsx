@@ -12,6 +12,15 @@ import { ToastProvider } from '../../components/ui';
 import { getEngine } from '../../engine';
 import RecorderScreen from '../recorder/RecorderScreen';
 
+// The CSS as written (vitest leaves CSS imports empty: `css: false`).
+const fsModule = 'node:fs', urlModule = 'node:url', pathModule = 'node:path';
+const fs = (await import(/* @vite-ignore */ fsModule)) as { readFileSync(path: string, enc: 'utf8'): string };
+const { fileURLToPath } = (await import(/* @vite-ignore */ urlModule)) as { fileURLToPath(url: string): string };
+const { dirname, join } = (await import(/* @vite-ignore */ pathModule)) as { dirname(p: string): string; join(...p: string[]): string };
+const here = dirname(fileURLToPath(import.meta.url));
+const shellCss = fs.readFileSync(join(here, '../../components/shell/shell.css'), 'utf8');
+const globalCss = fs.readFileSync(join(here, '../../styles/global.css'), 'utf8');
+
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;   // not in jsdom
 Element.prototype.scrollIntoView ??= () => undefined;
 
@@ -36,11 +45,13 @@ async function recordedTest() {
 }
 
 describe('Test details from the Tests tab', () => {
-  it('is in the ⋯ menu and opens with the test as it is', async () => {
+  it('is first in the ⋯ menu and opens with the test as it is', async () => {
     const t = await recordedTest();
     render(<MemoryRouter><TestsTab app={app} tests={[t]} /></MemoryRouter>);
     fireEvent.click(screen.getByRole('button', { name: 'More for Log in' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /Test details/ }));
+    const items = screen.getAllByRole('menuitem');
+    expect(items.slice(0, 2).map(i => i.textContent)).toEqual(['descriptionTest details…', 'editEdit steps']);
+    fireEvent.click(items[0]);
     const dialog = await screen.findByRole('dialog', { name: 'Test details' });
     expect(dialog).toBeInTheDocument();
     expect(screen.getByLabelText('Name')).toHaveValue('Log in');
@@ -121,13 +132,37 @@ describe('the Test details dialog', () => {
 });
 
 describe('Test details in the recorder', () => {
-  it('has a Test details button, and the browser stays on the address it opened at', async () => {
+  it("the title bar doesn't cut off the focus ring round the test's name: the ellipsis is on the text inside", () => {
+    // A lint-style guard of shell.css's rules (jsdom lays nothing out): the h1 clips nothing; a
+    // plain title's text and the button's name each cut themselves off with an ellipsis.
+    const css = shellCss.replace(/\/\*[\s\S]*?\*\//g, '');
+    const rules = new Map([...css.matchAll(/^([^{}\n]+?) \{([^}]*)\}/gm)].map(m => [m[1].trim(), m[2]]));
+    const rule = (sel: string) => { expect(rules.has(sel), sel).toBe(true); return rules.get(sel) ?? ''; };
+    expect(rule('.titlebar-title h1')).toMatch(/font-size: 15px/);
+    expect(rule('.titlebar-title h1')).not.toMatch(/overflow/);
+    expect(rule('.titlebar-text')).toMatch(/overflow: hidden; text-overflow: ellipsis/);
+    expect(rule('.titlebar-name > span:first-child')).toMatch(/overflow: hidden; text-overflow: ellipsis/);
+    expect(globalCss).toMatch(/:focus-visible \{[^}]*outline-offset: 2px/);     // the ring is outside the button
+  });
+
+
+  it('opens from the test\'s name in the title bar, and the browser stays on the address it opened at', async () => {
     const t = await recordedTest();
     const opened = vi.spyOn(getEngine(), 'openBrowser');
     render(<ToastProvider><MemoryRouter initialEntries={[`/apps/${app.id}/tests/${t.id}/record`]}>
       <Routes><Route path="/apps/:appId/tests/:testId/record" element={<RecorderScreen />} /></Routes>
     </MemoryRouter></ToastProvider>);
-    fireEvent.click(await screen.findByRole('button', { name: 'Test details' }));
+    // The name is the button, with a pencil and the tooltip "Test details"; there's no other one to find.
+    // Its accessible name is the test's, and "Test details" is said once, as its description.
+    const name = await screen.findByRole('button', { name: 'Log in' });
+    expect(name).toHaveAccessibleName('Log in');
+    expect(name).toHaveAccessibleDescription('Test details');
+    expect(name).toHaveAttribute('title', 'Test details');
+    expect(name).not.toHaveAttribute('aria-label');
+    expect(screen.getByRole('heading', { level: 1 })).toContainElement(name);
+    expect(name.querySelector('.icon')).toHaveTextContent('edit');
+    expect(screen.getAllByRole('button', { description: 'Test details' })).toEqual([name]);
+    fireEvent.click(within(name).getByText('Log in'));
     const dialog = await screen.findByRole('dialog', { name: 'Test details' });
     expect(dialog).toBeInTheDocument();
     fireEvent.change(within(dialog).getByLabelText('Start address'), { target: { value: 'https://app.example.com/signin' } });

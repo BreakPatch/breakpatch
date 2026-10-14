@@ -448,9 +448,12 @@ async def download_check(b: BrowserSession, step: dict, ctx: Context, at: Sequen
     if at is not None:
         await b.click(at)
     timeout = (step.get("timeoutMs") or ctx.timings.download_timeout * 1000) / 1000
-    d = await b.wait_download(ctx.download_mark, timeout)
+    d = await b.wait_download(ctx.download_mark, timeout, ctx.timings.download_finish)
     if d is None:
         raise ActionFailed("timeout", "No file was downloaded.")
+    if not d.done:
+        raise ActionFailed("timeout", f"The download of {d.filename} started but didn't finish in "
+                                      f"{round(timeout + ctx.timings.download_finish)} seconds.")
     ctx.download_mark = len(b.downloads)
     want = (step.get("fileType") or "").lower().lstrip(".")
     if want:

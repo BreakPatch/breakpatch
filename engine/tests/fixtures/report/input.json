@@ -137,5 +137,35 @@
         "note": "Couldn't run: it was deleted"
       }
     ]
+  },
+  "passed": {
+    "kind": "run",
+    "name": "Archive a project",
+    "appVersion": "0.1.0-beta.2",
+    "generatedAt": 1790259600000,
+    "tzOffsetMinutes": 0,
+    "screenshots": true,
+    "tests": [
+      {
+        "appName": "Web app",
+        "name": "Archive a project",
+        "steps": [
+          { "id": "p1", "action": "click", "label": "Click Projects", "target": "Projects link" },
+          { "id": "p2", "action": "click", "label": "Click Archive", "target": "Archive button" },
+          { "id": "p3", "action": "click", "label": "Click Confirm", "target": "Confirm button" }
+        ],
+        "run": {
+          "id": "run_a71c0", "testName": "Archive a project", "testVersion": 2,
+          "startedBy": { "uid": "u1", "name": "Maria López", "email": "maria@example.com" },
+          "machine": "Maria's MacBook Pro", "source": "desktop", "ranOn": { "os": "macOS" },
+          "startedAt": 1790258400000, "durationMs": 9400, "result": "pass", "healedCount": 0,
+          "steps": [
+            { "stepId": "p1", "result": "passed" },
+            { "stepId": "p2", "result": "passed", "unchecked": ["pre", "post"] },
+            { "stepId": "p3", "result": "passed" }
+          ]
+        }
+      }
+    ]
   }
 }

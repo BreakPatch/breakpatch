@@ -204,9 +204,45 @@ def test_earlier_tries_are_in_the_report_and_the_junit_xml():
         == "2 of 2 tests passed, 1 on a retry"
 
 
-def test_every_step_opens_for_printing():
-    view = report.all_open(report.build(INPUT["run"]))
-    assert all(s["open"] == s["hasDetail"] for s in view["tests"][0]["steps"])
+def test_the_pdf_lists_steps_only_for_a_test_that_did_not_pass():
+    run = report.print_view(report.build(INPUT["run"]))["tests"][0]
+    # The failed step, and one whose check covers nothing (its warning would be closed on paper).
+    assert run["passedText"] == "" and [s["number"] for s in run["steps"] if s["open"]] == ["5", "8"]
+    suite = report.print_view(report.build(INPUT["suite"]))["tests"]
+    assert [t["passedText"] for t in suite] == ["", "2 steps, all passed, 1 fixed automatically", "", ""]
+    assert suite[1]["steps"] == [] and all(t["stepsOpen"] for t in suite)
+    assert [s["number"] for s in suite[0]["steps"] if s["open"]] == ["3"]       # flaky: the step that failed on try 1
+    assert [s["number"] for s in suite[2]["steps"] if s["open"]] == ["2"]
+    html = report.html(report.print_view(report.build(INPUT["suite"])))
+    assert html.count('class="bpr-test bpr-brief"') == 1 and '<p class="bpr-passed-text">2 steps, all passed, 1 fixed automatically</p>' in html
+
+
+def test_a_test_that_passed_with_a_warning_prints_its_steps_with_the_warning_open():
+    # "3 steps, all passed" would leave out the step whose check covers nothing (the golden "passed").
+    view = report.build(INPUT["passed"])
+    t = view["tests"][0]
+    assert t["result"] == "passed" and t["passedText"] == ""
+    assert [(s["number"], s["stepNote"], s["printOpen"]) for s in t["steps"]] == [
+        ("1", "", False), ("2", report_view.UNCHECKED_NOTE, True), ("3", "", False)]
+    printed = report.print_view(view)["tests"][0]
+    assert len(printed["steps"]) == 3 and [s["number"] for s in printed["steps"] if s["open"]] == ["2"]
+    body = report.html(report.print_view(view)).split("<!--bpr-body-->")[1].split("<!--/bpr-body-->")[0]
+    assert "bpr-brief" not in body and "bpr-passed-text" not in body and body.count("data-bpr-print") == 1
+    # The same test without the warning is the short form again.
+    plain = copy.deepcopy(INPUT["passed"])
+    del plain["tests"][0]["run"]["steps"][1]["unchecked"]
+    assert report.build(plain)["tests"][0]["passedText"] == "3 steps, all passed"
+
+
+def test_all_open_is_kept_for_one_release_and_says_it_is_deprecated():
+    assert "all_open" in report.__all__
+    view = report.build(INPUT["suite"])
+    with pytest.warns(DeprecationWarning, match="print_view"):
+        opened = report.all_open(view)
+    # As 0.1.0-beta.1 had it: every test's steps open, and every step with something to show.
+    assert all(t["stepsOpen"] for t in opened["tests"])
+    assert [[s["open"] for s in t["steps"]] for t in opened["tests"]] == [[s["hasDetail"] for s in t["steps"]] for t in view["tests"]]
+    assert opened["tests"][1]["steps"] and view["tests"][1]["stepsOpen"] is False      # the view itself is unchanged
 
 
 # ---------------------------------------------------------------- the template language

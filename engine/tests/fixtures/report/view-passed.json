@@ -1,0 +1,169 @@
+{
+  "title": "Archive a project · Passed · Breakpatch",
+  "generator": "Breakpatch 0.1.0-beta.2",
+  "kindLabel": "Run report",
+  "heading": "Archive a project",
+  "result": "passed",
+  "resultText": "Passed",
+  "countsText": "",
+  "summary": [
+    {
+      "k": "App",
+      "v": "Web app"
+    },
+    {
+      "k": "Took",
+      "v": "9 s"
+    },
+    {
+      "k": "Run by",
+      "v": "Maria López"
+    },
+    {
+      "k": "Where",
+      "v": "This Mac"
+    },
+    {
+      "k": "Machine",
+      "v": "Maria's MacBook Pro"
+    },
+    {
+      "k": "When",
+      "v": "24 Sep 2026, 14:00 UTC"
+    },
+    {
+      "k": "Version",
+      "v": "2"
+    },
+    {
+      "k": "Run ID",
+      "v": "run_a71c0"
+    }
+  ],
+  "note": "",
+  "screenshotsLeftOut": false,
+  "multi": false,
+  "failed": null,
+  "tests": [
+    {
+      "anchor": "test-1",
+      "name": "Archive a project",
+      "appName": "Web app",
+      "multi": false,
+      "result": "passed",
+      "resultText": "Passed",
+      "meta": [
+        {
+          "k": "Took",
+          "v": "9 s"
+        },
+        {
+          "k": "Run by",
+          "v": "Maria López"
+        },
+        {
+          "k": "Where",
+          "v": "This Mac"
+        },
+        {
+          "k": "Machine",
+          "v": "Maria's MacBook Pro"
+        },
+        {
+          "k": "When",
+          "v": "24 Sep 2026, 14:00 UTC"
+        },
+        {
+          "k": "Version",
+          "v": "2"
+        },
+        {
+          "k": "Run ID",
+          "v": "run_a71c0"
+        }
+      ],
+      "testNote": "",
+      "retryNote": "",
+      "stepsText": "3 steps",
+      "steps": [
+        {
+          "number": "1",
+          "depth": 0,
+          "label": "Click Projects",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": false,
+          "printOpen": false
+        },
+        {
+          "number": "2",
+          "depth": 0,
+          "label": "Click Archive",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "This step's check covers nothing. Re-record it.",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": true,
+          "printOpen": true
+        },
+        {
+          "number": "3",
+          "depth": 0,
+          "label": "Click Confirm",
+          "result": "passed",
+          "resultText": "Passed",
+          "headline": "",
+          "body": "",
+          "stepNote": "",
+          "system": "",
+          "explanation": null,
+          "advice": "",
+          "took": "",
+          "phases": "",
+          "image": null,
+          "open": false,
+          "hasDetail": false,
+          "printOpen": false
+        }
+      ],
+      "junit": {
+        "seconds": "9.400",
+        "timestamp": "2026-09-24T14:00:00",
+        "status": "passed",
+        "type": "",
+        "message": "",
+        "text": "",
+        "retries": []
+      },
+      "stepsOpen": false,
+      "passedText": ""
+    }
+  ],
+  "footer": "Made with Breakpatch 0.1.0-beta.2 on 24 Sep 2026, 14:20 UTC.",
+  "junit": {
+    "name": "Archive a project",
+    "tests": 1,
+    "failures": 0,
+    "skipped": 0,
+    "seconds": "9.400",
+    "timestamp": "2026-09-24T14:00:00"
+  }
+}

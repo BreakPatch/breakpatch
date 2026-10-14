@@ -3,9 +3,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Run, Step } from '../../data/types';
 import { ToastProvider } from '../../components/ui';
-import { buildView } from '../../lib/report';
+import { buildView, printView } from '../../lib/report';
 import { exportFile, fileStem, reportInput, withImages, type ExportTest } from '../../lib/report/collect';
-import { PRINT_ID, printReport, removePrinted } from '../../lib/report/print';
+import { PRINT_ID, TITLE_BACK_MS, printReport, removePrinted } from '../../lib/report/print';
 
 const saved = vi.hoisted(() => ({ calls: [] as { name: string; text: string; opts: unknown }[] }));
 vi.mock('../../platform', async orig => ({
@@ -84,6 +84,54 @@ describe('printing', () => {
     expect(document.getElementById(PRINT_ID)).toBeNull();
     vi.unstubAllGlobals();
   });
+
+  it('decodes only the screenshots that print: the open steps\', not every step\'s', async () => {
+    vi.stubGlobal('print', vi.fn());
+    const decoded: string[] = [];
+    const proto = HTMLImageElement.prototype as { decode?: () => Promise<void> };
+    const had = proto.decode;
+    proto.decode = function (this: HTMLImageElement) { decoded.push(this.alt); return Promise.resolve(); };
+    try {
+      const reportImages = async (items: { size: string }[]) => items.map(i => IMG(i.size === 'full' ? 1280 : 480));
+      const view = buildView(await reportInput({ kind: 'run', name: 'Edit profile', tests: [TEST], screenshots: true, engine: { reportImages } }));
+      const { reportHtml } = await import('../../lib/report');
+      await printReport(reportHtml(printView(view)));
+      const holder = document.getElementById(PRINT_ID)!;
+      expect(holder.querySelectorAll('img')).toHaveLength(2);         // the fixed step's (closed) and the failed one's
+      expect(decoded).toEqual(['Screenshot: step 2.1, Click Next']);
+    } finally {
+      if (had) proto.decode = had; else delete proto.decode;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('names the PDF as the HTML export, through the page title, and puts the title back after printing', async () => {
+    document.title = 'Breakpatch';
+    let printedAs = '';
+    vi.stubGlobal('print', () => { printedAs = document.title; window.dispatchEvent(new Event('afterprint')); });
+    await printReport('<html><body><!--bpr-body--><div class="bpr"></div><!--/bpr-body--></body></html>', 'edit-profile-2026-09-24');
+    expect(printedAs).toBe('edit-profile-2026-09-24');
+    expect(document.title).toBe('Breakpatch');
+    vi.unstubAllGlobals();
+  });
+
+  it('puts the title back without an afterprint (the macOS shell): when the report is removed, or a while later', async () => {
+    document.title = 'Breakpatch';
+    vi.stubGlobal('print', async () => {});                          // Tauri's print: the sheet opens, nothing fires
+    await printReport('<div></div>', 'a-2026-09-24');
+    expect(document.title).toBe('a-2026-09-24');                      // still, while the sheet may read it
+    removePrinted();
+    expect(document.title).toBe('Breakpatch');
+    vi.useFakeTimers();
+    try {
+      const done = printReport('<div></div>', 'b-2026-09-24');
+      await vi.advanceTimersByTimeAsync(1);
+      await done;
+      expect(document.title).toBe('b-2026-09-24');
+      await vi.advanceTimersByTimeAsync(TITLE_BACK_MS);
+      expect(document.title).toBe('Breakpatch');
+    } finally { vi.useRealTimers(); vi.unstubAllGlobals(); }
+  });
 });
 
 describe('the dialog', () => {
@@ -103,6 +151,24 @@ describe('the dialog', () => {
     expect(load).toHaveBeenCalledWith(false);
     expect(saved.calls[0].name).toMatch(/^edit-profile-.*\.html$/);
     expect(saved.calls[0].opts).toMatchObject({ type: 'text/html' });
+  });
+
+  it('prints the PDF under the name the HTML export saves', async () => {
+    document.title = 'Breakpatch';
+    const titles: string[] = [];
+    vi.stubGlobal('print', () => { titles.push(document.title); window.dispatchEvent(new Event('afterprint')); });
+    try {
+      const { onClose } = open();
+      fireEvent.click(screen.getByLabelText(/PDF.*print dialog/));
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+      await waitFor(() => expect(onClose).toHaveBeenCalled());
+      fireEvent.click(screen.getByLabelText(/Web page \(HTML\)/));
+      fireEvent.click(screen.getByRole('button', { name: 'Export' }));
+      await waitFor(() => expect(saved.calls).toHaveLength(1));
+      expect(titles).toEqual([saved.calls[0].name.replace(/\.html$/, '')]);
+      expect(titles[0]).toMatch(/^edit-profile-\d{4}-\d\d-\d\d$/);
+      expect(document.title).toBe('Breakpatch');
+    } finally { vi.unstubAllGlobals(); }
   });
 
   it('saves JUnit XML without asking about screenshots', async () => {

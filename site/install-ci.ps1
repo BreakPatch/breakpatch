@@ -86,6 +86,28 @@ function Install-BreakpatchCi {
     return $p
   }
 
+  # Adds a folder to this user's PATH, as written in the registry. [Environment]'s
+  # Get/SetEnvironmentVariable(..., 'User') would read the value with %VARS% expanded and write it
+  # back as a plain string (REG_SZ), so an entry like %USERPROFILE%\.cargo\bin would be fixed to
+  # one profile's path for good, and %JAVA_HOME%-style entries would stop following their
+  # variable. Read without expanding, written back as REG_EXPAND_SZ. Then a variable that isn't
+  # there is removed the .NET way, only for the WM_SETTINGCHANGE that sends: windows opened after
+  # this, from Explorer too, get the new PATH. Windows only; tests on Linux have no registry.
+  function Add-UserPath([string] $dir) {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+    try {
+      $userPath = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+      $entries = @($userPath -split ';' | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') })
+      if ($entries -contains $dir.TrimEnd('\')) { return }
+      $new = $(if ($userPath.TrimEnd(';')) { $userPath.TrimEnd(';') + ';' } else { '' }) + $dir
+      $key.SetValue('Path', $new, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+    } finally {
+      $key.Dispose()
+    }
+    [Environment]::SetEnvironmentVariable('BREAKPATCH_CI_PATH_CHANGED', $null, 'User')
+  }
+
   # ------------------------------------------------------------ checks
 
   function Test-Platform {
@@ -344,21 +366,83 @@ function Install-BreakpatchCi {
   $bin = if ($env:BREAKPATCH_CI_BIN) { $env:BREAKPATCH_CI_BIN } else { Join-Path $ciHome 'bin' }
   $shim = Join-Path $bin 'breakpatch-ci.cmd'
   $current = Join-Path $ciHome 'current.txt'     # the environment in use: no symbolic links without admin rights
+  $binIsDefault = $bin.TrimEnd('\', '/') -eq (Join-Path $ciHome 'bin').TrimEnd('\', '/')
 
   if (($Arguments -contains '-Uninstall') -or ($Arguments -contains '--uninstall') -or $env:BREAKPATCH_UNINSTALL -eq '1') {
-    $removed = $false
-    if (Test-Path -LiteralPath $shim) {
-      if ((Get-Content -Raw -LiteralPath $shim) -match 'breakpatch-ci installer') { Remove-Item -LiteralPath $shim -Force; $removed = $true }
+    # irm | iex runs this in the window's own session: BREAKPATCH_UNINSTALL goes once it's done, or
+    # the next install in that window would uninstall again.
+    try {
+      $removed = $false
+      if (Test-Path -LiteralPath $shim) {
+        if ((Get-Content -Raw -LiteralPath $shim) -match 'breakpatch-ci installer') { Remove-Item -LiteralPath $shim -Force; $removed = $true }
+      }
+      # Only what the installer makes goes, as in site/install-ci: BREAKPATCH_CI_HOME may be a
+      # folder with other things in it. current.txt (and a current.txt.new a run left), the
+      # environments (env-<version>-<id>, half-made ones too), the browsers and the downloaded
+      # Pythons (python\cpython-*, with any .partial unpacking); then python\, bin\ (when it's the
+      # default one, in the install folder) and the folder itself, if that leaves them empty. An
+      # env-* that isn't a folder, or is a link (a reparse point), isn't the installer's, and nor is
+      # anything else in python\.
+      if ((Test-Path -LiteralPath $current) -or (Test-Path -LiteralPath (Join-Path $ciHome 'browsers'))) {
+        $pyRoot = Join-Path $ciHome 'python'
+        $ours = @($current, "$current.new", (Join-Path $ciHome 'browsers'))
+        if (Test-Path -LiteralPath $pyRoot -PathType Container) {
+          $ours += @(Get-ChildItem -LiteralPath $pyRoot -Filter 'cpython-*' -Force | ForEach-Object { $_.FullName })
+        }
+        $ours += @(Get-ChildItem -LiteralPath $ciHome -Directory -Filter 'env-*' -Force |
+                   Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | ForEach-Object { $_.FullName })
+        foreach ($p in $ours) {
+          if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Recurse -Force }
+        }
+        if ((Test-Path -LiteralPath $pyRoot -PathType Container) -and -not (Get-ChildItem -LiteralPath $pyRoot -Force)) { Remove-Item -LiteralPath $pyRoot -Force }
+        $removed = $true
+      }
+      if (-not $removed) { Say "breakpatch-ci isn't in $(Pretty $ciHome). Nothing to remove."; return }
+      if (Test-Path -LiteralPath "$shim.new") { Remove-Item -LiteralPath "$shim.new" -Force }
+      $made = if ($binIsDefault) { @($bin, $ciHome) } else { @($ciHome) }
+      foreach ($d in $made) {
+        if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d -Force }
+      }
+      Say "Removed breakpatch-ci and its browser from $(Pretty $ciHome)."
+      Say "The machine licence is still in Breakpatch's data folder. Run breakpatch-ci licence release first to give the seat back, or free it in the back office."
+      return
+    } finally {
+      Remove-Item Env:\BREAKPATCH_UNINSTALL -ErrorAction SilentlyContinue
     }
-    if ((Test-Path -LiteralPath $current) -or (Test-Path -LiteralPath (Join-Path $ciHome 'browsers'))) {
-      Remove-Item -LiteralPath $ciHome -Recurse -Force
-      $removed = $true
-    }
-    if (-not $removed) { Say "breakpatch-ci isn't in $(Pretty $ciHome). Nothing to remove."; return }
-    Say "Removed breakpatch-ci and its browser from $(Pretty $ciHome)."
-    Say "The machine licence is still in Breakpatch's data folder. Run breakpatch-ci licence release first to give the seat back, or free it in the back office."
-    return
   }
+
+  # bin\breakpatch-ci.cmd: cmd.exe reads a .cmd file in the console's code page, never as UTF-16
+  # or (with a BOM) UTF-8, so a path written as ASCII lost every letter outside it (an accented
+  # user name in C:\Users\ became a ?) and the command couldn't start. In the default bin,
+  # inside the install folder, the shim names nothing but its own folder (%~dp0, which cmd fills
+  # in itself) and ASCII names, so any profile path works. Anywhere else it has to name the install folder: it's written in
+  # the system's OEM code page, the one a new console starts in (OEMCP; 65001, UTF-8 without a
+  # BOM, when Windows' "Use Unicode UTF-8" option is on), and a path that code page can't hold
+  # stops the install here, before anything is downloaded, rather than leave a broken command.
+  # .NET's own encodings, so it's the same in Windows PowerShell 5.1 and PowerShell 7.
+  if ($binIsDefault) {
+    $shimLines = @('@echo off', 'rem breakpatch-ci installer: starts the environment named in current.txt', 'setlocal',
+                   'set /p BP_CI_ENV=<"%~dp0..\current.txt"', '"%~dp0..\%BP_CI_ENV%\Scripts\breakpatch-ci.exe" %*')
+  } else {
+    $shimLines = @('@echo off', 'rem breakpatch-ci installer: starts the environment named in current.txt', 'setlocal',
+                   "set /p BP_CI_ENV=<`"$current`"", "`"$ciHome\%BP_CI_ENV%\Scripts\breakpatch-ci.exe`" %*")
+  }
+  $shimText = ($shimLines -join "`r`n") + "`r`n"
+  $shimEncoding = $null
+  if (-not $binIsDefault) {
+    try {
+      $oemCp = [int](Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name OEMCP -ErrorAction Stop).OEMCP
+      if ($oemCp -ne 65001) {
+        $shimEncoding = [Text.Encoding]::GetEncoding($oemCp, [Text.EncoderFallback]::ExceptionFallback, [Text.DecoderFallback]::ExceptionFallback)
+      }
+    } catch { $shimEncoding = $null; $oemCp = 0 }
+    if ($oemCp -eq 65001) { $shimEncoding = New-Object Text.UTF8Encoding($false, $true) }
+  }
+  if (-not $shimEncoding) {    # the default bin (all ASCII), or no OEM code page to be found (not Windows: tests)
+    $shimEncoding = [Text.Encoding]::GetEncoding('us-ascii', [Text.EncoderFallback]::ExceptionFallback, [Text.DecoderFallback]::ExceptionFallback)
+  }
+  try { $null = $shimEncoding.GetBytes($shimText) }
+  catch { Fail "The command prompt can't read the install folder's path, $ciHome, in this PC's language settings. Leave BREAKPATCH_CI_BIN unset, or set BREAKPATCH_CI_HOME to a folder with a plainer name, and run this again." }
 
   $python = Find-Python
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ("breakpatch-ci-install-" + [Guid]::NewGuid().ToString('N'))
@@ -395,10 +479,16 @@ function Install-BreakpatchCi {
     if ((Invoke-Native (Join-Path $tmp 'venv.log') $python @('-m', 'venv', $staged)) -ne 0) { Fail "$python couldn't make a Python environment in $(Pretty $ciHome)." }
     $py = Get-VenvPython $staged
     Say 'Installing the Python packages (checked against their hashes)...'
+    # For pip only: irm | iex runs this in the window's own session, so they go back to what they
+    # were (unset, usually) once pip is done.
+    $pipWas = @{ PIP_DISABLE_PIP_VERSION_CHECK = $env:PIP_DISABLE_PIP_VERSION_CHECK; PIP_NO_INPUT = $env:PIP_NO_INPUT }
     $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'; $env:PIP_NO_INPUT = '1'
     Push-Location $files
     try { $code = Invoke-Native (Join-Path $tmp 'pip.log') $py @('-m', 'pip', 'install', '-q', '--require-hashes', '--only-binary=:all:', '-r', $script:reqs) }
-    finally { Pop-Location }
+    finally {
+      Pop-Location
+      foreach ($k in $pipWas.Keys) { [Environment]::SetEnvironmentVariable($k, $pipWas[$k], 'Process') }   # $null removes it
+    }
     if ($code -ne 0) {
       Get-Content -LiteralPath (Join-Path $tmp 'pip.log') -Tail 8 | Write-Host
       Fail "Couldn't install breakpatch-ci's Python packages. Check this PC can reach pypi.org (or your PIP_INDEX_URL), and run this again."
@@ -408,9 +498,11 @@ function Install-BreakpatchCi {
     $browsers = Join-Path $ciHome 'browsers'
     Say "Installing Chromium into $(Pretty $browsers)..."
     New-Item -ItemType Directory -Force -Path $browsers | Out-Null
+    # Put back as it was afterwards, as with pip's settings above.
+    $browsersWas = $env:PLAYWRIGHT_BROWSERS_PATH
     $env:PLAYWRIGHT_BROWSERS_PATH = $browsers
     try { $code = Invoke-Native (Join-Path $tmp 'browser.log') $py @('-m', 'playwright', 'install', 'chromium', '--no-shell') }
-    finally { Remove-Item Env:\PLAYWRIGHT_BROWSERS_PATH -ErrorAction SilentlyContinue }
+    finally { [Environment]::SetEnvironmentVariable('PLAYWRIGHT_BROWSERS_PATH', $browsersWas, 'Process') }   # $null removes it
     if ($code -ne 0) {
       Get-Content -LiteralPath (Join-Path $tmp 'browser.log') -Tail 5 | Write-Host
       Fail "Couldn't install Chromium. Check your connection and run this again."
@@ -428,19 +520,18 @@ function Install-BreakpatchCi {
     Move-Item -LiteralPath "$current.new" -Destination $current -Force
     $staged = $null
     New-Item -ItemType Directory -Force -Path $bin | Out-Null
-    $lines = @('@echo off', 'rem breakpatch-ci installer: starts the environment named in current.txt', 'setlocal',
-               "set /p BP_CI_ENV=<`"$current`"", "`"$ciHome\%BP_CI_ENV%\Scripts\breakpatch-ci.exe`" %*")
-    Set-Content -LiteralPath "$shim.new" -Value $lines -Encoding ASCII
+    # Bytes, in the encoding worked out above (Set-Content's -Encoding differs between 5.1 and 7).
+    [IO.File]::WriteAllBytes($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath("$shim.new"), $shimEncoding.GetBytes($shimText))
     Move-Item -LiteralPath "$shim.new" -Destination $shim -Force
     if ($old -and $old -ne $name -and $old -like 'env-*') {
       Remove-Item -LiteralPath (Join-Path $ciHome $old) -Recurse -Force -ErrorAction SilentlyContinue
     }
-    # Downloaded Pythons no environment uses any more.
+    # Downloaded Pythons (python\cpython-*, as in site/install-ci) no environment uses any more.
     $pyRoot = Join-Path $ciHome 'python'
     if (Test-Path -LiteralPath $pyRoot) {
-      Get-ChildItem -LiteralPath $pyRoot -Directory | Where-Object { -not ($pbs -and $_.FullName -eq $script:pbsDir) } |
+      Get-ChildItem -LiteralPath $pyRoot -Directory -Filter 'cpython-*' | Where-Object { -not ($pbs -and $_.FullName -eq $script:pbsDir) } |
         ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
-      if (-not (Get-ChildItem -LiteralPath $pyRoot)) { Remove-Item -LiteralPath $pyRoot -Force }
+      if (-not (Get-ChildItem -LiteralPath $pyRoot -Force)) { Remove-Item -LiteralPath $pyRoot -Force }
     }
 
     Say "breakpatch-ci $version is in $(Pretty $ciHome)."
@@ -449,10 +540,7 @@ function Install-BreakpatchCi {
       Add-Content -LiteralPath $env:GITHUB_PATH -Value $bin
       Say "Added $(Pretty $bin) to GITHUB_PATH: the next steps of this job can run breakpatch-ci."
     } elseif (-not $onPath) {
-      $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-      if (-not (($userPath -split ';') -contains $bin)) {
-        [Environment]::SetEnvironmentVariable('Path', ($(if ($userPath) { "$userPath;" } else { '' }) + $bin), 'User')
-      }
+      Add-UserPath $bin
       Say "Added $(Pretty $bin) to your PATH. Open a new terminal, then run: breakpatch-ci run --test path\to\test.json"
     } else {
       Say 'Run it with: breakpatch-ci run --test path\to\test.json'

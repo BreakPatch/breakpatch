@@ -31,6 +31,12 @@ interface SystemState {
   setWarnings(v: string[]): void;
   dismissWarnings(): void;
   setUpdateReady(v: string | null): void;
+  /**
+   * When GitHub last answered an update check on this Mac (Settings → About's "Last checked"),
+   * automatic or by hand; null: never. Kept here too so About shows a check that ends while it's open.
+   */
+  updateCheckedAt: number | null;
+  setUpdateCheckedAt(at: number): void;
   dismissUpdate(): void;
   setReadOnly(v: boolean): void;
   showError(e: AppError | null): void;
@@ -43,6 +49,12 @@ function startedBefore(): boolean {
 }
 function noteStarted() {
   try { localStorage.setItem(ENGINE_STARTED_KEY, appVersion()); } catch { /* next start says "first" again */ }
+}
+
+/** When an update check last got an answer on this Mac (lib/updates.ts writes it). */
+export const UPDATE_CHECKED_KEY = 'breakpatch.updates.lastChecked';
+export function storedUpdateCheckedAt(): number | null {
+  try { const v = localStorage.getItem(UPDATE_CHECKED_KEY); return v ? Number(v) : null; } catch { return null; }
 }
 
 export const useSystem = create<SystemState>(set => ({
@@ -58,6 +70,8 @@ export const useSystem = create<SystemState>(set => ({
   setWarnings: warnings => set(s => ({ warnings, warningsDismissed: s.warningsDismissed && warnings.join('\n') === s.warnings.join('\n') })),
   dismissWarnings: () => set({ warningsDismissed: true }),
   setUpdateReady: updateReady => set({ updateReady, updateDismissed: false }),
+  updateCheckedAt: storedUpdateCheckedAt(),
+  setUpdateCheckedAt: updateCheckedAt => set({ updateCheckedAt }),
   dismissUpdate: () => set({ updateDismissed: true }),
   setReadOnly: readOnly => set({ readOnly }),
   showError: error => set({ error }),

@@ -122,6 +122,9 @@ arm64), and on Windows x64 as a preview.
 - **Every action a person does.** Click, double, long and right click, hover, swipe, scroll, drag
   and drop, typing, uploads, downloads, tabs and popups, plus checkpoints, loops, shared steps
   (record *Log in* once, use it everywhere) and suites.
+- **Phones, tablets and your API.** Test your site at an iPhone's, a Pixel's or an iPad's size,
+  with taps and swipes, and call your app's API in the middle of a test with a **Call** step, for
+  example to get a one-time code.
 - **Bring your Playwright and Cypress tests.** **Import…** reads a script (never runs it), turns its
   steps into Breakpatch steps, lists what it left out and why, then learns the screens by doing each
   step once.
@@ -343,7 +346,10 @@ for `releases/latest`, and the updater reads `releases/latest/download/latest.js
   for `gh`.
 - The tag must match `app/package.json`, `app/src-tauri/Cargo.toml` and
   `engine/src/breakpatch_engine/__init__.py` (the release workflow checks);
-  `engine/pyproject.toml` has the PEP 440 spelling (`0.1.0b1`).
+  `engine/pyproject.toml` has the PEP 440 spelling (`0.1.0b2` for 0.1.0-beta.2;
+  `scripts/build-ci.sh` checks it). So bump them all, with `app/package-lock.json` and
+  `app/src-tauri/Cargo.lock`, and add `docs/releases/<tag>.md`, in the commit you tag
+  (`site/launch.test.mjs` checks they agree).
 
 `BREAKPATCH_GITHUB_TOKEN`, which the install commands take, was for the private beta while the
 repository was private. It isn't needed now.
