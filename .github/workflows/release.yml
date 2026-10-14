@@ -25,11 +25,15 @@ name: Release
 #               the real licence keys only, never the public test key.
 #   publish     needs build; the only job that can write (contents: write). It downloads the
 #               build's files, checks SHA256SUMS and creates the GitHub release. No checkout.
-#   app-linux-x64, publish-linux
+#   linux-release-key, app-linux-x64, publish-linux
 #               Only while the repository variable LINUX_DESKTOP is `on`: until the llama.cpp
 #               runtime and the GGUF model are pinned (build-release.sh --release refuses them
 #               off macOS), a tag would only fail there and wait for an approval it can't use.
-#               Without it both are skipped, and publish-ci and sign-sums go on as before.
+#               Without it all three are skipped, and publish-ci and sign-sums go on as before.
+#               linux-release-key goes first: with LINUX_DESKTOP on, it fails while the tagged
+#               site/install's GPG_FINGERPRINT is TODO-owner (Linux installs check SHA256SUMS.asc
+#               with that key), so the Linux app is never published without it; the Mac app and
+#               breakpatch-ci are published as usual.
 #               The Linux x64 desktop app (a preview): the Team edition as an AppImage and a .deb,
 #               built by the same script in an Ubuntu 22.04 container (glibc 2.35, so it runs on
 #               22.04 and later and on Debian 12), tag runs only, in the `release` environment.
@@ -122,7 +126,8 @@ name: Release
 #                                 (ubuntu:24.04@sha256:…). Optional: ci-image-build's default is pinned
 #                      LINUX_DESKTOP  on: build and publish the Linux desktop app (app-linux-x64,
 #                                 publish-linux). TODO(owner): turn on once runtimes.py and the
-#                                 GGUF model in models.py are pinned.
+#                                 GGUF model in models.py are pinned, and site/install pins the
+#                                 release key (linux-release-key refuses it before then).
 
 on:
   push:
@@ -362,9 +367,45 @@ jobs:
 
   # ---------------------------------------------------------------- Linux x64 desktop (a preview)
 
+  # Before the Linux desktop app is built: the tagged site/install must pin Breakpatch's release
+  # key. Linux installs check SHA256SUMS's signature with it (sign-sums signs it), so with the
+  # placeholder (GPG_FINGERPRINT=TODO-owner) a Linux release would install without anyone
+  # checking who published it. Then this fails, app-linux-x64 is skipped (it needs this) and
+  # publish-linux warns; the Mac app, breakpatch-ci and the rest are published as usual. Only with
+  # LINUX_DESKTOP on, like the jobs it gates: a Mac-only tag never runs it. No environment, so it
+  # fails before the owner is asked to approve anything.
+  linux-release-key:
+    name: Linux desktop (preview) needs the release key
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.LINUX_DESKTOP == 'on'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: tagged
+          sparse-checkout: site/install
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Release key pinned
+        env:
+          INSTALL: ${{ github.workspace }}/tagged/site/install
+        run: |
+          # The key this tag's installer trusts: a fingerprint (40 hex digits) and its public key.
+          fpr=$(sed -n 's/^GPG_FINGERPRINT=//p' "$INSTALL" | head -n 1)
+          if [ "$fpr" = TODO-owner ]; then
+            echo "::error::LINUX_DESKTOP is on, but this tag's site/install has no release key yet (GPG_FINGERPRINT=TODO-owner), so Linux installs couldn't check who published the app. First do the owner step in site/install (the TODO(owner) above GPG_FINGERPRINT): add the release key as the release environment's GPG_SIGNING_KEY secret, put its fingerprint and public key in GPG_FINGERPRINT and GPG_PUBLIC_KEY, and tag again. Or turn LINUX_DESKTOP off. The Linux desktop app isn't built."
+            exit 1
+          fi
+          if ! [[ "$fpr" =~ ^[0-9A-F]{40}$ ]] || ! grep -q "^GPG_PUBLIC_KEY='-----BEGIN PGP PUBLIC KEY BLOCK-----" "$INSTALL"; then
+            echo "::error::GPG_FINGERPRINT in this tag's site/install isn't a fingerprint (40 hex digits, upper case) with its public key in GPG_PUBLIC_KEY ('${fpr:-unset}'): see the owner step (TODO(owner)) there. The Linux desktop app isn't built."
+            exit 1
+          fi
+          echo "This tag's site/install pins the release key $fpr: the Linux desktop app is built."
+
   app-linux-x64:
     name: Linux x64 desktop (preview; AppImage and .deb)
-    # Only with the repository variable LINUX_DESKTOP=on (see the top of this file).
+    # Only with the repository variable LINUX_DESKTOP=on (see the top of this file), and once the
+    # tagged site/install pins the release key (linux-release-key).
+    needs: linux-release-key
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.LINUX_DESKTOP == 'on'
     runs-on: ubuntu-24.04
     environment: release
@@ -474,7 +515,8 @@ jobs:
     name: Publish the Linux desktop app
     needs: [publish, app-linux-x64]
     # Skipped with app-linux-x64 while LINUX_DESKTOP isn't on; publish-ci and sign-sums need it,
-    # and run whatever its result (!cancelled()).
+    # and run whatever its result (!cancelled()). With LINUX_DESKTOP on and no release key
+    # (linux-release-key failed), app-linux-x64 is skipped and this only warns.
     if: ${{ !cancelled() && needs.publish.result == 'success' && vars.LINUX_DESKTOP == 'on' }}
     runs-on: ubuntu-latest
     permissions:

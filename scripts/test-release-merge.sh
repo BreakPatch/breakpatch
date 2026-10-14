@@ -4,8 +4,10 @@
 # scripts/release-put-sums.sh (both): the first run, a re-run with the same files (as when the
 # Linux desktop build is re-run, which re-runs publish-linux and publish-ci after it), and the
 # cases they must refuse. Then release.yml itself: with LINUX_DESKTOP off, skipping the Linux
-# desktop jobs skips nothing else (publish-ci, sign-sums and the rest still run); and the images
-# the release builds from are pinned by digest, with no token in the container image's build.
+# desktop jobs skips nothing else (publish-ci, sign-sums and the rest still run); with it on, the
+# Linux app is refused while site/install's release key is TODO-owner, and only the Linux app; and
+# the images the release builds from are pinned by digest, with no token in the container image's
+# build.
 # Needs jq, awk, sha256sum and python3.
 #
 #   bash scripts/test-release-merge.sh
@@ -155,20 +157,32 @@ for line in open(sys.argv[1]):
     if m:
         cur["if"] = m.group(1).strip()
 gated = {j for j, d in jobs.items() if "vars.LINUX_DESKTOP == 'on'" in d["if"]}
-assert gated == {"app-linux-x64", "publish-linux"}, f"jobs gated by LINUX_DESKTOP: {sorted(gated)}"
-# A job is skipped when its `if` needs LINUX_DESKTOP, or when a job it needs is skipped and its
-# `if` has no status function (always(), !cancelled(), failure()) or wants that job's success.
-skipped, changed = set(gated), True
-while changed:
-    changed = False
-    for j, d in jobs.items():
-        if j in skipped:
-            continue
-        cond = d["if"]
-        status = any(f in cond for f in ("always()", "cancelled()", "failure()"))
-        wants = any(f"needs.{n}.result == 'success'" in cond for n in d["needs"] if n in skipped)
-        if any(n in skipped for n in d["needs"]) and (not status or wants):
-            skipped.add(j); changed = True
+assert gated == {"linux-release-key", "app-linux-x64", "publish-linux"}, f"jobs gated by LINUX_DESKTOP: {sorted(gated)}"
+# A job is skipped when its `if` needs LINUX_DESKTOP, or when a job it needs is skipped (or
+# failed) and its `if` has no status function (always(), !cancelled(), failure()) or wants that
+# job's success.
+def not_run(start):
+    out, changed = set(start), True
+    while changed:
+        changed = False
+        for j, d in jobs.items():
+            if j in out:
+                continue
+            cond = d["if"]
+            status = any(f in cond for f in ("always()", "cancelled()", "failure()"))
+            wants = any(f"needs.{n}.result == 'success'" in cond for n in d["needs"] if n in out)
+            if any(n in out for n in d["needs"]) and (not status or wants):
+                out.add(j); changed = True
+    return out
+skipped = not_run(gated)
+# With LINUX_DESKTOP on and the release key still TODO-owner, linux-release-key fails: only the
+# Linux app isn't built. publish-linux still runs (it warns), and so does everything else.
+assert "linux-release-key" in jobs["app-linux-x64"]["needs"], "app-linux-x64 doesn't wait for linux-release-key"
+refused = not_run({"linux-release-key"})
+assert refused == {"linux-release-key", "app-linux-x64"}, f"a missing release key also stops: {sorted(refused - {'linux-release-key', 'app-linux-x64'})}"
+for j, d in jobs.items():
+    if j not in ("app-linux-x64",):
+        assert "linux-release-key" not in d["needs"], f"{j} waits on linux-release-key"
 tag_jobs = {j for j, d in jobs.items() if "workflow_dispatch" not in d["if"]}
 must_run = {"build", "publish", "sign-sums", "ci-linux", "ci-macos", "ci-linux-arm64", "ci-windows-x64",
             "publish-ci", "smoke-ci-linux", "ci-image-build", "ci-image"}
@@ -189,7 +203,7 @@ print("skipped:", sorted(skipped))
 PY
 expect "the workflow's needs and ifs" "$code" 0
 [ "$code" -eq 0 ] || cat "$work/log"
-if grep -q "^skipped: \['app-linux-x64', 'publish-linux'\]$" "$work/log"; then ok "publish-ci, sign-sums and the rest run on a Mac-only release"; else bad "$(cat "$work/log")"; fi
+if grep -q "^skipped: \['app-linux-x64', 'linux-release-key', 'publish-linux'\]$" "$work/log"; then ok "publish-ci, sign-sums and the rest run on a Mac-only release"; else bad "$(cat "$work/log")"; fi
 step=$(awk '/^  publish-ci:/ { j = 1 } j && /^  [a-z]/ && !/^  publish-ci:/ { exit } j' "$wf")
 # shellcheck disable=SC2016  # the literal ${files[@]} in the workflow
 if grep -q 'release-add-files.sh' <<< "$step" && grep -q 'release-put-sums.sh' <<< "$step" && grep -q -- '"${files\[@\]}" --clobber' <<< "$step"; then
@@ -217,6 +231,63 @@ else bad "ci-image-build doesn't require CI_IMAGE_BASE pinned, or defaults to a 
 app=$(job_of app-linux-x64)
 first=$(grep -m 1 -- '- name:' <<< "$app" | sed 's/.*- name: //')
 if [ "$first" = "Container pinned" ] && grep -q 'UBUNTU_2204_IMAGE must name' <<< "$app"; then ok "app-linux-x64 first checks UBUNTU_2204_IMAGE is pinned"; else bad "app-linux-x64's first step is '$first'"; fi
+
+echo
+echo "release.yml: the Linux desktop app needs site/install's release key (linux-release-key)"
+# The job's "Release key pinned" script, with bash -e (as Actions runs it), against the tagged
+# site/install as it is and against copies with a key pinned, half pinned or mistyped.
+gate=$(job_of linux-release-key)
+awk '/- name: Release key pinned/ { s = 1; next }
+     s && /^        run: \|/ { on = 1; next }
+     on && /^          / { print substr($0, 11); next }
+     on && /^ *$/ { print ""; next }
+     on { exit }' <<< "$gate" > "$work/gate.sh"
+if grep -q 'GPG_FINGERPRINT' "$work/gate.sh"; then ok "found linux-release-key's script"; else bad "couldn't read linux-release-key's \"Release key pinned\" step"; fi
+if grep -q "vars.LINUX_DESKTOP == 'on'" <<< "$(grep -m 1 '^    if:' <<< "$gate")" && ! grep -q '^    needs:' <<< "$gate" &&
+   ! grep -q '^    environment:' <<< "$gate"; then
+  ok "linux-release-key runs only with LINUX_DESKTOP on, first, and without the release environment"
+else bad "linux-release-key's if, needs or environment: $(grep -E '^    (if|needs|environment):' <<< "$gate" | tr '\n' ' ')"; fi
+gate_run() {   # INSTALL: sets $code and $out
+  code=0
+  out=$(env INSTALL="$1" bash -e "$work/gate.sh" 2>&1) || code=$?
+}
+fpr=0123456789ABCDEF0123456789ABCDEF01234567
+pinned() {   # FINGERPRINT KEY-LINE > a copy of site/install with them
+  python3 - "$repo/site/install" "$1" "$2" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+s, n1 = re.subn(r"(?m)^GPG_FINGERPRINT=.*$", lambda m: "GPG_FINGERPRINT=" + sys.argv[2], s)
+s, n2 = re.subn(r"(?m)^GPG_PUBLIC_KEY=''$", lambda m: "GPG_PUBLIC_KEY=" + sys.argv[3], s)
+assert n1 == n2 == 1, (n1, n2)
+sys.stdout.write(s)
+PY
+}
+key="'-----BEGIN PGP PUBLIC KEY BLOCK-----
+mQENBGZ0ZXN0
+-----END PGP PUBLIC KEY BLOCK-----'"
+if grep -qx 'GPG_FINGERPRINT=TODO-owner' "$repo/site/install"; then
+  gate_run "$repo/site/install"
+  expect "site/install as it is (TODO-owner): refused" "$code" 1
+  if grep -q '^::error::LINUX_DESKTOP is on, but .*GPG_FINGERPRINT=TODO-owner.*owner step in site/install (the TODO(owner) above GPG_FINGERPRINT).*GPG_SIGNING_KEY.*Or turn LINUX_DESKTOP off' <<< "$out"; then
+    ok "and says why, naming the owner step"
+  else bad "the error doesn't name the owner step: $out"; fi
+else
+  ok "site/install pins a release key already (the TODO-owner case is below)"
+fi
+pinned TODO-owner "''" > "$work/install-todo"
+gate_run "$work/install-todo"
+expect "TODO-owner: refused" "$code" 1
+pinned "$fpr" "$key" > "$work/install-pinned"
+gate_run "$work/install-pinned"
+expect "a fingerprint and its public key: built" "$code" 0
+if grep -q "pins the release key $fpr" <<< "$out"; then ok "and says which key"; else bad "$out"; fi
+pinned "$fpr" "''" > "$work/install-nokey"
+gate_run "$work/install-nokey"
+expect "a fingerprint without its public key: refused" "$code" 1
+pinned "${fpr,,}" "$key" > "$work/install-lower"
+gate_run "$work/install-lower"
+expect "a fingerprint in lower case: refused" "$code" 1
+if grep -q "^::error::GPG_FINGERPRINT in this tag's site/install isn't a fingerprint" <<< "$out"; then ok "and says so"; else bad "$out"; fi
 
 echo
 if [ ${#failures[@]} -eq 0 ]; then echo "test-release-merge: all $pass checks passed"; exit 0; fi
