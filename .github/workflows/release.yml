@@ -85,8 +85,9 @@ name: Release
 #               Latest release (never a prerelease, nor an older version's fix). The only jobs
 #               with packages: write, which only docker login and the push use (no token goes
 #               into the build). Repository variable CI_IMAGE_BASE: the base image, pinned by
-#               digest (ubuntu:24.04@sha256:…); without it ci-image-build fails (only the image:
-#               the app and breakpatch-ci are published before it, and nothing waits on it).
+#               digest; unset, it's the ubuntu:24.04 digest written below (checked 2026-10-14).
+#               One that isn't pinned fails ci-image-build only (the app and breakpatch-ci are
+#               published before it, and nothing waits on it).
 #   test-build  manual runs (workflow_dispatch): an unsigned Community build on macOS, with no
 #               secrets at all (not even the Team repo token), kept as a workflow artifact for
 #               3 days. It tries the macOS build, the AI assistant bundle and the hardened
@@ -118,7 +119,7 @@ name: Release
 #                                 (ubuntu:22.04@sha256:…). Required by app-linux-x64 (a tag build with
 #                                 LINUX_DESKTOP on); test-build-linux defaults to ubuntu:22.04
 #                      CI_IMAGE_BASE  the container image's base, pinned by digest
-#                                 (ubuntu:24.04@sha256:…). Required by ci-image-build
+#                                 (ubuntu:24.04@sha256:…). Optional: ci-image-build's default is pinned
 #                      LINUX_DESKTOP  on: build and publish the Linux desktop app (app-linux-x64,
 #                                 publish-linux). TODO(owner): turn on once runtimes.py and the
 #                                 GGUF model in models.py are pinned.
@@ -944,7 +945,7 @@ jobs:
       # hold up the app or breakpatch-ci (test-release-merge.sh checks nothing they need waits on it).
       - name: Base image and frontend pinned
         env:
-          BASE: ${{ vars.CI_IMAGE_BASE }}
+          BASE: ${{ vars.CI_IMAGE_BASE || 'ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55' }}
         run: |
           if [[ "$BASE" != *@sha256:* ]]; then
             echo "::error::The repository variable CI_IMAGE_BASE must name the base image by digest (ubuntu:24.04@sha256:…), not '${BASE:-unset}': the container image isn't built."
@@ -960,7 +961,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PLATFORM: ${{ matrix.platform }}
-          BASE: ${{ vars.CI_IMAGE_BASE }}
+          BASE: ${{ vars.CI_IMAGE_BASE || 'ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55' }}
         run: |
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker buildx create --use --driver docker-container >/dev/null

@@ -208,9 +208,12 @@ if ! grep -q 'type=secret\|GITHUB_TOKEN' "$df"; then ok "no secret or token in t
 job_of() { awk -v j="  $1:" '$0 == j { on = 1; print; next } on && /^  [a-z]/ { exit } on' "$wf"; }
 img=$(job_of ci-image-build)
 if ! grep -q -- '--secret\|github-token' <<< "$img"; then ok "ci-image-build gives the build no token"; else bad "ci-image-build passes a secret to the build"; fi
-if grep -q 'CI_IMAGE_BASE must name the base image by digest' <<< "$img" && ! grep -q "CI_IMAGE_BASE || " <<< "$img"; then
-  ok "ci-image-build fails without a pinned CI_IMAGE_BASE, with no moving default"
-else bad "ci-image-build doesn't require CI_IMAGE_BASE pinned"; fi
+# Its default, when the variable is unset, must itself be pinned by digest: never a moving tag.
+defaults=$(grep -oE "CI_IMAGE_BASE \|\| '[^']*'" <<< "$img" || true)
+if grep -q 'CI_IMAGE_BASE must name the base image by digest' <<< "$img" &&
+   { [ -z "$defaults" ] || ! grep -vqE "'[^'@]+@sha256:[0-9a-f]{64}'" <<< "$defaults"; }; then
+  ok "ci-image-build needs a base pinned by digest, and its default is one"
+else bad "ci-image-build doesn't require CI_IMAGE_BASE pinned, or defaults to a moving tag"; fi
 app=$(job_of app-linux-x64)
 first=$(grep -m 1 -- '- name:' <<< "$app" | sed 's/.*- name: //')
 if [ "$first" = "Container pinned" ] && grep -q 'UBUNTU_2204_IMAGE must name' <<< "$app"; then ok "app-linux-x64 first checks UBUNTU_2204_IMAGE is pinned"; else bad "app-linux-x64's first step is '$first'"; fi
