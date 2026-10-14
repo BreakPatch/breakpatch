@@ -91,16 +91,34 @@ check_entry() {   # <desktop entry> <what> <exec>
 check_entry "${entries[0]}" "the .deb's desktop entry" breakpatch
 say "$(basename "$deb"): package, dependencies, files and desktop entry"
 
-# ---- glibc: the newest GLIBC_x.y symbol version each binary needs
+# ---- glibc: the newest GLIBC_x.y symbol version each ELF file needs (objdump -T). It covers the
+# app and the engine sidecar's own executable, and every shared library the packages ship
+# (usr/lib/**/*.so*, the AppImage's below). Not what the sidecar unpacks from itself when it runs:
+# that's built in the same Ubuntu 22.04 container.
 newer() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" != "$2" ]; }   # $1 newer than $2?
-for bin in "$work/deb/usr/bin/breakpatch" "$work/deb/usr/bin/breakpatch-engine"; do
-  need=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -n 1)
-  [ -n "$need" ] || die "couldn't read the glibc versions $(basename "$bin") needs"
-  if newer "$need" "$glibc_max"; then
-    die "$(basename "$bin") needs glibc $need, newer than $glibc_max: build it on Ubuntu 22.04 (the release's container), or it won't start there"
+glibc_need() { { objdump -T "$1" 2>/dev/null || true; } | { grep -o 'GLIBC_[0-9][0-9.]*' || true; } | sed 's/GLIBC_//' | sort -uV | tail -n 1; }
+check_glibc() {   # <file> <name>: dies when it needs a newer glibc than glibc_max
+  local need
+  need=$(glibc_need "$1")
+  if [ -n "$need" ] && newer "$need" "$glibc_max"; then
+    die "$2 needs glibc $need, newer than $glibc_max: build it on Ubuntu 22.04 (the release's container), or it won't start there"
   fi
+  printf '%s' "$need"
+}
+for bin in "$work/deb/usr/bin/breakpatch" "$work/deb/usr/bin/breakpatch-engine"; do
+  need=$(check_glibc "$bin" "$(basename "$bin")")
+  [ -n "$need" ] || die "couldn't read the glibc versions $(basename "$bin") needs"
   say "$(basename "$bin") needs glibc $need (at most $glibc_max)"
 done
+check_libs() {   # <root> <what>: every usr/lib/**/*.so* under root
+  local n=0 f
+  while IFS= read -r -d '' f; do
+    check_glibc "$f" "$2's ${f#"$1"/}" >/dev/null
+    n=$((n + 1))
+  done < <(find "$1/usr/lib" \( -type f -o -type l \) -name '*.so*' -print0 2>/dev/null)
+  say "$2: $n shared libraries checked, none needs glibc newer than $glibc_max"
+}
+check_libs "$work/deb" "the .deb"
 
 # ---- the AppImage
 chmod +x "$appimage"
@@ -109,6 +127,8 @@ chmod +x "$appimage"
 [ -x "$work/squashfs-root/usr/bin/breakpatch-engine" ] || die "the AppImage has no engine sidecar"
 [ -f "$work/squashfs-root/usr/share/icons/hicolor/128x128/apps/breakpatch.png" ] \
   || die "the AppImage has no 128x128 icon (site/install puts it in the apps menu)"
+for bin in breakpatch breakpatch-engine; do check_glibc "$work/squashfs-root/usr/bin/$bin" "the AppImage's $bin" >/dev/null; done
+check_libs "$work/squashfs-root" "the AppImage"
 # Not byte for byte the .deb's app: Tauri writes the bundle type (deb, appimage) into each copy,
 # for the updater.
 grep -aq '__TAURI_BUNDLE_TYPE_VAR_APP' "$work/squashfs-root/usr/bin/breakpatch" \

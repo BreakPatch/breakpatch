@@ -357,7 +357,7 @@ jobs:
           GOBIN="$RUNNER_TEMP/bin" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
           "$RUNNER_TEMP/bin/actionlint" -color
       - name: shellcheck
-        run: shellcheck action/scripts/*.sh action/test.sh scripts/test-ci-containers.sh site/install-ci scripts/linux-release-merge.sh scripts/release-add-files.sh scripts/release-put-sums.sh scripts/test-release-merge.sh
+        run: shellcheck action/scripts/*.sh action/test.sh scripts/test-ci-containers.sh site/install-ci scripts/linux-release-files.sh scripts/linux-release-merge.sh scripts/release-add-files.sh scripts/release-put-sums.sh scripts/test-release-merge.sh
       - name: The action's scripts
         run: bash action/test.sh
       - name: The release scripts (publish-linux, publish-ci) and release.yml's needs
