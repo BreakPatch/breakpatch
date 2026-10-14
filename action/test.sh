@@ -2,8 +2,10 @@
 # Tests the action's scripts on Linux, without GitHub: install.sh against a fake release served
 # over https from this machine (stand-in wheels, so pip installs offline), run.sh with a stand-in
 # breakpatch-ci that passes, fails or can't run tests by their names, and summary.py's table,
-# JSON and outputs; and install.sh against site/install-ci on the same release (they must accept
-# and refuse the same releases). Needs python3.11, curl, openssl and sha256sum.
+# JSON and outputs; install.sh against site/install-ci on the same release (they must accept
+# and refuse the same releases); and licence-cache.py, which seals the machine licence for the
+# Actions cache. Needs python3.11, curl, openssl and sha256sum (and pip's access to PyPI when
+# python3.11 has no cryptography).
 #
 #   bash action/test.sh
 set -euo pipefail
@@ -284,6 +286,65 @@ contains "and says why" "$work/alog" "artifact-name can't have any of"
 contains "action.yml passes the matrix leg's index" "$here/action.yml" 'BP_JOB_INDEX: ${{ strategy.job-index }}'
 # shellcheck disable=SC2016
 contains "and uploads under that name" "$here/action.yml" 'name: ${{ steps.artifact.outputs.name }}'
+
+# ---------------------------------------------------------------- the machine licence in the cache
+
+# licence-cache.py runs with breakpatch-ci's Python, which has cryptography (the engine's `ci`
+# extra). Here: this Python if it has it, else a venv with it from the engine's hashed lock.
+echo "licence-cache.py"
+cpy=$py
+if ! "$cpy" -c 'from cryptography.hazmat.primitives.ciphers.aead import AESGCM' >/dev/null 2>&1; then
+  lock="$here/../engine/locks/linux-$(uname -m | sed 's/aarch64/arm64/').dev.txt"
+  awk '/^(cryptography|cffi|pycparser)==/ { on = 1 } on && /^[^ ]/ && !/^(cryptography|cffi|pycparser)==/ { on = 0 } on && !/^ *#/' "$lock" > "$work/crypto-reqs.txt"
+  "$py" -m venv "$work/cryptovenv"
+  "$work/cryptovenv/bin/python" -m pip install -q --disable-pip-version-check --require-hashes --only-binary=:all: -r "$work/crypto-reqs.txt"
+  cpy="$work/cryptovenv/bin/python"
+fi
+lc() {   # KEY MACHINE-ID open|seal ARGS…: licence-cache.py's output in $work/lclog
+  local key=$1 mid=$2; shift 2
+  env BREAKPATCH_LICENCE_KEY="$key" BREAKPATCH_MACHINE_ID="$mid" "$cpy" "$here/scripts/licence-cache.py" "$@" > "$work/lclog" 2>&1
+}
+mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
+lic="$work/lic/licence/licence.json" sealed="$work/lic/sealed"
+mkdir -p "$work/lic/licence"
+printf '{"machine": "github-123", "token": "MACHINE-TOKEN-SECRET"}' > "$lic"
+cp "$lic" "$work/lic/original.json"
+lc KEY-1 github-123 seal "$lic" "$sealed"
+if [ -f "$sealed/licence.sealed" ] && [ ! -e "$lic" ]; then ok "seal: the sealed file, and the file in the clear is gone"; else bad "seal: $(ls -la "$work/lic"/*)"; fi
+if ! grep -q "MACHINE-TOKEN-SECRET" "$sealed/licence.sealed"; then ok "the token isn't readable in what's cached"; else bad "the token is in the clear in the cache"; fi
+expect "only the sealed file is in the cached folder" "$(ls -A "$sealed")" licence.sealed
+expect "the sealed file is 0600" "$(mode "$sealed/licence.sealed")" 600
+lc KEY-1 github-123 open "$sealed" "$lic"
+if cmp -s "$lic" "$work/lic/original.json"; then ok "open with the licence key: the same file back"; else bad "open: $(cat "$work/lclog")"; fi
+expect "the restored file is 0600" "$(mode "$lic")" 600
+rm -f "$lic"
+lc "" github-123 open "$sealed" "$lic"     # a fork's pull request: no secrets
+if [ ! -e "$lic" ]; then ok "without the licence key (a fork's run) nothing opens"; else bad "it opened without the key"; fi
+contains "and says so" "$work/lclog" "No licence key: the cached machine licence stays sealed."
+lc KEY-2 github-123 open "$sealed" "$lic"
+if [ ! -e "$lic" ]; then ok "another licence key opens nothing"; else bad "another key opened it"; fi
+contains "and breakpatch-ci checks online" "$work/lclog" "doesn't open with this licence key and machine ID"
+lc KEY-1 github-456 open "$sealed" "$lic"
+if [ ! -e "$lic" ]; then ok "another machine ID opens nothing"; else bad "another machine ID opened it"; fi
+cp "$sealed/licence.sealed" "$work/lic/good.sealed"
+"$py" -c 'import sys; p = sys.argv[1]; b = bytearray(open(p, "rb").read()); b[-1] ^= 1; open(p, "wb").write(b)' "$sealed/licence.sealed"
+code=0; lc KEY-1 github-123 open "$sealed" "$lic" || code=$?
+if [ ! -e "$lic" ] && [ "$code" -eq 0 ]; then ok "a changed sealed file opens nothing (and isn't an error)"; else bad "a changed file: exit $code, $(cat "$work/lclog")"; fi
+rm -rf "$sealed"
+code=0; lc KEY-1 github-123 open "$sealed" "$lic" || code=$?
+expect "no cache: exit 0" "$code" 0
+contains "and it checks online" "$work/lclog" "No machine licence in the cache"
+cp "$work/lic/original.json" "$lic"
+lc "" github-123 seal "$lic" "$sealed"
+if [ ! -e "$lic" ] && [ -z "$(ls -A "$sealed")" ]; then ok "without the licence key nothing is sealed, and the file in the clear goes"; else bad "seal without a key: $(ls -A "$sealed")"; fi
+# action.yml: the sealed folder is the only licence path in the cache, and a fork's pull request
+# neither restores nor saves it.
+# shellcheck disable=SC2016  # the text of action.yml, not shell
+fork_guard="!(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork)"
+expect "the restore and save steps skip a fork's pull request" "$(grep -cF -- "$fork_guard" "$here/action.yml")" 2
+expect "only the sealed folder is cached" "$(grep -cE '^ +path: ~/\.breakpatch-ci-action/licence' "$here/action.yml")-$(grep -cE '^ +path: ~/\.breakpatch-ci-action/licence-sealed$' "$here/action.yml")" 2-2
+contains "only a sealed licence is saved" "$here/action.yml" "always() && steps.seal.outputs.sealed == '1' &&"
+if awk '/- name: Seal the machine licence/ { s = NR } /- name: Keep the machine licence/ { k = NR } END { exit !(s && k && s < k) }' "$here/action.yml"; then ok "sealed, then saved"; else bad "action.yml doesn't seal before it saves"; fi
 
 echo
 if [ ${#failures[@]} -eq 0 ]; then echo "action/test.sh: all $pass checks passed"; exit 0; fi

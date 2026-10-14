@@ -54,7 +54,7 @@ The CI account, the workspace file and saved secrets work as in the manual: [Fro
 | `version` | `latest` | The `breakpatch-ci` version, for example `1.2.3`. |
 | `auto-fix` | `false` | `true` lets the AI assistant fix a step whose button moved. It needs a licence with Fixed automatically and a Mac with the AI assistant. |
 | `fail-on-fix` | `false` | `true` fails a test that needed fixing. |
-| `machine-id` | `github-<repository ID>` | A fixed name for this pipeline's machine licence, so every job reuses one. Give parallel jobs a name each. |
+| `machine-id` | `github-<repository ID>` | A fixed name for this pipeline's machine licence, so every job reuses one. Give parallel jobs a name each. It isn't a secret: don't rely on it to keep anything private (the licence key does that). |
 | `upload-screenshots` | `on-failure` | Upload the failed steps' screenshots as an artifact: `on-failure`, `always` or `never`. They can show personal data. |
 | `artifact-name` | unique per job | The screenshots artifact's name. The default, `breakpatch-screenshots-<job>-<job index>-<hash>-<attempt>`, differs for each matrix leg and each set of `tests` or `suite`, so several uses in one run don't collide. |
 | `secrets` | | Saved secrets the tests may use, one per line: `NAME`, or `NAME=https://site` for workspace tests. Each value comes from `BP_SECRET_<NAME>` in `env`. |
@@ -83,7 +83,7 @@ The CI account, the workspace file and saved secrets work as in the manual: [Fro
 1. Finds the release (`version`) of `BreakPatch/breakpatch`, downloads its `SHA256SUMS`, the requirements file for this runner and the two wheels it names, and checks each against `SHA256SUMS`. It refuses a requirements file that names anything but those two wheels and packages on PyPI.
 2. Makes a Python 3.11 environment (with `actions/setup-python`, leaving your job's Python alone) and installs with `pip --require-hashes --only-binary=:all:`.
 3. Restores Chromium from the cache, or runs `breakpatch-ci setup` to install it. On Linux, when Chromium's system libraries are missing, it adds them with `sudo playwright install-deps chromium`.
-4. Restores the machine licence file from this repository's cache, so most runs don't need to check online, and saves it again at the end.
+4. Restores the machine licence file from this repository's cache, so most runs don't need to check online, and saves it again at the end. The cache holds it only sealed: encrypted with a key derived from `licence-key` and bound to `machine-id`, so a run without your licence key can't read it. A pull request from a fork can restore your repository's caches, and `machine-id` isn't a secret (by default it's your repository's ID, which is public), so on a pull request from a fork the action neither restores nor saves it, and the licence file in the clear is deleted at the end of every run.
 5. Runs each test file, or the suite, with `--screenshots`, and the label `GitHub · <workflow> · run <number>`.
 6. Writes the table to the job summary, uploads the screenshots, sets the outputs, and fails the job unless every test passed.
 

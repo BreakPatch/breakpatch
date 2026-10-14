@@ -11,6 +11,12 @@ branding:
 # Chromium and the machine licence in the Actions cache, runs the tests one after another, and
 # fails the job when one fails. scripts/ holds the steps; inputs reach them only as environment
 # variables, never pasted into a script.
+#
+# The machine licence in the cache: a fork's pull request can restore this repository's caches
+# (with a workflow of its own, too), and machine-id isn't secret (the repository's ID by default).
+# So the cache only ever holds the licence file sealed with a key derived from licence-key, which
+# a fork's run doesn't get (scripts/licence-cache.py), and the action neither restores nor saves
+# it on a pull request from a fork.
 
 inputs:
   tests:
@@ -35,7 +41,7 @@ inputs:
     description: true fails a test that needed fixing.
     default: "false"
   machine-id:
-    description: A fixed name for this pipeline's machine licence, so every job reuses one.
+    description: A fixed name for this pipeline's machine licence, so every job reuses one. It isn't a secret (the default is the repository's ID); the licence key is.
     default: github-${{ github.repository_id }}
   upload-screenshots:
     description: Upload the failed steps' screenshots as an artifact. on-failure, always or never.
@@ -125,13 +131,25 @@ runs:
         key: ${{ steps.chromium.outputs.cache-primary-key }}
 
     # The machine licence file, kept between jobs of this repository: most runs then don't need
-    # to check online, and the usage counts it collects go with the next check.
+    # to check online, and the usage counts it collects go with the next check. Sealed with the
+    # licence key (see the top), and never restored or saved on a pull request from a fork.
     - name: Restore the machine licence
+      if: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork) }}
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ~/.breakpatch-ci-action/licence
-        key: breakpatch-licence-${{ inputs.machine-id }}-${{ github.run_id }}-${{ github.run_attempt }}
-        restore-keys: breakpatch-licence-${{ inputs.machine-id }}-
+        path: ~/.breakpatch-ci-action/licence-sealed
+        key: breakpatch-licence-sealed-${{ inputs.machine-id }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: breakpatch-licence-sealed-${{ inputs.machine-id }}-
+
+    - name: Open the machine licence
+      shell: bash
+      env:
+        PY: ${{ steps.install.outputs.python }}
+        BREAKPATCH_LICENCE_KEY: ${{ inputs.licence-key }}
+        BREAKPATCH_MACHINE_ID: ${{ inputs.machine-id }}
+      run: |
+        "$PY" "$GITHUB_ACTION_PATH/scripts/licence-cache.py" open \
+          "$HOME/.breakpatch-ci-action/licence-sealed" "$HOME/.breakpatch-ci-action/licence/licence.json"
 
     - name: Run the tests
       id: run
@@ -165,12 +183,28 @@ runs:
         "$PY" "$GITHUB_ACTION_PATH/scripts/summary.py" "$BP_DIR"
         echo "shots=$(find "$BP_DIR/screenshots" -type f 2>/dev/null | head -n 1)" >> "$GITHUB_OUTPUT"
 
-    - name: Keep the machine licence
+    # Sealed, and the file in the clear deleted, whatever happened (also on a fork's pull request).
+    - name: Seal the machine licence
+      id: seal
       if: always() && steps.run.outcome != 'skipped'
+      shell: bash
+      env:
+        PY: ${{ steps.install.outputs.python }}
+        BREAKPATCH_LICENCE_KEY: ${{ inputs.licence-key }}
+        BREAKPATCH_MACHINE_ID: ${{ inputs.machine-id }}
+      run: |
+        "$PY" "$GITHUB_ACTION_PATH/scripts/licence-cache.py" seal \
+          "$HOME/.breakpatch-ci-action/licence/licence.json" "$HOME/.breakpatch-ci-action/licence-sealed"
+        if [ -f "$HOME/.breakpatch-ci-action/licence-sealed/licence.sealed" ]; then echo "sealed=1" >> "$GITHUB_OUTPUT"; fi
+
+    - name: Keep the machine licence
+      if: >-
+        always() && steps.seal.outputs.sealed == '1' &&
+        !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork)
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: ~/.breakpatch-ci-action/licence
-        key: breakpatch-licence-${{ inputs.machine-id }}-${{ github.run_id }}-${{ github.run_attempt }}
+        path: ~/.breakpatch-ci-action/licence-sealed
+        key: breakpatch-licence-sealed-${{ inputs.machine-id }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     # Artifact names are unique within a run: one per job, matrix leg and set of tests.
     - name: Name the screenshots' artifact
