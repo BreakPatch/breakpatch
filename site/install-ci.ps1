@@ -478,7 +478,8 @@ function Install-BreakpatchCi {
   $staged = $null
   try {
     if ($token) {
-      if ($token -notmatch '^[A-Za-z0-9_]+$') { Fail "BREAKPATCH_GITHUB_TOKEN isn't a GitHub token (they're letters, digits and _ only)." }
+      # What an Authorization header can carry (RFC 6750's token68), and nothing that could end it.
+      if ($token -cnotmatch '\A[A-Za-z0-9._~+/-]+=*\z') { Fail "BREAKPATCH_GITHUB_TOKEN doesn't look like a GitHub token." }
       if (-not $Api.StartsWith($GitHubApi)) { Fail "BREAKPATCH_GITHUB_TOKEN is only ever sent to $GitHubApi, and BREAKPATCH_API isn't there. Unset one of them." }
       Say 'Using BREAKPATCH_GITHUB_TOKEN (private beta).'
     }

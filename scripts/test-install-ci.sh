@@ -1056,10 +1056,20 @@ for sh_name in "sh" "bash --posix"; do
   run_gh BREAKPATCH_GITHUB_TOKEN="$token" BREAKPATCH_API="$base/good"
   expect_code 1
   expect_out "BREAKPATCH_GITHUB_TOKEN is only ever sent to https://api.github.com/, and BREAKPATCH_API isn't there."
-  run_gh BREAKPATCH_GITHUB_TOKEN="$token"$'\nX-Evil: 1'
+  for bad_token in "$token"$'\nX-Evil: 1' "$token X" "$token=x" "=$token" "$token;"; do
+    run_gh BREAKPATCH_GITHUB_TOKEN="$bad_token"
+    expect_code 1
+    expect_out "BREAKPATCH_GITHUB_TOKEN doesn't look like a GitHub token."
+    expect_no_out "$token"
+  done
+  if [ ! -s "$gh_log" ]; then ok "GitHub got nothing"; else bad "GitHub got: $(tr '\n' ';' < "$gh_log")"; fi
+  expect_none
+  # Any token an Authorization header can carry (RFC 6750's token68) goes to GitHub, which
+  # decides: this stand-in knows one token only.
+  run_gh BREAKPATCH_GITHUB_TOKEN="ghs_Other.token-1~2+3/4=="
   expect_code 1
-  expect_out "BREAKPATCH_GITHUB_TOKEN isn't a GitHub token (they're letters, digits and _ only)."
-  expect_no_out "$token"
+  expect_out "GitHub didn't accept BREAKPATCH_GITHUB_TOKEN."
+  expect_gh "^api\.github\.com .* auth=Bearer ghs_Other\.token-1~2\+3/4==\$" "the token, as it is"
   expect_none
 
   gh_case private-without-token
@@ -1227,6 +1237,16 @@ else
   expect_code 1
   expect_out "BREAKPATCH_GITHUB_TOKEN is only ever sent to https://api.github.com/, and BREAKPATCH_API isn't there."
   expect_no_out "$token"
+  # Any token68 (RFC 6750) passes the format check, and only that.
+  ps_run BREAKPATCH_GITHUB_TOKEN="ghs_Other.token-1~2+3/4=="
+  expect_code 1
+  expect_out "BREAKPATCH_GITHUB_TOKEN is only ever sent to https://api.github.com/"
+  for bad_token in "$token"$'\nX-Evil: 1' "$token"$'\n' "$token X" "$token=x" "=$token"; do
+    ps_run BREAKPATCH_GITHUB_TOKEN="$bad_token"
+    expect_code 1
+    expect_out "BREAKPATCH_GITHUB_TOKEN doesn't look like a GitHub token."
+    expect_no_out "$token"
+  done
   ps_none
   if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
 

@@ -1224,10 +1224,20 @@ for sh_name in "${shells[@]}"; do
   expect_code 1
   expect_out "GitHub didn't accept BREAKPATCH_GITHUB_TOKEN. It may have expired: make a new one."
   expect_no_out github_pat_expired0000
-  run_gh BREAKPATCH_GITHUB_TOKEN="$token"$'\nX-Evil: 1'
+  : > "$gh_log"
+  for bad_token in "$token"$'\nX-Evil: 1' "$token X" "$token=x" "=$token" "$token;"; do
+    run_gh BREAKPATCH_GITHUB_TOKEN="$bad_token"
+    expect_code 1
+    expect_out "BREAKPATCH_GITHUB_TOKEN doesn't look like a GitHub token."
+    expect_no_out "$token"
+  done
+  if [ ! -s "$gh_log" ]; then ok "GitHub got nothing"; else bad "GitHub got: $(tr '\n' ';' < "$gh_log")"; fi
+  # Any token an Authorization header can carry (RFC 6750's token68) goes to GitHub, which
+  # decides: this stand-in knows one token only.
+  run_gh BREAKPATCH_GITHUB_TOKEN="ghs_Other.token-1~2+3/4=="
   expect_code 1
-  expect_out "BREAKPATCH_GITHUB_TOKEN isn't a GitHub token (they're letters, digits and _ only)."
-  expect_no_out "$token"
+  expect_out "GitHub didn't accept BREAKPATCH_GITHUB_TOKEN."
+  expect_gh "^api\.github\.com .* auth=Bearer ghs_Other\.token-1~2\+3/4==\$" "the token, as it is"
   expect_no_app "$apps"
   expect_clean
 

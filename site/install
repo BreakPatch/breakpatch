@@ -140,8 +140,10 @@ check_tools() {
 setup_token() {
   auth=""
   [ -n "$token" ] || return 0
+  # What an Authorization header can carry (RFC 6750's token68: = only at the end), and nothing
+  # that could end it.
   case "$token" in
-    *[!A-Za-z0-9_]*) fail "BREAKPATCH_GITHUB_TOKEN isn't a GitHub token (they're letters, digits and _ only)." ;;
+    *[!A-Za-z0-9._~+/=-]* | =* | *=*[!=]*) fail "BREAKPATCH_GITHUB_TOKEN doesn't look like a GitHub token." ;;
   esac
   case "$API" in
     "$GITHUB_API"*) ;;
