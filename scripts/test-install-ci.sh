@@ -116,6 +116,39 @@ if grep -q 'GetValue(.Path., .*DoNotExpandEnvironmentNames' "$ps1_src" && grep -
   && ! grep -qi "EnvironmentVariable('Path', *'User')" "$ps1_src"; then ok "install-ci.ps1 keeps the user's PATH as written (%VARS% unexpanded)"
 else bad "install-ci.ps1 reads or writes the user's PATH with its %VARS% expanded"; fi
 
+# ---------------------------------------------------------------- shared code
+
+# site/install and site/install-ci each carry the same code for finding and checking a release
+# (each is downloaded on its own). Each of these functions, and the addresses they use, must be
+# the same in both, but for the lines allowed below: a fix in one has to go into the other.
+echo "shared code: site/install and site/install-ci"
+current="shared code"
+app_script="$repo/site/install"
+shared_fns="say fail pretty setup_token check_curl drop_token curl_gh fetch download get_sums bad_file check_asset
+  json_flat field asset_names asset_url plain_release find_release api_release"
+# fn_body NAME FILE: the function as written, from "NAME() {" to its closing brace.
+fn_body() {
+  awk -v n="$1() {" 'index($0, n) == 1 { on = 1; print; if ($0 ~ /}$/) exit; next } on { print } on && /^}/ { exit }' "$2"
+}
+# The lines only site/install's copy may have ("< line") or only site/install-ci's ("> line").
+drift_allowed() {
+  case "$1" in
+    # The Mac and Linux app's SHA256SUMS.asc (check_publisher), which SHA256SUMS can't list.
+    plain_release) printf '%s\n' '<     echo "SHA256SUMS.asc SHA256SUMS.asc"' ;;
+  esac
+}
+for f in $shared_fns; do
+  a=$(fn_body "$f" "$app_script")
+  b=$(fn_body "$f" "$script")
+  if [ -z "$a" ] || [ -z "$b" ]; then bad "$f isn't in both site/install and site/install-ci"; continue; fi
+  d=$(diff <(printf '%s\n' "$a") <(printf '%s\n' "$b") | grep '^[<>]' | grep -vxF -f <(drift_allowed "$f"; echo '#') || true)
+  if [ -z "$d" ]; then ok "$f is the same in both"; else bad "$f differs between site/install (<) and site/install-ci (>):"$'\n'"$d"; fi
+done
+vars_re='^(GITHUB_API|API|RELEASES|DOWNLOADS|LIMITED)='
+if [ "$(grep -E "$vars_re" "$app_script")" = "$(grep -E "$vars_re" "$script")" ] && [ "$(grep -cE "$vars_re" "$script")" -eq 5 ]; then
+  ok "GITHUB_API, API, RELEASES, DOWNLOADS and LIMITED are the same in both"
+else bad "the addresses differ: $(diff <(grep -E "$vars_re" "$app_script") <(grep -E "$vars_re" "$script") | tr '\n' ' ')"; fi
+
 # ---------------------------------------------------------------- fake releases
 
 free_port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
@@ -223,9 +256,10 @@ PY
 # app-only (no breakpatch-ci files), bad-sum (the Team wheel's line in SHA256SUMS is wrong),
 # no-team-wheel (the requirements name a wheel the release doesn't have), foreign (the files are
 # listed on another host), stale-latest-json (latest.json changed after SHA256SUMS was made),
-# bad-hash, url, extra, crlf (see make_ci_files). Each has a latest.json naming its version.
+# no-sums (no SHA256SUMS), bad-hash, url, extra, crlf (see make_ci_files). Each has a latest.json
+# naming its version.
 make_release() {
-  local api=$1 version=$2 tag="v$2" latest=0 pre=0 draft=0 apponly=0 badsum=0 noteam=0 stale=0 dl url
+  local api=$1 version=$2 tag="v$2" latest=0 pre=0 draft=0 apponly=0 badsum=0 noteam=0 stale=0 nosums=0 dl url
   local ci_opts=()
   shift 2
   url="$base/$api/download/$tag"
@@ -233,6 +267,7 @@ make_release() {
     case "$o" in
       latest) latest=1 ;; prerelease) pre=1 ;; draft) draft=1 ;; app-only) apponly=1 ;; bad-sum) badsum=1 ;;
       no-team-wheel) noteam=1 ;; foreign) url="https://localhost:$port/$api/download/$tag" ;; stale-latest-json) stale=1 ;;
+      no-sums) nosums=1 ;;
       bad-hash | url | extra | crlf) ci_opts+=("$o") ;;
     esac
   done
@@ -242,7 +277,7 @@ make_release() {
   [ "$apponly" -eq 1 ] || make_ci_files "$dl" "$version" ${ci_opts[@]+"${ci_opts[@]}"}
   printf '{\n  "version": "%s",\n  "notes": "Breakpatch %s",\n  "platforms": {"darwin-aarch64": {"signature": "x", "url": "%s/Breakpatch_aarch64.app.tar.gz"}}\n}\n' \
     "$version" "$version" "$url" > "$dl/latest.json"
-  (cd "$dl" && sha256sum -- * > SHA256SUMS)
+  if [ "$nosums" -eq 0 ]; then (cd "$dl" && sha256sum -- * > SHA256SUMS); fi
   if [ "$stale" -eq 1 ]; then sed -i 's/"notes": "/"notes": "Changed. /' "$dl/latest.json"; fi
   if [ "$badsum" -eq 1 ]; then
     sed -i 's/^[0-9a-f]\{64\}\(  breakpatch_team_engine-\)/0000000000000000000000000000000000000000000000000000000000000000\1/' "$dl/SHA256SUMS"
@@ -284,8 +319,27 @@ make_release url 1.9.0 latest url
 make_release extra 2.0.0 latest extra
 make_release crlf 2.1.0 latest crlf
 make_release stale 2.2.0 latest stale-latest-json
+make_release nosums 2.3.0 latest no-sums
+# Its SHA256SUMS is fetched once only, on the download addresses too (server.log counts it).
+make_release once 2.4.0 latest
 mkdir -p "$srv/empty/releases"
 echo "[]" > "$srv/empty/releases/list.json"
+# $1 API root name, $2 latest.json as it is: a Latest release (v9.0.0) with only that file, for
+# the checks of latest.json on the download addresses (plain_release, Find-PlainRelease).
+make_latest_json() {
+  mkdir -p "$srv/$1/releases" "$srv/$1/download/v9.0.0"
+  printf '{"tag_name": "v9.0.0"}\n' > "$srv/$1/releases/latest"
+  printf '%s\n' "$2" > "$srv/$1/download/v9.0.0/latest.json"
+}
+make_latest_json lj-noversion '{"notes": "Breakpatch 1.1.0", "platforms": {"version": "1.1.0"}}'
+make_latest_json lj-v '{"version": "v1.1.0"}'
+make_latest_json lj-slash '{"version": "1.1.0/../../good/download/v1.1.0"}'
+make_latest_json lj-dotdot '{"version": "1..1"}'
+make_latest_json lj-percent '{"version": "1.1.0%2F"}'
+make_latest_json lj-notjson '<html>Not JSON</html>'
+latest_json_cases="lj-noversion lj-v lj-slash lj-dotdot lj-percent lj-notjson"
+# How many times the test server was asked for this path (its log, a line per request).
+served() { grep -cF "\"GET $1 " "$work/server.log" || true; }
 
 # ---- the private repository, as api.github.com shows it to a token that can read it
 
@@ -857,6 +911,9 @@ for sh_name in "sh" "bash --posix"; do
   run BREAKPATCH_API="$base/empty" BREAKPATCH_CHANNEL=beta
   expect_code 1
   expect_out "There's no Breakpatch release yet."
+  run BREAKPATCH_API="$base/nosums" BREAKPATCH_DOWNLOADS="$base/nosums/download/"
+  expect_code 1
+  expect_out "Breakpatch 2.3.0 has no breakpatch-ci for Linux x86_64."
   run BREAKPATCH_API="https://127.0.0.1:9/nothing"
   expect_code 1
   expect_out "Couldn't reach GitHub to find Breakpatch. Check your connection and try again."
@@ -896,7 +953,10 @@ for sh_name in "sh" "bash --posix"; do
   expect_out "Breakpatch 1.7.0 lists a file that isn't from Breakpatch's releases, so nothing was installed."
   run BREAKPATCH_DOWNLOADS="http://127.0.0.1:$http_port/good/download/"
   expect_code 1
-  expect_out "BREAKPATCH_DOWNLOADS must start with https://."
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
+  run BREAKPATCH_DOWNLOADS="$base/good/download"
+  expect_code 1
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
   run BREAKPATCH_API="http://127.0.0.1:$http_port/good"
   expect_code 1
   expect_out "Couldn't reach GitHub to find Breakpatch."
@@ -940,9 +1000,45 @@ for sh_name in "sh" "bash --posix"; do
   expect_out "Breakpatch 1.9.0's breakpatch-ci files can't be read, so nothing was installed."
   run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="http://127.0.0.1:$http_port/good/download/"
   expect_code 1
-  expect_out "BREAKPATCH_DOWNLOADS must start with https://."
-  expect_version 1.0.0
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
+  # A release without SHA256SUMS: as the API path says it, not "limiting requests".
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/nosums/download/"
+  expect_code 1
+  expect_out "Breakpatch 2.3.0 has no breakpatch-ci for Linux x86_64."
+  expect_no_out "GitHub is limiting requests"
+  # SHA256SUMS once: the copy latest.json was checked with is the one the files are checked with.
+  n=$(served /once/download/v2.4.0/SHA256SUMS)
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/once/download/"
+  expect_code 0
+  expect_out "Updating breakpatch-ci 1.0.0 to 2.4.0…"
+  if [ "$(served /once/download/v2.4.0/SHA256SUMS)" -eq $((n + 1)) ]; then ok "SHA256SUMS was downloaded once"; else bad "SHA256SUMS was downloaded $(( $(served /once/download/v2.4.0/SHA256SUMS) - n )) times"; fi
+  expect_version 2.4.0
   expect_envs 1
+  expect_clean
+
+  # latest.json on the download addresses: a version as release.yml writes it (no v, nothing that
+  # could reach another address), or nothing is fetched with it and nothing installed.
+  new_case api-rate-limited-latest-json
+  for lj in $latest_json_cases; do
+    run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/$lj/download/"
+    expect_code 1
+    expect_out "Couldn't read the release from GitHub. Try again in a few minutes."
+    expect_no_out "download address instead"
+  done
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/empty/download/"     # no latest.json: 404
+  expect_code 1
+  expect_out "There's no Breakpatch release yet. See https://github.com/BreakPatch/breakpatch/releases."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="https://127.0.0.1:9/nothing/download/"
+  expect_code 1
+  expect_out "Couldn't reach GitHub to find Breakpatch. Check your connection and try again."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/good/files/"         # no latest/download/ next to it
+  expect_code 1
+  expect_out "GitHub is limiting requests from this network right now. Try again in a few minutes."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/good/download"
+  expect_code 1
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
+  expect_none
+  if [ ! -e "$home" ]; then ok "no install folder was made"; else bad "made: $(ls -A "$home")"; fi
   expect_clean
 
   new_case chromium-fails

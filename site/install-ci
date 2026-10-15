@@ -63,7 +63,8 @@
 #   BREAKPATCH_CI_HOME   the folder to install into (default ~/.breakpatch-ci)
 #   BREAKPATCH_CI_BIN    the folder for the breakpatch-ci link (default ~/.local/bin)
 #   BREAKPATCH_API       the GitHub API address of the repository (for tests and mirrors)
-#   BREAKPATCH_DOWNLOADS where the release files must come from (for tests and mirrors; https only)
+#   BREAKPATCH_DOWNLOADS where the release files must come from (for tests and mirrors; https only,
+#                        ending in /)
 #   BREAKPATCH_PYTHON_DOWNLOADS, BREAKPATCH_PYTHON_SHA256  where the Python download comes from
 #                        and its SHA-256, together (for tests and mirrors; https only)
 
@@ -75,6 +76,8 @@ RELEASES=https://github.com/BreakPatch/breakpatch/releases
 DOWNLOADS=${BREAKPATCH_DOWNLOADS:-$RELEASES/download/}
 DOCS=https://breakpatch.dev/docs/#from-ci-with-breakpatch-ci
 MARKER=breakpatch-ci.json
+# What messages call this computer (site/install says "this Mac" or "this computer").
+this_machine="this machine"
 
 # Python 3.11 from python-build-standalone, for machines without one: the release, the version,
 # and each build's SHA-256 (from that release's SHA256SUMS, checked against the files).
@@ -342,9 +345,9 @@ setup_token() {
 check_curl() {
   v=$(curl --version 2>/dev/null | sed -n '1s/^curl \([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')
   cmaj=${v% *} cmin=${v#* }
-  case "$cmaj$cmin" in '' | *[!0-9]*) fail "Couldn't tell which curl this machine has." ;; esac
+  case "$cmaj$cmin" in '' | *[!0-9]*) fail "Couldn't tell which curl $this_machine has." ;; esac
   if [ "$cmaj" -lt 7 ] || { [ "$cmaj" -eq 7 ] && [ "$cmin" -lt 83 ]; }; then
-    fail "With BREAKPATCH_GITHUB_TOKEN the installer needs curl 7.83 or later (this machine has $cmaj.$cmin)."
+    fail "With BREAKPATCH_GITHUB_TOKEN the installer needs curl 7.83 or later ($this_machine has $cmaj.$cmin)."
   fi
 }
 
@@ -362,17 +365,25 @@ curl_gh() {
 # ---------------------------------------------------------------- the release
 
 # Fetches a URL to a file; prints the HTTP status ("000" when there was no answer). https only,
-# redirects too.
+# redirects too. 20 seconds to connect; no time limit after that, as the downloads are big.
 fetch() {
-  curl_gh -sSL --proto =https --proto-redir =https -H 'Accept: application/vnd.github+json' \
+  curl_gh -sSL --connect-timeout 20 --proto =https --proto-redir =https -H 'Accept: application/vnd.github+json' \
     -o "$2" -w '%{http_code}' "$1" 2>/dev/null || true
 }
 
 # A release file. octet-stream is what GitHub's asset addresses (…/releases/assets/ID) need to
 # send the file rather than its description; the download addresses ignore it.
 download() {
-  curl_gh -fsSL --proto =https --proto-redir =https -H 'Accept: application/octet-stream' \
+  curl_gh -fsSL --connect-timeout 20 --proto =https --proto-redir =https -H 'Accept: application/octet-stream' \
     -o "$2" "$1" 2>/dev/null
+}
+
+# The release's SHA256SUMS, into $tmp/SHA256SUMS: plain_release has it there already, the same
+# copy it checked latest.json with.
+get_sums() {
+  [ "$plain" -eq 0 ] || return 0
+  download "$sums_url" "$tmp/SHA256SUMS" \
+    || fail "Couldn't download the checksums. Check your connection and run this again."
 }
 
 bad_file() {
@@ -390,7 +401,7 @@ check_asset() {
     case "${2#"$API/releases/assets/"}" in '' | *[!0-9]*) bad_file ;; esac
     return 0
   fi
-  case "$DOWNLOADS" in https://*) ;; *) fail "BREAKPATCH_DOWNLOADS must start with https://." ;; esac
+  case "$DOWNLOADS" in https://*/) ;; *) fail "BREAKPATCH_DOWNLOADS must start with https:// and end with /." ;; esac
   case "$2" in
     "$DOWNLOADS"*) rest=${2#"$DOWNLOADS"} ;;
     *) bad_file ;;
@@ -470,10 +481,14 @@ LIMITED="GitHub is limiting requests from this network right now. Try again in a
 # latest release the one in its latest.json (from RELEASES/latest/download/, the address GitHub
 # sends to the Latest release's file), which must match that version's SHA256SUMS. The release's
 # files are the ones its SHA256SUMS lists, each checked as the API's are (check_asset, then
-# check_sum). With BREAKPATCH_DOWNLOADS, latest is ../latest/download/ next to it.
+# check_sum). With BREAKPATCH_DOWNLOADS, latest is ../latest/download/ next to it. What a release
+# must have for this is in .github/workflows/release.yml's header (the release contract). A file
+# that isn't there gets the API path's message: no latest.json is no release yet, and a release
+# without SHA256SUMS has nothing to install. site/install has the same code: keep them alike
+# (scripts/test-install-ci.sh compares them).
 plain_release() {
   plain=1
-  case "$DOWNLOADS" in https://*) ;; *) fail "BREAKPATCH_DOWNLOADS must start with https://." ;; esac
+  case "$DOWNLOADS" in https://*/) ;; *) fail "BREAKPATCH_DOWNLOADS must start with https:// and end with /." ;; esac
   if [ -n "$wanted" ]; then
     version=$wanted
   else
@@ -481,6 +496,7 @@ plain_release() {
     status=$(fetch "${DOWNLOADS%download/}latest/download/latest.json" "$tmp/latest.json")
     case "$status" in
       200) ;;
+      404) fail "There's no Breakpatch release yet. See $RELEASES." ;;
       000) fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." ;;
       *) fail "$LIMITED" ;;
     esac
@@ -491,14 +507,19 @@ plain_release() {
       *) fail "Couldn't read the release from GitHub. Try again in a few minutes." ;;
     esac
     case "$version" in
-      *[!0-9A-Za-z.-]*) fail "Couldn't read the release from GitHub. Try again in a few minutes." ;;
+      *[!0-9A-Za-z.-]* | *..*) fail "Couldn't read the release from GitHub. Try again in a few minutes." ;;
     esac
   fi
   say "GitHub's API is limiting requests from this network: getting Breakpatch $version from its download address instead."
   status=$(fetch "${DOWNLOADS}v$version/SHA256SUMS" "$tmp/SHA256SUMS")
   case "$status" in
     200) ;;
-    404) if [ -n "$wanted" ]; then fail "There's no Breakpatch $wanted. The versions are at $RELEASES."; fi; fail "$LIMITED" ;;
+    404)
+      if [ -n "$wanted" ]; then fail "There's no Breakpatch $wanted. The versions are at $RELEASES."; fi
+      # The latest release has no SHA256SUMS, so nothing to install: release_files says so, as
+      # it does for the API's release.
+      : >"$tmp/assets.txt"
+      return 0 ;;
     000) fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." ;;
     *) fail "$LIMITED" ;;
   esac
@@ -510,7 +531,7 @@ plain_release() {
   fi
   # "name name" lines: a file's name is its own index here (asset_url).
   { echo "SHA256SUMS SHA256SUMS"
-    LC_ALL=C awk '$1 ~ /^[0-9A-Fa-f]+$/ && length($1) == 64 && NF == 2 { n = $2; sub(/^[*]/, "", n); if (n != "SHA256SUMS") print n " " n }' "$tmp/SHA256SUMS"
+    LC_ALL=C awk '$1 ~ /^[0-9A-Fa-f]+$/ && length($1) == 64 && NF == 2 { n = $2; sub(/^[*]/, "", n); if (n != "SHA256SUMS" && n != "SHA256SUMS.asc") print n " " n }' "$tmp/SHA256SUMS"
   } >"$tmp/assets.txt"
 }
 
@@ -622,8 +643,7 @@ check_sum() {
 # SHA256SUMS (pip checks them against the hashes in the file as well).
 download_files() {
   mkdir "$tmp/files"
-  download "$sums_url" "$tmp/SHA256SUMS" \
-    || fail "Couldn't download the checksums. Check your connection and run this again."
+  get_sums
   download "$reqs_url" "$tmp/files/$reqs" \
     || fail "The download stopped. Check your connection and run this again."
   check_sum "$reqs"

@@ -251,6 +251,19 @@ make_release signedbadsum 1.7.0 latest signed bad-sum
 make_release stale 2.2.0 latest stale-latest-json
 mkdir -p "$srv/empty/releases"
 echo "[]" > "$srv/empty/releases/list.json"
+# $1 API root name, $2 latest.json as it is: a Latest release (v9.0.0) with only that file, for
+# the checks of latest.json on the download addresses (plain_release).
+make_latest_json() {
+  mkdir -p "$srv/$1/releases" "$srv/$1/download/v9.0.0"
+  printf '{"tag_name": "v9.0.0"}\n' > "$srv/$1/releases/latest"
+  printf '%s\n' "$2" > "$srv/$1/download/v9.0.0/latest.json"
+}
+make_latest_json lj-noversion '{"notes": "Breakpatch 1.1.0", "platforms": {"version": "1.1.0"}}'
+make_latest_json lj-v '{"version": "v1.1.0"}'
+make_latest_json lj-slash '{"version": "1.1.0/../../good/download/v1.1.0"}'
+make_latest_json lj-dotdot '{"version": "1..1"}'
+make_latest_json lj-percent '{"version": "1.1.0%2F"}'
+make_latest_json lj-notjson '<html>Not JSON</html>'
 
 # ---- the private repository, as api.github.com shows it to a token that can read it
 
@@ -1121,7 +1134,10 @@ for sh_name in "${shells[@]}"; do
   expect_no_app "$apps"
   run BREAKPATCH_DOWNLOADS="http://127.0.0.1:$http_port/good/download/"
   expect_code 1
-  expect_out "BREAKPATCH_DOWNLOADS must start with https://."
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
+  run BREAKPATCH_DOWNLOADS="$base/good/download"
+  expect_code 1
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
   expect_no_app "$apps"
   expect_clean
 
@@ -1211,10 +1227,37 @@ for sh_name in "${shells[@]}"; do
   run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/stale/download/"
   expect_code 1
   expect_out "Couldn't read the release from GitHub. Try again in a few minutes."
+  # A release without SHA256SUMS: as the API path says it.
   run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/nosums/download/"
   expect_code 1
-  expect_out "GitHub is limiting requests from this network right now."
+  expect_out "Breakpatch 1.3.0 can't be installed with this command. Try an older version"
+  expect_no_out "GitHub is limiting requests"
   expect_version "$apps" 1.0.0
+  expect_clean
+
+  # latest.json on the download addresses: a version as release.yml writes it (no v, nothing that
+  # could reach another address), or nothing is fetched with it and nothing installed.
+  new_case api-rate-limited-latest-json
+  for lj in lj-noversion lj-v lj-slash lj-dotdot lj-percent lj-notjson; do
+    run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/$lj/download/"
+    expect_code 1
+    expect_out "Couldn't read the release from GitHub. Try again in a few minutes."
+    expect_no_out "download address instead"
+  done
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/empty/download/"     # no latest.json: 404
+  expect_code 1
+  expect_out "There's no Breakpatch release yet. See https://github.com/BreakPatch/breakpatch/releases."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="https://127.0.0.1:9/nothing/download/"
+  expect_code 1
+  expect_out "Couldn't reach GitHub to find Breakpatch. Check your connection and try again."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/good/files/"         # no latest/download/ next to it
+  expect_code 1
+  expect_out "GitHub is limiting requests from this network right now. Try again in a few minutes."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/good/download"
+  expect_code 1
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
+  expect_no_app "$apps"
+  expect_no_log "codesign"
   expect_clean
 
   new_case pinned-prerelease
@@ -1317,6 +1360,11 @@ for sh_name in "${shells[@]}"; do
   expect_out "With BREAKPATCH_GITHUB_TOKEN the installer needs curl 7.83 or later (this Mac has 7.79)."
   if [ ! -s "$gh_log" ]; then ok "nothing was sent to GitHub"; else bad "sent: $(tr '\n' ';' < "$gh_log")"; fi
   expect_no_app "$apps"
+  # On Linux it's "this computer" (check_curl is shared with site/install-ci).
+  run_gh FAKE_OS=Linux FAKE_ARCH=x86_64 DISPLAY= WAYLAND_DISPLAY= BREAKPATCH_GITHUB_TOKEN="$token" FAKE_CURL_VERSION=7.79.1
+  expect_code 1
+  expect_out "With BREAKPATCH_GITHUB_TOKEN the installer needs curl 7.83 or later (this computer has 7.79)."
+  expect_no_out "this Mac"
 
   gh_case token-files-from-another-repo
   run_gh BREAKPATCH_GITHUB_TOKEN="$token" BREAKPATCH_API=https://api.github.com/repos/BreakPatch/evil
@@ -1516,9 +1564,14 @@ for sh_name in "${shells[@]}"; do
   script="$work/install-gpg" run_linux BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/badsig/download/"
   expect_code 1
   expect_out "Breakpatch 1.7.0's checksums aren't signed by Breakpatch's release key, so nothing was installed."
+  # A release without SHA256SUMS.asc (the download address answers 404): as the API path says it.
   script="$work/install-gpg" run_linux BREAKPATCH_API="$base/limited"
   expect_code 1
-  expect_out "Couldn't download the checksums' signature."
+  expect_out "Breakpatch 1.1.0's checksums aren't signed (it has no SHA256SUMS.asc), so nothing was installed."
+  expect_no_out "Couldn't download the checksums' signature."
+  run_linux BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/nosums/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.3.0 can't be installed with this command."
   expect_linux_app 1.7.0
   expect_linux_clean
 
