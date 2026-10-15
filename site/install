@@ -189,18 +189,25 @@ curl_gh() {
 
 # ---------------------------------------------------------------- the release
 
-# Fetches a URL to a file; prints the HTTP status ("000" when there was no answer). https only,
-# redirects too. 20 seconds to connect; no time limit after that, as the downloads are big.
+# Fetches a URL to a file; prints the HTTP status. "000" when there was no answer, or when the
+# transfer failed after the status line (cut off, or stalled): that's a connection error too.
+# https only, redirects too. 20 seconds to connect; no time limit after that, as the downloads are
+# big, but a transfer that brings under 1 KB a second for a minute has stalled, and stops.
 fetch() {
-  curl_gh -sSL --connect-timeout 20 --proto =https --proto-redir =https -H 'Accept: application/vnd.github+json' \
-    -o "$2" -w '%{http_code}' "$1" 2>/dev/null || true
+  if fetched=$(curl_gh -sSL --connect-timeout 20 --speed-limit 1024 --speed-time 60 --proto =https --proto-redir =https \
+    -H 'Accept: application/vnd.github+json' -o "$2" -w '%{http_code}' "$1" 2>/dev/null); then
+    echo "$fetched"
+  else
+    echo 000
+  fi
 }
 
 # A release file. octet-stream is what GitHub's asset addresses (…/releases/assets/ID) need to
-# send the file rather than its description; the download addresses ignore it.
+# send the file rather than its description; the download addresses ignore it. A stalled transfer
+# stops, as in fetch.
 download() {
-  curl_gh -fsSL --connect-timeout 20 --proto =https --proto-redir =https -H 'Accept: application/octet-stream' \
-    -o "$2" "$1" 2>/dev/null
+  curl_gh -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 60 --proto =https --proto-redir =https \
+    -H 'Accept: application/octet-stream' -o "$2" "$1" 2>/dev/null
 }
 
 # The release's SHA256SUMS, into $tmp/SHA256SUMS: plain_release has it there already, the same
@@ -668,7 +675,7 @@ do_uninstall() {
 # breakpatch:// links and .bpworkspace files. No sudo. When Breakpatch was installed from its .deb
 # package, the package manager owns it, so this stops and says so.
 #
-# Who published it: with gpg on this computer, the release's SHA256SUMS must carry a valid
+# Who published it: with gpg on this PC, the release's SHA256SUMS must carry a valid
 # signature (SHA256SUMS.asc, release.yml's sign-sums job) by Breakpatch's release key, whose
 # fingerprint and public key are built into this script (GPG_FINGERPRINT, GPG_PUBLIC_KEY). Then the
 # download must match SHA256SUMS, and with minisign installed, Breakpatch's update key. Only after
@@ -712,7 +719,7 @@ check_linux() {
   need="Breakpatch for Linux needs a 64-bit Intel or AMD processor (x86_64) and glibc $GLIBC_MIN or later: Ubuntu 22.04, Debian 12, Fedora 36 or later."
   case "$(uname -m)" in
     x86_64 | amd64) ;;
-    *) fail "$need This computer has $(uname -m)." ;;
+    *) fail "$need This PC has $(uname -m)." ;;
   esac
   glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{ print $2 }')
   case "$glibc" in
@@ -723,7 +730,7 @@ check_linux() {
   gmin=${gmin%%.*}
   wmaj=${GLIBC_MIN%%.*} wmin=${GLIBC_MIN#*.}
   if [ "$gmaj" -lt "$wmaj" ] || { [ "$gmaj" -eq "$wmaj" ] && [ "$gmin" -lt "$wmin" ]; }; then
-    fail "$need This computer has glibc $glibc."
+    fail "$need This PC has glibc $glibc."
   fi
 }
 

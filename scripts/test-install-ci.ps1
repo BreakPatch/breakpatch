@@ -41,10 +41,15 @@
 #   7. Another user folder with no Python on PATH and BREAKPATCH_CI_BIN elsewhere: Python 3.11
 #      is downloaded (its SHA-256, Windows' tar), the .cmd names the install folder in the OEM
 #      code page and runs in a new console, which starts in it (from this test's own console,
-#      when that has another code page, only a warning); then the uninstall removes it all,
-#      the PATH entry the installer added included.
+#      when that has another code page, only a warning). An install again with the default bin
+#      adds a second line to path-added.txt. The uninstall with BREAKPATCH_CI_BIN takes out that
+#      folder's PATH entry and line only; the one without, the rest: the install folder goes,
+#      downloaded Python and all, and both PATH entries.
 #   8. BREAKPATCH_CI_BIN a folder that was on the user's PATH before the install: the installer
 #      notes nothing (no path-added.txt), and the uninstall leaves the entry where it was.
+#   9. The default bin on the user's PATH with no path-added.txt, as an install from before
+#      path-added.txt left it: the install notes it, and with the note gone again the uninstall
+#      still takes the entry out (only this installer makes that folder).
 #
 # Each failure is a "FAIL" line in the log and, in GitHub Actions, an annotation
 # (::error title=test-install-ci.ps1::...) saying which step failed with the key lines of what
@@ -259,18 +264,19 @@ function Test-UserPath([string] $dir, [int] $want, [string] $label) {
 
 # ---------------------------------------------------------------- checks of an install
 
-# path-added.txt in the install folder names the bin folder the installer added to the user's
-# PATH (so the uninstall takes that entry out, and no other); with no $bin, there's none.
-function Test-PathNote([string] $ciHome, [string] $bin = '') {
+# path-added.txt in the install folder has a line for each bin folder the installer added to the
+# user's PATH (so the uninstall takes those entries out, and no other): these, in this order.
+# With none, there's no path-added.txt.
+function Test-PathNote([string] $ciHome, [string[]] $bins = @()) {
   $note = Join-Path $ciHome 'path-added.txt'
   $has = Test-Path -LiteralPath $note
-  if (-not $bin) {
+  if ($bins.Count -eq 0) {
     if (-not $has) { Ok 'no path-added.txt: the installer added nothing to PATH' } else { Bad "there's a path-added.txt: $([IO.File]::ReadAllText($note, [Text.Encoding]::UTF8))" }
     return
   }
-  $named = if ($has) { [IO.File]::ReadAllText($note, [Text.Encoding]::UTF8).Trim() } else { '' }
-  if ($named -eq $bin) { Ok 'path-added.txt names the bin folder the installer added to PATH' }
-  else { Bad "path-added.txt names '$named', expected $bin" }
+  $named = @(if ($has) { [IO.File]::ReadAllLines($note, [Text.Encoding]::UTF8) | Where-Object { $_.Trim() } })
+  if (($named -join '|') -eq ($bins -join '|')) { Ok "path-added.txt names the folder(s) the installer added to PATH: $($bins -join ', ')" }
+  else { Bad "path-added.txt names '$($named -join ' | ')', expected $($bins -join ' | ')" }
 }
 
 function Get-EnvDir([string] $ciHome) {
@@ -440,7 +446,7 @@ try {
     if ($c.Out.Contains('bp-test-after')) { Ok 'a batch file goes on after breakpatch-ci' }
     else { Warn 'a batch file that runs breakpatch-ci (without call) stops there: breakpatch-ci is a .cmd' (Get-RunSummary $c) }
     Test-UserPath $bin1 1 'bin'
-    Test-PathNote $home1 $bin1
+    Test-PathNote $home1 @($bin1)
   }
 
   # Cases 2 to 6 build on the first install.
@@ -572,13 +578,26 @@ try {
       else { Bad "the .cmd doesn't name the install folder in code page $oemCp" $text }
     } catch { Bad "the .cmd isn't in code page $oemCp" }
     Test-UserPath $bin2 1 'the other bin'
-    Test-PathNote $home2 $bin2
+    Test-PathNote $home2 @($bin2)
+    # Again with the default bin: its entry is a second line in the note, not instead of the first.
+    $defaultBin2 = Join-Path $home2 'bin'
+    $r = Invoke-Installer @{ LOCALAPPDATA = $local2; Path = $bare }
+    if (Test-Run $r @("Reinstalling breakpatch-ci $Version...", 'to your PATH. Open a new terminal')) {
+      Test-PathNote $home2 @($bin2, $defaultBin2)
+      Test-UserPath $defaultBin2 1 'the default bin'
+    }
     $r = Invoke-Installer @{ LOCALAPPDATA = $local2; BREAKPATCH_CI_BIN = $bin2; BREAKPATCH_UNINSTALL = '1' }
-    if (Test-Run $r @('Removed breakpatch-ci and its browser from', 'off your PATH.')) {
+    if (Test-Run $r @('Removed breakpatch-ci and its browser from', 'ci tools off your PATH.')) {
       if (-not (Test-Path -LiteralPath $shim2)) { Ok 'the .cmd is gone' } else { Bad 'the .cmd is still there' }
+      Test-UserPath $bin2 0 'the other bin'
+      Test-UserPath $defaultBin2 1 'the default bin, until its own uninstall'
+      Test-PathNote $home2 @($defaultBin2)
+    }
+    $r = Invoke-Installer @{ LOCALAPPDATA = $local2; BREAKPATCH_UNINSTALL = '1' }
+    if (Test-Run $r @('off your PATH.')) {
       if (-not (Test-Path -LiteralPath $home2)) { Ok 'the install folder is gone, downloaded Python, path-added.txt and all' }
       else { Bad "left: $(@(Get-ChildItem -LiteralPath $home2 -Recurse -Force | Select-Object -First 10 | ForEach-Object { $_.FullName.Substring($home2.Length) }) -join ', ')" }
-      Test-UserPath $bin2 0 'the other bin'
+      Test-UserPath $defaultBin2 0 'the default bin'
     }
   }
 
@@ -606,6 +625,29 @@ try {
       if (-not $r.Out.Contains('off your PATH')) { Ok "it doesn't say it took the folder off PATH" } else { Bad 'it says it took the folder off PATH' (Get-RunSummary $r) }
       if (-not (Test-Path -LiteralPath (Join-Path $bin3 'breakpatch-ci.cmd'))) { Ok 'the .cmd is gone' } else { Bad 'the .cmd is still there' }
       Test-UserPath $bin3 1 'the bin folder of the user''s, after the uninstall'
+    }
+  }
+
+  # ------------------------------------------------------------ 9. default bin, no note
+
+  Enter-Step '9. the default bin on the user''s PATH with no path-added.txt: the uninstall takes it out'
+  $user4 = Join-Path $root 'Users\Old Install'
+  $local4 = Join-Path $user4 'AppData\Local'
+  $home4 = Join-Path $local4 'breakpatch-ci'
+  $bin4 = Join-Path $home4 'bin'
+  New-Item -ItemType Directory -Force -Path $local4 | Out-Null
+  # As an install before path-added.txt left it: the entry in the registry, and no note.
+  $u = Get-UserPath
+  Write-UserPath ([pscustomobject]@{ Value = "$($u.Value.TrimEnd(';'));$bin4"; Kind = $u.Kind })
+  $r = Invoke-Installer @{ LOCALAPPDATA = $local4 }
+  if (Test-Run $r @("breakpatch-ci $Version is in", 'is on your PATH. Open a new terminal')) {
+    Test-UserPath $bin4 1 'the default bin'
+    Test-PathNote $home4 @($bin4)
+    Remove-Item -LiteralPath (Join-Path $home4 'path-added.txt') -Force -ErrorAction SilentlyContinue
+    $r = Invoke-Installer @{ LOCALAPPDATA = $local4; BREAKPATCH_UNINSTALL = '1' }
+    if (Test-Run $r @('Removed breakpatch-ci and its browser from', 'off your PATH.')) {
+      Test-UserPath $bin4 0 'the default bin'
+      if (-not (Test-Path -LiteralPath $home4)) { Ok 'the install folder is gone' } else { Bad "left in the install folder: $(@(Get-ChildItem -LiteralPath $home4 -Force | ForEach-Object { $_.Name }) -join ', ')" }
     }
   }
 } catch {

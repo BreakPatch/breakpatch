@@ -1612,10 +1612,10 @@ for sh_name in "${shells[@]}"; do
   new_case linux-needs-x86_64-and-glibc
   run_linux FAKE_ARCH=aarch64
   expect_code 1
-  expect_out "Breakpatch for Linux needs a 64-bit Intel or AMD processor (x86_64) and glibc 2.35 or later: Ubuntu 22.04, Debian 12, Fedora 36 or later. This computer has aarch64."
+  expect_out "Breakpatch for Linux needs a 64-bit Intel or AMD processor (x86_64) and glibc 2.35 or later: Ubuntu 22.04, Debian 12, Fedora 36 or later. This PC has aarch64."
   run_linux FAKE_GLIBC=2.31
   expect_code 1
-  expect_out "This computer has glibc 2.31."
+  expect_out "This PC has glibc 2.31."
   run_linux FAKE_GLIBC=2.35
   expect_code 0
   run_linux FAKE_GLIBC=none

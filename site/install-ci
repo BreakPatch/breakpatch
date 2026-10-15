@@ -280,8 +280,9 @@ fetch_python() {
   done
   file="cpython-$PBS_VERSION+$PBS_RELEASE-$triple-install_only_stripped.tar.gz"
   say "This machine has no Python 3.11 that breakpatch-ci can use: downloading Python $PBS_VERSION (python-build-standalone $PBS_RELEASE)…"
-  # The + is written %2B in the address, as GitHub names the file.
-  curl -fsSL --proto =https --proto-redir =https -o "$tmp/$file" "$base$PBS_RELEASE/cpython-$PBS_VERSION%2B$PBS_RELEASE-$triple-install_only_stripped.tar.gz" 2>/dev/null \
+  # The + is written %2B in the address, as GitHub names the file. A stalled transfer stops, as in
+  # download.
+  curl -fsSL --speed-limit 1024 --speed-time 60 --proto =https --proto-redir =https -o "$tmp/$file" "$base$PBS_RELEASE/cpython-$PBS_VERSION%2B$PBS_RELEASE-$triple-install_only_stripped.tar.gz" 2>/dev/null \
     || fail "Couldn't download Python 3.11. Check your connection and run this again, or install Python 3.11 and set BREAKPATCH_PYTHON."
   [ "$(sha256_of "$tmp/$file")" = "$expected" ] \
     || fail "The download of Python 3.11 doesn't match its checksum, so nothing was installed. Run this again. If it keeps happening, tell us: https://github.com/BreakPatch/breakpatch/issues"
@@ -364,18 +365,25 @@ curl_gh() {
 
 # ---------------------------------------------------------------- the release
 
-# Fetches a URL to a file; prints the HTTP status ("000" when there was no answer). https only,
-# redirects too. 20 seconds to connect; no time limit after that, as the downloads are big.
+# Fetches a URL to a file; prints the HTTP status. "000" when there was no answer, or when the
+# transfer failed after the status line (cut off, or stalled): that's a connection error too.
+# https only, redirects too. 20 seconds to connect; no time limit after that, as the downloads are
+# big, but a transfer that brings under 1 KB a second for a minute has stalled, and stops.
 fetch() {
-  curl_gh -sSL --connect-timeout 20 --proto =https --proto-redir =https -H 'Accept: application/vnd.github+json' \
-    -o "$2" -w '%{http_code}' "$1" 2>/dev/null || true
+  if fetched=$(curl_gh -sSL --connect-timeout 20 --speed-limit 1024 --speed-time 60 --proto =https --proto-redir =https \
+    -H 'Accept: application/vnd.github+json' -o "$2" -w '%{http_code}' "$1" 2>/dev/null); then
+    echo "$fetched"
+  else
+    echo 000
+  fi
 }
 
 # A release file. octet-stream is what GitHub's asset addresses (…/releases/assets/ID) need to
-# send the file rather than its description; the download addresses ignore it.
+# send the file rather than its description; the download addresses ignore it. A stalled transfer
+# stops, as in fetch.
 download() {
-  curl_gh -fsSL --connect-timeout 20 --proto =https --proto-redir =https -H 'Accept: application/octet-stream' \
-    -o "$2" "$1" 2>/dev/null
+  curl_gh -fsSL --connect-timeout 20 --speed-limit 1024 --speed-time 60 --proto =https --proto-redir =https \
+    -H 'Accept: application/octet-stream' -o "$2" "$1" 2>/dev/null
 }
 
 # The release's SHA256SUMS, into $tmp/SHA256SUMS: plain_release has it there already, the same

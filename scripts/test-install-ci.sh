@@ -421,6 +421,16 @@ class Static(http.server.SimpleHTTPRequestHandler):
         # (limited) or 429 (ratelimited) for everything about releases.
         m = re.fullmatch(r"/(limited|ratelimited)/releases(/.*)?", path)
         if m: return self.answer(403 if m[1] == "limited" else 429, b'{"message":"API rate limit exceeded for 127.0.0.1."}')
+        # An answer cut off part-way: a 200 whose body stops short of its Content-Length, then the
+        # connection closes.
+        if re.fullmatch(r"/cutoff/releases(/.*)?", path):
+            self.send_response(200)
+            self.send_header("Content-Length", "100000")
+            self.end_headers()
+            self.wfile.write(b'{"tag_name": "v1.1.0", "assets": [')
+            self.wfile.flush()
+            self.close_connection = True
+            return
         # <api>/latest/download/<file>: a redirect to the file in the release <api>/releases/latest
         # names, as github.com/<repo>/releases/latest/download/<file> does.
         m = re.fullmatch(r"/([A-Za-z0-9_-]+)/latest/download/([^/]+)", path)
@@ -915,6 +925,10 @@ for sh_name in "sh" "bash --posix"; do
   expect_code 1
   expect_out "Breakpatch 2.3.0 has no breakpatch-ci for Linux x86_64."
   run BREAKPATCH_API="https://127.0.0.1:9/nothing"
+  expect_code 1
+  expect_out "Couldn't reach GitHub to find Breakpatch. Check your connection and try again."
+  # A 200 cut off part-way is a connection error too, not a release that can't be read.
+  run BREAKPATCH_API="$base/cutoff"
   expect_code 1
   expect_out "Couldn't reach GitHub to find Breakpatch. Check your connection and try again."
   expect_none
@@ -1417,6 +1431,9 @@ else
   ps_run BREAKPATCH_API="http://127.0.0.1:$http_port/good"
   expect_code 1
   expect_out "Couldn't reach GitHub to find Breakpatch."
+  ps_run BREAKPATCH_API="$base/cutoff"
+  expect_code 1
+  expect_out "Couldn't reach GitHub to find Breakpatch. Check your connection and try again."
   ps_run BREAKPATCH_GITHUB_TOKEN="$token"
   expect_code 1
   expect_out "BREAKPATCH_GITHUB_TOKEN is only ever sent to https://api.github.com/, and BREAKPATCH_API isn't there."
@@ -1532,14 +1549,22 @@ else
   ps_case windows-uninstall-and-iex
   ps_run
   expect_code 0
-  # The note of a PATH entry the installer added (only on Windows, which has a registry) goes too.
-  printf '%s' "$bin" > "$home/path-added.txt"
+  # The note of the PATH entries the installer added (only on Windows, which has a registry): a
+  # line a folder. The uninstall takes out this bin's line only, and the note once it's empty.
+  # No registry here, so no PATH entry to take out, and it doesn't say it did.
+  printf '%s\r\n%s\r\n' "$c/other bin" "$bin" > "$home/path-added.txt"
   ps_run BREAKPATCH_UNINSTALL=1
   expect_code 0
   expect_out "Removed breakpatch-ci and its browser from"
   expect_out "This machine's licence may still be taken. Free it in the back office"
+  expect_no_out "off your PATH"
   if ! grep -q "licence" "$c/state/breakpatch-ci" 2>/dev/null; then ok "no licence release without the key"; else bad "licence release ran without a key"; fi
-  if [ ! -e "$home" ]; then ok "the install folder is gone"; else bad "something is left: $(ls -A "$home")"; fi
+  if [ "$(tr -d '\r' < "$home/path-added.txt" 2>/dev/null)" = "$c/other bin" ]; then ok "path-added.txt has only the other folder's line left"; else bad "path-added.txt: $(cat "$home/path-added.txt" 2>&1)"; fi
+  if [ "$(ls -A "$home")" = path-added.txt ]; then ok "the install folder has only path-added.txt left"; else bad "left: $(ls -A "$home")"; fi
+  ps_run BREAKPATCH_UNINSTALL=1 BREAKPATCH_CI_BIN="$c/other bin"
+  expect_code 0
+  expect_out "Nothing to remove."
+  if [ ! -e "$home" ]; then ok "the last line goes, then path-added.txt and the install folder"; else bad "something is left: $(ls -A "$home")"; fi
   ps_run BREAKPATCH_UNINSTALL=1
   expect_out "Nothing to remove."
   # With BREAKPATCH_LICENCE_KEY, the licence goes back first, as site/install-ci does it.

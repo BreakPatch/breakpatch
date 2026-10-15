@@ -27,9 +27,11 @@
 #   6. Switches to the new environment only once all of that worked (the one before stays until
 #      then): bin\breakpatch-ci.cmd (BREAKPATCH_CI_BIN) starts it. When the bin folder isn't on
 #      PATH yet, in GitHub Actions it goes to GITHUB_PATH for the next steps, anywhere else to
-#      this user's PATH; path-added.txt in the install folder notes an entry this installer added.
+#      this user's PATH; path-added.txt in the install folder has a line for each entry this
+#      installer added.
 # The uninstall (BREAKPATCH_UNINSTALL=1, or -Uninstall) removes only what the installer made, and
-# takes the bin folder off the user's PATH only when path-added.txt says it put it there. With
+# takes the bin folder off the user's PATH only when path-added.txt says it put it there, or it's
+# the default bin in the install folder, which only this installer makes. With
 # BREAKPATCH_LICENCE_KEY set, it first gives this machine's licence back (breakpatch-ci licence
 # release), as site/install-ci does.
 # No administrator rights; nothing outside those folders and this user's PATH is changed.
@@ -129,21 +131,58 @@ function Install-BreakpatchCi {
   }
 
   # Takes a folder out of this user's PATH again, read and written as in Add-UserPath. Only called
-  # for an entry this installer added (path-added.txt), once the folder is gone or empty, so an
-  # entry the user had before, or for a folder with the user's own things, stays.
+  # for an entry this installer added (path-added.txt, or the default bin), once the folder is
+  # gone or empty, so an entry the user had before, or for a folder with the user's own things,
+  # stays. $true when it took the entry out, $false when it wasn't there (or there's no registry).
   function Remove-UserPath([string] $dir) {
-    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return $false }
     $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
     try {
       $userPath = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
       $keep = @($userPath -split ';' | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ne $dir.TrimEnd('\') })
       $new = $keep -join ';'
-      if ($new -eq $userPath) { return }
+      if ($new -eq $userPath) { return $false }
       $key.SetValue('Path', $new, [Microsoft.Win32.RegistryValueKind]::ExpandString)
     } finally {
       $key.Dispose()
     }
     [Environment]::SetEnvironmentVariable('BREAKPATCH_CI_PATH_CHANGED', [NullString]::Value, 'User')
+    return $true
+  }
+
+  # Whether this user's PATH, as written in the registry, has the folder. $false without a registry.
+  function Test-OnUserPath([string] $dir) {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return $false }
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment')
+    if (-not $key) { return $false }
+    try {
+      $userPath = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    } finally {
+      $key.Dispose()
+    }
+    return (@($userPath -split ';' | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') }) -contains $dir.TrimEnd('\'))
+  }
+
+  # path-added.txt: a line for each bin folder this installer added to the user's PATH (UTF-8, no
+  # BOM). Add-PathNote adds one once; Remove-PathNote takes one out, and the file goes when it's
+  # left empty. Folders compare as Windows does: without a trailing \, case aside.
+  function Get-PathNote {
+    if (-not (Test-Path -LiteralPath $pathMarker -PathType Leaf)) { return @() }
+    return @([IO.File]::ReadAllLines((Get-FullPath $pathMarker), [Text.Encoding]::UTF8) | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+  }
+  function Add-PathNote([string] $dir) {
+    $lines = @(Get-PathNote)
+    if (@($lines | ForEach-Object { $_.TrimEnd('\') }) -contains $dir.TrimEnd('\')) { return }
+    $text = (@($lines + $dir) -join "`r`n") + "`r`n"
+    [IO.File]::WriteAllText((Get-FullPath $pathMarker), $text, (New-Object Text.UTF8Encoding($false)))
+  }
+  function Remove-PathNote([string] $dir) {
+    $lines = @(Get-PathNote | Where-Object { $_.TrimEnd('\') -ne $dir.TrimEnd('\') })
+    if ($lines.Count -eq 0) {
+      if (Test-Path -LiteralPath $pathMarker) { Remove-Item -LiteralPath $pathMarker -Force }
+      return
+    }
+    [IO.File]::WriteAllText((Get-FullPath $pathMarker), (($lines -join "`r`n") + "`r`n"), (New-Object Text.UTF8Encoding($false)))
   }
 
   # ------------------------------------------------------------ checks
@@ -219,15 +258,43 @@ function Install-BreakpatchCi {
   $client.Timeout = [TimeSpan]::FromMinutes(10)
   $client.DefaultRequestHeaders.UserAgent.ParseAdd('breakpatch-install-ci')
 
+  # The body into a stream. A transfer that stalls stops, as curl's --speed-limit 1024
+  # --speed-time 60 does in site/install-ci: under 60 KB in a minute, or a minute with nothing at
+  # all. With ResponseHeadersRead, HttpClient's Timeout covers only the wait for the headers.
+  function Copy-Body($resp, [IO.Stream] $to) {
+    $from = $resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+    try {
+      $buf = New-Object byte[] 65536
+      $clock = [Diagnostics.Stopwatch]::StartNew()
+      $got = 0
+      while ($true) {
+        $read = $from.ReadAsync($buf, 0, $buf.Length)
+        if (-not $read.Wait(60000)) { throw 'The download stalled.' }
+        $n = $read.Result
+        if ($n -le 0) { return }
+        $to.Write($buf, 0, $n)
+        $got += $n
+        if ($clock.Elapsed.TotalSeconds -ge 60) {
+          if ($got -lt 61440) { throw 'The download stalled.' }
+          $clock.Restart()
+          $got = 0
+        }
+      }
+    } finally {
+      $from.Dispose()
+    }
+  }
+
   # Get-Url URL [OutFile] [Accept]: the body (as text, or into OutFile). Returns the HTTP status;
-  # 0 when there was no answer. The token goes to api.github.com only, never after a redirect.
+  # 0 when there was no answer, or the body was cut off or stalled. The token goes to
+  # api.github.com only, never after a redirect.
   function Get-Url([string] $url, [string] $outFile, [string] $accept = 'application/vnd.github+json') {
     $first = $true
     for ($hop = 0; $hop -lt 6; $hop++) {
-      if (-not $url.StartsWith('https://')) { return 0 }
+      if (-not $url.StartsWith('https://', [StringComparison]::Ordinal)) { return 0 }
       $req = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, $url)
       $req.Headers.Accept.ParseAdd($accept)
-      if ($first -and $token -and $url.StartsWith($GitHubApi)) {
+      if ($first -and $token -and $url.StartsWith($GitHubApi, [StringComparison]::Ordinal)) {
         $req.Headers.Authorization = New-Object System.Net.Http.Headers.AuthenticationHeaderValue('Bearer', $token)
       }
       try { $resp = $client.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult() }
@@ -239,15 +306,22 @@ function Install-BreakpatchCi {
         $resp.Dispose()
         continue
       }
-      if ($code -eq 200) {
-        if ($outFile) {
-          $fs = [IO.File]::Create($outFile)
-          try { [void]$resp.Content.CopyToAsync($fs).GetAwaiter().GetResult() } finally { $fs.Dispose() }
-        } else {
-          $script:body = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+      try {
+        if ($code -eq 200) {
+          if ($outFile) {
+            $fs = [IO.File]::Create($outFile)
+            try { Copy-Body $resp $fs } finally { $fs.Dispose() }
+          } else {
+            $ms = New-Object IO.MemoryStream
+            Copy-Body $resp $ms
+            $script:body = [Text.Encoding]::UTF8.GetString($ms.ToArray())
+          }
         }
+      } catch {
+        return 0
+      } finally {
+        $resp.Dispose()
       }
-      $resp.Dispose()
       return $code
     }
     return 0
@@ -270,7 +344,7 @@ function Install-BreakpatchCi {
     if (-not $url.StartsWith($Downloads, [StringComparison]::Ordinal)) { Fail $bad }
     $rest = $url.Substring($Downloads.Length)
     if ($rest -cnotmatch '\A[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\z' -or $rest.Contains('..')) { Fail $bad }
-    if ($url.Split('/')[-1] -ne $name) { Fail $bad }
+    if ($url.Split('/')[-1] -cne $name) { Fail $bad }
   }
 
   # When GitHub's API turns away requests without a token (403 or 429: 60 an hour per address, and
@@ -311,13 +385,15 @@ function Install-BreakpatchCi {
     if ($s -eq 404 -and $wanted) { Fail "There's no Breakpatch $wanted. The versions are at $Releases." }
     if ($s -eq 404) {
       # The latest release has no SHA256SUMS, so nothing to install: Assert-Release says so.
-      $script:assets = @{}
+      $script:assets = [System.Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
       return
     }
     if ($s -eq 0) { Fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." }
     if ($s -ne 200) { Fail $limitedMessage }
-    $script:assets = @{ 'SHA256SUMS' = "${base}SHA256SUMS" }
-    $listed = @{}
+    # Ordinal: a file's name is its name, case and all, as in site/install-ci.
+    $script:assets = [System.Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+    $script:assets['SHA256SUMS'] = "${base}SHA256SUMS"
+    $listed = [System.Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
     foreach ($line in (Get-Content -LiteralPath $sumsFile)) {
       $f = ([string]$line).Trim() -split '\s+', 2
       if ($f.Count -ne 2 -or $f[0] -cnotmatch '\A[0-9A-Fa-f]{64}\z') { continue }
@@ -376,7 +452,7 @@ function Install-BreakpatchCi {
     if ($tag -cnotmatch '\Av[0-9][0-9A-Za-z.-]*\z') { Fail "Couldn't read the release from GitHub. Try again in a few minutes." }
     $script:version = $tag.Substring(1)
     if ($wanted -and $script:version -cne $wanted) { Fail "GitHub answered with Breakpatch $($script:version), not $wanted. Try again in a few minutes." }
-    $script:assets = @{}
+    $script:assets = [System.Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
     foreach ($a in @($doc.assets)) {
       $script:assets[[string]$a.name] = if ($token) { [string]$a.url } else { [string]$a.browser_download_url }
     }
@@ -483,7 +559,7 @@ function Install-BreakpatchCi {
   $shim = Join-Path $bin 'breakpatch-ci.cmd'
   $current = Join-Path $ciHome 'current.txt'     # the environment in use: no symbolic links without admin rights
   $binIsDefault = $bin.TrimEnd('\', '/') -eq (Join-Path $ciHome 'bin').TrimEnd('\', '/')
-  # The bin folder this installer added to the user's PATH, if it did (Add-UserPath).
+  # The bin folders this installer added to the user's PATH, a line each (Add-PathNote).
   $pathMarker = Join-Path $ciHome 'path-added.txt'
 
   if (($Arguments -contains '-Uninstall') -or ($Arguments -contains '--uninstall') -or $env:BREAKPATCH_UNINSTALL -eq '1') {
@@ -524,21 +600,23 @@ function Install-BreakpatchCi {
         $removed = $true
       }
       if ($removed -and (Test-Path -LiteralPath "$shim.new")) { Remove-Item -LiteralPath "$shim.new" -Force }
-      # The PATH entry goes only when this installer added it (path-added.txt names this bin
-      # folder), and only once the folder is gone or has nothing else in it. Before "Nothing to
-      # remove": an entry left by an uninstall cut short still goes. The note goes either way.
+      # The PATH entry goes only when this installer added it, and only once the folder is gone or
+      # has nothing else in it. The installer's: a folder path-added.txt names, and the default
+      # bin, which only this installer makes (an install from before path-added.txt didn't note
+      # it). Before "Nothing to remove": an entry left by an uninstall cut short still goes. This
+      # bin's line in the note goes either way, and the note once it has no other.
+      $noted = @(Get-PathNote | ForEach-Object { $_.TrimEnd('\') }) -contains $bin.TrimEnd('\')
+      $binGone = -not (Test-Path -LiteralPath $bin -PathType Container) -or -not (Get-ChildItem -LiteralPath $bin -Force)
       $unpathed = $false
-      if (Test-Path -LiteralPath $pathMarker -PathType Leaf) {
-        $added = ([IO.File]::ReadAllText((Get-FullPath $pathMarker), [Text.Encoding]::UTF8)).Trim()
-        $binGone = -not (Test-Path -LiteralPath $bin -PathType Container) -or -not (Get-ChildItem -LiteralPath $bin -Force)
-        if ($added -and $added.TrimEnd('\') -eq $bin.TrimEnd('\') -and $binGone) { Remove-UserPath $bin; $unpathed = $true }
-        Remove-Item -LiteralPath $pathMarker -Force
+      if (($noted -or $binIsDefault) -and $binGone) { $unpathed = Remove-UserPath $bin }
+      if ($noted) { Remove-PathNote $bin }
+      if ($removed -or $unpathed -or $noted) {
+        $made = if ($binIsDefault) { @($bin, $ciHome) } else { @($ciHome) }
+        foreach ($d in $made) {
+          if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d -Force }
+        }
       }
       if (-not $removed -and -not $unpathed) { Say "breakpatch-ci isn't in $(Pretty $ciHome). Nothing to remove."; return }
-      $made = if ($binIsDefault) { @($bin, $ciHome) } else { @($ciHome) }
-      foreach ($d in $made) {
-        if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d -Force }
-      }
       if ($unpathed) { Say "Took $(Pretty $bin) off your PATH." }
       if (-not $removed) { return }
       Say "Removed breakpatch-ci and its browser from $(Pretty $ciHome)."
@@ -603,7 +681,7 @@ function Install-BreakpatchCi {
     if ($token) {
       # What an Authorization header can carry (RFC 6750's token68), and nothing that could end it.
       if ($token -cnotmatch '\A[A-Za-z0-9._~+/-]+=*\z') { Fail "BREAKPATCH_GITHUB_TOKEN doesn't look like a GitHub token." }
-      if (-not $Api.StartsWith($GitHubApi)) { Fail "BREAKPATCH_GITHUB_TOKEN is only ever sent to $GitHubApi, and BREAKPATCH_API isn't there. Unset one of them." }
+      if (-not $Api.StartsWith($GitHubApi, [StringComparison]::Ordinal)) { Fail "BREAKPATCH_GITHUB_TOKEN is only ever sent to $GitHubApi, and BREAKPATCH_API isn't there. Unset one of them." }
       Say 'Using BREAKPATCH_GITHUB_TOKEN (private beta).'
     }
     Find-Release
@@ -699,11 +777,14 @@ function Install-BreakpatchCi {
       Say "Added $(Pretty $bin) to GITHUB_PATH: the next steps of this job can run breakpatch-ci."
     } elseif (Add-UserPath $bin) {
       # Noted, so the uninstall takes out only an entry this installer put there.
-      [IO.File]::WriteAllText((Get-FullPath $pathMarker), $bin, (New-Object Text.UTF8Encoding($false)))
+      Add-PathNote $bin
       Say "Added $(Pretty $bin) to your PATH. Open a new terminal, then run: breakpatch-ci run --test path\to\test.json"
     } else {
       Say "$(Pretty $bin) is on your PATH. Open a new terminal, then run: breakpatch-ci run --test path\to\test.json"
     }
+    # The default bin on the user's PATH is this installer's entry (only it makes that folder),
+    # also from an install before path-added.txt: noted now.
+    if ($binIsDefault -and (Test-OnUserPath $bin)) { Add-PathNote $bin }
     Say "How to use it: $Docs"
   } finally {
     if ($staged -and (Test-Path -LiteralPath $staged)) { Remove-Item -LiteralPath $staged -Recurse -Force -ErrorAction SilentlyContinue }
