@@ -268,7 +268,7 @@ function Get-CurrentEnv([string] $ciHome) {
 function Test-Installed([string] $ciHome, [string] $shim) {
   $envName = Get-CurrentEnv $ciHome
   if ($envName -match '^env-') { Ok "current.txt names $envName" } else { Bad "current.txt names '$envName'" }
-  $n = (Get-EnvDir $ciHome).Count
+  $n = @(Get-EnvDir $ciHome).Count
   if ($n -eq 1) { Ok 'one environment in the install folder' } else { Bad "$n environments in the install folder, expected 1" }
   $browsers = Join-Path $ciHome 'browsers'
   if ((Test-Path -LiteralPath $browsers) -and @(Get-ChildItem -LiteralPath $browsers -Directory -Filter 'chromium*').Count -gt 0) { Ok 'Chromium is in the install folder''s browsers' }
