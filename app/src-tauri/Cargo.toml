@@ -1,6 +1,6 @@
 [package]
 name = "breakpatch"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 description = "Breakpatch desktop app"
 authors = ["Breakpatch contributors"]
 license = "Apache-2.0"
