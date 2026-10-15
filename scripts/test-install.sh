@@ -812,15 +812,14 @@ expect_code 0
 expect_created " --latest=false"
 if [ "$outputs" = "latest-at-end=1" ]; then ok "site/install unreadable: Latest waits for sign-sums too"; else bad "outputs: '$outputs'"; fi
 
-# ---------------------------------------------------------------- release.yml: sign-sums
+# ---------------------------------------------------------------- release.yml: the release contract
 
-# The sign-sums job's "Sign SHA256SUMS" and "Make it the Latest release" scripts, with bash -eo
-# pipefail (as Actions runs them), a stand-in gh and the tagged site/install: the placeholder
-# (as now) or the test release key built in.
-current="release.yml sign-sums"
+# The build job's "Collect the release files", run with bash -e against stand-in bundles: the
+# files keep what the install commands' fallback reads from the download addresses alone
+# (release.yml's header, plain_release): latest.json's top-level version is app/package.json's,
+# without a v, and SHA256SUMS has a line for latest.json.
+current="release.yml release files"
 echo "$current"
-sgn="$work/sign"
-mkdir -p "$sgn/release"
 step_of() {   # JOB STEP-NAME: that step's run script
   awk -v job="  $1:" -v step="- name: $2" '
     $0 == job { j = 1; next }
@@ -831,6 +830,35 @@ step_of() {   # JOB STEP-NAME: that step's run script
     on && /^ *$/ { print ""; next }
     on { exit }' "$repo/.github/workflows/release.yml"
 }
+col="$work/collect"
+bundle="$col/app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
+mkdir -p "$bundle" "$col/tmp"
+cp "$repo/app/package.json" "$col/app/package.json"
+echo app > "$bundle/Breakpatch.app.tar.gz"
+echo sig > "$bundle/Breakpatch.app.tar.gz.sig"
+step_of build "Collect the release files" > "$col/step.sh"
+if grep -q 'latest.json' "$col/step.sh" && grep -q 'SHA256SUMS' "$col/step.sh"; then ok "found the build job's collect script"; else bad "couldn't read the build job's collect step from release.yml"; fi
+set +e
+out=$(cd "$col" && env TARGET=aarch64-apple-darwin RUNNER_TEMP="$col/tmp" GITHUB_REPOSITORY=BreakPatch/breakpatch \
+      GITHUB_OUTPUT="$col/output" bash -e "$col/step.sh" 2>&1)
+code=$?
+set -e
+expect_code 0
+want_version=$(node -p "require('$repo/app/package.json').version")
+got_version=$(node -p "require('$col/tmp/release/latest.json').version" 2>/dev/null || true)
+if [ "$got_version" = "$want_version" ]; then ok "latest.json's version is app/package.json's ($want_version), without a v"; else bad "latest.json's version is '$got_version', app/package.json's $want_version"; fi
+if grep -qE '^[0-9a-f]{64}  latest\.json$' "$col/tmp/release/SHA256SUMS" 2>/dev/null; then ok "SHA256SUMS lists latest.json"; else bad "SHA256SUMS has no line for latest.json: $(cat "$col/tmp/release/SHA256SUMS" 2>&1)"; fi
+if (cd "$col/tmp/release" && shasum -a 256 -c SHA256SUMS >/dev/null 2>&1); then ok "SHA256SUMS matches the files"; else bad "SHA256SUMS doesn't match the files"; fi
+
+# ---------------------------------------------------------------- release.yml: sign-sums
+
+# The sign-sums job's "Sign SHA256SUMS" and "Make it the Latest release" scripts, with bash -eo
+# pipefail (as Actions runs them), a stand-in gh and the tagged site/install: the placeholder
+# (as now) or the test release key built in.
+current="release.yml sign-sums"
+echo "$current"
+sgn="$work/sign"
+mkdir -p "$sgn/release"
 step_of sign-sums "Sign SHA256SUMS" > "$sgn/sign.sh"
 step_of sign-sums "Make it the Latest release" > "$sgn/latest.sh"
 if grep -q 'detach-sign' "$sgn/sign.sh" && grep -q 'release edit' "$sgn/latest.sh"; then ok "found the sign-sums scripts"; else bad "couldn't read the sign-sums steps from release.yml"; fi

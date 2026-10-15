@@ -9,6 +9,19 @@ name: Release
 # the in-app updater reads from the URL in app/src-tauri/tauri.conf.json
 # (plugins.updater.endpoints), and SHA256SUMS, which the install command checks against.
 #
+# The release contract. When GitHub's API is limiting requests, the install commands read the
+# release from its download addresses alone (plain_release in site/install and site/install-ci,
+# Find-PlainRelease in site/install-ci.ps1), which relies on every release keeping these:
+#   - releases/latest/download/latest.json is there (the Latest release's), with a top-level
+#     "version" written without a v (0.2.0, 0.1.0-beta.2);
+#   - latest.json is listed in that tag's SHA256SUMS;
+#   - each file is at releases/download/v<version>/<name>;
+#   - SHA256SUMS lists every file the install commands need: all of the release's but
+#     SHA256SUMS.asc, its signature, which they ask for by name.
+# scripts/test-install.sh runs the build job's "Collect the release files" and checks the first
+# two; the jobs that add files later (publish-linux, publish-ci) add their lines to SHA256SUMS,
+# and sign-sums fails on a file of the release that SHA256SUMS doesn't list.
+#
 # Releases are the Team edition (docs/editions.md), built by scripts/build-release.sh, the same
 # script people use: it links the private module, installs the Team engine, builds the sidecar,
 # the frontend and the app, and puts the checkout back to Community at the end. This workflow
