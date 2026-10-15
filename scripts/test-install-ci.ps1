@@ -380,7 +380,8 @@ try {
   if ($installed1) {
     if ($r.Out.Contains('downloading Python')) { Write-Host '  (this machine had no Python 3.11 the installer could use: it downloaded one)' }
     Test-Installed $home1 $shim1
-    $bytes = if (Test-Path -LiteralPath $shim1) { [IO.File]::ReadAllBytes($shim1) } else { [byte[]]@() }
+    $bytes = [byte[]]@()   # not from an if: that would unroll the bytes (and none would be $null)
+    if (Test-Path -LiteralPath $shim1) { $bytes = [IO.File]::ReadAllBytes($shim1) }
     $text = [Text.Encoding]::ASCII.GetString($bytes)
     if (@($bytes | Where-Object { $_ -ge 0x80 }).Count -eq 0) { Ok 'the .cmd is plain ASCII' } else { Bad 'the .cmd has bytes outside ASCII' }
     if ($text.StartsWith('@echo off') -and ([regex]::Matches($text, "`r`n").Count -eq ([regex]::Matches($text, "`n").Count))) { Ok 'the .cmd has no BOM and CRLF line endings' }
@@ -514,7 +515,8 @@ try {
     if ($pbs.Count -eq 1 -and (Test-Path -LiteralPath (Join-Path $pbs[0].FullName 'python.exe'))) { Ok "the downloaded Python is in python\$($pbs[0].Name)" }
     else { Bad 'no python\cpython-*\python.exe in the install folder' }
     $cfg = Join-Path $home2 "$(Get-CurrentEnv $home2)\pyvenv.cfg"
-    $homeLine = if (Test-Path -LiteralPath $cfg) { @([IO.File]::ReadAllLines($cfg, [Text.Encoding]::UTF8) | Where-Object { $_ -match '^home\s*=' }) } else { @() }
+    # @() around the if: its result is unrolled, and one line or none has no .Count in strict mode.
+    $homeLine = @(if (Test-Path -LiteralPath $cfg) { [IO.File]::ReadAllLines($cfg, [Text.Encoding]::UTF8) | Where-Object { $_ -match '^home\s*=' } })
     if ($homeLine.Count -eq 1 -and $homeLine[0].IndexOf((Join-Path $home2 'python\cpython-'), [StringComparison]::OrdinalIgnoreCase) -ge 0) { Ok 'the environment is made from the downloaded Python' }
     else { Bad "the environment isn't made from the downloaded Python" "pyvenv.cfg: $($homeLine -join ' | ')" }
     Test-Installed $home2 $shim2
