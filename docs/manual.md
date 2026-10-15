@@ -510,7 +510,7 @@ The counts wait in `~/Library/Application Support/Breakpatch/usage.json`, with y
 
 Company networks often check the traffic that leaves them: a proxy every connection goes through, *TLS inspection* (a firewall such as Fortinet, Zscaler, Palo Alto or Netskope opens HTTPS connections, checks them and signs them again with the company's own certificate), and a web filter that blocks sites by category. Breakpatch works on these networks once they let it through. This is what it needs, and what to ask IT for.
 
-**What Breakpatch connects to.** Setup downloads the browser from `cdn.playwright.dev` and `playwright.download.prss.microsoft.com`, and the AI assistant from `huggingface.co` (its files come from `cdn-lfs.huggingface.co`, `cdn-lfs.hf.co` and `cas-bridge.xethub.hf.co`). Updates come from `github.com` (the files from `objects.githubusercontent.com` and `release-assets.githubusercontent.com`). Licences, the hosted workspace and the anonymous usage counts use `breakpatch.dev` and `account.breakpatch.dev`. A Team workspace also uses Google Firebase: `firestore.googleapis.com`, `identitytoolkit.googleapis.com`, `securetoken.googleapis.com` and `firebasestorage.googleapis.com`, and for one hosted by Breakpatch `europe-west1-breakpatch-cloud.cloudfunctions.net`. And during a test, the browser opens your own app, and set-up and clean-up calls and Call steps go to its hosts.
+**What Breakpatch connects to.** Setup downloads the browser from `cdn.playwright.dev` and `playwright.download.prss.microsoft.com`, and the AI assistant from `huggingface.co` (its files come from `cdn-lfs.huggingface.co`, `cdn-lfs.hf.co` and `cas-bridge.xethub.hf.co`). Updates come from `github.com` (the files from `objects.githubusercontent.com` and `release-assets.githubusercontent.com`). The install command also uses `api.github.com`. Licences, the hosted workspace and the anonymous usage counts use `breakpatch.dev` and `account.breakpatch.dev`. A Team workspace also uses Google Firebase: `firestore.googleapis.com`, `identitytoolkit.googleapis.com`, `securetoken.googleapis.com` and `firebasestorage.googleapis.com`, and for one hosted by Breakpatch `europe-west1-breakpatch-cloud.cloudfunctions.net`. And during a test, the browser opens your own app, and set-up and clean-up calls and Call steps go to its hosts.
 
 **Certificates.** Breakpatch trusts the certificates your Mac trusts: the app, its engine, the setup downloads and the browser all trust the certificates in the macOS Keychain, including one IT installs there, and none of them ever skips the check. On a network with TLS inspection, IT installs the network's root certificate on company Macs (usually through device management), and then Breakpatch just works. If it isn't installed, you see:
 
@@ -526,7 +526,7 @@ Ask IT to install the network's TLS-inspection certificate in the **System** key
 
 **Web filters.** Company web filters (FortiGuard, Cisco Talos, Palo Alto Networks, Zscaler, Symantec WebPulse and others) sort sites into categories and may block a site they haven't seen before as *new*, *newly registered* or *unrated*. `breakpatch.dev` is a new domain, so a filter may block it until it has been rated. A blocked address shows as the setup download stopping, "Couldn't reach the licence service", or a page saying your network blocked it. Ask IT to:
 
-1. allow the addresses above (or `*.breakpatch.dev`, `*.huggingface.co`, `*.hf.co`, `cdn.playwright.dev`, `playwright.download.prss.microsoft.com`, `github.com` and `*.githubusercontent.com`);
+1. allow the addresses above (or `*.breakpatch.dev`, `*.huggingface.co`, `*.hf.co`, `cdn.playwright.dev`, `playwright.download.prss.microsoft.com`, `github.com`, `api.github.com` and `*.githubusercontent.com`);
 2. ask their filter's vendor to rate `breakpatch.dev` (each vendor has a page for asking to re-rate a site: FortiGuard, Cisco Talos, Palo Alto URL Filtering, Zscaler and Symantec Site Review). It's software for testing websites, usually *Information Technology* or *Software*; and
 3. if they inspect TLS, install the network's certificate on the Mac (above), or exempt these addresses from inspection.
 
@@ -1090,7 +1090,7 @@ To run a suite on the local runner Mac instead, add a [run request](#run-request
 
 **What you need**
 
-- A Breakpatch Team licence with a free **machine licence** for the CI machine. Machine licences count separately from people's seats.
+- A Breakpatch Team or Solo licence with a free **machine licence** for the CI machine. Machine licences count separately from people's seats.
 - A Mac with Apple Silicon and macOS 14 or later (for example GitHub's `macos-15` runners or a Codemagic Mac), or 64-bit Linux on x86_64 or arm64 (a Raspberry Pi too). Linux runs tests; you record them on a Mac. Windows x64 works as a preview. See [breakpatch-ci on Linux](#breakpatch-ci-on-linux), [breakpatch-ci in a container](#breakpatch-ci-in-a-container), [breakpatch-ci on Windows](#breakpatch-ci-on-windows) and [Raspberry Pi runner](#raspberry-pi-runner).
 - Python 3.11 on that machine. When there's none, the install command downloads it.
 - One run at a time per machine licence. To run tests in parallel, give each parallel job its own machine licence and its own `BREAKPATCH_MACHINE_ID`.
@@ -1265,6 +1265,7 @@ To run a test file from the repo instead, use `--test breakpatch-tests/apps/web-
 
 - **"breakpatch-ci needs Python 3.11"**: install it (on a Mac, `brew install python@3.11`; in GitHub Actions, `actions/setup-python`), or point `BREAKPATCH_PYTHON` at it, and install again.
 - **"command not found: breakpatch-ci"**: add `~/.local/bin` to `PATH`, or run `~/.local/bin/breakpatch-ci`.
+- **"GitHub is limiting requests from this network right now"**: GitHub allows 60 requests an hour from one network address, and CI runners share theirs. The install command then gets Breakpatch from the release's download address instead. Only `BREAKPATCH_CHANNEL=beta` still stops with this message: wait a few minutes, or name the version with `BREAKPATCH_VERSION`. So does an install with `BREAKPATCH_GITHUB_TOKEN`: wait a few minutes, or leave the token out.
 - **Exit code 3 with "no machine licences left"**: each pipeline that runs at the same time needs its own machine licence. Set a fixed `BREAKPATCH_MACHINE_ID` so jobs reuse one, free old ones in the back office, or ask your admin to add one.
 - **Exit code 3 after the clock changed or a long time offline**: the machine checks its licence online at least once a week. Make sure it can reach `https://account.breakpatch.dev`.
 - **"The saved secret STAGING_PASSWORD isn't on this Mac"**: set `BP_SECRET_STAGING_PASSWORD` in the job, and add the name to `--secret` if you use it. Or, in a workspace, an admin turns on **breakpatch-ci can use** for the workspace's secret of that name.
@@ -1409,7 +1410,9 @@ Set `BREAKPATCH_LICENCE_KEY`, `BREAKPATCH_CI_EMAIL`, `BREAKPATCH_CI_PASSWORD` an
 irm https://breakpatch.dev/install-ci.ps1 | iex
 ```
 
-It works like the install command for Mac and Linux. It installs `breakpatch-ci` and the test browser into `%LOCALAPPDATA%\breakpatch-ci`, uses Python 3.11 if it's installed (or downloads it, checked, into that folder), and adds `%LOCALAPPDATA%\breakpatch-ci\bin` to your PATH. Open a new terminal afterwards. For a given version, set `$env:BREAKPATCH_VERSION = "1.2.3"` first. To remove it, set `$env:BREAKPATCH_UNINSTALL = "1"` and run the same command.
+It works like the install command for Mac and Linux. It installs `breakpatch-ci` and the test browser into `%LOCALAPPDATA%\breakpatch-ci`, uses Python 3.11 if it's installed (or downloads it, checked, into that folder), and adds `%LOCALAPPDATA%\breakpatch-ci\bin` to your PATH if it isn't there yet. Open a new terminal afterwards. For a given version, set `$env:BREAKPATCH_VERSION = "1.2.3"` first. To remove it, set `$env:BREAKPATCH_UNINSTALL = "1"` and run the same command. It takes the folder off your PATH only if the install command put it there. With `$env:BREAKPATCH_LICENCE_KEY` set, it first gives the machine licence back.
+
+**Another folder.** `$env:BREAKPATCH_CI_HOME` installs somewhere else, and `$env:BREAKPATCH_CI_BIN` puts `breakpatch-ci.cmd` in a folder of its own. Set the same ones to uninstall. If you set `BREAKPATCH_CI_BIN` and the install folder's path has letters outside A to Z (an accent in your user name, say), `breakpatch-ci` starts only in a console that uses your PC's own code page, as a new window does, not after `chcp 65001`. Leave `BREAKPATCH_CI_BIN` unset and any folder name works.
 
 **GitHub Actions on Windows**
 
@@ -1440,6 +1443,8 @@ jobs:
 ```
 
 The install command adds its folder to `GITHUB_PATH`, so the next steps can run `breakpatch-ci`.
+
+**In a batch file.** `breakpatch-ci` is a `.cmd` file, so in a batch file, or a GitHub Actions step with `shell: cmd`, start it with `call`: `call breakpatch-ci run --workspace team.bpworkspace --suite smoke-7f3a`. Without `call`, the lines after it don't run. From PowerShell, or in a Task Scheduler task, you don't need it.
 
 **A Windows PC as a runner.** To run a suite on a schedule without the app, use Task Scheduler. `breakpatch-ci service` writes the task for you; run `schtasks` from a terminal opened as administrator:
 

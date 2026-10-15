@@ -271,7 +271,7 @@ cargo check && cargo clippy --all-targets -- -D warnings
 | Shell | `cd app/src-tauri && cargo test` | Run `sh ../scripts/dev-sidecar.sh` once first: the build needs a sidecar file to exist. |
 | Install command | `scripts/test-install.sh` | Runs the installer against fake releases, on Linux. |
 | breakpatch-ci install command | `scripts/test-install-ci.sh` | The same for `site/install-ci` (needs `python3.11`). |
-| breakpatch-ci install command, Windows | `scripts\test-install-ci.ps1` | `site/install-ci.ps1` on a real Windows machine, against the real latest release. It changes your user PATH and puts it back. CI runs it by hand only: Actions → Windows install, in PowerShell 5.1 and 7. |
+| breakpatch-ci install command, Windows | `powershell -ExecutionPolicy Bypass -File scripts\test-install-ci.ps1` | `site/install-ci.ps1` on a real Windows machine, against a real release (GitHub's Latest, or `-Version 0.1.0-beta.2`). It changes your user PATH and puts it back. CI runs it by hand only: Actions → Windows install, in PowerShell 5.1 and 7. |
 
 Coverage, measured the way CI measures it for the badges:
 
@@ -351,6 +351,11 @@ for `releases/latest`, and the updater reads `releases/latest/download/latest.js
   `scripts/build-ci.sh` checks it). So bump them all, with `app/package-lock.json` and
   `app/src-tauri/Cargo.lock`, and add `docs/releases/<tag>.md`, in the commit you tag
   (`site/launch.test.mjs` checks they agree).
+
+When GitHub's API limits an install without a token (HTTP 403 or 429), the install commands read
+the Latest release's `latest.json` and that version's `SHA256SUMS` from the download addresses
+instead, so every release must keep the release contract in `release.yml`'s header.
+`BREAKPATCH_CHANNEL=beta` and installs with a token have no fallback.
 
 `BREAKPATCH_GITHUB_TOKEN`, which the install commands take, was for the private beta while the
 repository was private. It isn't needed now.
