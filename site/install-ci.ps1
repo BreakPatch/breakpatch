@@ -500,14 +500,19 @@ function Install-BreakpatchCi {
   # or (with a BOM) UTF-8, so a path written as ASCII lost every letter outside it (an accented
   # user name in C:\Users\ became a ?) and the command couldn't start. In the default bin,
   # inside the install folder, the shim names nothing but its own folder (%~dp0, which cmd fills
-  # in itself) and ASCII names, so any profile path works. Anywhere else it has to name the install folder: it's written in
-  # the system's OEM code page, the one a new console starts in (OEMCP; 65001, UTF-8 without a
-  # BOM, when Windows' "Use Unicode UTF-8" option is on), and a path that code page can't hold
-  # stops the install here, before anything is downloaded, rather than leave a broken command.
-  # .NET's own encodings, so it's the same in Windows PowerShell 5.1 and PowerShell 7.
+  # in itself) and ASCII names, so any profile path works. It reads %~dp0 in a subroutine (call
+  # :here): started by its name in quotes ("breakpatch-ci", found on PATH), cmd fills the batch
+  # file's own %~dp0 in wrong, with the current folder, but a called label's right. Then exit /b
+  # with breakpatch-ci's exit code, so it doesn't run on into the subroutine. Anywhere else it has
+  # to name the install folder: it's written in the system's OEM code page, the one a new console
+  # starts in (OEMCP; 65001, UTF-8 without a BOM, when Windows' "Use Unicode UTF-8" option is on),
+  # and a path that code page can't hold stops the install here, before anything is downloaded,
+  # rather than leave a broken command. .NET's own encodings, so it's the same in Windows
+  # PowerShell 5.1 and PowerShell 7.
   if ($binIsDefault) {
     $shimLines = @('@echo off', 'rem breakpatch-ci installer: starts the environment named in current.txt', 'setlocal',
-                   'set /p BP_CI_ENV=<"%~dp0..\current.txt"', '"%~dp0..\%BP_CI_ENV%\Scripts\breakpatch-ci.exe" %*')
+                   'call :here', 'set /p BP_CI_ENV=<"%BP_CI_DIR%..\current.txt"', '"%BP_CI_DIR%..\%BP_CI_ENV%\Scripts\breakpatch-ci.exe" %*',
+                   'exit /b %ERRORLEVEL%', ':here', 'set "BP_CI_DIR=%~dp0"', 'exit /b')
   } else {
     $shimLines = @('@echo off', 'rem breakpatch-ci installer: starts the environment named in current.txt', 'setlocal',
                    "set /p BP_CI_ENV=<`"$current`"", "`"$ciHome\%BP_CI_ENV%\Scripts\breakpatch-ci.exe`" %*")

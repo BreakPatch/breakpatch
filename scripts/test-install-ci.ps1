@@ -22,9 +22,9 @@
 #      PowerShell, and from cmd.exe with PATH as a new window gets it from the registry) says
 #      the version; the .cmd is plain ASCII with CRLF line endings and passes the exit code on;
 #      the user's PATH in HKCU\Environment has the bin folder once, is REG_EXPAND_SZ, and a
-#      %USERPROFILE%\... entry in it is still written that way. Two things a .cmd may not do are
-#      warnings (::warning), not failures: start when cmd.exe is given its name in quotes, and let
-#      a batch file that runs it without `call` go on afterwards.
+#      %USERPROFILE%\... entry in it is still written that way. It starts when cmd.exe is given
+#      its name in quotes too. One thing a .cmd may not do is a warning (::warning), not a
+#      failure: let a batch file that runs it without `call` go on afterwards.
 #   2. Install again: still one PATH entry, one environment, the old one gone.
 #   3. In GitHub Actions (GITHUB_PATH set): the folder goes to GITHUB_PATH as UTF-8, the
 #      registry isn't touched.
@@ -288,10 +288,11 @@ function Test-Installed([string] $ciHome, [string] $shim) {
   $c = Invoke-Child $env:ComSpec '/d /c breakpatch-ci --version' @{ Path = (Get-NewWindowPath) } $root 120
   if ($c.Code -eq 0 -and $c.Out.Trim() -eq $Version) { Ok "cmd /c breakpatch-ci --version, PATH from the registry: $Version" }
   else { Bad "cmd /c breakpatch-ci --version with PATH from the registry didn't say $Version" (Get-RunSummary $c) }
-  # A quoted name found on PATH: cmd.exe has been known to fill %~dp0 in wrong for that.
+  # A quoted name found on PATH: cmd.exe fills a batch file's own %~dp0 in wrong for that (the
+  # current folder), so the .cmd reads it in a subroutine, where it's right.
   $c = Invoke-Child $env:ComSpec '/d /s /c ""breakpatch-ci" --version"' @{ Path = (Get-NewWindowPath) } $root 120
   if ($c.Code -eq 0 -and $c.Out.Trim() -eq $Version) { Ok "cmd /c `"breakpatch-ci`" --version (quoted name): $Version" }
-  else { Warn "cmd /c `"breakpatch-ci`" --version (the name in quotes, found on PATH) didn't say $Version" (Get-RunSummary $c) }
+  else { Bad "cmd /c `"breakpatch-ci`" --version (the name in quotes, found on PATH) didn't say $Version" (Get-RunSummary $c) }
   # The exit code comes through the .cmd: the same as the environment's own breakpatch-ci.exe's.
   $direct = Invoke-Child $exe '--bp-test-no-such-option'
   $via = Invoke-Shim $shim @('--bp-test-no-such-option')
