@@ -271,6 +271,7 @@ cargo check && cargo clippy --all-targets -- -D warnings
 | Shell | `cd app/src-tauri && cargo test` | Run `sh ../scripts/dev-sidecar.sh` once first: the build needs a sidecar file to exist. |
 | Install command | `scripts/test-install.sh` | Runs the installer against fake releases, on Linux. |
 | breakpatch-ci install command | `scripts/test-install-ci.sh` | The same for `site/install-ci` (needs `python3.11`). |
+| breakpatch-ci install command, Windows | `scripts\test-install-ci.ps1` | `site/install-ci.ps1` on a real Windows machine, against the real latest release. It changes your user PATH and puts it back. CI runs it by hand only: Actions → Windows install, in PowerShell 5.1 and 7. |
 
 Coverage, measured the way CI measures it for the badges:
 

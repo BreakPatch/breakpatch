@@ -43,7 +43,7 @@ The pricing, thanks and legal pages (`pricing/`, `thanks/`, `terms/`, `privacy/`
 
 The plain command, `curl -fsSL https://breakpatch.dev/install | sh`, installs GitHub's Latest release. Until the first stable release, the release workflow publishes each beta as Latest, so the plain command and the in-app updater get the newest beta; after that, betas are prereleases and only `BREAKPATCH_CHANNEL=beta` (the newest release, prereleases included) or `BREAKPATCH_VERSION` installs them. The main README's "Betas and updates" has the details.
 
-`install` and `install-ci` still take `BREAKPATCH_GITHUB_TOKEN`, from the private beta while the repository was private; it isn't needed now. `install-ci` is tested like `install`, by `scripts/test-install-ci.sh`, which also runs `install-ci.ps1` with PowerShell 7 (`pwsh`) on Linux when it's installed. `install-ci.ps1` takes the same variables (as `$env:NAME` before `irm … | iex`); its token path and the `.cmd` it writes need a check on a real Windows machine.
+`install` and `install-ci` still take `BREAKPATCH_GITHUB_TOKEN`, from the private beta while the repository was private; it isn't needed now. `install-ci` is tested like `install`, by `scripts/test-install-ci.sh`, which also runs `install-ci.ps1` with PowerShell 7 (`pwsh`) on Linux when it's installed. `install-ci.ps1` takes the same variables (as `$env:NAME` before `irm … | iex`); its token path, the `.cmd` it writes and the user's PATH in the registry are checked on a real Windows machine by `scripts/test-install-ci.ps1`, which the Windows install workflow runs by hand (`.github/workflows/windows-install.yml`).
 
 ## Phones
 

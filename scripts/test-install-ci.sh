@@ -17,7 +17,7 @@
 # PWSH=/path/to/pwsh) when there is one, on this Linux machine: OS=Windows_NT and
 # PROCESSOR_ARCHITECTURE say it's Windows, and it finds bin/ where Windows has Scripts\. Without
 # pwsh those cases are skipped, and say so. The token cases and the .cmd command itself need a
-# real Windows machine.
+# real Windows machine: scripts/test-install-ci.ps1 (the Windows install workflow, run by hand).
 #
 # The private beta (BREAKPATCH_GITHUB_TOKEN) runs against the same stand-in for api.github.com and
 # objects.githubusercontent.com as scripts/test-install.sh, reached through connect-to lines in the
