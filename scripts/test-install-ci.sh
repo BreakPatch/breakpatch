@@ -222,16 +222,17 @@ PY
 # $1 API root name, $2 version, then options: latest (also releases/latest), prerelease, draft,
 # app-only (no breakpatch-ci files), bad-sum (the Team wheel's line in SHA256SUMS is wrong),
 # no-team-wheel (the requirements name a wheel the release doesn't have), foreign (the files are
-# listed on another host), bad-hash, url, extra, crlf (see make_ci_files).
+# listed on another host), stale-latest-json (latest.json changed after SHA256SUMS was made),
+# bad-hash, url, extra, crlf (see make_ci_files). Each has a latest.json naming its version.
 make_release() {
-  local api=$1 version=$2 tag="v$2" latest=0 pre=0 draft=0 apponly=0 badsum=0 noteam=0 dl url
+  local api=$1 version=$2 tag="v$2" latest=0 pre=0 draft=0 apponly=0 badsum=0 noteam=0 stale=0 dl url
   local ci_opts=()
   shift 2
   url="$base/$api/download/$tag"
   for o in "$@"; do
     case "$o" in
       latest) latest=1 ;; prerelease) pre=1 ;; draft) draft=1 ;; app-only) apponly=1 ;; bad-sum) badsum=1 ;;
-      no-team-wheel) noteam=1 ;; foreign) url="https://localhost:$port/$api/download/$tag" ;;
+      no-team-wheel) noteam=1 ;; foreign) url="https://localhost:$port/$api/download/$tag" ;; stale-latest-json) stale=1 ;;
       bad-hash | url | extra | crlf) ci_opts+=("$o") ;;
     esac
   done
@@ -239,7 +240,10 @@ make_release() {
   mkdir -p "$dl" "$srv/$api/releases/tags"
   echo "app" > "$dl/Breakpatch_aarch64.app.tar.gz"
   [ "$apponly" -eq 1 ] || make_ci_files "$dl" "$version" ${ci_opts[@]+"${ci_opts[@]}"}
+  printf '{\n  "version": "%s",\n  "notes": "Breakpatch %s",\n  "platforms": {"darwin-aarch64": {"signature": "x", "url": "%s/Breakpatch_aarch64.app.tar.gz"}}\n}\n' \
+    "$version" "$version" "$url" > "$dl/latest.json"
   (cd "$dl" && sha256sum -- * > SHA256SUMS)
+  if [ "$stale" -eq 1 ]; then sed -i 's/"notes": "/"notes": "Changed. /' "$dl/latest.json"; fi
   if [ "$badsum" -eq 1 ]; then
     sed -i 's/^[0-9a-f]\{64\}\(  breakpatch_team_engine-\)/0000000000000000000000000000000000000000000000000000000000000000\1/' "$dl/SHA256SUMS"
   fi
@@ -279,6 +283,7 @@ make_release badhash 1.8.0 latest bad-hash
 make_release url 1.9.0 latest url
 make_release extra 2.0.0 latest extra
 make_release crlf 2.1.0 latest crlf
+make_release stale 2.2.0 latest stale-latest-json
 mkdir -p "$srv/empty/releases"
 echo "[]" > "$srv/empty/releases/list.json"
 
@@ -343,13 +348,35 @@ pbs_sha=$(sha256sum "$srv/pbs/$pbs_release/cpython-$pbs_version+$pbs_release-x86
 # The GitHub stand-in answers by Host and logs "host path auth=<Authorization or ->" to gh.log
 # (the same server as scripts/test-install.sh).
 cat > "$work/serve.py" <<'PY'
-import functools, http.server, os, re, ssl, sys, threading
+import functools, http.server, json, os, re, ssl, sys, threading
 port, http_port, gh_port, root, tls, token, gh_log = sys.argv[1:]
 
 class Static(http.server.SimpleHTTPRequestHandler):
     def translate_path(self, path):
         p = super().translate_path(path)
         return os.path.join(p, "list.json") if os.path.isfile(os.path.join(p, "list.json")) else p
+    def answer(self, code, body=b"", headers=()):
+        self.send_response(code)
+        for k, v in headers: self.send_header(k, v)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        # An API that's limiting this address, as api.github.com does without a token: 403
+        # (limited) or 429 (ratelimited) for everything about releases.
+        m = re.fullmatch(r"/(limited|ratelimited)/releases(/.*)?", path)
+        if m: return self.answer(403 if m[1] == "limited" else 429, b'{"message":"API rate limit exceeded for 127.0.0.1."}')
+        # <api>/latest/download/<file>: a redirect to the file in the release <api>/releases/latest
+        # names, as github.com/<repo>/releases/latest/download/<file> does.
+        m = re.fullmatch(r"/([A-Za-z0-9_-]+)/latest/download/([^/]+)", path)
+        if m:
+            try:
+                with open(os.path.join(root, m[1], "releases", "latest")) as f: tag = json.load(f)["tag_name"]
+            except OSError:
+                return self.answer(404)
+            return self.answer(302, headers=[("Location", f"/{m[1]}/download/{tag}/{m[2]}")])
+        return super().do_GET()
 
 class GitHub(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -875,6 +902,49 @@ for sh_name in "sh" "bash --posix"; do
   expect_out "Couldn't reach GitHub to find Breakpatch."
   expect_none
 
+  # GitHub's API limits requests without a token (60 an hour per address, and CI runners share
+  # theirs): the stable release or a pinned version comes from the download addresses instead,
+  # with every check still made. The beta channel needs the API's list, so it can't.
+  new_case api-rate-limited
+  run BREAKPATCH_API="$base/limited"
+  expect_code 0
+  expect_out "GitHub's API is limiting requests from this network: getting Breakpatch 1.1.0 from its download address instead."
+  expect_out "Installing breakpatch-ci 1.1.0…"
+  expect_version 1.1.0
+  run BREAKPATCH_API="$base/ratelimited" BREAKPATCH_VERSION=1.0.0
+  expect_code 0
+  expect_out "getting Breakpatch 1.0.0 from its download address instead."
+  expect_out "Updating breakpatch-ci 1.1.0 to 1.0.0…"
+  expect_version 1.0.0
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_CHANNEL=beta
+  expect_code 1
+  expect_out "GitHub is limiting requests from this network right now. Try again in a few minutes."
+  expect_no_out "download address instead"
+  run BREAKPATCH_API="$base/ratelimited" BREAKPATCH_CHANNEL=beta
+  expect_code 1
+  expect_out "GitHub is limiting requests from this network right now."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_VERSION=9.9.9
+  expect_code 1
+  expect_out "There's no Breakpatch 9.9.9. The versions are at https://github.com/BreakPatch/breakpatch/releases."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/badsum/download/"
+  expect_code 1
+  expect_out "The download of breakpatch_team_engine-1.5.0-py3-none-any.whl doesn't match its checksum, so nothing was installed."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/stale/download/"
+  expect_code 1
+  expect_out "Couldn't read the release from GitHub. Try again in a few minutes."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/apponly/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.4.0 has no breakpatch-ci for Linux x86_64."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/url/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.9.0's breakpatch-ci files can't be read, so nothing was installed."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="http://127.0.0.1:$http_port/good/download/"
+  expect_code 1
+  expect_out "BREAKPATCH_DOWNLOADS must start with https://."
+  expect_version 1.0.0
+  expect_envs 1
+  expect_clean
+
   new_case chromium-fails
   run BREAKPATCH_VERSION=1.0.0
   run FAKE_PLAYWRIGHT=fail
@@ -1248,6 +1318,38 @@ else
     expect_no_out "$token"
   done
   ps_none
+  if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
+
+  # GitHub's API limiting requests: the download addresses instead, checked the same way.
+  ps_case windows-api-rate-limited
+  ps_run BREAKPATCH_API="$base/limited"
+  expect_code 0
+  expect_out "GitHub's API is limiting requests from this network: getting Breakpatch 1.1.0 from its download address instead."
+  expect_out "Installing breakpatch-ci 1.1.0..."
+  ps_version 1.1.0
+  ps_run BREAKPATCH_API="$base/ratelimited" BREAKPATCH_VERSION=1.0.0
+  expect_code 0
+  expect_out "getting Breakpatch 1.0.0 from its download address instead."
+  expect_out "Updating breakpatch-ci 1.1.0 to 1.0.0..."
+  ps_version 1.0.0
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_CHANNEL=beta
+  expect_code 1
+  expect_out "GitHub is limiting requests from this network right now. Try again in a few minutes."
+  expect_no_out "download address instead"
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_VERSION=9.9.9
+  expect_code 1
+  expect_out "There's no Breakpatch 9.9.9."
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/badsum/download/"
+  expect_code 1
+  expect_out "The download of breakpatch_team_engine-1.5.0-py3-none-any.whl doesn't match its checksum, so nothing was installed."
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/stale/download/"
+  expect_code 1
+  expect_out "Couldn't read the release from GitHub. Try again in a few minutes."
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/apponly/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.4.0 has no breakpatch-ci for Windows."
+  ps_version 1.0.0
+  ps_envs 1
   if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
 
   # A requirements file with CRLF line endings (as Windows' text mode writes it) reads the same:

@@ -154,15 +154,16 @@ trap 'code=$?; stop_gpg; cleanup "$code"' EXIT
 # $1 API root name, $2 version, then options: latest (also releases/latest), bad-sum, no-sums,
 # foreign (the files are listed on another host), dotdot (listed with ../ in their address),
 # prerelease, draft, mac-only (no Linux AppImage), signed (SHA256SUMS.asc by the release key),
-# signed-by-other (by another key).
+# signed-by-other (by another key), stale-latest-json (latest.json changed after SHA256SUMS was
+# made). Each has a latest.json naming its version, as the updater's feed does.
 make_release() {
-  local api=$1 version=$2 tag="v$2" latest=0 badsum=0 nosums=0 pre=0 draft=0 linux=1 signer="" dl stage url
+  local api=$1 version=$2 tag="v$2" latest=0 badsum=0 nosums=0 pre=0 draft=0 linux=1 stale=0 signer="" dl stage url
   shift 2
   url="$base/$api/download/$tag"
   for o in "$@"; do
     case "$o" in
       latest) latest=1 ;; bad-sum) badsum=1 ;; no-sums) nosums=1 ;; prerelease) pre=1 ;; draft) draft=1 ;;
-      mac-only) linux=0 ;;
+      mac-only) linux=0 ;; stale-latest-json) stale=1 ;;
       signed) signer=$gpg_home ;; signed-by-other) signer=$gpg_home/other ;;
       foreign) url="https://localhost:$port/$api/download/$tag" ;;
       dotdot) url="$base/$api/download/$tag/../../../good/download/v1.1.0" ;;
@@ -182,9 +183,10 @@ make_release() {
     cp "$dl/Breakpatch_aarch64.app.tar.gz.sig" "$dl/Breakpatch_amd64.AppImage.sig"
     echo "deb" > "$dl/breakpatch_${version}_amd64.deb"
   fi
-  echo "{}" > "$dl/latest.json"
+  printf '{\n  "version": "%s",\n  "notes": "Breakpatch %s"\n}\n' "$version" "$version" > "$dl/latest.json"
   if [ "$nosums" -eq 0 ]; then
     (cd "$dl" && shasum -a 256 -- * > SHA256SUMS)   # expanded before SHA256SUMS exists
+    if [ "$stale" -eq 1 ]; then printf '{"version": "%s", "notes": "Changed."}\n' "$version" > "$dl/latest.json"; fi
     if [ "$badsum" -eq 1 ]; then
       # Not sed -i: macOS's sed needs an argument after it that GNU sed would read as the script.
       sed -E 's/^[0-9a-f]{64}(  Breakpatch_(aarch64\.app\.tar\.gz|amd64\.AppImage))$/0000000000000000000000000000000000000000000000000000000000000000\1/' \
@@ -246,6 +248,7 @@ make_list linuxolder v1.6.0 v1.5.0
 make_release signed 1.7.0 latest signed
 make_release badsig 1.7.0 latest signed-by-other
 make_release signedbadsum 1.7.0 latest signed bad-sum
+make_release stale 2.2.0 latest stale-latest-json
 mkdir -p "$srv/empty/releases"
 echo "[]" > "$srv/empty/releases/list.json"
 
@@ -317,13 +320,35 @@ make_private_release httpredirect 0.3.0 latest
 # objects.githubusercontent.com, which, like S3 with its signed address, fails a request that
 # also has an Authorization header. httpredirect's files redirect to http://.
 cat > "$work/serve.py" <<'PY'
-import functools, http.server, os, re, ssl, sys, threading
+import functools, http.server, json, os, re, ssl, sys, threading
 port, http_port, gh_port, root, tls, token, gh_log = sys.argv[1:]
 
 class Static(http.server.SimpleHTTPRequestHandler):
     def translate_path(self, path):
         p = super().translate_path(path)
         return os.path.join(p, "list.json") if os.path.isfile(os.path.join(p, "list.json")) else p
+    def answer(self, code, body=b"", headers=()):
+        self.send_response(code)
+        for k, v in headers: self.send_header(k, v)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        # An API that's limiting this address, as api.github.com does without a token: 403
+        # (limited) or 429 (ratelimited) for everything about releases.
+        m = re.fullmatch(r"/(limited|ratelimited)/releases(/.*)?", path)
+        if m: return self.answer(403 if m[1] == "limited" else 429, b'{"message":"API rate limit exceeded for 127.0.0.1."}')
+        # <api>/latest/download/<file>: a redirect to the file in the release <api>/releases/latest
+        # names, as github.com/<repo>/releases/latest/download/<file> does.
+        m = re.fullmatch(r"/([A-Za-z0-9_-]+)/latest/download/([^/]+)", path)
+        if m:
+            try:
+                with open(os.path.join(root, m[1], "releases", "latest")) as f: tag = json.load(f)["tag_name"]
+            except OSError:
+                return self.answer(404)
+            return self.answer(302, headers=[("Location", f"/{m[1]}/download/{tag}/{m[2]}")])
+        return super().do_GET()
 
 class GitHub(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -1158,6 +1183,40 @@ for sh_name in "${shells[@]}"; do
   expect_out "Updating Breakpatch 0.1.0-beta.2 to 0.1.0-beta.1…"
   expect_version "$apps" 0.1.0-beta.1
 
+  # GitHub's API limits requests without a token (60 an hour per address): the stable release or
+  # a pinned version comes from the download addresses instead, with every check still made. The
+  # beta channel needs the API's list, so it can't.
+  new_case api-rate-limited
+  run BREAKPATCH_API="$base/limited"
+  expect_code 0
+  expect_out "GitHub's API is limiting requests from this network: getting Breakpatch 1.1.0 from its download address instead."
+  expect_out "Installing Breakpatch 1.1.0…"
+  expect_version "$apps" 1.1.0
+  expect_log "codesign -d --extract-certificates="
+  run BREAKPATCH_API="$base/ratelimited" BREAKPATCH_VERSION=1.0.0
+  expect_code 0
+  expect_out "getting Breakpatch 1.0.0 from its download address instead."
+  expect_out "Updating Breakpatch 1.1.0 to 1.0.0…"
+  expect_version "$apps" 1.0.0
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_CHANNEL=beta
+  expect_code 1
+  expect_out "GitHub is limiting requests from this network right now. Try again in a few minutes."
+  expect_no_out "download address instead"
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_VERSION=9.9.9
+  expect_code 1
+  expect_out "There's no Breakpatch 9.9.9. The versions are at https://github.com/BreakPatch/breakpatch/releases."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/bad/download/"
+  expect_code 1
+  expect_out "The download doesn't match its checksum, so it wasn't installed."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/stale/download/"
+  expect_code 1
+  expect_out "Couldn't read the release from GitHub. Try again in a few minutes."
+  run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/nosums/download/"
+  expect_code 1
+  expect_out "GitHub is limiting requests from this network right now."
+  expect_version "$apps" 1.0.0
+  expect_clean
+
   new_case pinned-prerelease
   run BREAKPATCH_VERSION=1.2.0-beta.1
   expect_code 0
@@ -1441,6 +1500,27 @@ for sh_name in "${shells[@]}"; do
   run_linux BREAKPATCH_API="$base/linuxolder" BREAKPATCH_DOWNLOADS="$base/linuxolder/download/" BREAKPATCH_VERSION=1.5.0
   expect_code 0
   expect_linux_app 1.5.0
+
+  new_case linux-api-rate-limited
+  run_linux BREAKPATCH_API="$base/limited"
+  expect_code 0
+  expect_out "GitHub's API is limiting requests from this network: getting Breakpatch 1.1.0 from its download address instead."
+  expect_linux_app 1.1.0
+  run_linux BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/maconly/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.6.0 has no Linux version. The Linux app is a preview, and not every release has it yet."
+  script="$work/install-gpg" run_linux BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/signed/download/"
+  expect_code 0
+  expect_out "The checksums are signed by Breakpatch's release key ($gpg_fpr)."
+  expect_linux_app 1.7.0
+  script="$work/install-gpg" run_linux BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/badsig/download/"
+  expect_code 1
+  expect_out "Breakpatch 1.7.0's checksums aren't signed by Breakpatch's release key, so nothing was installed."
+  script="$work/install-gpg" run_linux BREAKPATCH_API="$base/limited"
+  expect_code 1
+  expect_out "Couldn't download the checksums' signature."
+  expect_linux_app 1.7.0
+  expect_linux_clean
 
   new_case linux-files-from-elsewhere
   run_linux BREAKPATCH_API="$base/foreign" BREAKPATCH_DOWNLOADS="$base/foreign/download/"

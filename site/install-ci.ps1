@@ -13,7 +13,9 @@
 #      Python 3.11 from python-build-standalone (github.com/astral-sh/python-build-standalone),
 #      checked against the SHA-256 written in this script, into the install folder.
 #   2. Asks GitHub for the latest release of BreakPatch/breakpatch (or BREAKPATCH_VERSION, or with
-#      BREAKPATCH_CHANNEL=beta the newest release, betas included).
+#      BREAKPATCH_CHANNEL=beta the newest release, betas included). When GitHub's API is limiting
+#      requests from this network, the stable release or BREAKPATCH_VERSION comes from the
+#      release's download addresses instead (Find-PlainRelease).
 #   3. Downloads breakpatch-ci-requirements-windows-x86_64.txt and the two wheels it names from the
 #      release (https only, also after redirects; with BREAKPATCH_GITHUB_TOKEN, from the
 #      repository's asset addresses on api.github.com, and the token goes to that host only), and
@@ -256,6 +258,52 @@ function Install-BreakpatchCi {
     if ($url.Split('/')[-1] -ne $name) { Fail $bad }
   }
 
+  # When GitHub's API turns away requests without a token (403 or 429: 60 an hour per address, and
+  # CI runners share theirs), the release comes from its download addresses, which that limit
+  # doesn't cover: <Downloads>v<version>/<file>. The version is BREAKPATCH_VERSION's, or for the
+  # latest release the one in its latest.json (from <Releases>/latest/download/, the address
+  # GitHub sends to the Latest release's file), which must match that version's SHA256SUMS. The
+  # release's files are the ones its SHA256SUMS lists, each checked like the API's (Assert-Asset,
+  # then against SHA256SUMS). With BREAKPATCH_DOWNLOADS, latest is ../latest/download/ next to it.
+  $limitedMessage = 'GitHub is limiting requests from this network right now. Try again in a few minutes.'
+  function Find-PlainRelease([string] $wanted) {
+    if (-not $Downloads.StartsWith('https://')) { Fail 'BREAKPATCH_DOWNLOADS must start with https://.' }
+    $latestJson = $null
+    if ($wanted) {
+      $script:version = $wanted
+    } else {
+      if (-not $Downloads.EndsWith('/download/')) { Fail $limitedMessage }
+      $latestJson = Join-Path $tmp 'latest.json'
+      $s = Get-Url ($Downloads.Substring(0, $Downloads.Length - 'download/'.Length) + 'latest/download/latest.json') $latestJson 'application/octet-stream'
+      if ($s -eq 0) { Fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." }
+      if ($s -ne 200) { Fail $limitedMessage }
+      $v = ''
+      try { $v = [string](Get-Content -Raw -LiteralPath $latestJson | ConvertFrom-Json).version } catch { $v = '' }
+      if ($v -cnotmatch '\A[0-9][0-9A-Za-z.-]*\z') { Fail "Couldn't read the release from GitHub. Try again in a few minutes." }
+      $script:version = $v
+    }
+    $version = $script:version
+    Say "GitHub's API is limiting requests from this network: getting Breakpatch $version from its download address instead."
+    $base = "${Downloads}v$version/"
+    $sumsFile = Join-Path $tmp 'SHA256SUMS'
+    $s = Get-Url "${base}SHA256SUMS" $sumsFile 'application/octet-stream'
+    if ($s -eq 404 -and $wanted) { Fail "There's no Breakpatch $wanted. The versions are at $Releases." }
+    if ($s -eq 0) { Fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." }
+    if ($s -ne 200) { Fail $limitedMessage }
+    $script:assets = @{ 'SHA256SUMS' = "${base}SHA256SUMS" }
+    $listed = @{}
+    foreach ($line in (Get-Content -LiteralPath $sumsFile)) {
+      $f = ([string]$line).Trim() -split '\s+', 2
+      if ($f.Count -ne 2 -or $f[0] -notmatch '^[0-9A-Fa-f]{64}$') { continue }
+      $n = $f[1].TrimStart('*')
+      if (-not $listed.ContainsKey($n)) { $listed[$n] = $f[0].ToLowerInvariant() }
+      if ($n -ne 'SHA256SUMS') { $script:assets[$n] = "$base$n" }
+    }
+    if ($latestJson -and (-not $listed.ContainsKey('latest.json') -or (Get-Sha256 $latestJson) -ne $listed['latest.json'])) {
+      Fail "Couldn't read the release from GitHub. Try again in a few minutes."
+    }
+  }
+
   function Find-Release {
     $channel = if ($env:BREAKPATCH_CHANNEL) { $env:BREAKPATCH_CHANNEL } else { 'stable' }
     if ($channel -notin @('stable', 'beta')) { Fail "BREAKPATCH_CHANNEL is stable or beta, not $channel." }
@@ -269,6 +317,7 @@ function Install-BreakpatchCi {
     } else {
       $status = Get-Url "$Api/releases/latest"
     }
+    $limited = $false
     switch ($status) {
       200 { }
       401 { Fail "GitHub didn't accept BREAKPATCH_GITHUB_TOKEN. It may have expired: make a new one." }
@@ -276,9 +325,15 @@ function Install-BreakpatchCi {
         if ($wanted) { Fail "There's no Breakpatch $wanted. The versions are at $Releases." }
         Fail "There's no Breakpatch release yet. See $Releases."
       }
-      { $_ -in 403, 429 } { Fail 'GitHub is limiting requests from this network right now. Try again in a few minutes.' }
+      { $_ -in 403, 429 } { $limited = $true }
       0 { Fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." }
       default { Fail "GitHub didn't answer as expected (HTTP $status). Try again in a few minutes." }
+    }
+    if ($limited) {
+      # The beta channel needs the list of releases, which only the API gives.
+      if ($token -or (-not $wanted -and $channel -eq 'beta')) { Fail $limitedMessage }
+      Find-PlainRelease $wanted
+      return
     }
     $doc = $script:body | ConvertFrom-Json
     if ($doc -is [array]) {
@@ -293,6 +348,9 @@ function Install-BreakpatchCi {
     foreach ($a in @($doc.assets)) {
       $script:assets[[string]$a.name] = if ($token) { [string]$a.url } else { [string]$a.browser_download_url }
     }
+  }
+
+  function Assert-Release {
     $script:reqs = "breakpatch-ci-requirements-$Platform.txt"
     if (-not $script:assets.ContainsKey($script:reqs) -or -not $script:assets.ContainsKey('SHA256SUMS')) {
       Fail "Breakpatch $($script:version) has no breakpatch-ci for Windows. Try an older version with BREAKPATCH_VERSION, or write to support@breakpatch.dev."
@@ -484,6 +542,7 @@ function Install-BreakpatchCi {
       Say 'Using BREAKPATCH_GITHUB_TOKEN (private beta).'
     }
     Find-Release
+    Assert-Release
     $version = $script:version
     $was = $null
     if (Test-Path -LiteralPath $current) {

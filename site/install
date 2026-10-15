@@ -10,7 +10,9 @@
 # What it does:
 #   1. Checks this is a Mac with Apple Silicon and macOS 14 or later.
 #   2. Asks GitHub for the latest release of BreakPatch/breakpatch (or BREAKPATCH_VERSION, or with
-#      BREAKPATCH_CHANNEL=beta the newest release, betas included).
+#      BREAKPATCH_CHANNEL=beta the newest release, betas included). When GitHub's API is limiting
+#      requests from this network, the stable release or BREAKPATCH_VERSION comes from the
+#      release's download addresses instead (plain_release).
 #   3. Downloads Breakpatch_aarch64.app.tar.gz from BreakPatch/breakpatch's releases (https only,
 #      also after redirects, and only from that address; with BREAKPATCH_GITHUB_TOKEN, from the
 #      repository's asset addresses on api.github.com) and checks it against the release's
@@ -274,9 +276,63 @@ asset_names() {
 }
 
 # The address to download file number $1 from: its asset address with a token, else its
-# download address.
+# download address. From plain_release, $1 is the file's name, and the address the version's.
 asset_url() {
-  if [ -n "$auth" ]; then field "assets.$1.url"; else field "assets.$1.browser_download_url"; fi
+  if [ "$plain" -eq 1 ]; then printf '%sv%s/%s\n' "$DOWNLOADS" "$version" "$1"
+  elif [ -n "$auth" ]; then field "assets.$1.url"; else field "assets.$1.browser_download_url"; fi
+}
+
+LIMITED="GitHub is limiting requests from this network right now. Try again in a few minutes."
+
+# When GitHub's API turns away requests without a token (403 or 429: 60 an hour per address,
+# shared by everyone behind it), the release comes from its download addresses, which that limit
+# doesn't cover: DOWNLOADS, v<version>/<file>. The version is BREAKPATCH_VERSION's, or for the
+# latest release the one in its latest.json (from RELEASES/latest/download/, the address GitHub
+# sends to the Latest release's file), which must match that version's SHA256SUMS. The release's
+# files are the ones its SHA256SUMS lists, each checked as the API's are, and SHA256SUMS.asc,
+# which it can't list. With BREAKPATCH_DOWNLOADS, latest is ../latest/download/ next to it.
+plain_release() {
+  plain=1
+  case "$DOWNLOADS" in https://*) ;; *) fail "BREAKPATCH_DOWNLOADS must start with https://." ;; esac
+  if [ -n "$wanted" ]; then
+    version=$wanted
+  else
+    case "$DOWNLOADS" in */download/) ;; *) fail "$LIMITED" ;; esac
+    status=$(fetch "${DOWNLOADS%download/}latest/download/latest.json" "$tmp/latest.json")
+    case "$status" in
+      200) ;;
+      000) fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." ;;
+      *) fail "$LIMITED" ;;
+    esac
+    json_flat "$tmp/latest.json" >"$tmp/latest.txt"
+    version=$(LC_ALL=C awk -F '\t' '$1 == "version" { print $2; exit }' "$tmp/latest.txt")
+    case "$version" in
+      [0-9]*) ;;
+      *) fail "Couldn't read the release from GitHub. Try again in a few minutes." ;;
+    esac
+    case "$version" in
+      *[!0-9A-Za-z.-]*) fail "Couldn't read the release from GitHub. Try again in a few minutes." ;;
+    esac
+  fi
+  say "GitHub's API is limiting requests from this network: getting Breakpatch $version from its download address instead."
+  status=$(fetch "${DOWNLOADS}v$version/SHA256SUMS" "$tmp/SHA256SUMS")
+  case "$status" in
+    200) ;;
+    404) if [ -n "$wanted" ]; then fail "There's no Breakpatch $wanted. The versions are at $RELEASES."; fi; fail "$LIMITED" ;;
+    000) fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." ;;
+    *) fail "$LIMITED" ;;
+  esac
+  if [ -z "$wanted" ]; then
+    expected=$(awk '$2 == "latest.json" || $2 == "*latest.json" { print $1; exit }' "$tmp/SHA256SUMS" | tr 'A-F' 'a-f')
+    if [ -z "$expected" ] || [ "$(sha256_of "$tmp/latest.json")" != "$expected" ]; then
+      fail "Couldn't read the release from GitHub. Try again in a few minutes."
+    fi
+  fi
+  # "name name" lines: a file's name is its own index here (asset_url).
+  { echo "SHA256SUMS SHA256SUMS"
+    echo "SHA256SUMS.asc SHA256SUMS.asc"
+    LC_ALL=C awk '$1 ~ /^[0-9A-Fa-f]+$/ && length($1) == 64 && NF == 2 { n = $2; sub(/^[*]/, "", n); if (n != "SHA256SUMS" && n != "SHA256SUMS.asc") print n " " n }' "$tmp/SHA256SUMS"
+  } >"$tmp/assets.txt"
 }
 
 # newest_linux: the tag of the newest release (not a draft) that has the Linux AppImage, among
@@ -299,6 +355,7 @@ newest_linux() {
 }
 
 find_release() {
+  plain=0
   channel=${BREAKPATCH_CHANNEL:-stable}
   case "$channel" in
     stable | beta) ;;
@@ -332,11 +389,18 @@ find_release() {
       fail "There's no Breakpatch release yet. See $RELEASES." ;;
     403 | 429)
       if [ -n "$auth" ] && [ "$status" = 403 ]; then fail "GitHub refused BREAKPATCH_GITHUB_TOKEN (HTTP 403). Check it can read BreakPatch/breakpatch (Contents: read-only), or try again in a few minutes."; fi
-      fail "GitHub is limiting requests from this network right now. Try again in a few minutes." ;;
+      # The beta channel needs the list of releases, which only the API gives.
+      if [ -n "$auth" ] || [ "$list" -eq 1 ]; then fail "$LIMITED"; fi
+      plain_release ;;
     000) fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." ;;
     *) fail "GitHub didn't answer as expected (HTTP $status). Try again in a few minutes." ;;
   esac
+  if [ "$plain" -eq 0 ]; then api_release; fi
+  release_files
+}
 
+# The release in GitHub's answer: its version, and its files in $tmp/assets.txt.
+api_release() {
   json_flat "$tmp/release.json" >"$tmp/release.txt"
   r=""
   if [ "$list" -eq 1 ]; then
@@ -361,8 +425,11 @@ find_release() {
   if [ -n "$wanted" ] && [ "$version" != "$wanted" ]; then
     fail "GitHub answered with Breakpatch $version, not $wanted. Try again in a few minutes."
   fi
-
   asset_names >"$tmp/assets.txt"
+}
+
+# The archive, SHA256SUMS and their signatures among the release's files, addresses checked.
+release_files() {
   # The Mac's .app.tar.gz, or on Linux the AppImage (ARCHIVE_RE).
   archive=$(awk -v re="$ARCHIVE_RE" '$2 ~ re { print $2; exit }' "$tmp/assets.txt")
   archive_i=$(awk -v re="$ARCHIVE_RE" '$2 ~ re { print $1; exit }' "$tmp/assets.txt")
