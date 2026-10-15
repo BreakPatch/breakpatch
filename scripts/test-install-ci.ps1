@@ -38,7 +38,9 @@
 #      entry goes, and BREAKPATCH_UNINSTALL is cleared. Again: "Nothing to remove."
 #   7. Another user folder with no Python on PATH and BREAKPATCH_CI_BIN elsewhere: Python 3.11
 #      is downloaded (its SHA-256, Windows' tar), the .cmd names the install folder in the OEM
-#      code page and runs; then the uninstall removes it all, PATH entry included.
+#      code page and runs in a new console, which starts in it (from this test's own console,
+#      when that has another code page, only a warning); then the uninstall removes it all,
+#      PATH entry included.
 #
 # Each failure is a "FAIL" line in the log and, in GitHub Actions, an annotation
 # (::error title=test-install-ci.ps1::...) saying which step failed with the key lines of what
@@ -263,9 +265,18 @@ function Get-CurrentEnv([string] $ciHome) {
   return [string](Get-Content -LiteralPath $c -TotalCount 1)
 }
 
+# The console code page this test runs in (cmd.exe reads a batch file in it): GitHub Actions' job
+# console needn't be the OEM code page a new console starts in. 0 when there's none to read.
+function Get-ConsoleCodePage {
+  try { return [Console]::OutputEncoding.CodePage } catch { return 0 }
+}
+
 # breakpatch-ci in $ciHome, started by $shim: from PowerShell, and from cmd.exe by name with
-# PATH as a new window would have it, in another folder.
-function Test-Installed([string] $ciHome, [string] $shim) {
+# PATH as a new window would have it, in another folder. $shimCp: the code page a .cmd that names
+# the install folder is written in (case 7), as install-ci.ps1 promises it for a new console. When
+# this console's is another, the .cmd is started in a new console (Invoke-Child's: hidden, in the
+# OEM code page), and from this one only as a warning: cmd.exe can't read the path in it here.
+function Test-Installed([string] $ciHome, [string] $shim, [int] $shimCp = 0) {
   $envName = Get-CurrentEnv $ciHome
   if ($envName -match '^env-') { Ok "current.txt names $envName" } else { Bad "current.txt names '$envName'" }
   $n = @(Get-EnvDir $ciHome).Count
@@ -282,9 +293,18 @@ function Test-Installed([string] $ciHome, [string] $shim) {
   if ($left.Count -eq 0) { Ok "the installer's temporary folder is gone" } else { Bad "the installer left $($left[0].Name) in TEMP" }
 
   if (-not (Test-Path -LiteralPath $shim)) { Bad "there's no $shim"; return }
+  $consoleCp = Get-ConsoleCodePage
+  $newConsole = $shimCp -ne 0 -and $consoleCp -ne $shimCp
   $s = Invoke-Shim $shim @('--version')
   if ($s.Code -eq 0 -and $s.Out -eq $Version) { Ok "breakpatch-ci.cmd --version (from PowerShell): $Version" }
-  else { Bad "breakpatch-ci.cmd --version (from PowerShell) says '$($s.Out)', exit $($s.Code); expected $Version" "stderr: $($s.Err)" }
+  elseif ($newConsole) {
+    Warn "breakpatch-ci.cmd --version from this PowerShell says '$($s.Out)', exit $($s.Code): the .cmd names the install folder in code page $shimCp, this console's is $consoleCp, and cmd.exe reads a batch file in the console's code page. A new console starts in $shimCp." "stderr: $($s.Err)"
+  } else { Bad "breakpatch-ci.cmd --version (from PowerShell) says '$($s.Out)', exit $($s.Code); expected $Version" "stderr: $($s.Err)" }
+  if ($newConsole) {
+    $s = Invoke-Child $env:ComSpec "/d /s /c `"`"$shim`" --version`"" @{} $root 120
+    if ($s.Code -eq 0 -and $s.Out.Trim() -eq $Version) { Ok "breakpatch-ci.cmd --version in a new console (code page $shimCp): $Version" }
+    else { Bad "breakpatch-ci.cmd --version in a new console didn't say $Version" (Get-RunSummary $s) }
+  }
   $c = Invoke-Child $env:ComSpec '/d /c breakpatch-ci --version' @{ Path = (Get-NewWindowPath) } $root 120
   if ($c.Code -eq 0 -and $c.Out.Trim() -eq $Version) { Ok "cmd /c breakpatch-ci --version, PATH from the registry: $Version" }
   else { Bad "cmd /c breakpatch-ci --version with PATH from the registry didn't say $Version" (Get-RunSummary $c) }
@@ -295,7 +315,7 @@ function Test-Installed([string] $ciHome, [string] $shim) {
   else { Bad "cmd /c `"breakpatch-ci`" --version (the name in quotes, found on PATH) didn't say $Version" (Get-RunSummary $c) }
   # The exit code comes through the .cmd: the same as the environment's own breakpatch-ci.exe's.
   $direct = Invoke-Child $exe '--bp-test-no-such-option'
-  $via = Invoke-Shim $shim @('--bp-test-no-such-option')
+  $via = if ($newConsole) { Invoke-Child $env:ComSpec "/d /s /c `"`"$shim`" --bp-test-no-such-option`"" @{} $root 120 } else { Invoke-Shim $shim @('--bp-test-no-such-option') }
   if ($direct.Code -eq 0) { Write-Host "  (breakpatch-ci.exe exits 0 for an unknown option: exit code pass-through not checked)" }
   elseif ($via.Code -eq $direct.Code) { Ok "the .cmd passes the exit code on ($($via.Code))" }
   else { Bad "breakpatch-ci.exe exits $($direct.Code) for an unknown option, the .cmd $($via.Code)" }
@@ -355,7 +375,7 @@ try {
 
   $oemCp = [int](Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name OEMCP).OEMCP
   $long = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -ErrorAction SilentlyContinue)
-  Write-Host "test-install-ci.ps1: $shellLabel on $([Environment]::OSVersion.VersionString), OEM code page $oemCp, LongPathsEnabled $(if ($long) { $long.LongPathsEnabled } else { '-' })"
+  Write-Host "test-install-ci.ps1: $shellLabel on $([Environment]::OSVersion.VersionString), OEM code page $oemCp, console code page $(Get-ConsoleCodePage), LongPathsEnabled $(if ($long) { $long.LongPathsEnabled } else { '-' })"
   Write-Host "installing breakpatch-ci $Version ($(if ($versionVar) { 'BREAKPATCH_VERSION' } else { 'GitHub''s Latest' })) with $installer"
   Write-Host "test folder: $root"
 
@@ -520,7 +540,7 @@ try {
     $homeLine = @(if (Test-Path -LiteralPath $cfg) { [IO.File]::ReadAllLines($cfg, [Text.Encoding]::UTF8) | Where-Object { $_ -match '^home\s*=' } })
     if ($homeLine.Count -eq 1 -and $homeLine[0].IndexOf((Join-Path $home2 'python\cpython-'), [StringComparison]::OrdinalIgnoreCase) -ge 0) { Ok 'the environment is made from the downloaded Python' }
     else { Bad "the environment isn't made from the downloaded Python" "pyvenv.cfg: $($homeLine -join ' | ')" }
-    Test-Installed $home2 $shim2
+    Test-Installed $home2 $shim2 $oemCp
     try {
       $text = $oem.GetString([IO.File]::ReadAllBytes($shim2))
       if ($text.Contains("`"$home2\current.txt`"") -and $text.Contains("`"$home2\%BP_CI_ENV%\Scripts\breakpatch-ci.exe`" %*")) { Ok "the .cmd names the install folder, in code page $oemCp" }
