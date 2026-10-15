@@ -537,7 +537,9 @@ function Install-BreakpatchCi {
     Say "breakpatch-ci $version is in $(Pretty $ciHome)."
     $onPath = ($env:Path -split ';') -contains $bin
     if ($env:GITHUB_PATH) {
-      Add-Content -LiteralPath $env:GITHUB_PATH -Value $bin
+      # UTF-8 without a BOM, as the runner reads it: Windows PowerShell 5.1's Add-Content writes
+      # the ANSI code page, which loses a folder name's accent.
+      [IO.File]::AppendAllText($env:GITHUB_PATH, $bin + [Environment]::NewLine, (New-Object Text.UTF8Encoding($false)))
       Say "Added $(Pretty $bin) to GITHUB_PATH: the next steps of this job can run breakpatch-ci."
     } elseif (-not $onPath) {
       Add-UserPath $bin
