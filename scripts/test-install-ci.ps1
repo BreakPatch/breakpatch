@@ -337,6 +337,12 @@ function Test-Installed([string] $ciHome, [string] $shim, [int] $shimCp = 0) {
   if ($direct.Code -eq 0) { Write-Host "  (breakpatch-ci.exe exits 0 for an unknown option: exit code pass-through not checked)" }
   elseif ($via.Code -eq $direct.Code) { Ok "the .cmd passes the exit code on ($($via.Code))" }
   else { Bad "breakpatch-ci.exe exits $($direct.Code) for an unknown option, the .cmd $($via.Code)" }
+  # A variable named ERRORLEVEL (which %ERRORLEVEL% would read) doesn't hide the exit code.
+  if ($direct.Code -ne 0) {
+    $set = Invoke-Child $env:ComSpec '/d /c breakpatch-ci --bp-test-no-such-option' @{ Path = (Get-NewWindowPath); ERRORLEVEL = '0' } $root 120
+    if ($set.Code -eq $direct.Code) { Ok "with a variable ERRORLEVEL=0 set, the .cmd still passes the exit code on ($($set.Code))" }
+    else { Bad "with a variable ERRORLEVEL=0 set, the .cmd exits $($set.Code), breakpatch-ci.exe $($direct.Code)" (Get-RunSummary $set) }
+  }
 }
 
 # ---------------------------------------------------------------- set-up

@@ -1316,14 +1316,14 @@ else
   if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
   # In the default bin the .cmd names only its own folder, so any user name in the path works.
   # Its folder read in a subroutine (call :here), where cmd fills %~dp0 in right even when the
-  # command was started by its name in quotes; then a bare exit /b, which keeps breakpatch-ci's
-  # exit code, so it doesn't run on into the subroutine.
-  shim_want=$'@echo off\r\nrem breakpatch-ci installer: starts the environment named in current.txt\r\nsetlocal\r\ncall :here\r\n'
+  # command was started by its name in quotes; then exit /b with breakpatch-ci's exit code (a
+  # variable named ERRORLEVEL cleared first), so it doesn't run on into the subroutine.
+  shim_want=$'@echo off\r\nrem breakpatch-ci installer: starts the environment named in current.txt\r\nsetlocal\r\nset "ERRORLEVEL="\r\ncall :here\r\n'
   shim_want+=$'set /p BP_CI_ENV=<"%BP_CI_DIR%..\\current.txt"\r\n"%BP_CI_DIR%..\\%BP_CI_ENV%\\Scripts\\breakpatch-ci.exe" %*\r\n'
-  shim_want+=$'exit /b\r\n:here\r\nset "BP_CI_DIR=%~dp0"\r\nexit /b\r\n'
+  shim_want+=$'exit /b %ERRORLEVEL%\r\n:here\r\nset "BP_CI_DIR=%~dp0"\r\nexit /b\r\n'
   if [ "$(cat "$bin/breakpatch-ci.cmd"; echo .)" = "$shim_want." ]; then ok "the .cmd finds current.txt and the environment from its own folder (%~dp0, in a subroutine)"; else bad "the .cmd is: $(cat "$bin/breakpatch-ci.cmd")"; fi
   if ! grep -qF "$home" "$bin/breakpatch-ci.cmd"; then ok "the .cmd doesn't name the install folder"; else bad "the .cmd names $home"; fi
-  if [ "$(head -c 9 "$bin/breakpatch-ci.cmd")" = "@echo off" ] && [ "$(grep -c $'\r$' "$bin/breakpatch-ci.cmd")" -eq 10 ]; then ok "the .cmd has no BOM and CRLF line endings"; else bad "the .cmd starts: $(head -c 12 "$bin/breakpatch-ci.cmd" | od -c | head -1)"; fi
+  if [ "$(head -c 9 "$bin/breakpatch-ci.cmd")" = "@echo off" ] && [ "$(grep -c $'\r$' "$bin/breakpatch-ci.cmd")" -eq 11 ]; then ok "the .cmd has no BOM and CRLF line endings"; else bad "the .cmd starts: $(head -c 12 "$bin/breakpatch-ci.cmd" | od -c | head -1)"; fi
 
   # A user name with an accent: the default bin needs nothing of the path.
   ps_case windows-accented-path
