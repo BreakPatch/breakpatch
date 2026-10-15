@@ -22,7 +22,8 @@
 #      PowerShell, and from cmd.exe with PATH as a new window gets it from the registry) says
 #      the version; the .cmd is plain ASCII with CRLF line endings and passes the exit code on;
 #      the user's PATH in HKCU\Environment has the bin folder once, is REG_EXPAND_SZ, and a
-#      %USERPROFILE%\... entry in it is still written that way. It starts when cmd.exe is given
+#      %USERPROFILE%\... entry in it is still written that way; path-added.txt in the install
+#      folder notes that the installer added it. It starts when cmd.exe is given
 #      its name in quotes too. One thing a .cmd may not do is a warning (::warning), not a
 #      failure: let a batch file that runs it without `call` go on afterwards.
 #   2. Install again: still one PATH entry, one environment, the old one gone.
@@ -34,13 +35,16 @@
 #   5. With BP_TEST_GITHUB_TOKEN set, an install with it as BREAKPATCH_GITHUB_TOKEN (the
 #      asset addresses on api.github.com, and the redirect without the token).
 #   6. Uninstall in that window ($env:BREAKPATCH_UNINSTALL = "1"; irm | iex): a file and a folder
-#      of the user's in the install folder stay, the installer's own files and bin\ go, the PATH
-#      entry goes, and BREAKPATCH_UNINSTALL is cleared. Again: "Nothing to remove."
+#      of the user's in the install folder stay, the installer's own files (path-added.txt too)
+#      and bin\ go, the PATH entry the installer added goes, and BREAKPATCH_UNINSTALL is cleared.
+#      Again: "Nothing to remove."
 #   7. Another user folder with no Python on PATH and BREAKPATCH_CI_BIN elsewhere: Python 3.11
 #      is downloaded (its SHA-256, Windows' tar), the .cmd names the install folder in the OEM
 #      code page and runs in a new console, which starts in it (from this test's own console,
 #      when that has another code page, only a warning); then the uninstall removes it all,
-#      PATH entry included.
+#      the PATH entry the installer added included.
+#   8. BREAKPATCH_CI_BIN a folder that was on the user's PATH before the install: the installer
+#      notes nothing (no path-added.txt), and the uninstall leaves the entry where it was.
 #
 # Each failure is a "FAIL" line in the log and, in GitHub Actions, an annotation
 # (::error title=test-install-ci.ps1::...) saying which step failed with the key lines of what
@@ -255,6 +259,20 @@ function Test-UserPath([string] $dir, [int] $want, [string] $label) {
 
 # ---------------------------------------------------------------- checks of an install
 
+# path-added.txt in the install folder names the bin folder the installer added to the user's
+# PATH (so the uninstall takes that entry out, and no other); with no $bin, there's none.
+function Test-PathNote([string] $ciHome, [string] $bin = '') {
+  $note = Join-Path $ciHome 'path-added.txt'
+  $has = Test-Path -LiteralPath $note
+  if (-not $bin) {
+    if (-not $has) { Ok 'no path-added.txt: the installer added nothing to PATH' } else { Bad "there's a path-added.txt: $([IO.File]::ReadAllText($note, [Text.Encoding]::UTF8))" }
+    return
+  }
+  $named = if ($has) { [IO.File]::ReadAllText($note, [Text.Encoding]::UTF8).Trim() } else { '' }
+  if ($named -eq $bin) { Ok 'path-added.txt names the bin folder the installer added to PATH' }
+  else { Bad "path-added.txt names '$named', expected $bin" }
+}
+
 function Get-EnvDir([string] $ciHome) {
   if (-not (Test-Path -LiteralPath $ciHome)) { return @() }
   return @(Get-ChildItem -LiteralPath $ciHome -Directory -Filter 'env-*' -Force)
@@ -416,6 +434,7 @@ try {
     if ($c.Out.Contains('bp-test-after')) { Ok 'a batch file goes on after breakpatch-ci' }
     else { Warn 'a batch file that runs breakpatch-ci (without call) stops there: breakpatch-ci is a .cmd' (Get-RunSummary $c) }
     Test-UserPath $bin1 1 'bin'
+    Test-PathNote $home1 $bin1
   }
 
   # Cases 2 to 6 build on the first install.
@@ -547,12 +566,40 @@ try {
       else { Bad "the .cmd doesn't name the install folder in code page $oemCp" $text }
     } catch { Bad "the .cmd isn't in code page $oemCp" }
     Test-UserPath $bin2 1 'the other bin'
+    Test-PathNote $home2 $bin2
     $r = Invoke-Installer @{ LOCALAPPDATA = $local2; BREAKPATCH_CI_BIN = $bin2; BREAKPATCH_UNINSTALL = '1' }
-    if (Test-Run $r @('Removed breakpatch-ci and its browser from')) {
+    if (Test-Run $r @('Removed breakpatch-ci and its browser from', 'off your PATH.')) {
       if (-not (Test-Path -LiteralPath $shim2)) { Ok 'the .cmd is gone' } else { Bad 'the .cmd is still there' }
-      if (-not (Test-Path -LiteralPath $home2)) { Ok 'the install folder is gone, downloaded Python and all' }
+      if (-not (Test-Path -LiteralPath $home2)) { Ok 'the install folder is gone, downloaded Python, path-added.txt and all' }
       else { Bad "left: $(@(Get-ChildItem -LiteralPath $home2 -Recurse -Force | Select-Object -First 10 | ForEach-Object { $_.FullName.Substring($home2.Length) }) -join ', ')" }
       Test-UserPath $bin2 0 'the other bin'
+    }
+  }
+
+  # ------------------------------------------------------------ 8. bin on PATH before the install
+
+  Enter-Step '8. BREAKPATCH_CI_BIN on the user''s PATH already: it stays there after the uninstall'
+  $user3 = Join-Path $root 'Users\Pre Path'
+  $local3 = Join-Path $user3 'AppData\Local'
+  $home3 = Join-Path $local3 'breakpatch-ci'
+  $bin3 = Join-Path $user3 'my tools'
+  New-Item -ItemType Directory -Force -Path $local3 | Out-Null
+  New-Item -ItemType Directory -Force -Path $bin3 | Out-Null
+  # In the registry only, as a window opened before it was added would have it: the installer's
+  # own PATH hasn't got it, so it asks the registry.
+  $u = Get-UserPath
+  Write-UserPath ([pscustomobject]@{ Value = "$($u.Value.TrimEnd(';'));$bin3"; Kind = $u.Kind })
+  Test-UserPath $bin3 1 'the bin folder of the user''s, before the install'
+  $r = Invoke-Installer @{ LOCALAPPDATA = $local3; BREAKPATCH_CI_BIN = $bin3 }
+  if (Test-Run $r @("breakpatch-ci $Version is in", 'is on your PATH. Open a new terminal')) {
+    if (-not $r.Out.Contains("to your PATH")) { Ok "it doesn't say it added the folder to PATH" } else { Bad 'it says it added the folder to PATH' (Get-RunSummary $r) }
+    Test-PathNote $home3
+    Test-UserPath $bin3 1 'the bin folder of the user''s'
+    $r = Invoke-Installer @{ LOCALAPPDATA = $local3; BREAKPATCH_CI_BIN = $bin3; BREAKPATCH_UNINSTALL = '1' }
+    if (Test-Run $r @('Removed breakpatch-ci and its browser from')) {
+      if (-not $r.Out.Contains('off your PATH')) { Ok "it doesn't say it took the folder off PATH" } else { Bad 'it says it took the folder off PATH' (Get-RunSummary $r) }
+      if (-not (Test-Path -LiteralPath (Join-Path $bin3 'breakpatch-ci.cmd'))) { Ok 'the .cmd is gone' } else { Bad 'the .cmd is still there' }
+      Test-UserPath $bin3 1 'the bin folder of the user''s, after the uninstall'
     }
   }
 } catch {

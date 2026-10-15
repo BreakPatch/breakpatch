@@ -25,8 +25,13 @@
 #      --only-binary=:all:, so every package must match its SHA-256 and nothing is built.
 #   5. Installs Chromium, the version this engine uses, into that folder's browsers\.
 #   6. Switches to the new environment only once all of that worked (the one before stays until
-#      then): bin\breakpatch-ci.cmd (BREAKPATCH_CI_BIN) starts it. The bin folder is added to
-#      this user's PATH, and in GitHub Actions to GITHUB_PATH for the next steps.
+#      then): bin\breakpatch-ci.cmd (BREAKPATCH_CI_BIN) starts it. When the bin folder isn't on
+#      PATH yet, in GitHub Actions it goes to GITHUB_PATH for the next steps, anywhere else to
+#      this user's PATH; path-added.txt in the install folder notes an entry this installer added.
+# The uninstall (BREAKPATCH_UNINSTALL=1, or -Uninstall) removes only what the installer made, and
+# takes the bin folder off the user's PATH only when path-added.txt says it put it there. With
+# BREAKPATCH_LICENCE_KEY set, it first gives this machine's licence back (breakpatch-ci licence
+# release), as site/install-ci does.
 # No administrator rights; nothing outside those folders and this user's PATH is changed.
 #
 # Everything happens in Install-BreakpatchCi, called on the last line: if the download of this
@@ -34,8 +39,9 @@
 #
 # Environment: BREAKPATCH_VERSION, BREAKPATCH_CHANNEL, BREAKPATCH_GITHUB_TOKEN, BREAKPATCH_PYTHON,
 # BREAKPATCH_PYTHON_DOWNLOAD (0: never download Python), BREAKPATCH_CI_HOME, BREAKPATCH_CI_BIN,
-# BREAKPATCH_UNINSTALL, and for tests and mirrors (https only) BREAKPATCH_API, BREAKPATCH_DOWNLOADS,
-# BREAKPATCH_PYTHON_DOWNLOADS with BREAKPATCH_PYTHON_SHA256. As in site/install-ci.
+# BREAKPATCH_UNINSTALL, BREAKPATCH_LICENCE_KEY (with the uninstall), and for tests and mirrors
+# (https only) BREAKPATCH_API, BREAKPATCH_DOWNLOADS (ending in /), BREAKPATCH_PYTHON_DOWNLOADS with
+# BREAKPATCH_PYTHON_SHA256. As in site/install-ci.
 
 function Install-BreakpatchCi {
   param([string[]] $Arguments)
@@ -88,6 +94,8 @@ function Install-BreakpatchCi {
     if ($null -eq $value) { Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue }
     else { Set-Item -LiteralPath "Env:\$name" -Value $value }
   }
+  # A path as .NET reads it (PowerShell's own current folder, not the process's).
+  function Get-FullPath([string] $p) { return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($p) }
   function Pretty([string] $p) {
     $h = [Environment]::GetFolderPath('UserProfile')
     if ($h -and $p.StartsWith($h, [StringComparison]::OrdinalIgnoreCase)) { return '~' + $p.Substring($h.Length) }
@@ -102,24 +110,27 @@ function Install-BreakpatchCi {
   # there is removed the .NET way, only for the WM_SETTINGCHANGE that sends: windows opened after
   # this, from Explorer too, get the new PATH. [NullString]::Value, not $null: PowerShell passes
   # $null to a string parameter as "", and .NET (PowerShell 7's) then writes an empty variable
-  # instead of removing it. Windows only; tests on Linux have no registry.
+  # instead of removing it. Windows only; tests on Linux have no registry. $true when it added
+  # the entry, $false when it was there already (or there's no registry).
   function Add-UserPath([string] $dir) {
-    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return $false }
     $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
     try {
       $userPath = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
       $entries = @($userPath -split ';' | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') })
-      if ($entries -contains $dir.TrimEnd('\')) { return }
+      if ($entries -contains $dir.TrimEnd('\')) { return $false }
       $new = $(if ($userPath.TrimEnd(';')) { $userPath.TrimEnd(';') + ';' } else { '' }) + $dir
       $key.SetValue('Path', $new, [Microsoft.Win32.RegistryValueKind]::ExpandString)
     } finally {
       $key.Dispose()
     }
     [Environment]::SetEnvironmentVariable('BREAKPATCH_CI_PATH_CHANGED', [NullString]::Value, 'User')
+    return $true
   }
 
   # Takes a folder out of this user's PATH again, read and written as in Add-UserPath. Only called
-  # once the folder is gone or empty, so an entry for a folder with the user's own things stays.
+  # for an entry this installer added (path-added.txt), once the folder is gone or empty, so an
+  # entry the user had before, or for a folder with the user's own things, stays.
   function Remove-UserPath([string] $dir) {
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
     $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
@@ -244,17 +255,21 @@ function Install-BreakpatchCi {
 
   function Get-Sha256([string] $path) { return (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant() }
 
+  function Assert-Downloads {
+    if ($Downloads -cnotmatch '\Ahttps://[^\r\n]*/\z') { Fail 'BREAKPATCH_DOWNLOADS must start with https:// and end with /.' }
+  }
+
   function Assert-Asset([string] $name, [string] $url) {
     $bad = "Breakpatch $version lists a file that isn't from Breakpatch's releases, so nothing was installed. Tell us: https://github.com/BreakPatch/breakpatch/issues"
-    if ($name -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { Fail $bad }
+    if ($name -cnotmatch '\A[A-Za-z0-9][A-Za-z0-9._-]*\z') { Fail $bad }
     if ($token) {
-      if ($url -notmatch ('^' + [regex]::Escape("$Api/releases/assets/") + '[0-9]+$')) { Fail $bad }
+      if ($url -cnotmatch ('\A' + [regex]::Escape("$Api/releases/assets/") + '[0-9]+\z')) { Fail $bad }
       return
     }
-    if (-not $Downloads.StartsWith('https://')) { Fail 'BREAKPATCH_DOWNLOADS must start with https://.' }
-    if (-not $url.StartsWith($Downloads)) { Fail $bad }
+    Assert-Downloads
+    if (-not $url.StartsWith($Downloads, [StringComparison]::Ordinal)) { Fail $bad }
     $rest = $url.Substring($Downloads.Length)
-    if ($rest -notmatch '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' -or $rest.Contains('..')) { Fail $bad }
+    if ($rest -cnotmatch '\A[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\z' -or $rest.Contains('..')) { Fail $bad }
     if ($url.Split('/')[-1] -ne $name) { Fail $bad }
   }
 
@@ -265,39 +280,50 @@ function Install-BreakpatchCi {
   # GitHub sends to the Latest release's file), which must match that version's SHA256SUMS. The
   # release's files are the ones its SHA256SUMS lists, each checked like the API's (Assert-Asset,
   # then against SHA256SUMS). With BREAKPATCH_DOWNLOADS, latest is ../latest/download/ next to it.
+  # What a release must have for this is in .github/workflows/release.yml's header (the release
+  # contract). A file that isn't there gets the API path's message: no latest.json is no release
+  # yet, and a release without SHA256SUMS has nothing to install. As plain_release in site/install-ci.
   $limitedMessage = 'GitHub is limiting requests from this network right now. Try again in a few minutes.'
   function Find-PlainRelease([string] $wanted) {
-    if (-not $Downloads.StartsWith('https://')) { Fail 'BREAKPATCH_DOWNLOADS must start with https://.' }
+    $script:plain = $true
+    Assert-Downloads
     $latestJson = $null
     if ($wanted) {
       $script:version = $wanted
     } else {
-      if (-not $Downloads.EndsWith('/download/')) { Fail $limitedMessage }
+      if (-not $Downloads.EndsWith('/download/', [StringComparison]::Ordinal)) { Fail $limitedMessage }
       $latestJson = Join-Path $tmp 'latest.json'
       $s = Get-Url ($Downloads.Substring(0, $Downloads.Length - 'download/'.Length) + 'latest/download/latest.json') $latestJson 'application/octet-stream'
+      if ($s -eq 404) { Fail "There's no Breakpatch release yet. See $Releases." }
       if ($s -eq 0) { Fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." }
       if ($s -ne 200) { Fail $limitedMessage }
       $v = ''
       try { $v = [string](Get-Content -Raw -LiteralPath $latestJson | ConvertFrom-Json).version } catch { $v = '' }
-      if ($v -cnotmatch '\A[0-9][0-9A-Za-z.-]*\z') { Fail "Couldn't read the release from GitHub. Try again in a few minutes." }
+      if ($v -cnotmatch '\A[0-9][0-9A-Za-z.-]*\z' -or $v.Contains('..')) { Fail "Couldn't read the release from GitHub. Try again in a few minutes." }
       $script:version = $v
     }
     $version = $script:version
     Say "GitHub's API is limiting requests from this network: getting Breakpatch $version from its download address instead."
     $base = "${Downloads}v$version/"
+    # Kept for Get-Files: the same copy latest.json is checked with.
     $sumsFile = Join-Path $tmp 'SHA256SUMS'
     $s = Get-Url "${base}SHA256SUMS" $sumsFile 'application/octet-stream'
     if ($s -eq 404 -and $wanted) { Fail "There's no Breakpatch $wanted. The versions are at $Releases." }
+    if ($s -eq 404) {
+      # The latest release has no SHA256SUMS, so nothing to install: Assert-Release says so.
+      $script:assets = @{}
+      return
+    }
     if ($s -eq 0) { Fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." }
     if ($s -ne 200) { Fail $limitedMessage }
     $script:assets = @{ 'SHA256SUMS' = "${base}SHA256SUMS" }
     $listed = @{}
     foreach ($line in (Get-Content -LiteralPath $sumsFile)) {
       $f = ([string]$line).Trim() -split '\s+', 2
-      if ($f.Count -ne 2 -or $f[0] -notmatch '^[0-9A-Fa-f]{64}$') { continue }
+      if ($f.Count -ne 2 -or $f[0] -cnotmatch '\A[0-9A-Fa-f]{64}\z') { continue }
       $n = $f[1].TrimStart('*')
       if (-not $listed.ContainsKey($n)) { $listed[$n] = $f[0].ToLowerInvariant() }
-      if ($n -ne 'SHA256SUMS') { $script:assets[$n] = "$base$n" }
+      if ($n -cne 'SHA256SUMS' -and $n -cne 'SHA256SUMS.asc') { $script:assets[$n] = "$base$n" }
     }
     if ($latestJson -and (-not $listed.ContainsKey('latest.json') -or (Get-Sha256 $latestJson) -ne $listed['latest.json'])) {
       Fail "Couldn't read the release from GitHub. Try again in a few minutes."
@@ -305,12 +331,13 @@ function Install-BreakpatchCi {
   }
 
   function Find-Release {
+    $script:plain = $false
     $channel = if ($env:BREAKPATCH_CHANNEL) { $env:BREAKPATCH_CHANNEL } else { 'stable' }
     if ($channel -notin @('stable', 'beta')) { Fail "BREAKPATCH_CHANNEL is stable or beta, not $channel." }
     $wanted = ''
     if ($env:BREAKPATCH_VERSION) {
-      $wanted = $env:BREAKPATCH_VERSION -replace '^v', ''
-      if ($wanted -notmatch '^[0-9][0-9A-Za-z.-]*$') { Fail 'BREAKPATCH_VERSION is a version like 1.2.3 or 0.1.0-beta.1.' }
+      $wanted = $env:BREAKPATCH_VERSION -creplace '\Av', ''
+      if ($wanted -cnotmatch '\A[0-9][0-9A-Za-z.-]*\z') { Fail 'BREAKPATCH_VERSION is a version like 1.2.3 or 0.1.0-beta.1.' }
       $status = Get-Url "$Api/releases/tags/v$wanted"
     } elseif ($channel -eq 'beta') {
       $status = Get-Url "$Api/releases?per_page=10"
@@ -322,10 +349,15 @@ function Install-BreakpatchCi {
       200 { }
       401 { Fail "GitHub didn't accept BREAKPATCH_GITHUB_TOKEN. It may have expired: make a new one." }
       404 {
+        if ($token -and $wanted) { Fail "There's no Breakpatch $wanted, or BREAKPATCH_GITHUB_TOKEN can't read BreakPatch/breakpatch." }
+        if ($token) { Fail "There's no Breakpatch release yet, or BREAKPATCH_GITHUB_TOKEN can't read BreakPatch/breakpatch." }
         if ($wanted) { Fail "There's no Breakpatch $wanted. The versions are at $Releases." }
         Fail "There's no Breakpatch release yet. See $Releases."
       }
-      { $_ -in 403, 429 } { $limited = $true }
+      { $_ -in 403, 429 } {
+        if ($token -and $status -eq 403) { Fail "GitHub refused BREAKPATCH_GITHUB_TOKEN (HTTP 403). Check it can read BreakPatch/breakpatch (Contents: read-only), or try again in a few minutes." }
+        $limited = $true
+      }
       0 { Fail "Couldn't reach GitHub to find Breakpatch. Check your connection and try again." }
       default { Fail "GitHub didn't answer as expected (HTTP $status). Try again in a few minutes." }
     }
@@ -341,9 +373,9 @@ function Install-BreakpatchCi {
       if (-not $doc) { Fail "There's no Breakpatch release yet. See $Releases." }
     }
     $tag = [string]$doc.tag_name
-    if ($tag -notmatch '^v[0-9][0-9A-Za-z.-]*$') { Fail "Couldn't read the release from GitHub. Try again in a few minutes." }
+    if ($tag -cnotmatch '\Av[0-9][0-9A-Za-z.-]*\z') { Fail "Couldn't read the release from GitHub. Try again in a few minutes." }
     $script:version = $tag.Substring(1)
-    if ($wanted -and $script:version -ne $wanted) { Fail "GitHub answered with Breakpatch $($script:version), not $wanted. Try again in a few minutes." }
+    if ($wanted -and $script:version -cne $wanted) { Fail "GitHub answered with Breakpatch $($script:version), not $wanted. Try again in a few minutes." }
     $script:assets = @{}
     foreach ($a in @($doc.assets)) {
       $script:assets[[string]$a.name] = if ($token) { [string]$a.url } else { [string]$a.browser_download_url }
@@ -361,7 +393,7 @@ function Install-BreakpatchCi {
     $want = $null
     foreach ($line in $script:sums) {
       $f = $line -split '\s+', 2
-      if ($f.Count -eq 2 -and ($f[1] -eq $name -or $f[1] -eq "*$name")) { $want = $f[0].ToLowerInvariant(); break }
+      if ($f.Count -eq 2 -and ($f[1] -ceq $name -or $f[1] -ceq "*$name")) { $want = $f[0].ToLowerInvariant(); break }
     }
     if (-not $want) { Fail "Breakpatch $version has no checksum for $name, so nothing was installed." }
     if ((Get-Sha256 (Join-Path $files $name)) -ne $want) {
@@ -373,7 +405,8 @@ function Install-BreakpatchCi {
     $version = $script:version
     Assert-Asset $script:reqs $script:assets[$script:reqs]
     Assert-Asset 'SHA256SUMS' $script:assets['SHA256SUMS']
-    if ((Get-Url $script:assets['SHA256SUMS'] (Join-Path $tmp 'SHA256SUMS') 'application/octet-stream') -ne 200) {
+    # Find-PlainRelease has it already: the copy it checked latest.json with.
+    if (-not $script:plain -and (Get-Url $script:assets['SHA256SUMS'] (Join-Path $tmp 'SHA256SUMS') 'application/octet-stream') -ne 200) {
       Fail "Couldn't download the checksums. Check your connection and run this again."
     }
     $script:sums = Get-Content -LiteralPath (Join-Path $tmp 'SHA256SUMS')
@@ -382,12 +415,12 @@ function Install-BreakpatchCi {
     }
     Assert-Sum $script:reqs
     $lines = Get-Content -LiteralPath (Join-Path $files $script:reqs)
-    $wheels = @($lines | ForEach-Object { if ($_ -match '^\./([A-Za-z0-9][A-Za-z0-9._-]*\.whl) --hash=sha256:[0-9a-f]{64}$') { $Matches[1] } })
-    $local = @($lines | Where-Object { $_ -match '^[^#A-Za-z0-9 ]' })
+    $wheels = @($lines | ForEach-Object { if ($_ -cmatch '\A\./([A-Za-z0-9][A-Za-z0-9._-]*\.whl) --hash=sha256:[0-9a-f]{64}\z') { $Matches[1] } })
+    $local = @($lines | Where-Object { $_ -cmatch '\A[^#A-Za-z0-9 ]' })
     # Comment lines don't count (the file's header names the install command's own address).
     $urls = @($lines | Where-Object { $_ -notmatch '^\s*#' -and $_ -match '://|@ ' })
     if ($wheels.Count -ne 2 -or $local.Count -ne 2 -or $urls.Count -ne 0 -or
-        -not ($wheels | Where-Object { $_ -like 'breakpatch_engine-*' }) -or -not ($wheels | Where-Object { $_ -like 'breakpatch_team_engine-*' })) {
+        -not ($wheels | Where-Object { $_ -clike 'breakpatch_engine-*' }) -or -not ($wheels | Where-Object { $_ -clike 'breakpatch_team_engine-*' })) {
       Fail "Breakpatch $version's breakpatch-ci files can't be read, so nothing was installed. Write to support@breakpatch.dev."
     }
     foreach ($w in $wheels) {
@@ -412,10 +445,10 @@ function Install-BreakpatchCi {
     }
     $base = $PbsDownloads; $want = $PbsSha256
     if ($env:BREAKPATCH_PYTHON_DOWNLOADS) {
-      if ($env:BREAKPATCH_PYTHON_DOWNLOADS -notmatch '^https://.*/$') { Fail 'BREAKPATCH_PYTHON_DOWNLOADS must start with https:// and end with /.' }
+      if ($env:BREAKPATCH_PYTHON_DOWNLOADS -cnotmatch '\Ahttps://[^\r\n]*/\z') { Fail 'BREAKPATCH_PYTHON_DOWNLOADS must start with https:// and end with /.' }
       $base = $env:BREAKPATCH_PYTHON_DOWNLOADS; $want = [string]$env:BREAKPATCH_PYTHON_SHA256
     }
-    if ($want -notmatch '^[0-9a-f]{64}$') { Fail "There's no checksum for the Python download for this PC, so nothing was installed." }
+    if ($want -cnotmatch '\A[0-9a-f]{64}\z') { Fail "There's no checksum for the Python download for this PC, so nothing was installed." }
     Say "This PC has no Python 3.11 that breakpatch-ci can use: downloading Python $PbsVersion (python-build-standalone $PbsRelease)..."
     $file = Join-Path $tmp "cpython-$PbsVersion-$PbsTriple.tar.gz"
     if ((Get-Url "$base$PbsRelease/cpython-$PbsVersion%2B$PbsRelease-$PbsTriple-install_only_stripped.tar.gz" $file 'application/octet-stream') -ne 200) {
@@ -450,12 +483,22 @@ function Install-BreakpatchCi {
   $shim = Join-Path $bin 'breakpatch-ci.cmd'
   $current = Join-Path $ciHome 'current.txt'     # the environment in use: no symbolic links without admin rights
   $binIsDefault = $bin.TrimEnd('\', '/') -eq (Join-Path $ciHome 'bin').TrimEnd('\', '/')
+  # The bin folder this installer added to the user's PATH, if it did (Add-UserPath).
+  $pathMarker = Join-Path $ciHome 'path-added.txt'
 
   if (($Arguments -contains '-Uninstall') -or ($Arguments -contains '--uninstall') -or $env:BREAKPATCH_UNINSTALL -eq '1') {
     # irm | iex runs this in the window's own session: BREAKPATCH_UNINSTALL goes once it's done, or
     # the next install in that window would uninstall again.
     try {
       $removed = $false
+      # The machine licence goes back first, while breakpatch-ci is still here (it needs the key),
+      # as in site/install-ci.
+      $released = $false
+      if ($env:BREAKPATCH_LICENCE_KEY -and (Test-Path -LiteralPath $current)) {
+        $envName = [string](Get-Content -LiteralPath $current -TotalCount 1)
+        $exe = if ($envName -clike 'env-*') { Get-VenvCommand (Join-Path $ciHome $envName) } else { '' }
+        if ($exe -and (Test-Path -LiteralPath $exe) -and ((Read-Native $exe @('licence', 'release')) -match '"released": *true')) { $released = $true }
+      }
       if (Test-Path -LiteralPath $shim) {
         if ((Get-Content -Raw -LiteralPath $shim) -match 'breakpatch-ci installer') { Remove-Item -LiteralPath $shim -Force; $removed = $true }
       }
@@ -480,16 +523,30 @@ function Install-BreakpatchCi {
         if ((Test-Path -LiteralPath $pyRoot -PathType Container) -and -not (Get-ChildItem -LiteralPath $pyRoot -Force)) { Remove-Item -LiteralPath $pyRoot -Force }
         $removed = $true
       }
-      if (-not $removed) { Say "breakpatch-ci isn't in $(Pretty $ciHome). Nothing to remove."; return }
-      if (Test-Path -LiteralPath "$shim.new") { Remove-Item -LiteralPath "$shim.new" -Force }
+      if ($removed -and (Test-Path -LiteralPath "$shim.new")) { Remove-Item -LiteralPath "$shim.new" -Force }
+      # The PATH entry goes only when this installer added it (path-added.txt names this bin
+      # folder), and only once the folder is gone or has nothing else in it. Before "Nothing to
+      # remove": an entry left by an uninstall cut short still goes. The note goes either way.
+      $unpathed = $false
+      if (Test-Path -LiteralPath $pathMarker -PathType Leaf) {
+        $added = ([IO.File]::ReadAllText((Get-FullPath $pathMarker), [Text.Encoding]::UTF8)).Trim()
+        $binGone = -not (Test-Path -LiteralPath $bin -PathType Container) -or -not (Get-ChildItem -LiteralPath $bin -Force)
+        if ($added -and $added.TrimEnd('\') -eq $bin.TrimEnd('\') -and $binGone) { Remove-UserPath $bin; $unpathed = $true }
+        Remove-Item -LiteralPath $pathMarker -Force
+      }
+      if (-not $removed -and -not $unpathed) { Say "breakpatch-ci isn't in $(Pretty $ciHome). Nothing to remove."; return }
       $made = if ($binIsDefault) { @($bin, $ciHome) } else { @($ciHome) }
       foreach ($d in $made) {
         if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d -Force }
       }
-      # The PATH entry goes with the shim, unless the folder still has something else in it.
-      if (-not (Test-Path -LiteralPath $bin -PathType Container) -or -not (Get-ChildItem -LiteralPath $bin -Force)) { Remove-UserPath $bin }
+      if ($unpathed) { Say "Took $(Pretty $bin) off your PATH." }
+      if (-not $removed) { return }
       Say "Removed breakpatch-ci and its browser from $(Pretty $ciHome)."
-      Say "The machine licence is still in Breakpatch's data folder. Run breakpatch-ci licence release first to give the seat back, or free it in the back office."
+      if ($released) {
+        Say "This machine's licence is given back."
+      } else {
+        Say "This machine's licence may still be taken. Free it in the back office, or next time run breakpatch-ci licence release first (or uninstall with BREAKPATCH_LICENCE_KEY set, which does it for you)."
+      }
       return
     } finally {
       Remove-Item Env:\BREAKPATCH_UNINSTALL -ErrorAction SilentlyContinue
@@ -502,17 +559,18 @@ function Install-BreakpatchCi {
   # inside the install folder, the shim names nothing but its own folder (%~dp0, which cmd fills
   # in itself) and ASCII names, so any profile path works. It reads %~dp0 in a subroutine (call
   # :here): started by its name in quotes ("breakpatch-ci", found on PATH), cmd fills the batch
-  # file's own %~dp0 in wrong, with the current folder, but a called label's right. Then exit /b
-  # with breakpatch-ci's exit code, so it doesn't run on into the subroutine. Anywhere else it has
-  # to name the install folder: it's written in the system's OEM code page, the one a new console
-  # starts in (OEMCP; 65001, UTF-8 without a BOM, when Windows' "Use Unicode UTF-8" option is on),
-  # and a path that code page can't hold stops the install here, before anything is downloaded,
-  # rather than leave a broken command. .NET's own encodings, so it's the same in Windows
-  # PowerShell 5.1 and PowerShell 7.
+  # file's own %~dp0 in wrong, with the current folder, but a called label's right. Then a bare
+  # exit /b, so it doesn't run on into the subroutine: it keeps breakpatch-ci's exit code as it is
+  # (exit /b %ERRORLEVEL% would take a variable named ERRORLEVEL instead, if one were set).
+  # Anywhere else it has to name the install folder: it's written in the system's OEM code page,
+  # the one a new console starts in (OEMCP; 65001, UTF-8 without a BOM, when Windows' "Use Unicode
+  # UTF-8" option is on), and a path that code page can't hold stops the install here, before
+  # anything is downloaded, rather than leave a broken command. .NET's own encodings, so it's the
+  # same in Windows PowerShell 5.1 and PowerShell 7.
   if ($binIsDefault) {
     $shimLines = @('@echo off', 'rem breakpatch-ci installer: starts the environment named in current.txt', 'setlocal',
                    'call :here', 'set /p BP_CI_ENV=<"%BP_CI_DIR%..\current.txt"', '"%BP_CI_DIR%..\%BP_CI_ENV%\Scripts\breakpatch-ci.exe" %*',
-                   'exit /b %ERRORLEVEL%', ':here', 'set "BP_CI_DIR=%~dp0"', 'exit /b')
+                   'exit /b', ':here', 'set "BP_CI_DIR=%~dp0"', 'exit /b')
   } else {
     $shimLines = @('@echo off', 'rem breakpatch-ci installer: starts the environment named in current.txt', 'setlocal',
                    "set /p BP_CI_ENV=<`"$current`"", "`"$ciHome\%BP_CI_ENV%\Scripts\breakpatch-ci.exe`" %*")
@@ -613,7 +671,7 @@ function Install-BreakpatchCi {
     $staged = $null
     New-Item -ItemType Directory -Force -Path $bin | Out-Null
     # Bytes, in the encoding worked out above (Set-Content's -Encoding differs between 5.1 and 7).
-    [IO.File]::WriteAllBytes($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath("$shim.new"), $shimEncoding.GetBytes($shimText))
+    [IO.File]::WriteAllBytes((Get-FullPath "$shim.new"), $shimEncoding.GetBytes($shimText))
     Move-Item -LiteralPath "$shim.new" -Destination $shim -Force
     if ($old -and $old -ne $name -and $old -like 'env-*') {
       Remove-Item -LiteralPath (Join-Path $ciHome $old) -Recurse -Force -ErrorAction SilentlyContinue
@@ -627,17 +685,22 @@ function Install-BreakpatchCi {
     }
 
     Say "breakpatch-ci $version is in $(Pretty $ciHome)."
-    $onPath = ($env:Path -split ';') -contains $bin
-    if ($env:GITHUB_PATH) {
+    # As in site/install-ci: on PATH already, nothing to add; in GitHub Actions, GITHUB_PATH;
+    # anywhere else this user's PATH.
+    $onPath = @(([string]$env:Path -split ';') | ForEach-Object { $_.TrimEnd('\') }) -contains $bin.TrimEnd('\')
+    if ($onPath) {
+      Say 'Run it with: breakpatch-ci run --test path\to\test.json'
+    } elseif ($env:GITHUB_PATH) {
       # UTF-8 without a BOM, as the runner reads it: Windows PowerShell 5.1's Add-Content writes
       # the ANSI code page, which loses a folder name's accent.
       [IO.File]::AppendAllText($env:GITHUB_PATH, $bin + [Environment]::NewLine, (New-Object Text.UTF8Encoding($false)))
       Say "Added $(Pretty $bin) to GITHUB_PATH: the next steps of this job can run breakpatch-ci."
-    } elseif (-not $onPath) {
-      Add-UserPath $bin
+    } elseif (Add-UserPath $bin) {
+      # Noted, so the uninstall takes out only an entry this installer put there.
+      [IO.File]::WriteAllText((Get-FullPath $pathMarker), $bin, (New-Object Text.UTF8Encoding($false)))
       Say "Added $(Pretty $bin) to your PATH. Open a new terminal, then run: breakpatch-ci run --test path\to\test.json"
     } else {
-      Say 'Run it with: breakpatch-ci run --test path\to\test.json'
+      Say "$(Pretty $bin) is on your PATH. Open a new terminal, then run: breakpatch-ci run --test path\to\test.json"
     }
     Say "How to use it: $Docs"
   } finally {

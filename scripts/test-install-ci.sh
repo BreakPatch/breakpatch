@@ -1316,11 +1316,11 @@ else
   if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
   # In the default bin the .cmd names only its own folder, so any user name in the path works.
   # Its folder read in a subroutine (call :here), where cmd fills %~dp0 in right even when the
-  # command was started by its name in quotes; then exit /b with breakpatch-ci's exit code, so it
-  # doesn't run on into the subroutine.
+  # command was started by its name in quotes; then a bare exit /b, which keeps breakpatch-ci's
+  # exit code, so it doesn't run on into the subroutine.
   shim_want=$'@echo off\r\nrem breakpatch-ci installer: starts the environment named in current.txt\r\nsetlocal\r\ncall :here\r\n'
   shim_want+=$'set /p BP_CI_ENV=<"%BP_CI_DIR%..\\current.txt"\r\n"%BP_CI_DIR%..\\%BP_CI_ENV%\\Scripts\\breakpatch-ci.exe" %*\r\n'
-  shim_want+=$'exit /b %ERRORLEVEL%\r\n:here\r\nset "BP_CI_DIR=%~dp0"\r\nexit /b\r\n'
+  shim_want+=$'exit /b\r\n:here\r\nset "BP_CI_DIR=%~dp0"\r\nexit /b\r\n'
   if [ "$(cat "$bin/breakpatch-ci.cmd"; echo .)" = "$shim_want." ]; then ok "the .cmd finds current.txt and the environment from its own folder (%~dp0, in a subroutine)"; else bad "the .cmd is: $(cat "$bin/breakpatch-ci.cmd")"; fi
   if ! grep -qF "$home" "$bin/breakpatch-ci.cmd"; then ok "the .cmd doesn't name the install folder"; else bad "the .cmd names $home"; fi
   if [ "$(head -c 9 "$bin/breakpatch-ci.cmd")" = "@echo off" ] && [ "$(grep -c $'\r$' "$bin/breakpatch-ci.cmd")" -eq 10 ]; then ok "the .cmd has no BOM and CRLF line endings"; else bad "the .cmd starts: $(head -c 12 "$bin/breakpatch-ci.cmd" | od -c | head -1)"; fi
@@ -1402,6 +1402,18 @@ else
   ps_run BREAKPATCH_VERSION=9.9.9
   expect_code 1
   expect_out "There's no Breakpatch 9.9.9."
+  ps_run BREAKPATCH_API="$base/nosums" BREAKPATCH_DOWNLOADS="$base/nosums/download/"
+  expect_code 1
+  expect_out "Breakpatch 2.3.0 has no breakpatch-ci for Windows."
+  ps_run BREAKPATCH_DOWNLOADS="http://127.0.0.1:$http_port/good/download/"
+  expect_code 1
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
+  ps_run BREAKPATCH_DOWNLOADS="$base/good/download"
+  expect_code 1
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
+  ps_run BREAKPATCH_VERSION=V1.0.0
+  expect_code 1
+  expect_out "BREAKPATCH_VERSION is a version like 1.2.3 or 0.1.0-beta.1."
   ps_run BREAKPATCH_API="http://127.0.0.1:$http_port/good"
   expect_code 1
   expect_out "Couldn't reach GitHub to find Breakpatch."
@@ -1450,8 +1462,44 @@ else
   ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/apponly/download/"
   expect_code 1
   expect_out "Breakpatch 1.4.0 has no breakpatch-ci for Windows."
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/nosums/download/"
+  expect_code 1
+  expect_out "Breakpatch 2.3.0 has no breakpatch-ci for Windows."
+  expect_no_out "GitHub is limiting requests"
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="http://127.0.0.1:$http_port/good/download/"
+  expect_code 1
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
   ps_version 1.0.0
+  n=$(served /once/download/v2.4.0/SHA256SUMS)
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/once/download/"
+  expect_code 0
+  expect_out "Updating breakpatch-ci 1.0.0 to 2.4.0..."
+  if [ "$(served /once/download/v2.4.0/SHA256SUMS)" -eq $((n + 1)) ]; then ok "SHA256SUMS was downloaded once"; else bad "SHA256SUMS was downloaded $(( $(served /once/download/v2.4.0/SHA256SUMS) - n )) times"; fi
+  ps_version 2.4.0
   ps_envs 1
+  if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
+
+  ps_case windows-api-rate-limited-latest-json
+  for lj in $latest_json_cases; do
+    ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/$lj/download/"
+    expect_code 1
+    expect_out "Couldn't read the release from GitHub. Try again in a few minutes."
+    expect_no_out "download address instead"
+  done
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/empty/download/"
+  expect_code 1
+  expect_out "There's no Breakpatch release yet. See https://github.com/BreakPatch/breakpatch/releases."
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="https://127.0.0.1:9/nothing/download/"
+  expect_code 1
+  expect_out "Couldn't reach GitHub to find Breakpatch. Check your connection and try again."
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/good/files/"
+  expect_code 1
+  expect_out "GitHub is limiting requests from this network right now. Try again in a few minutes."
+  ps_run BREAKPATCH_API="$base/limited" BREAKPATCH_DOWNLOADS="$base/good/download"
+  expect_code 1
+  expect_out "BREAKPATCH_DOWNLOADS must start with https:// and end with /."
+  ps_none
+  if [ ! -e "$home" ]; then ok "no install folder was made"; else bad "made: $(ls -A "$home")"; fi
   if [ -z "$(ls -A "$c/tmp")" ]; then ok "nothing left in the temporary folder"; else bad "left behind: $(ls -A "$c/tmp")"; fi
 
   # A requirements file with CRLF line endings (as Windows' text mode writes it) reads the same:
@@ -1484,12 +1532,28 @@ else
   ps_case windows-uninstall-and-iex
   ps_run
   expect_code 0
+  # The note of a PATH entry the installer added (only on Windows, which has a registry) goes too.
+  printf '%s' "$bin" > "$home/path-added.txt"
   ps_run BREAKPATCH_UNINSTALL=1
   expect_code 0
   expect_out "Removed breakpatch-ci and its browser from"
+  expect_out "This machine's licence may still be taken. Free it in the back office"
+  if ! grep -q "licence" "$c/state/breakpatch-ci" 2>/dev/null; then ok "no licence release without the key"; else bad "licence release ran without a key"; fi
   if [ ! -e "$home" ]; then ok "the install folder is gone"; else bad "something is left: $(ls -A "$home")"; fi
   ps_run BREAKPATCH_UNINSTALL=1
   expect_out "Nothing to remove."
+  # With BREAKPATCH_LICENCE_KEY, the licence goes back first, as site/install-ci does it.
+  ps_run
+  expect_code 0
+  ps_run BREAKPATCH_UNINSTALL=1 BREAKPATCH_LICENCE_KEY=BPK-test
+  expect_code 0
+  expect_out "This machine's licence is given back."
+  if grep -qx "licence release" "$c/state/breakpatch-ci"; then ok "the licence went back before the files"; else bad "breakpatch-ci was run as: $(cat "$c/state/breakpatch-ci" 2>/dev/null)"; fi
+  ps_run
+  ps_run BREAKPATCH_UNINSTALL=1 BREAKPATCH_LICENCE_KEY=BPK-test FAKE_RELEASE=no
+  expect_code 0
+  expect_out "This machine's licence may still be taken."
+  if [ ! -e "$home" ]; then ok "the install folder is gone"; else bad "something is left: $(ls -A "$home")"; fi
 
   # irm … | iex: a failure is printed, and doesn't close the window (no exit).
   set +e
