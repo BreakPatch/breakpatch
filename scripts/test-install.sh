@@ -1388,10 +1388,10 @@ for sh_name in "${shells[@]}"; do
   expect_out "With BREAKPATCH_GITHUB_TOKEN the installer needs curl 7.83 or later (this Mac has 7.79)."
   if [ ! -s "$gh_log" ]; then ok "nothing was sent to GitHub"; else bad "sent: $(tr '\n' ';' < "$gh_log")"; fi
   expect_no_app "$apps"
-  # On Linux it's "this computer" (check_curl is shared with site/install-ci).
+  # On Linux it's "this PC", as the app says (check_curl is shared with site/install-ci).
   run_gh FAKE_OS=Linux FAKE_ARCH=x86_64 DISPLAY= WAYLAND_DISPLAY= BREAKPATCH_GITHUB_TOKEN="$token" FAKE_CURL_VERSION=7.79.1
   expect_code 1
-  expect_out "With BREAKPATCH_GITHUB_TOKEN the installer needs curl 7.83 or later (this computer has 7.79)."
+  expect_out "With BREAKPATCH_GITHUB_TOKEN the installer needs curl 7.83 or later (this PC has 7.79)."
   expect_no_out "this Mac"
 
   gh_case token-files-from-another-repo
@@ -1487,7 +1487,7 @@ for sh_name in "${shells[@]}"; do
   new_case linux-without-fuse
   run_linux DISPLAY=:99 PATH="$(nofuse_path)"
   expect_code 0
-  expect_out "Breakpatch is an AppImage, which needs FUSE to start, and this computer doesn't have it."
+  expect_out "Breakpatch is an AppImage, which needs FUSE to start, and this PC doesn't have it."
   expect_out "sudo apt install"
   expect_no_out "Opening it now."
   expect_linux_app 1.1.0
@@ -1620,7 +1620,7 @@ for sh_name in "${shells[@]}"; do
   expect_code 0
   run_linux FAKE_GLIBC=none
   expect_code 1
-  expect_out "Couldn't find glibc on this computer."
+  expect_out "Couldn't find glibc on this PC."
 
   new_case linux-from-the-deb
   run_linux FAKE_DEB=1
@@ -1681,7 +1681,7 @@ for sh_name in "${shells[@]}"; do
   new_case linux-help-and-root
   run_linux -- --help
   expect_code 0
-  expect_out "Installs or updates Breakpatch on this computer (Linux x86_64, a preview)."
+  expect_out "Installs or updates Breakpatch on this PC (Linux x86_64, a preview)."
   expect_no_out "this Mac"
   run_linux FAKE_UID=0
   expect_code 1

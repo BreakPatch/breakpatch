@@ -76,7 +76,7 @@ RELEASES=https://github.com/BreakPatch/breakpatch/releases
 DOWNLOADS=${BREAKPATCH_DOWNLOADS:-$RELEASES/download/}
 DOCS=https://breakpatch.dev/docs/#from-ci-with-breakpatch-ci
 MARKER=breakpatch-ci.json
-# What messages call this computer (site/install says "this Mac" or "this computer").
+# What messages call this computer (site/install says "this Mac" or "this PC").
 this_machine="this machine"
 
 # Python 3.11 from python-build-standalone, for machines without one: the release, the version,

@@ -61,7 +61,7 @@ CERT_SHA256=25D8516500459226D00A500DEDDE0D13094B3BB48E560068B737BBA62427948E
 MINISIGN_KEY=RWQbw3MJi+i+MQ97FPaAqkP2nnccBb+ySDCUH1PqiwViaG6y9TNEQszX
 APP=Breakpatch.app
 BUNDLE_ID=dev.breakpatch.app
-# What messages call this computer (the Linux path says "this computer").
+# What messages call this computer (the Linux path says "this PC", as the app does).
 this_machine="this Mac"
 # The release file to install: the Mac's update archive (the Linux path sets the AppImage's).
 ARCHIVE_RE='[.]app[.]tar[.]gz$'
@@ -693,7 +693,7 @@ GPG_PUBLIC_KEY=''
 
 usage_linux() {
   cat <<'EOF'
-Installs or updates Breakpatch on this computer (Linux x86_64, a preview).
+Installs or updates Breakpatch on this PC (Linux x86_64, a preview).
 
   curl -fsSL https://breakpatch.dev/install | sh
   curl -fsSL https://breakpatch.dev/install | BREAKPATCH_VERSION=1.2.3 sh
@@ -717,7 +717,7 @@ check_linux() {
   glibc=$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{ print $2 }')
   case "$glibc" in
     [0-9]*.[0-9]*) ;;
-    *) fail "$need Couldn't find glibc on this computer." ;;
+    *) fail "$need Couldn't find glibc on this PC." ;;
   esac
   gmaj=${glibc%%.*} gmin=${glibc#*.}
   gmin=${gmin%%.*}
@@ -730,10 +730,10 @@ check_linux() {
 check_linux_tools() {
   for tool in curl awk sed; do
     command -v "$tool" >/dev/null 2>&1 \
-      || fail "The installer needs $tool, which isn't on this computer's PATH. Install it and run this again."
+      || fail "The installer needs $tool, which isn't on this PC's PATH. Install it and run this again."
   done
   command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 \
-    || fail "The installer needs sha256sum (coreutils), which isn't on this computer's PATH."
+    || fail "The installer needs sha256sum (coreutils), which isn't on this PC's PATH."
 }
 
 # The package manager owns a .deb install: two copies would fight over the same links and files.
@@ -824,7 +824,7 @@ copy_icon() {
 # An AppImage mounts itself with FUSE, through fusermount (from fuse3, or fuse).
 check_fuse() {
   if command -v fusermount3 >/dev/null 2>&1 || command -v fusermount >/dev/null 2>&1; then return 0; fi
-  say "Breakpatch is an AppImage, which needs FUSE to start, and this computer doesn't have it."
+  say "Breakpatch is an AppImage, which needs FUSE to start, and this PC doesn't have it."
   say "Install it, then open Breakpatch: sudo apt install fuse3 (Ubuntu, Debian) or sudo dnf install fuse3 (Fedora)."
   return 1
 }
@@ -995,7 +995,7 @@ main() {
   if [ "$(uname -s)" = Linux ]; then
     linux=1
     ARCHIVE_RE='_amd64[.]AppImage$'
-    this_machine="this computer"
+    this_machine="this PC"
   fi
   action=do_install
   while [ $# -gt 0 ]; do
