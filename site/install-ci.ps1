@@ -108,6 +108,23 @@ function Install-BreakpatchCi {
     [Environment]::SetEnvironmentVariable('BREAKPATCH_CI_PATH_CHANGED', $null, 'User')
   }
 
+  # Takes a folder out of this user's PATH again, read and written as in Add-UserPath. Only called
+  # once the folder is gone or empty, so an entry for a folder with the user's own things stays.
+  function Remove-UserPath([string] $dir) {
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+    try {
+      $userPath = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+      $keep = @($userPath -split ';' | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ne $dir.TrimEnd('\') })
+      $new = $keep -join ';'
+      if ($new -eq $userPath) { return }
+      $key.SetValue('Path', $new, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+    } finally {
+      $key.Dispose()
+    }
+    [Environment]::SetEnvironmentVariable('BREAKPATCH_CI_PATH_CHANGED', $null, 'User')
+  }
+
   # ------------------------------------------------------------ checks
 
   function Test-Platform {
@@ -403,6 +420,8 @@ function Install-BreakpatchCi {
       foreach ($d in $made) {
         if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d -Force }
       }
+      # The PATH entry goes with the shim, unless the folder still has something else in it.
+      if (-not (Test-Path -LiteralPath $bin -PathType Container) -or -not (Get-ChildItem -LiteralPath $bin -Force)) { Remove-UserPath $bin }
       Say "Removed breakpatch-ci and its browser from $(Pretty $ciHome)."
       Say "The machine licence is still in Breakpatch's data folder. Run breakpatch-ci licence release first to give the seat back, or free it in the back office."
       return
