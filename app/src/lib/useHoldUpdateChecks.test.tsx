@@ -93,7 +93,7 @@ describe('the screens hold update checks only while busy', () => {
     expect(holds.n).toBe(1);
     finishRun();
     expect(await screen.findByRole('button', { name: 'Run again' })).toBeInTheDocument();
-    expect(holds.n).toBe(0);                                       // the screen stays open, idle
+    await waitFor(() => expect(holds.n).toBe(0));                  // the screen stays open, idle (released in an effect, after the render)
   });
 
   it('Run all holds them from the first test to the last, not between, and not once it has ended', async () => {
@@ -105,7 +105,7 @@ describe('the screens hold update checks only while busy', () => {
     expect(holds.n).toBe(1);
     finishRun();
     await waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('All tests · finished'));
-    expect(holds.n).toBe(0);
+    await waitFor(() => expect(holds.n).toBe(0));                  // released in an effect, after the render
   });
 
   it('the recorder holds nothing while it is just open, and holds them while the test plays', async () => {
