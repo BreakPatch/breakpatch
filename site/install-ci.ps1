@@ -80,6 +80,12 @@ function Install-BreakpatchCi {
     $ErrorActionPreference = 'Continue'
     try { return ([string](& $exe @argv 2>$null)).Trim() } catch { return '' } finally { $ErrorActionPreference = $was }
   }
+  # Puts a variable of this session back as it was; $null: it wasn't there, so it goes. Not
+  # [Environment]::SetEnvironmentVariable: PowerShell would pass it $null as "".
+  function Restore-EnvVar([string] $name, $value) {
+    if ($null -eq $value) { Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue }
+    else { Set-Item -LiteralPath "Env:\$name" -Value $value }
+  }
   function Pretty([string] $p) {
     $h = [Environment]::GetFolderPath('UserProfile')
     if ($h -and $p.StartsWith($h, [StringComparison]::OrdinalIgnoreCase)) { return '~' + $p.Substring($h.Length) }
@@ -92,7 +98,9 @@ function Install-BreakpatchCi {
   # one profile's path for good, and %JAVA_HOME%-style entries would stop following their
   # variable. Read without expanding, written back as REG_EXPAND_SZ. Then a variable that isn't
   # there is removed the .NET way, only for the WM_SETTINGCHANGE that sends: windows opened after
-  # this, from Explorer too, get the new PATH. Windows only; tests on Linux have no registry.
+  # this, from Explorer too, get the new PATH. [NullString]::Value, not $null: PowerShell passes
+  # $null to a string parameter as "", and .NET (PowerShell 7's) then writes an empty variable
+  # instead of removing it. Windows only; tests on Linux have no registry.
   function Add-UserPath([string] $dir) {
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
     $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
@@ -105,7 +113,7 @@ function Install-BreakpatchCi {
     } finally {
       $key.Dispose()
     }
-    [Environment]::SetEnvironmentVariable('BREAKPATCH_CI_PATH_CHANGED', $null, 'User')
+    [Environment]::SetEnvironmentVariable('BREAKPATCH_CI_PATH_CHANGED', [NullString]::Value, 'User')
   }
 
   # Takes a folder out of this user's PATH again, read and written as in Add-UserPath. Only called
@@ -122,7 +130,7 @@ function Install-BreakpatchCi {
     } finally {
       $key.Dispose()
     }
-    [Environment]::SetEnvironmentVariable('BREAKPATCH_CI_PATH_CHANGED', $null, 'User')
+    [Environment]::SetEnvironmentVariable('BREAKPATCH_CI_PATH_CHANGED', [NullString]::Value, 'User')
   }
 
   # ------------------------------------------------------------ checks
@@ -506,7 +514,7 @@ function Install-BreakpatchCi {
     try { $code = Invoke-Native (Join-Path $tmp 'pip.log') $py @('-m', 'pip', 'install', '-q', '--require-hashes', '--only-binary=:all:', '-r', $script:reqs) }
     finally {
       Pop-Location
-      foreach ($k in $pipWas.Keys) { [Environment]::SetEnvironmentVariable($k, $pipWas[$k], 'Process') }   # $null removes it
+      foreach ($k in @($pipWas.Keys)) { Restore-EnvVar $k $pipWas[$k] }
     }
     if ($code -ne 0) {
       Get-Content -LiteralPath (Join-Path $tmp 'pip.log') -Tail 8 | Write-Host
@@ -521,7 +529,7 @@ function Install-BreakpatchCi {
     $browsersWas = $env:PLAYWRIGHT_BROWSERS_PATH
     $env:PLAYWRIGHT_BROWSERS_PATH = $browsers
     try { $code = Invoke-Native (Join-Path $tmp 'browser.log') $py @('-m', 'playwright', 'install', 'chromium', '--no-shell') }
-    finally { [Environment]::SetEnvironmentVariable('PLAYWRIGHT_BROWSERS_PATH', $browsersWas, 'Process') }   # $null removes it
+    finally { Restore-EnvVar 'PLAYWRIGHT_BROWSERS_PATH' $browsersWas }
     if ($code -ne 0) {
       Get-Content -LiteralPath (Join-Path $tmp 'browser.log') -Tail 5 | Write-Host
       Fail "Couldn't install Chromium. Check your connection and run this again."
