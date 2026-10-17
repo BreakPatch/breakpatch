@@ -41,17 +41,17 @@ permissions:
 jobs:
   ui:
     name: UI (typecheck, build, tests)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       coverage: ${{ steps.tests.outputs.coverage }}
     defaults:
       run:
         working-directory: app
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
@@ -70,7 +70,7 @@ jobs:
 
   engine:
     name: Engine (pytest)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       coverage: ${{ steps.tests.outputs.coverage }}
     defaults:
@@ -80,10 +80,10 @@ jobs:
       # One place for Playwright's Chromium, used by both the install and the tests.
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
           cache: pip
@@ -123,10 +123,10 @@ jobs:
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Install the engine
@@ -149,7 +149,7 @@ jobs:
       run:
         working-directory: app/src-tauri
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: WebKit and system libraries
@@ -202,7 +202,7 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_PROFILE_TEST_DEBUG: "0"
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: WebKit, system libraries, MinGW, GNOME Keyring and shared-mime-info
@@ -251,7 +251,7 @@ jobs:
     name: Community release build (scripts/build-release.sh, Linux, no bundle)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: WebKit and system libraries
@@ -261,12 +261,12 @@ jobs:
             libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
             libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev \
             build-essential patchelf
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master, 2026-09
@@ -286,13 +286,13 @@ jobs:
 
   install-script:
     name: Install commands
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # breakpatch-ci's install command needs Python 3.11 (ubuntu-latest's own is newer).
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      # breakpatch-ci's install command needs Python 3.11 (ubuntu-24.04's own is newer).
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: Test the install command against fake releases
@@ -313,10 +313,10 @@ jobs:
       LANG: en_US.UTF-8
       LC_ALL: en_US.UTF-8
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       # The test's certificate needs openssl req -addext: Homebrew's OpenSSL 3 rather than the
@@ -346,10 +346,10 @@ jobs:
     name: GitHub Action and workflows (actionlint, shellcheck)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11"
       - name: actionlint
@@ -372,7 +372,7 @@ jobs:
   # another system and no licence. The Team wheel must hold the compiled module only.
   ci-command:
     name: breakpatch-ci wheels (Linux, throwaway key)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       HAS_TEAM: ${{ secrets.TEAM_CI_TOKEN != '' }}
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
@@ -380,7 +380,7 @@ jobs:
       - name: Skipped without the Team repo
         if: env.HAS_TEAM != 'true'
         run: echo "::notice::TEAM_CI_TOKEN isn't available here (a fork, or not set up yet), so breakpatch-ci's wheels weren't built."
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.HAS_TEAM == 'true'
         with:
           path: breakpatch
@@ -409,14 +409,14 @@ jobs:
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
       - name: Check out the Team module
         if: env.HAS_TEAM == 'true'
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ vars.TEAM_REPO || 'BreakPatch/breakpatch-team' }}
           ref: ${{ steps.team.outputs.ref }}
           token: ${{ secrets.TEAM_CI_TOKEN }}
           path: breakpatch-team
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         if: env.HAS_TEAM == 'true'
         with:
           python-version: "3.11"
@@ -468,11 +468,11 @@ jobs:
     name: Coverage badges (main only)
     needs: [ui, engine, shell]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write   # pushes the badges branch; nothing else in this workflow can write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false   # publish-badges.sh passes the token for its one push
